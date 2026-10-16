@@ -48,6 +48,8 @@ class ResearchAgentReplanAuditDiscoveryWiringTest {
     @Autowired private ResearchAgentCheckpointSnapshotCompiler snapshotCompiler;
     @Autowired private ResearchAgentCheckpointHydrator hydrator;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private com.fasterxml.jackson.databind.ObjectMapper mapper;
+    @Autowired private ResearchDiscoveryController discoveryController;
 
     private TransactionTemplate transactions;
 
@@ -60,7 +62,10 @@ class ResearchAgentReplanAuditDiscoveryWiringTest {
     void acceptedDiscoveryRevisionShouldPersistOneScopeExpandedReplanAuditRow() {
         Fixture fixture = seedDiscoveryRun();
 
+        jdbcTemplate.update("update research_cell set high_risk = true where research_run_id = ? and column_key = 'answer'", fixture.runId());
         submitDiscovery(fixture, "1");
+        assertThat(jdbcTemplate.queryForObject("select high_risk from research_cell where research_run_id = ? and cell_key = 'entity-1:answer'", Boolean.class, fixture.runId())).isTrue();
+        assertThat(jdbcTemplate.queryForObject("select high_risk from research_column where research_run_id = ? and column_key = 'dimension-1'", Boolean.class, fixture.runId())).isTrue();
 
         List<ResearchAgentReplanAuditService.ReplanAudit> audits = replanAudit.findByRun(fixture.runId());
         assertThat(audits).hasSize(1);
@@ -78,7 +83,7 @@ class ResearchAgentReplanAuditDiscoveryWiringTest {
         // The affected cells are the cells the revision inserted, not a placeholder list.
         assertThat(audit.affectedCells()).containsExactlyInAnyOrder(
                 "entity-1:answer", "entity-1:implications", "entity-1:key_evidence",
-                "entity-1:limitations", "subject:dimension-1");
+                "entity-1:limitations", "subject:dimension-1", "entity-1:dimension-1");
         for (String cellKey : audit.affectedCells()) {
             assertThat(jdbcTemplate.queryForObject("""
                     select count(*) from research_cell
@@ -190,6 +195,88 @@ class ResearchAgentReplanAuditDiscoveryWiringTest {
         assertThat(planRows(fixture.runId())).isEqualTo(1);
         assertThat(replanAudit.findByRun(fixture.runId())).isEmpty();
         assertThat(proposalRows(fixture.runId())).isZero();
+    }
+
+    @Test
+    void realDiscoveryShouldRecomputeSourceScoreAndIgnoreRepeatedProposalsAcrossRounds() throws Exception {
+        Fixture fixture = seedDiscoveryRun();
+        var task = discoveryV2Task(fixture);
+        var result = discoveryV2Result();
+        transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, result, fixture.roleResultId()));
+        assertThat(jdbcTemplate.queryForObject("select confidence_ppm from research_discovery_proposal where research_run_id = ?", Integer.class, fixture.runId())).isEqualTo(500000);
+        assertThat(jdbcTemplate.queryForObject("select supporting_domain_count from research_discovery_proposal where research_run_id = ?", Integer.class, fixture.runId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select proposal_status from research_discovery_proposal where research_run_id = ?", String.class, fixture.runId())).isEqualTo("SHADOW");
+        result.put("search_observations", List.of(observation("observation-b", "A second real result", "https://different.org/result")));
+        var proposal = new LinkedHashMap<>((Map<String, Object>) ((List<?>) result.get("proposals")).get(0));
+        proposal.put("supports", List.of(Map.of("observation_key", "observation-b", "quote_text", "second real")));
+        result.put("proposals", List.of(proposal));
+        transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, result, fixture.roleResultId()));
+        assertThat(proposalRows(fixture.runId())).isEqualTo(1);
+        assertThat(discoveryController.proposals(fixture.workspaceId(), fixture.runId()).data().get(0).keySet()).containsExactlyInAnyOrder(
+                "proposal_type", "label", "rationale", "confidence_ppm", "supporting_domain_count", "status");
+        assertThatThrownBy(() -> discoveryController.proposals(Ids.newId(), fixture.runId())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void invalidDiscoveryQuoteOrPrivateUrlShouldRollbackObservationsAndProposals() throws Exception {
+        Fixture fixture = seedDiscoveryRun();
+        var task = discoveryV2Task(fixture);
+        var result = discoveryV2Result();
+        result.put("search_observations", List.of(observation("observation-a", "A real result", "http://127.0.0.1/metadata")));
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, result, fixture.roleResultId()))).isInstanceOf(BusinessException.class);
+        result.put("search_observations", List.of(observation("observation-a", "Unrelated content", "https://example.org/result")));
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, result, fixture.roleResultId()))).isInstanceOf(BusinessException.class);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_discovery_observation where research_run_id = ?", Integer.class, fixture.runId())).isZero();
+        assertThat(proposalRows(fixture.runId())).isZero();
+    }
+
+    @Test
+    void newDiscoveryTaskShouldRejectLegacyPayloadAndStaleMatrix() throws Exception {
+        Fixture fixture = seedDiscoveryRun();
+        var task = discoveryV2Task(fixture);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, discoveryResult("1"), fixture.roleResultId()))).isInstanceOf(BusinessException.class);
+        jdbcTemplate.update("update research_cell set plan_revision = 1 where research_run_id = ?", fixture.runId());
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> discoveryProposals.validateAndPersist(task, discoveryV2Result(), fixture.roleResultId()))).isInstanceOfSatisfying(BusinessException.class,
+                error -> assertThat(error.code()).isEqualTo("RESEARCH_DISCOVERY_PROPOSAL_STALE"));
+        assertThat(proposalRows(fixture.runId())).isZero();
+    }
+
+    private ResearchAgentCompletionCommitter.TaskRow discoveryV2Task(Fixture fixture) throws Exception {
+        var old = fixture.task();
+        String context = mapper.writeValueAsString(Map.of("source_policy", Map.of("retrieval_mode", "WEB_ONLY", "allow_external_search", true),
+                "query_policy", Map.of("discovery_input", Map.of("schema_version", "research-discovery-input.v2", "input_digest", INPUT_DIGEST,
+                        "query_limit", 3, "authoritative_domains", List.of(), "allowed_source_ids", List.of()))));
+        return new ResearchAgentCompletionCommitter.TaskRow(old.id(), old.runId(), "SUBMITTED", "WIDE_DISCOVERY", "subject", old.branchId(), 0, 0,
+                "[]", "{}", context, "research-agent-task-snapshot.v3", old.snapshotDigest(), "dr110-worker", 1, 1L, "logical-" + old.id(), old.id(), 1, 1, true);
+    }
+
+    private Map<String, Object> discoveryV2Result() {
+        Map<String, Object> proposal = new LinkedHashMap<>(proposal("query-a", "SEARCH_QUERY", "query-a", "Additional query"));
+        proposal.put("confidence_ppm", 999999);
+        proposal.put("supports", List.of(Map.of("observation_key", "observation-a", "quote_text", "real result")));
+        Map<String, Object> result = new LinkedHashMap<>(discoveryResult("1"));
+        result.put("result_schema_version", "research-discovery-proposal.v2");
+        result.put("queries", List.of("scope query"));
+        result.put("proposals", List.of(proposal));
+        result.put("search_observations", List.of(observation("observation-a", "A real result", "https://example.org/result")));
+        return result;
+    }
+
+    private Map<String, Object> observation(String key, String snippet, String url) {
+        return Map.of("observation_key", key, "query", "scope query", "source_id", "source-a", "source_title", "Result",
+                "source_url", url, "source_window_id", "", "snippet", snippet, "source_domain", "forged.example", "lineage_digest", "forged");
+    }
+
+    @Test
+    void sparseMatrixExpansionShouldStillBoundTheCompleteCrossProduct() {
+        Fixture fixture = seedDiscoveryRun();
+        for (int i = 0; i < 20; i++) jdbcTemplate.update("insert into research_row(id, research_run_id, row_key, row_status) values (?, ?, ?, 'DISCOVERED')",
+                Ids.newId(), fixture.runId(), "empty-" + i);
+        assertThatThrownBy(() -> submitDiscovery(fixture, "1")).isInstanceOfSatisfying(BusinessException.class,
+                error -> assertThat(error.code()).isEqualTo("RESEARCH_DISCOVERY_PLAN_BOUNDED"));
+        assertThat(cells(fixture.runId())).isEqualTo(4);
+        assertThat(proposalRows(fixture.runId())).isZero();
+        assertThat(replanAudit.findByRun(fixture.runId())).isEmpty();
     }
 
     private void submitDiscovery(Fixture fixture, String suffix) {

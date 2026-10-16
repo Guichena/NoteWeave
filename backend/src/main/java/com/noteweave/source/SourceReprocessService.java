@@ -116,6 +116,12 @@ public class SourceReprocessService {
         String taskId = taskCommandPort.createTask(workspaceId, "SOURCE_PARSE", "SOURCE", sourceId,
                 SourcePipelineStages.STAGE_EMBEDDING, reason);
         taskCommandPort.startTask(taskId);
+        jdbcTemplate.update("update source_snapshot set embedding_task_id = ? where id = ?", taskId, snapshotId);
+        jdbcTemplate.update("""
+                update source_embedding_batch set lease_token = null, lease_until = null,
+                    status = case when status = 'COMPLETED' then status else 'READY' end,
+                    updated_at = current_timestamp where source_snapshot_id = ?
+                """, snapshotId);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("taskId", taskId);
         payload.put("workspaceId", workspaceId);
@@ -137,6 +143,7 @@ public class SourceReprocessService {
     }
 
     private String restartParse(String workspaceId, String sourceId, Snapshot snapshot) {
+        jdbcTemplate.update("delete from source_embedding_batch where source_snapshot_id = ?", snapshot.snapshotId());
         // 解析失败时事务已回滚，一般没有残留片段；这里仍然清理一次，保证重新切片从空状态开始
         jdbcTemplate.update("""
                 delete from source_window where source_chunk_id in (
@@ -146,6 +153,7 @@ public class SourceReprocessService {
         jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = null,
+                    embedding_task_id = null, embedding_batch_version = null,
                     index_attempt_count = 0, next_index_retry_at = null
                 where id = ?
                 """, snapshot.snapshotId());

@@ -56,8 +56,10 @@ class WikiAnswerModeStrategyTest {
                 .contains("## 页面关系")
                 .contains("## 会话上下文")
                 .contains("## 表达控制")
-                .contains("/workspaces/workspace/wiki");
-        assertThat(strategy.plan(answerContext).budget().maxGraphHops()).isEqualTo(1);
+                .contains("/workspaces/workspace/wiki")
+                .doesNotContain("到达路径");
+        assertThat(strategy.plan(answerContext).budget().maxGraphHops()).isEqualTo(3);
+        assertThat(strategy.plan(answerContext).budget().maxEvidence()).isEqualTo(35);
         assertThat(strategy.plan(answerContext).budget().maxGraphEdges()).isEqualTo(60);
         assertThat(strategy.plan(answerContext).budget().maxGraphCharacters()).isEqualTo(4_000);
     }
@@ -104,6 +106,30 @@ class WikiAnswerModeStrategyTest {
                 .doesNotContain("Excluded Wiki Page")
                 .doesNotContain("excluded summary");
         assertThat(prompt.referencedEvidenceIds()).containsExactly("knowledge-version:version");
+    }
+
+    @Test
+    void shouldAppendTheArrivalPathOnlyForExpandedPages() {
+        WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(
+                List.of(pageContext()), List.of("citation"));
+        String encoded = codec.encodeGraphPath(List.of("Seed", "Wiki Page"));
+        EvidenceBundle.Evidence expanded = new EvidenceBundle.Evidence(
+                "knowledge-version:version", "KNOWLEDGE_VERSION", "", "", "",
+                "item", "version", "Wiki Page", "summary", "knowledge-version:version",
+                8, 1, 1, "workspace-knowledge:item", null, "wiki-page-graph", 7,
+                Map.of(WikiEvidenceRetriever.GRAPH_PATH_METADATA, encoded)
+        );
+        EvidenceBundle bundle = new EvidenceBundle(
+                "bundle", WikiAnswerModeStrategy.PLAN_VERSION, List.of(expanded), false,
+                List.of(), Instant.now(),
+                Map.of(WikiRetrievalSnapshotCodec.METADATA_KEY, codec.encode(snapshot))
+        );
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query", Set.of(), Map.of(), Instant.now());
+
+        var prompt = strategy.compose(context, bundle);
+
+        assertThat(prompt.userPrompt()).contains("到达路径 Seed → Wiki Page");
     }
 
     private WikiPageContext pageContext() {

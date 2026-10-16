@@ -26,6 +26,7 @@ public class KafkaDeadLetterTaskRecovery {
     private final SourceParseFailureFinalizer sourceParseFailureFinalizer;
     private final String retrievalProjectionTopic;
     private final String sourceParseTopic;
+    private com.noteweave.retrieval.projection.SourceEmbeddingBatchRepository embeddingBatches;
 
     public KafkaDeadLetterTaskRecovery(
             ObjectMapper objectMapper,
@@ -39,6 +40,11 @@ public class KafkaDeadLetterTaskRecovery {
         this.sourceParseFailureFinalizer = sourceParseFailureFinalizer;
         this.retrievalProjectionTopic = retrievalProjectionTopic;
         this.sourceParseTopic = sourceParseTopic;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setEmbeddingBatches(com.noteweave.retrieval.projection.SourceEmbeddingBatchRepository embeddingBatches) {
+        this.embeddingBatches = embeddingBatches;
     }
 
     public void recover(ConsumerRecord<?, ?> record, Exception exception) {
@@ -66,13 +72,26 @@ public class KafkaDeadLetterTaskRecovery {
                     record.topic(), record.partition(), record.offset());
             return;
         }
-        projectionFinalizer.finalizeFailed(
+        if (embeddingBatches != null && com.noteweave.source.SourcePipelineStages.TOPIC_EMBED.equals(record.topic())) {
+            Object batch = payload.get("batchNo"); String version = text(payload.get("batchVersion"));
+            if (batch != null) {
+                if (!(batch instanceof Integer batchNo) || batchNo < 0 || version == null || !version.matches("[a-f0-9]{64}")
+                        || !embeddingBatches.acceptsFailure(workspaceId, sourceId, snapshotId, taskId, batchNo, version)) return;
+            } else if (!embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "EMBEDDING")) return;
+        }
+        if (embeddingBatches != null && com.noteweave.source.SourcePipelineStages.TOPIC_INDEX.equals(record.topic())
+                && !embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "INDEXING")) return;
+        try {
+            projectionFinalizer.finalizeFailed(
                 workspaceId,
                 sourceId,
                 snapshotId,
                 taskId,
                 errorCode(exception)
-        );
+            );
+        } catch (RuntimeException finalizeFailure) {
+            log.warn("检索索引死信收尾失败: taskId={}, sourceId={}", taskId, sourceId, finalizeFailure);
+        }
     }
 
     private void recoverSourceParse(ConsumerRecord<?, ?> record, Exception exception) {

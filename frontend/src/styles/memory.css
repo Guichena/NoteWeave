@@ -449,3 +449,75 @@
     opacity: 1;
   }
 }
+
+/* 2A 冲突说明 */
+.memory-conflict {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--tint-rose);
+  color: var(--tint-rose-ink);
+  font-size: var(--text-sm);
+}
+
+.memory-conflict-text {
+  color: var(--ink-2);
+}
+
+/* 2C 记忆注入预览与回答中的记忆引用 */
+.memory-preview-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.memory-preview-form input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.memory-reference-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-reference-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.memory-reference-list li > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.memory-reference-list small {
+  color: var(--muted);
+}
+
+.memory-class-tag {
+  flex: none;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: 20px;
+  background: var(--tint-blue);
+  color: var(--tint-blue-ink);
+}
+
+.memory-class-tag.is-always_on {
+  background: var(--tint-violet);
+  color: var(--tint-violet-ink);
+}
+
+.message-memory-references {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}

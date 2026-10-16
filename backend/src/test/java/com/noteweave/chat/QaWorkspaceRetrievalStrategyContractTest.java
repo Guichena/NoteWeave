@@ -103,7 +103,7 @@ class QaWorkspaceRetrievalStrategyContractTest {
 
     private void assertV2Run(String runId) throws Exception {
         String expectedPlanVersion = "qa-weknora-hybrid-v1";
-        String expectedProfile = "qa-weknora-hybrid-v1";
+        String expectedProfile = "qa-hybrid-mmr-token-v3";
         String expectedRelevancePolicy = "qa-lexical-sufficiency-v2";
         Map<String, Object> row = jdbcTemplate.queryForMap("""
                 select retrieval_plan_version, retrieval_plan_json
@@ -117,7 +117,7 @@ class QaWorkspaceRetrievalStrategyContractTest {
         assertThat(filters.path("strategy_profile").asText()).isEqualTo(expectedProfile);
         assertThat(filters.path("relevance_policy").asText()).isEqualTo(expectedRelevancePolicy);
         assertThat(filters.path("selection_policy").asText())
-                .isEqualTo("qa-source-diverse-budget-v2");
+                .isEqualTo("qa-mmr-token-budget-v3");
 
         String promptVersion = jdbcTemplate.queryForObject("""
                 select prompt_version
@@ -136,7 +136,7 @@ class QaWorkspaceRetrievalStrategyContractTest {
         assertThat(summary.path("strategy_profile").asText()).isEqualTo(expectedProfile);
         assertThat(summary.path("relevance_policy").asText()).isEqualTo(expectedRelevancePolicy);
         assertThat(summary.path("selection_policy").asText())
-                .isEqualTo("qa-source-diverse-budget-v2");
+                .isEqualTo("qa-mmr-token-budget-v3");
         assertThat(summary.path("execution_trace").path("steps").get(0)
                 .path("measurements").path("strategy_v2_enabled").asInt())
                 .isEqualTo(1);

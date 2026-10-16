@@ -1,10 +1,12 @@
 package com.noteweave.chat;
 
+import com.noteweave.answer.strategy.RetrievalExecutionTrace;
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
 import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaEvidenceRelevancePolicy;
 import com.noteweave.retrieval.QaEvidenceSelectionPolicy;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
+import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.search.ChunkSearchHit;
 import com.noteweave.search.ChunkSearchPort;
 import java.util.ArrayList;
@@ -95,6 +97,18 @@ public class QaPassageRetriever {
             Set<String> sourceScope,
             QaRetrievalStrategyProfile profile
     ) {
+        return retrieveWithDiagnostics(
+                workspaceId, RetrievalChannels.same(query), sourceScope, profile);
+    }
+
+    public RetrievalResult retrieveWithDiagnostics(
+            String workspaceId,
+            RetrievalChannels channels,
+            Set<String> sourceScope,
+            QaRetrievalStrategyProfile profile
+    ) {
+        RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
+        String query = safeChannels.lexicalQuery();
         Objects.requireNonNull(profile, "QA retrieval strategy profile is required");
         List<String> allowedSourceIds = normalizeSourceScope(sourceScope);
         Set<String> allowedSources = new LinkedHashSet<>(allowedSourceIds);
@@ -109,9 +123,9 @@ public class QaPassageRetriever {
         if (hybridRetriever != null) {
             try {
                 QaHybridRetriever.HybridResult hybrid = hybridRetriever.retrieve(
-                        workspaceId, query, allowedSources);
+                        workspaceId, safeChannels, allowedSources, profile);
                 return new RetrievalResult(hybrid.chunks(), hybrid.degraded(),
-                        hybrid.degradationReasons(), hybrid.measurements());
+                        hybrid.degradationReasons(), hybrid.measurements(), hybrid.rankedCandidates());
             } catch (BusinessException ex) {
                 throw ex;
             } catch (Exception ex) {
@@ -491,13 +505,24 @@ public class QaPassageRetriever {
             List<RetrievedChunk> chunks,
             boolean degraded,
             List<String> degradationReasons,
-            Map<String, Long> measurements
+            Map<String, Long> measurements,
+            List<RetrievalExecutionTrace.RankedCandidateTrace> rankedCandidates
     ) {
         public RetrievalResult {
             chunks = chunks == null ? List.of() : List.copyOf(chunks);
             degradationReasons = degradationReasons == null
                     ? List.of() : List.copyOf(degradationReasons);
             measurements = measurements == null ? Map.of() : Map.copyOf(measurements);
+            rankedCandidates = rankedCandidates == null ? List.of() : List.copyOf(rankedCandidates);
+        }
+
+        public RetrievalResult(
+                List<RetrievedChunk> chunks,
+                boolean degraded,
+                List<String> degradationReasons,
+                Map<String, Long> measurements
+        ) {
+            this(chunks, degraded, degradationReasons, measurements, List.of());
         }
     }
 }

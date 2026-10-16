@@ -72,13 +72,19 @@ class ResearchAgentLocalReplanRecorder {
                     """, revisionTo, runId, cell, revisionFrom);
         }
         long targetCount = affectedCells.size();
-        Map<String, Long> budgetDelta = ResearchAgentTaskCoordinatorService.deepCellBudget((int) targetCount);
+        Map<String, Long> budgetDelta = new LinkedHashMap<>();
+        ("EVIDENCE_CONFLICT".equals(repairCause) ? ResearchAgentTaskCoordinatorService.counterCellBudget()
+                : ResearchAgentTaskCoordinatorService.deepCellBudget(1)).forEach((key, value) -> budgetDelta.put(key, value * targetCount));
         audits.recordReplan(new ResearchAgentReplanAuditService.ReplanAuditCommand(
                 runId, revisionFrom, revisionTo, previous.planDigest(), planDigest,
                 deviationType(repairCause),
                 "MA4 observed " + repairCause + " for " + targetCount
                         + " unresolved cell(s); only those cells were replanned.",
                 affectedCells, budgetDelta, null, "COUNTERFACTUAL_RESEARCH"));
+        jdbcTemplate.update("update research_agent_replan_audit set repair_cause = ?, strategy = ? where research_run_id = ? and plan_revision_to = ?",
+                repairCause, "EVIDENCE_CONFLICT".equals(repairCause) ? "COUNTER_EVIDENCE"
+                        : ("FETCH_FAILED".equals(repairCause) || "PROVIDER_FAILED".equals(repairCause)) ? "SWITCH_SOURCE_TYPE" : "NARROW",
+                runId, revisionTo);
     }
 
     private String deviationType(String repairCause) {

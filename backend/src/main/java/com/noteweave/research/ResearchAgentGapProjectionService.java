@@ -62,7 +62,8 @@ public class ResearchAgentGapProjectionService {
             aggregate.decisionIds.add(repair.id());
             aggregate.statuses.add("VERIFIER_DECISION_OPEN");
             aggregate.reasons.add(repair.reasonCode());
-            aggregate.excludedSources.addAll(evidenceSourceIds(runId, strings(repair.evidenceIdsJson())));
+            if ("SEMANTIC_EQUIVALENCE_APPROVED".equals(repair.reasonCode())) aggregate.excludedSources.clear();
+            else aggregate.excludedSources.addAll(evidenceSourceIds(runId, strings(repair.evidenceIdsJson())));
         }
         List<RepairGap> result = new ArrayList<>();
         for (Map.Entry<String, Aggregate> item : byCell.entrySet()) {

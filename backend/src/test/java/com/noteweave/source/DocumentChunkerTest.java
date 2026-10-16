@@ -195,4 +195,46 @@ class DocumentChunkerTest {
                 .singleElement()
                 .satisfies(chunk -> assertThat(chunk.content()).isEmpty());
     }
+
+    @Test
+    void typedTablesCaptionsAndFormulasStayWholeEvenAboveTheTokenBudget() {
+        var box = new DocumentElement.BoundingBox(10, 20, 200, 400, DocumentElement.CoordOrigin.TOPLEFT);
+        for (var type : List.of(DocumentElement.ElementType.TABLE, DocumentElement.ElementType.CAPTION,
+                DocumentElement.ElementType.FORMULA)) {
+            String atomic = "完整结构原文。".repeat(200);
+            var document = new SourceDocumentTextExtractor.ExtractedDocument(atomic, "application/pdf", 3,
+                    List.of(new DocumentElement(DocumentElement.ElementType.TITLE, "研究报告", 1, null, 1),
+                            new DocumentElement(DocumentElement.ElementType.SECTION_HEADER, "实验结果", 2, null, 2),
+                            new DocumentElement(type, atomic, 3, box, null)), "DOCLING", false, List.of(), null);
+            var chunks = chunker.chunk(document);
+            var preserved = chunks.stream().filter(chunk -> chunk.structureMetadata().indivisible()).findFirst().orElseThrow();
+
+            assertThat(preserved.content()).isEqualTo(atomic);
+            assertThat(preserved.tokens()).isGreaterThan(120);
+            assertThat(preserved.headingPath()).isEqualTo("研究报告 > 实验结果");
+            assertThat(preserved.pageStart()).isEqualTo(3);
+            assertThat(preserved.pageEnd()).isEqualTo(3);
+            assertThat(preserved.structureMetadata().exceedsTokenBudget()).isTrue();
+            assertThat(preserved.structureMetadata().elements()).singleElement()
+                    .satisfies(element -> assertThat(element.bbox()).isEqualTo(box));
+            assertThat(chunker.windows(preserved)).containsExactly(atomic);
+        }
+    }
+
+    @Test
+    void typedBodyCanSplitWhileItsPagesAndHeadingPathRemainAvailable() {
+        String body = "每句正文保留真实内容与定位。".repeat(100);
+        var document = new SourceDocumentTextExtractor.ExtractedDocument(body, "application/pdf", 2,
+                List.of(new DocumentElement(DocumentElement.ElementType.SECTION_HEADER, "细节", 2, null, 1),
+                        new DocumentElement(DocumentElement.ElementType.TEXT, body, 2, null, null)),
+                "DOCLING", false, List.of(), null);
+        var chunks = chunker.chunk(document);
+        assertThat(chunks).hasSizeGreaterThan(1);
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.tokens()).isLessThanOrEqualTo(120);
+            assertThat(chunk.headingPath()).isEqualTo("细节");
+            assertThat(chunk.pageStart()).isEqualTo(2);
+            assertThat(chunk.structureMetadata().indivisible()).isFalse();
+        });
+    }
 }

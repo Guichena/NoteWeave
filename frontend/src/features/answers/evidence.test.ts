@@ -47,7 +47,20 @@ describe("buildCitationViews", () => {
 
   it("没有证据清单时只展示引用文本", () => {
     expect(buildCitationViews(["A 文档 | 摘录"], null)).toEqual([
-      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "" }
+      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "", graphPath: [], ocrNote: "", ocrLowConfidence: false }
     ]);
+  });
+
+  it("OCR 片段标注置信度，低于阈值时要求核对原文", () => {
+    const base = { kind: "PASSAGE", source_id: "s", passage_id: "p", knowledge_item_id: null, excerpt: "", location: null, character_cost: 1 };
+    const views = buildCitationViews(["扫描件 | 甲", "扫描件 | 乙", "文字版 | 丙"], [
+      { ...base, rank: 1, evidence_id: "passage:1", title: "扫描件", text_origin: "OCR", ocr_confidence: 0.93 },
+      { ...base, rank: 2, evidence_id: "passage:2", title: "扫描件", text_origin: "OCR", ocr_confidence: 0.61 },
+      { ...base, rank: 3, evidence_id: "passage:3", title: "文字版", text_origin: "TEXT_LAYER" }
+    ]);
+
+    expect(views[0]).toMatchObject({ ocrNote: "文字由 OCR 识别 · 置信度 93%", ocrLowConfidence: false });
+    expect(views[1]).toMatchObject({ ocrNote: "文字由 OCR 识别 · 置信度 61%", ocrLowConfidence: true });
+    expect(views[2]).toMatchObject({ ocrNote: "", ocrLowConfidence: false });
   });
 });

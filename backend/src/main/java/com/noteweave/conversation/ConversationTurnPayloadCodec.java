@@ -30,6 +30,7 @@ final class ConversationTurnPayloadCodec {
         EffectiveRetrievalConfig retrievalConfig = command.effectiveRetrievalConfig();
         canonical.put("retrieval_config", retrievalConfig);
         canonical.put("expected_history_head_message_id", command.expectedHistoryHeadMessageId());
+        canonical.put("regenerated_from", command.regeneratedFrom());
         try {
             byte[] payload = objectMapper.writeValueAsString(canonical).getBytes(StandardCharsets.UTF_8);
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(payload));
@@ -50,6 +51,7 @@ final class ConversationTurnPayloadCodec {
         preparation.put("history_head_message_id", activeHeadMessageId);
         preparation.put("conversation_lock_version", lockVersion);
         preparation.put("expected_history_head_message_id", command.expectedHistoryHeadMessageId());
+        preparation.put("regenerated_from", command.regeneratedFrom());
         try {
             return objectMapper.writeValueAsString(preparation);
         } catch (JsonProcessingException ex) {
@@ -92,7 +94,8 @@ final class ConversationTurnPayloadCodec {
                     optionalFrozenText(frozen, "expected_history_head_message_id"),
                     optionalFrozenText(frozen, "retrieval_strategy"),
                     optionalFrozenStringList(frozen, "retrieval_channels"),
-                    optionalFrozenStringList(frozen, "grounding_refs")
+                    optionalFrozenStringList(frozen, "grounding_refs"),
+                    optionalFrozenText(frozen, "regenerated_from")
             );
         } catch (JsonProcessingException | IllegalArgumentException ex) {
             throw invalidFrozenCommand();

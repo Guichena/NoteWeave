@@ -50,7 +50,7 @@ public class ResearchAgentCompletionCanonicalizer {
     );
     public static final Set<String> EXTRACTION_DIAGNOSTICS_KEYS = Set.of(
             "schema_version", "termination_reason", "accepted_count", "rejected_count",
-            "rejection_counts", "provider_receipt", "rejection_samples"
+            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report", "claim_clusters"
     );
     public static final Set<String> EXTRACTION_PROVIDER_RECEIPT_KEYS = Set.of(
             "purpose", "transport", "model", "call_count", "response_digest", "response_chars"
@@ -58,7 +58,7 @@ public class ResearchAgentCompletionCanonicalizer {
     public static final Set<String> EXTRACTION_REJECTION_SAMPLE_KEYS = Set.of(
             "reason", "window_id", "column_key", "detail"
     );
-    public static final int MAX_EXTRACTION_DIAGNOSTICS_BYTES = 8_192;
+    public static final int MAX_EXTRACTION_DIAGNOSTICS_BYTES = 65_536;
     public static final int MAX_EXTRACTION_REJECTION_SAMPLES = 8;
     public static final int MAX_EXTRACTION_MODEL_CHARS = 128;
     public static final int MAX_EXTRACTION_WINDOW_CHARS = 64;
@@ -214,6 +214,12 @@ public class ResearchAgentCompletionCanonicalizer {
         }
         if (envelope.extractionDiagnostics() != null) {
             validateExtractionDiagnostics(envelope.extractionDiagnostics());
+            if (envelope.extractionDiagnostics().containsKey("execution_report")) {
+                ResearchRepairExecutionService.validateReport(envelope.extractionDiagnostics().get("execution_report"));
+            }
+            if (envelope.extractionDiagnostics().containsKey("claim_clusters")) {
+                ResearchClaimClusterService.validateClusters(envelope.extractionDiagnostics().get("claim_clusters"));
+            }
         }
 
         Set<String> evidenceKeys = new HashSet<>();
@@ -230,6 +236,9 @@ public class ResearchAgentCompletionCanonicalizer {
             Set<String> referenced = new HashSet<>(item.evidenceKeys());
             if (referenced.size() != item.evidenceKeys().size() || !evidenceKeys.containsAll(referenced)) {
                 throw invalid("Candidate evidence_keys are duplicated or outside the envelope");
+            }
+            if (item.equivalentClaims() != null && !SCHEMA_VERSION_V2.equals(envelope.schemaVersion())) {
+                throw invalid("等价证据需要完成信封 v2");
             }
         }
     }
@@ -263,6 +272,18 @@ public class ResearchAgentCompletionCanonicalizer {
             throw invalid("Candidate version, confidence, or evidence references are invalid");
         }
         item.evidenceKeys().forEach(key -> safeIdentifier(key, 64, "candidate evidence_key"));
+        if (item.equivalentClaims() != null) {
+            Set<String> keys = new HashSet<>();
+            if (item.equivalentClaims().size() > 12) throw invalid("等价证据超过上限");
+            for (var claim : item.equivalentClaims()) {
+                safeIdentifier(claim.evidenceKey(), 64, "等价证据标识");
+                text(claim.claimText(), 16384, false, "等价结论");
+                text(claim.sourceDomain(), 300, false, "来源域名");
+                if (!keys.add(claim.evidenceKey())) throw invalid("等价证据重复");
+            }
+            if (!keys.equals(new HashSet<>(item.evidenceKeys()))) throw invalid("等价证据必须逐条对应候选证据");
+            if (item.equivalentClaims().stream().noneMatch(claim -> item.candidateValue().equals(claim.claimText()))) throw invalid("候选代表值必须保留一条证据的结论原文");
+        }
     }
 
     private void validateCounters(Map<String, Long> counters, Set<String> exactKeys, String field) {
@@ -454,6 +475,9 @@ public class ResearchAgentCompletionCanonicalizer {
         result.put("candidate_value", item.candidateValue());
         result.put("evidence_keys", item.evidenceKeys() == null ? null : item.evidenceKeys().stream().sorted().toList());
         result.put("confidence_ppm", item.confidencePpm());
+        if (item.equivalentClaims() != null) result.put("equivalent_claims", item.equivalentClaims().stream()
+                .sorted(java.util.Comparator.comparing(ResearchAgentCompletionEnvelope.EquivalentClaim::evidenceKey))
+                .map(claim -> Map.of("evidence_key", claim.evidenceKey(), "claim_text", claim.claimText(), "source_domain", claim.sourceDomain())).toList());
         return result;
     }
 
@@ -516,7 +540,9 @@ public class ResearchAgentCompletionCanonicalizer {
                 new ResearchAgentCompletionEnvelope.Candidate(
                         nfc(item.candidateKey()), nfc(item.cellKey()), item.baseCellVersion(),
                         nfc(item.candidateValue()), item.evidenceKeys().stream().map(this::nfc).toList(),
-                        item.confidencePpm())).toList();
+                        item.confidencePpm(), item.equivalentClaims() == null ? null : item.equivalentClaims().stream()
+                        .map(claim -> new ResearchAgentCompletionEnvelope.EquivalentClaim(nfc(claim.evidenceKey()),
+                                nfc(claim.claimText()), nfc(claim.sourceDomain()))).toList())).toList();
         return new ResearchAgentCompletionEnvelope(
                 nfc(source.schemaVersion()), nfc(source.taskId()), nfc(source.workerInstanceId()),
                 source.leaseEpoch(), source.fencingToken(), nfc(source.executionKey()),

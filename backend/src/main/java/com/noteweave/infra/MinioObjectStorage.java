@@ -95,6 +95,72 @@ public class MinioObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public InputStream openStream(String bucket, String objectKey) {
+        try { return client.getObject(GetObjectArgs.builder().bucket(bucket).object(objectKey).build()); }
+        catch (Exception ex) { throw new IllegalStateException("对象读取失败：" + bucket + "/" + objectKey, ex); }
+    }
+
+    @Override
+    public void compose(String sourceBucket, List<String> sourceKeys, String targetBucket, String targetKey) {
+        if (sourceKeys == null || sourceKeys.isEmpty()) throw new IllegalArgumentException("合并对象列表不能为空");
+        if (sourceBucket.equals(targetBucket) && sourceKeys.contains(targetKey)) {
+            throw new IllegalArgumentException("合并目标不能覆盖输入对象");
+        }
+        try {
+            long total = 0;
+            boolean serverSide = true;
+            for (int index = 0; index < sourceKeys.size(); index++) {
+                long size = client.statObject(io.minio.StatObjectArgs.builder().bucket(sourceBucket)
+                        .object(sourceKeys.get(index)).build()).size();
+                total = Math.addExact(total, size);
+                if (index < sourceKeys.size() - 1 && size < 5L * 1024 * 1024) serverSide = false;
+            }
+            if (serverSide) {
+                client.composeObject(io.minio.ComposeObjectArgs.builder().bucket(targetBucket).object(targetKey)
+                        .sources(sourceKeys.stream().map(key -> io.minio.ComposeSource.builder()
+                                .bucket(sourceBucket).object(key).build()).toList()).build());
+            } else {
+                // 历史小分片不满足 multipart copy 的下限，逐个打开流后直接上传合并对象。
+                try (InputStream input = sequentialStream(sourceBucket, sourceKeys)) {
+                    client.putObject(PutObjectArgs.builder().bucket(targetBucket).object(targetKey)
+                            .stream(input, total, -1).contentType(detectContentType(targetKey)).build());
+                }
+            }
+        } catch (Exception ex) { throw new IllegalStateException("MinIO 对象合并失败", ex); }
+    }
+
+    private InputStream sequentialStream(String bucket, List<String> keys) {
+        return new InputStream() {
+            private int index;
+            private InputStream current;
+            private boolean closed;
+            @Override public int read() throws IOException {
+                byte[] one = new byte[1];
+                return read(one, 0, 1) == -1 ? -1 : one[0] & 0xff;
+            }
+            @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+                java.util.Objects.checkFromIndexSize(offset, length, bytes.length);
+                if (closed) throw new IOException("对象合并流已经关闭");
+                if (length == 0) return 0;
+                while (true) {
+                    if (current == null) {
+                        if (index == keys.size()) return -1;
+                        current = openStream(bucket, keys.get(index++));
+                    }
+                    int read = current.read(bytes, offset, length);
+                    if (read != -1) return read;
+                    current.close();
+                    current = null;
+                }
+            }
+            @Override public void close() throws IOException {
+                closed = true;
+                if (current != null) current.close();
+            }
+        };
+    }
+
+    @Override
     public void writeFile(String bucket, String objectKey, java.nio.file.Path file) {
         // 按文件大小流式上传，SDK 会对大文件自动分段上传，不把整个文件读入内存
         try (InputStream stream = java.nio.file.Files.newInputStream(file)) {

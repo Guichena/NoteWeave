@@ -1,6 +1,7 @@
 package com.noteweave.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -39,9 +40,12 @@ class MemoryConversationExtractionContractTest {
         String preferenceMessage = send(conversationId, "记住：以后回答先给结论再展开。", "extract-1");
         String ordinaryMessage = send(conversationId, "解释一下缓存一致性", "extract-2");
 
-        // 只有带长期要求措辞的消息才进入提取任务
+        // 普通消息也会入队；模型关闭时规则抽不出偏好
         assertThat(jdbc.queryForObject("select count(*) from task_outbox where topic = ? and message_key = ?",
-                Integer.class, TOPIC, ordinaryMessage)).isZero();
+                Integer.class, TOPIC, ordinaryMessage)).isEqualTo(1);
+        MemoryConversationExtractionService.ExtractionResult ordinary = consume(payloadOf(ordinaryMessage));
+        assertThat(ordinary.method()).isEqualTo("RULE");
+        assertThat(ordinary.candidates()).isEmpty();
         JsonNode payload = mapper.readTree(jdbc.queryForObject(
                 "select payload_json from task_outbox where topic = ? and message_key = ?",
                 String.class, TOPIC, preferenceMessage));
@@ -62,11 +66,30 @@ class MemoryConversationExtractionContractTest {
             assertThat(item.path("gate").path("source_type").asText()).isEqualTo("CONVERSATION_FEEDBACK");
             assertThat(item.path("gate").path("source_ref").asText())
                     .isEqualTo("conversation-message:" + preferenceMessage + ":0");
+            assertThat(item.path("slot_key").asText()).isEqualTo("format.structure");
+            assertThat(item.path("conflict").path("type").asText()).isEqualTo("NONE");
+            assertThat(item.path("confidence").path("alpha").asDouble()).isCloseTo(4, within(0.001));
+            assertThat(item.path("confidence").path("beta").asDouble()).isCloseTo(1, within(0.001));
+            assertThat(item.path("confidence").path("mean").asDouble()).isCloseTo(0.8, within(0.001));
+            assertThat(item.path("reinforcement_count").asInt()).isZero();
         });
+        assertThat(jdbc.queryForObject(
+                "select status from memory_index_outbox where memory_item_id = ?",
+                String.class, items.get(0).path("memory_item_id").asText())).isEqualTo("PENDING");
         // 生效后进入表达控制，结构类偏好编入结构约束
         JsonNode pack = data(get("/api/v2/workspaces/{workspaceId}/memory/control-pack/chat", workspaceId)
                 .param("answer_mode", "QA"));
         assertThat(pack.path("structure_constraints").toString()).contains("以后回答先给结论再展开");
+        JsonNode reference = null;
+        for (JsonNode item : pack.path("memory_references")) {
+            if (item.path("display_text").asText().contains("以后回答先给结论再展开")) {
+                reference = item;
+            }
+        }
+        assertThat(reference).isNotNull();
+        assertThat(reference.path("memory_class").asText()).isEqualTo("ALWAYS_ON");
+        assertThat(reference.path("selection_reason").asText()).isEqualTo("适用于全部回答的常驻约束");
+        assertThat(reference.has("relevance")).isFalse();
         assertThat(jdbc.queryForObject("select task_status from task where id = ?", String.class,
                 payload.path("task_id").asText())).isEqualTo("COMPLETED");
 
@@ -76,13 +99,13 @@ class MemoryConversationExtractionContractTest {
     }
 
     @Test
-    void inferredPreferenceWaitsForConfirmationAndDuplicatesAreSkipped() throws Exception {
+    void inferredPreferenceWaitsForConfirmationAndEquivalentSignalReinforces() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);
         String first = send(conversationId, "以后不要使用表情符号", "infer-1");
         consume(payloadOf(first));
 
-        // 模型推断出的偏好可信度低于门槛，进入待确认；与已有记忆相同的偏好被跳过
+        // 模型推断进入待确认。与已有记忆相同的说法不再新建，而是给原记忆加一次证据。
         String userId = jdbc.queryForObject("select user_id from memory_signal where source_id like ?",
                 String.class, "conversation-message:" + first + ":%");
         List<MemoryConversationExtractionService.Preference> inferred = new ArrayList<>(List.of(
@@ -102,6 +125,15 @@ class MemoryConversationExtractionContractTest {
         assertThat(items.get(0).path("display_text").asText()).isEqualTo("回答时多用类比解释概念");
         assertThat(items.get(0).path("revision_status").asText()).isEqualTo("PROPOSED");
         assertThat(items.get(0).path("gate").path("result").asText()).isEqualTo("NEEDS_REVIEW");
+        JsonNode reinforced = null;
+        for (JsonNode item : items) {
+            if ("以后不要使用表情符号".equals(item.path("display_text").asText())) {
+                reinforced = item;
+            }
+        }
+        assertThat(reinforced).isNotNull();
+        assertThat(reinforced.path("reinforcement_count").asInt()).isEqualTo(1);
+        assertThat(reinforced.path("confidence").path("alpha").asDouble()).isCloseTo(4.5, within(0.001));
     }
 
     private MemoryConversationExtractionService.ExtractionResult consume(JsonNode payload) {

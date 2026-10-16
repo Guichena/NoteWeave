@@ -12,8 +12,10 @@ import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,9 @@ public class CanonicalMemoryReviewService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final MemoryStatementMatcher statementMatcher;
     private final RunReplayRedactionService replayRedactionService;
+    private final MemoryIndexOutbox indexOutbox;
+    private final MemoryEvidenceService evidenceService;
+    private final MemoryTextEmbeddingStore embeddingStore;
 
     public CanonicalMemoryReviewService(
             JdbcTemplate jdbcTemplate,
@@ -35,7 +40,10 @@ public class CanonicalMemoryReviewService {
             CurrentUserProvider currentUserProvider,
             WorkspaceAccessGuard workspaceAccessGuard,
             MemoryStatementMatcher statementMatcher,
-            RunReplayRedactionService replayRedactionService
+            RunReplayRedactionService replayRedactionService,
+            MemoryIndexOutbox indexOutbox,
+            MemoryEvidenceService evidenceService,
+            MemoryTextEmbeddingStore embeddingStore
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -43,6 +51,9 @@ public class CanonicalMemoryReviewService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.statementMatcher = statementMatcher;
         this.replayRedactionService = replayRedactionService;
+        this.indexOutbox = indexOutbox;
+        this.evidenceService = evidenceService;
+        this.embeddingStore = embeddingStore;
     }
 
     @Transactional
@@ -64,8 +75,8 @@ public class CanonicalMemoryReviewService {
                 insert into memory_item(
                     id, workspace_id, owner_user_id, memory_scope, scope_ref_key, slot_key,
                     slot_schema_version, status, current_revision_id, lock_version,
-                    utility_score, review_status, outcome_policy_version
-                ) values (?, ?, ?, 'WORKSPACE', ?, ?, 'candidate-v2', ?, ?, 0, ?, ?, ?)
+                    utility_score, review_status, outcome_policy_version, semantic_slot_key
+                ) values (?, ?, ?, 'WORKSPACE', ?, ?, 'candidate-v3', ?, ?, 0, ?, ?, ?, ?)
                 """,
                 candidate.candidateId(),
                 candidate.workspaceId(),
@@ -76,7 +87,8 @@ public class CanonicalMemoryReviewService {
                 activate ? candidate.candidateId() : null,
                 candidate.marginalUtilityScore(),
                 activate ? "APPROVED" : "REVIEW_REQUIRED",
-                MemoryOutcomePolicy.VERSION);
+                MemoryOutcomePolicy.VERSION,
+                MemorySlots.normalizeSlot(candidate.slotKey()));
         jdbcTemplate.update("""
                 insert into memory_runtime_revision(
                     id, memory_item_id, workspace_id, version_no, status, confidence,
@@ -101,21 +113,128 @@ public class CanonicalMemoryReviewService {
                     where workspace_id = ? and id = ?
                     """, candidate.workspaceId(), candidate.candidateId());
             writeEvent(candidate.candidateId(), "CANDIDATE_ACTIVATED", candidate.candidateId());
+            enqueueIndex(candidate.workspaceId(), candidate.candidateId(), "UPSERT",
+                    candidate.normalizedStatement(), candidate.slotKey(), firstNeighborhood(candidate.taskNeighborhoods()));
         } else {
             writeEvent(candidate.candidateId(), "CANDIDATE_PROPOSED", candidate.candidateId());
+            if ("CONFLICTING_ACTIVE_MEMORY".equals(candidate.conflictStatus())
+                    || "CONFLICT_CHECK_NOT_RUN".equals(candidate.conflictStatus())) {
+                flagConflictingItem(candidate.conflictingItemId());
+            }
+        }
+        evidenceService.assignPrior(candidate.candidateId(), evidenceBand(candidate));
+        if (activate) {
+            embeddingStore.refresh(
+                    candidate.workspaceId(), candidate.candidateId(), candidate.normalizedStatement());
         }
         return candidateResponse(candidate);
+    }
+
+    /** 等价记忆的新措辞更具体时，在同一条记忆上增加版本，不新建记忆。 */
+    @Transactional
+    public boolean reviseEquivalentWording(String workspaceId, String itemId, String newText) {
+        if (newText == null || newText.isBlank()) {
+            return false;
+        }
+        RevisionHead head = jdbcTemplate.query("""
+                select r.id, r.version_no, r.status, r.confidence, r.display_text, r.normalized_value_json,
+                       r.provenance_type, r.provenance_ref, i.semantic_slot_key
+                from memory_item i
+                join memory_runtime_revision r on r.memory_item_id = i.id
+                where i.workspace_id = ? and i.id = ?
+                  and i.status not in ('DELETED', 'SUPERSEDED')
+                  and r.status in ('ACTIVE', 'PROPOSED')
+                  and (r.status = 'PROPOSED' or r.id = i.current_revision_id)
+                order by case when r.status = 'ACTIVE' then 0 else 1 end
+                limit 1
+                for update
+                """, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+            return new RevisionHead(
+                    rs.getString("id"),
+                    rs.getInt("version_no"),
+                    rs.getString("status"),
+                    rs.getDouble("confidence"),
+                    rs.getString("display_text"),
+                    rs.getString("normalized_value_json"),
+                    rs.getString("provenance_type"),
+                    rs.getString("provenance_ref"),
+                    rs.getString("semantic_slot_key"));
+        }, workspaceId, itemId);
+        if (head == null || newText.trim().equals(head.displayText())) {
+            return false;
+        }
+        if ("PROPOSED".equals(head.status())) {
+            jdbcTemplate.update("""
+                    update memory_runtime_revision set display_text = ? where id = ?
+                    """, newText.trim(), head.revisionId());
+            return true;
+        }
+        String revisionId = Ids.newId();
+        jdbcTemplate.update("""
+                update memory_runtime_revision
+                set status = 'SUPERSEDED', valid_until = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, head.revisionId());
+        jdbcTemplate.update("""
+                insert into memory_runtime_revision(
+                    id, memory_item_id, workspace_id, version_no, status, confidence,
+                    normalized_value_json, display_text, provenance_type, provenance_ref,
+                    observation_id, content_hash, supersedes_revision_id
+                ) values (?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                revisionId, itemId, workspaceId, head.versionNo() + 1, head.confidence(),
+                head.normalizedValueJson(), newText.trim(), head.provenanceType(), head.provenanceRef(),
+                "wording:" + revisionId, revisionId, head.revisionId());
+        jdbcTemplate.update("""
+                update memory_item set current_revision_id = ?, updated_at = current_timestamp
+                where id = ?
+                """, revisionId, itemId);
+        writeEvent(itemId, "WORDING_REVISED", revisionId);
+        enqueueIndex(workspaceId, itemId, "UPSERT", newText.trim(),
+                head.semanticSlot() == null ? "" : head.semanticSlot(), "");
+        embeddingStore.refresh(workspaceId, itemId, newText.trim());
+        return true;
+    }
+
+    /** 后台整理确认两条记忆重复后，停用较新的一条。不删除、不脱敏。 */
+    @Transactional
+    public boolean mergeDuplicate(String workspaceId, String keepItemId, String dropItemId) {
+        ActiveRow drop = lockActive(workspaceId, dropItemId, keepItemId);
+        if (drop == null) {
+            return false;
+        }
+        int updated = jdbcTemplate.update("""
+                update memory_item set status = 'SUPERSEDED', review_status = 'SUPERSEDED',
+                    semantic_slot_key = null, lock_version = lock_version + 1,
+                    updated_at = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, drop.itemId());
+        if (updated == 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                update memory_runtime_revision
+                set status = 'SUPERSEDED', valid_until = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, drop.revisionId());
+        writeEvent(drop.itemId(), "MERGED_DUPLICATE", keepItemId);
+        enqueueIndex(workspaceId, drop.itemId(), "DELETE", drop.displayText(), "", "");
+        return true;
     }
 
     public List<MemoryRuntimeReviewItemResponse> list(String workspaceId) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
         return jdbcTemplate.query("""
                 select r.id, r.memory_item_id, r.status, r.display_text, r.provenance_ref,
-                       r.normalized_value_json, i.utility_score, i.review_status, i.status as lifecycle_status
+                       r.normalized_value_json, i.utility_score, i.review_status, i.status as lifecycle_status,
+                       i.semantic_slot_key
                 from memory_runtime_revision r
                 join memory_item i on i.id = r.memory_item_id
                 where r.workspace_id = ?
-                  and i.status <> 'DELETED'
+                  and i.status not in ('DELETED', 'SUPERSEDED')
                   and (
                     r.status = 'PROPOSED'
                     or (r.id = i.current_revision_id and r.status = 'ACTIVE'
@@ -133,7 +252,9 @@ public class CanonicalMemoryReviewService {
                 payloadText(rs.getString("normalized_value_json"), "conflict_status", "NO_CONFLICT"),
                 rs.getDouble("utility_score"),
                 rs.getString("review_status"),
-                rs.getString("lifecycle_status")
+                rs.getString("lifecycle_status"),
+                displaySlot(rs.getString("semantic_slot_key"), rs.getString("normalized_value_json")),
+                conflictOf(rs.getString("normalized_value_json"))
         ), workspaceId);
     }
 
@@ -146,11 +267,12 @@ public class CanonicalMemoryReviewService {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
         ReviewRow row = lockReview(workspaceId, revisionId, request.decision());
         return "PROPOSED".equals(row.revisionStatus())
-                ? reviewProposal(row, request)
-                : reviewActive(row, request);
+                ? reviewProposal(workspaceId, row, request)
+                : reviewActive(workspaceId, row, request);
     }
 
     private MemoryRuntimeRevisionResponse reviewProposal(
+            String workspaceId,
             ReviewRow row,
             MemoryReviewDecisionRequest request
     ) {
@@ -180,7 +302,7 @@ public class CanonicalMemoryReviewService {
         }
 
         List<String> revoked = "REPLACE_EXISTING".equals(request.decision())
-                ? revokeConflictingItems(row, request)
+                ? revokeConflictingItems(workspaceId, row, request)
                 : List.of();
         if ("REPLACE_EXISTING".equals(request.decision()) && revoked.isEmpty()) {
             throw new BusinessException(
@@ -193,16 +315,21 @@ public class CanonicalMemoryReviewService {
                 """, row.revisionId());
         jdbcTemplate.update("""
                 update memory_item set current_revision_id = ?, status = 'ACTIVE', review_status = 'APPROVED',
+                    semantic_slot_key = ?,
                     lock_version = lock_version + 1, last_confirmed_at = current_timestamp,
                     updated_at = current_timestamp where id = ?
-                """, row.revisionId(), row.itemId());
+                """, row.revisionId(), MemorySlots.normalizeSlot(payloadText(row.normalizedValueJson(), "slot", "")),
+                row.itemId());
         updateCandidateStatus(row, "PROMOTED");
+        enqueueIndex(workspaceId, row.itemId(), "UPSERT", row.displayText(),
+                payloadText(row.normalizedValueJson(), "slot", ""), firstNeighborhood(row));
         writeEvent(row.itemId(), "REVISION_REVIEWED", row.revisionId() + ":" + request.decision(),
                 decisionPayload(request, null));
         return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "ACTIVE", revoked);
     }
 
     private MemoryRuntimeRevisionResponse reviewActive(
+            String workspaceId,
             ReviewRow row,
             MemoryReviewDecisionRequest request
     ) {
@@ -218,7 +345,8 @@ public class CanonicalMemoryReviewService {
         if ("REVOKE".equals(request.decision())) {
             // 未被标记复核的生效记忆由用户主动停用，单独记录事件类型
             boolean flagged = "REVIEW_REQUIRED".equals(row.reviewStatus()) || "STALE".equals(row.itemStatus());
-            revokeItem(row.itemId(), row.revisionId(), flagged ? "ACTIVE_REVIEW_REVOKED" : "ACTIVE_USER_REVOKED",
+            revokeItem(workspaceId, row.itemId(), row.revisionId(),
+                    flagged ? "ACTIVE_REVIEW_REVOKED" : "ACTIVE_USER_REVOKED",
                     decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "REVOKED", List.of(row.itemId()));
         }
@@ -264,7 +392,20 @@ public class CanonicalMemoryReviewService {
         return row;
     }
 
-    private List<String> revokeConflictingItems(ReviewRow proposal, MemoryReviewDecisionRequest request) {
+    private List<String> revokeConflictingItems(
+            String workspaceId,
+            ReviewRow proposal,
+            MemoryReviewDecisionRequest request
+    ) {
+        String targetId = payloadText(proposal.normalizedValueJson(), "conflicting_item_id", "");
+        if (!targetId.isBlank()) {
+            ActiveRow target = lockActive(workspaceId, targetId, proposal.itemId());
+            if (target != null && supersedeItem(workspaceId, target, proposal.revisionId(),
+                    decisionPayload(request, proposal.revisionId()))) {
+                return List.of(target.itemId());
+            }
+            return List.of();
+        }
         CandidatePayload incoming = candidatePayload(proposal.normalizedValueJson(), proposal.displayText());
         List<ActiveRow> activeRows = jdbcTemplate.query("""
                 select i.id, r.id as revision_id, r.display_text, r.normalized_value_json
@@ -278,35 +419,82 @@ public class CanonicalMemoryReviewService {
                 rs.getString("revision_id"),
                 rs.getString("display_text"),
                 rs.getString("normalized_value_json")
-        ), workspaceId(proposal), proposal.itemId());
+        ), workspaceId, proposal.itemId());
         List<String> revoked = new ArrayList<>();
         for (ActiveRow active : activeRows) {
             CandidatePayload existing = candidatePayload(active.normalizedValueJson(), active.displayText());
             Set<String> overlap = new LinkedHashSet<>(incoming.taskNeighborhoods());
             overlap.retainAll(existing.taskNeighborhoods());
-            if (!overlap.isEmpty()
-                    && !incoming.candidateType().equals(existing.candidateType())
-                    && statementMatcher.equivalent(incoming.statement(), existing.statement())) {
-                revokeItem(active.itemId(), active.revisionId(), "CONFLICT_REPLACED",
-                        decisionPayload(request, proposal.revisionId()));
+            boolean legacyEquivalent = !incoming.candidateType().equals(existing.candidateType())
+                    && statementMatcher.equivalent(incoming.statement(), existing.statement());
+            if (!overlap.isEmpty() && (legacyEquivalent || slotConflict(incoming, existing))
+                    && supersedeItem(workspaceId, active, proposal.revisionId(),
+                    decisionPayload(request, proposal.revisionId()))) {
                 revoked.add(active.itemId());
             }
         }
         return List.copyOf(revoked);
     }
 
-    private String workspaceId(ReviewRow row) {
-        return jdbcTemplate.queryForObject(
-                "select workspace_id from memory_item where id = ?",
-                String.class,
-                row.itemId());
+    private ActiveRow lockActive(String workspaceId, String itemId, String exceptItemId) {
+        List<ActiveRow> rows = jdbcTemplate.query("""
+                select i.id, r.id as revision_id, r.display_text, r.normalized_value_json
+                from memory_item i
+                join memory_runtime_revision r on r.id = i.current_revision_id
+                where i.workspace_id = ? and i.id = ? and i.id <> ?
+                  and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                for update
+                """, (rs, rowNum) -> new ActiveRow(
+                rs.getString("id"),
+                rs.getString("revision_id"),
+                rs.getString("display_text"),
+                rs.getString("normalized_value_json")
+        ), workspaceId, itemId, exceptItemId);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
-    private void revokeItem(String itemId, String revisionId, String eventType, String payloadJson) {
+    private boolean slotConflict(CandidatePayload incoming, CandidatePayload existing) {
+        if (incoming.slot().isBlank() || !incoming.slot().equals(existing.slot())) {
+            return false;
+        }
+        return !incoming.value().equals(existing.value()) || !incoming.polarity().equals(existing.polarity());
+    }
+
+    private boolean supersedeItem(
+            String workspaceId,
+            ActiveRow active,
+            String replacedByRevisionId,
+            String payloadJson
+    ) {
+        int updated = jdbcTemplate.update("""
+                update memory_item set status = 'SUPERSEDED', review_status = 'SUPERSEDED',
+                    semantic_slot_key = null, lock_version = lock_version + 1,
+                    updated_at = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, active.itemId());
+        if (updated == 0) {
+            return false;
+        }
+        jdbcTemplate.update("""
+                update memory_runtime_revision
+                set status = 'SUPERSEDED', valid_until = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, active.revisionId());
+        jdbcTemplate.update("""
+                update memory_runtime_revision set supersedes_revision_id = ? where id = ?
+                """, active.revisionId(), replacedByRevisionId);
+        writeEvent(active.itemId(), "CONFLICT_SUPERSEDED", active.revisionId(), payloadJson);
+        enqueueIndex(workspaceId, active.itemId(), "DELETE", active.displayText(), "", "");
+        return true;
+    }
+
+    private void revokeItem(String workspaceId, String itemId, String revisionId, String eventType, String payloadJson) {
         jdbcTemplate.update("""
                 update memory_item set status = 'DELETED', review_status = 'REJECTED',
-                    lock_version = lock_version + 1, updated_at = current_timestamp where id = ?
+                    semantic_slot_key = null, lock_version = lock_version + 1,
+                    updated_at = current_timestamp where id = ?
                 """, itemId);
+        enqueueIndex(workspaceId, itemId, "DELETE", "", "", "");
         jdbcTemplate.update("""
                 update memory_runtime_revision set status = 'REJECTED', valid_until = current_timestamp
                 where id = ? and status = 'ACTIVE'
@@ -366,20 +554,27 @@ public class CanonicalMemoryReviewService {
     }
 
     private String candidatePayload(MemoryCandidateService.CandidateRow candidate) {
-        return Json.write(objectMapper, java.util.Map.of(
-                "candidate_type", candidate.candidateType(),
-                "statement", candidate.normalizedStatement(),
-                "task_neighborhoods", candidate.taskNeighborhoods(),
-                "compile_hints", candidate.compileHints(),
-                "utility_score", candidate.marginalUtilityScore(),
-                "conflict_status", candidate.conflictStatus(),
-                "policy_version", candidate.policyVersion(),
-                "risk_score", candidate.riskScore()));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("candidate_type", candidate.candidateType());
+        payload.put("statement", candidate.normalizedStatement());
+        payload.put("task_neighborhoods", candidate.taskNeighborhoods());
+        payload.put("compile_hints", candidate.compileHints());
+        payload.put("utility_score", candidate.marginalUtilityScore());
+        payload.put("conflict_status", candidate.conflictStatus());
+        payload.put("conflict_type", candidate.conflictType() == null ? "" : candidate.conflictType());
+        payload.put("conflicting_item_id", candidate.conflictingItemId() == null ? "" : candidate.conflictingItemId());
+        payload.put("conflicting_text", candidate.conflictingText() == null ? "" : candidate.conflictingText());
+        payload.put("slot", candidate.slotKey() == null ? "" : candidate.slotKey());
+        payload.put("slot_value", candidate.slotValue() == null ? "" : candidate.slotValue());
+        payload.put("polarity", candidate.polarity() == null ? "" : candidate.polarity());
+        payload.put("policy_version", candidate.policyVersion());
+        payload.put("risk_score", candidate.riskScore());
+        return Json.write(objectMapper, payload);
     }
 
     private CandidatePayload candidatePayload(String json, String displayText) {
         if (json == null || json.isBlank()) {
-            return new CandidatePayload("UNKNOWN", displayText, List.of("COMMON"));
+            return new CandidatePayload("UNKNOWN", displayText, List.of("COMMON"), "", "", "");
         }
         try {
             JsonNode root = objectMapper.readTree(json);
@@ -389,7 +584,10 @@ public class CanonicalMemoryReviewService {
             return new CandidatePayload(
                     root.path("candidate_type").asText("UNKNOWN"),
                     root.path("statement").asText(displayText),
-                    neighborhoods.isEmpty() ? List.of("COMMON") : neighborhoods);
+                    neighborhoods.isEmpty() ? List.of("COMMON") : neighborhoods,
+                    root.path("slot").asText(""),
+                    root.path("slot_value").asText(""),
+                    root.path("polarity").asText(""));
         } catch (JsonProcessingException exception) {
             throw new BusinessException("MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
         }
@@ -405,6 +603,28 @@ public class CanonicalMemoryReviewService {
             throw new BusinessException("MEMORY_CANONICAL_PAYLOAD_PARSE_FAILED", "Canonical Memory payload parse failed");
         }
     }
+
+    private MemoryEvidence.Band evidenceBand(MemoryCandidateService.CandidateRow candidate) {
+        if (candidate.signalIds() == null || candidate.signalIds().isEmpty()) {
+            return MemoryEvidence.Band.INFERRED;
+        }
+        String band = jdbcTemplate.query("""
+                select evidence_band from memory_signal where id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, candidate.signalIds().get(0));
+        return MemoryEvidence.band(band);
+    }
+
+    private record RevisionHead(
+            String revisionId,
+            int versionNo,
+            String status,
+            double confidence,
+            String displayText,
+            String normalizedValueJson,
+            String provenanceType,
+            String provenanceRef,
+            String semanticSlot
+    ) { }
 
     private record ReviewRow(
             String revisionId,
@@ -426,9 +646,59 @@ public class CanonicalMemoryReviewService {
             String normalizedValueJson
     ) { }
 
+    private void flagConflictingItem(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
+            return;
+        }
+        jdbcTemplate.update("""
+                update memory_item
+                set review_status = 'REVIEW_REQUIRED', lock_version = lock_version + 1,
+                    updated_at = current_timestamp
+                where id = ? and status = 'ACTIVE' and review_status = 'APPROVED'
+                """, itemId);
+    }
+
+    private void enqueueIndex(
+            String workspaceId,
+            String itemId,
+            String operation,
+            String displayText,
+            String slotKey,
+            String taskNeighborhood
+    ) {
+        indexOutbox.enqueue(workspaceId, itemId, operation, displayText, slotKey, taskNeighborhood);
+    }
+
+    private String displaySlot(String semanticSlot, String json) {
+        String fromColumn = MemorySlots.publicSlot(semanticSlot);
+        if (!"unknown".equals(fromColumn)) {
+            return fromColumn;
+        }
+        return MemorySlots.publicSlot(payloadText(json, "slot", ""));
+    }
+
+    private MemoryConflictResponse conflictOf(String json) {
+        return MemoryConflictResponse.from(
+                payloadText(json, "conflict_type", ""),
+                payloadText(json, "conflicting_item_id", ""),
+                payloadText(json, "conflicting_text", ""),
+                payloadText(json, "conflict_status", "NO_CONFLICT"));
+    }
+
+    private String firstNeighborhood(List<String> neighborhoods) {
+        return neighborhoods == null || neighborhoods.isEmpty() ? "" : neighborhoods.get(0);
+    }
+
+    private String firstNeighborhood(ReviewRow row) {
+        return firstNeighborhood(candidatePayload(row.normalizedValueJson(), row.displayText()).taskNeighborhoods());
+    }
+
     private record CandidatePayload(
             String candidateType,
             String statement,
-            List<String> taskNeighborhoods
+            List<String> taskNeighborhoods,
+            String slot,
+            String value,
+            String polarity
     ) { }
 }

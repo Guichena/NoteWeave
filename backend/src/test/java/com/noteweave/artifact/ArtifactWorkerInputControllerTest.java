@@ -24,7 +24,7 @@ class ArtifactWorkerInputControllerTest {
 
         assertThatThrownBy(() -> controller.getTaskInput("task-1", ""))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("require an active outbox delivery token");
+                .hasMessageContaining("有效的 outbox 投递令牌");
     }
 
     @Test
@@ -47,7 +47,7 @@ class ArtifactWorkerInputControllerTest {
 
         assertThatThrownBy(() -> controller.getTaskInput("task-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
     }
 
     @Test
@@ -83,7 +83,7 @@ class ArtifactWorkerInputControllerTest {
         assertThatThrownBy(() -> controller.getSourceWindows(
                 "task-1", "source-1", "snapshot-1", "", 16, 65536, "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         org.mockito.Mockito.verifyNoInteractions(jobService);
     }
 
@@ -98,33 +98,33 @@ class ArtifactWorkerInputControllerTest {
 
         assertThatThrownBy(() -> controller.submitVideoMaterial("task-1", submission, "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getVideoMaterial("task-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         ArtifactVideoMaterialService.KnowledgeSubmission knowledge =
                 new ArtifactVideoMaterialService.KnowledgeSubmission("bundle-1", java.util.Map.of(), "digest");
         assertThatThrownBy(() -> controller.submitVideoKnowledgePlan("task-1", knowledge, "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getVideoKnowledgePlan("task-1", "bundle-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getReferencedVideoKnowledgePlan(
                 "task-1", "bundle-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getVideoMaterialFile("task-1", "frame-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getReferencedVideoMaterial(
                 "task-1", "bundle-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         assertThatThrownBy(() -> controller.getReferencedVideoMaterialFile(
                 "task-1", "bundle-1", "frame-1", "stale-token"))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("does not own the active outbox delivery");
+                .hasMessageContaining("不属于当前有效的 outbox 投递");
         org.mockito.Mockito.verifyNoInteractions(materials);
 
         when(dispatcher.renewTaskMessage("noteweave.artifact.job", "task-1", "delivery-1",

@@ -7,19 +7,20 @@ import com.noteweave.common.Json;
 import com.noteweave.storage.ObjectStorage;
 import com.noteweave.source.SourceMessagingMode;
 import com.noteweave.source.SourceParsePort;
-import com.noteweave.source.SourceWikiCommandPort;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
-import java.io.ByteArrayOutputStream;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.time.Duration;
+import java.time.Instant;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,13 +35,11 @@ public class UploadService {
 
     private static final Logger log = LoggerFactory.getLogger(UploadService.class);
     private static final String BUCKET_SOURCE = "noteweave-source";
-    private static final String BUCKET_DERIVED = "noteweave-derived";
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ObjectStorage storage;
     private final SourceParsePort sourceParsePort;
-    private final SourceWikiCommandPort wikiCommandPort;
     private final TaskCommandPort taskCommandPort;
     private final ObjectMapper objectMapper;
     private final SourceMessagingMode messagingMode;
@@ -48,13 +47,22 @@ public class UploadService {
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final UploadTempObjectCleanupService uploadTempObjectCleanupService;
+    private Duration staleAfter = Duration.ofSeconds(86400);
+    private com.noteweave.research.ResearchGeneratedSourceReadGate generatedSourceReadGate;
+
+    @Value("${noteweave.upload.cleanup-stale-after-seconds:86400}")
+    void configureStaleAfter(long seconds) { staleAfter = Duration.ofSeconds(Math.max(60, seconds)); }
+
+    @Autowired
+    void configureGeneratedSourceReadGate(com.noteweave.research.ResearchGeneratedSourceReadGate gate) {
+        generatedSourceReadGate = gate;
+    }
 
     public UploadService(
             JdbcTemplate jdbcTemplate,
             WorkspaceAccessGuard workspaceAccessGuard,
             ObjectStorage storage,
             SourceParsePort sourceParsePort,
-            SourceWikiCommandPort wikiCommandPort,
             TaskCommandPort taskCommandPort,
             ObjectMapper objectMapper,
             SourceMessagingMode messagingMode,
@@ -67,7 +75,6 @@ public class UploadService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.storage = storage;
         this.sourceParsePort = sourceParsePort;
-        this.wikiCommandPort = wikiCommandPort;
         this.taskCommandPort = taskCommandPort;
         this.objectMapper = objectMapper;
         this.messagingMode = messagingMode;
@@ -84,20 +91,86 @@ public class UploadService {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
         String actor = auditActorProvider.currentOrSystem("UPLOAD");
         String uploadId = Ids.newId();
+        CompleteUploadResponse instant = findInstantSource(workspaceId, request);
         jdbcTemplate.update("""
                 insert into document_upload(
                     id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status,
-                    created_by, updated_by
-                ) values (?, ?, ?, ?, ?, ?, ?, 'UPLOADING', ?, ?)
+                    created_by, updated_by, expected_sha256, source_id, task_id
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, uploadId, workspaceId, request.fileName(), request.fileSize(), request.mimeType(),
-                request.chunkSize(), request.totalChunks(), actor, actor);
+                request.chunkSize(), request.totalChunks(), instant == null ? "UPLOADING" : "COMPLETED", actor, actor,
+                request.sha256(), instant == null ? null : instant.sourceId(), instant == null ? null : instant.taskId());
+        if (instant != null) {
+            return new CreateUploadResponse(uploadId, "COMPLETED", request.chunkSize(), request.totalChunks(),
+                    true, instant.sourceId(), instant.taskId(), instant.parseStatus(), instant.indexStatus());
+        }
         return new CreateUploadResponse(uploadId, "UPLOADING", request.chunkSize(), request.totalChunks());
     }
 
-    @Transactional
-    public UploadChunkResponse acceptChunk(String uploadId, int chunkIndex, String contentMd5, byte[] content) {
+    public List<UploadFormatResponse> formats() { return uploadSecurityPolicy.formats(); }
+
+    public UploadStatusResponse getUpload(String uploadId) {
         UploadRow upload = findUpload(uploadId);
         workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        requireLiveSession(upload);
+        List<Integer> indexes = jdbcTemplate.queryForList("""
+                select chunk_index from upload_chunk where upload_id = ? order by chunk_index
+                """, Integer.class, uploadId);
+        return new UploadStatusResponse(uploadId, upload.status(), upload.totalChunks(), upload.chunkSize(), indexes);
+    }
+
+    private void requireLiveSession(UploadRow upload) {
+        if ("EXPIRED".equals(upload.status()) || ("UPLOADING".equals(upload.status())
+                && upload.updatedAt().isBefore(Instant.now().minus(staleAfter)))) {
+            throw new BusinessException("UPLOAD_NOT_FOUND", "上传会话不存在或已过期", HttpStatus.NOT_FOUND);
+        }
+    }
+
+    private CompleteUploadResponse findInstantSource(String workspaceId, CreateUploadRequest request) {
+        if (request.sha256() == null) return null;
+        List<FileObjectRef> files = jdbcTemplate.query("""
+                select id, object_key, file_size from file_object where workspace_id = ? and sha256 = ?
+                """, (rs, index) -> new FileObjectRef(rs.getString(1), rs.getString(2), rs.getLong(3)), workspaceId, request.sha256());
+        if (files.isEmpty()) return null;
+        FileObjectRef file = files.get(0);
+        if (file.size() != request.fileSize()) {
+            throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "同哈希文件的大小与声明不一致");
+        }
+        if (!storage.exists(BUCKET_SOURCE, file.objectKey())) return null;
+        List<InstantSource> sources = jdbcTemplate.query("""
+                select s.id, s.parse_status, s.index_status, coalesce(s.generated_by, ''), coalesce(s.generated_ref_id, '')
+                from source s where s.workspace_id = ? and s.file_object_id = ?
+                  and s.status in ('READY', 'PROCESSING') and s.parse_status <> 'FAILED'
+                  and exists (select 1 from source_snapshot ss where ss.source_id = s.id
+                    and ss.file_object_id = s.file_object_id
+                    and ss.version_no = (select max(latest_snapshot.version_no) from source_snapshot latest_snapshot where latest_snapshot.source_id = s.id))
+                order by s.created_at desc
+                """, (rs, index) -> new InstantSource(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)),
+                workspaceId, file.id());
+        for (InstantSource source : sources) {
+            if ("research_agent".equals(source.generatedBy())) {
+                if (generatedSourceReadGate == null) continue;
+                try {
+                    if (!generatedSourceReadGate.visible(workspaceId, source.generatedBy(), source.generatedRefId())) continue;
+                } catch (BusinessException unavailable) { continue; }
+            }
+            List<String> tasks = jdbcTemplate.queryForList("""
+                    select id from task where workspace_id = ? and target_id = ? and target_type = 'SOURCE'
+                      and task_type = 'SOURCE_PARSE' and task_status not in ('COMPLETED', 'FAILED', 'CANCELLED')
+                    order by created_at desc limit 1
+                    """, String.class, workspaceId, source.id());
+            return new CompleteUploadResponse(source.id(), tasks.isEmpty() ? "" : tasks.get(0), source.parseStatus(), source.indexStatus());
+        }
+        return null;
+    }
+
+    private record InstantSource(String id, String parseStatus, String indexStatus, String generatedBy, String generatedRefId) {}
+
+    @Transactional
+    public UploadChunkResponse acceptChunk(String uploadId, int chunkIndex, String contentMd5, byte[] content) {
+        UploadRow upload = findUploadForUpdate(uploadId);
+        workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        requireLiveSession(upload);
         String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if (!"UPLOADING".equals(upload.status())) {
             throw new BusinessException("UPLOAD_NOT_WRITABLE", "当前上传事务不可继续写入");
@@ -128,6 +201,9 @@ public class UploadService {
                     set uploaded_chunks = uploaded_chunks + 1, updated_by = ?, updated_at = current_timestamp
                     where workspace_id = ? and id = ?
                     """, actor, upload.workspaceId(), uploadId);
+        } else {
+            jdbcTemplate.update("update document_upload set updated_by = ?, updated_at = current_timestamp where workspace_id = ? and id = ?",
+                    actor, upload.workspaceId(), uploadId);
         }
         return new UploadChunkResponse(uploadId, chunkIndex, true);
     }
@@ -136,6 +212,7 @@ public class UploadService {
     public CompleteUploadResponse completeUpload(String uploadId) {
         UploadRow upload = findUploadForUpdate(uploadId);
         workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        requireLiveSession(upload);
         String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
             cleanupAfterCommit(uploadId);
@@ -149,7 +226,7 @@ public class UploadService {
             );
         }
         List<Map<String, Object>> chunkRows = jdbcTemplate.queryForList("""
-                select c.chunk_index, c.object_key
+                select c.chunk_index, c.object_key, c.byte_size
                 from upload_chunk c
                 join document_upload u on u.id = c.upload_id
                 where u.workspace_id = ? and c.upload_id = ?
@@ -158,8 +235,16 @@ public class UploadService {
         if (chunkRows.size() != upload.totalChunks()) {
             throw new BusinessException("UPLOAD_CHUNK_INCOMPLETE", "上传分片尚未完整");
         }
-        // 分片逐个写入本地临时文件并同时计算 SHA-256，内存中最多只有一个分片（不超过 8MB）
-        MergedFile merged = mergeChunksToFile(chunkRows);
+        long size = 0;
+        for (int index = 0; index < chunkRows.size(); index++) {
+            Map<String, Object> chunk = chunkRows.get(index);
+            if (((Number) chunk.get("chunk_index")).intValue() != index) {
+                throw new BusinessException("UPLOAD_CHUNK_INCOMPLETE", "上传分片序号不完整");
+            }
+            size = Math.addExact(size, ((Number) chunk.get("byte_size")).longValue());
+        }
+        if (size != upload.fileSize()) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "上传分片大小与声明不一致");
+        MergedFile merged = mergeChunksToFile(upload, chunkRows);
         try {
             return completeWithMergedFile(upload, uploadId, actor, merged);
         } finally {
@@ -171,11 +256,15 @@ public class UploadService {
                                                           MergedFile merged) {
         uploadSecurityPolicy.validateMergedFile(upload.mimeType(), upload.fileSize(), merged.path());
         String sha256 = merged.sha256();
-        FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, upload.fileSize(), merged.path());
+        if (upload.expectedSha256() != null && !upload.expectedSha256().equals(sha256)) {
+            throw new BusinessException("UPLOAD_SHA256_MISMATCH", "完整文件的 SHA-256 与创建上传时的声明不一致");
+        }
+        FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, upload.fileSize(), merged.objectKey());
         String sourceId = Ids.newId();
         String snapshotId = Ids.newId();
         String objectKey = "workspace/%s/source/%s/snapshot/1/original/%s".formatted(upload.workspaceId(), sourceId, sanitize(upload.fileName()));
         // 快照原件从文件对象服务端复制，不再经过应用内存
+        cleanupObjectOnRollback(objectKey);
         storage.copy(BUCKET_SOURCE, fileObject.objectKey(), BUCKET_SOURCE, objectKey);
         jdbcTemplate.update("""
                 insert into source(
@@ -208,8 +297,7 @@ public class UploadService {
                     """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
         } else {
             taskCommandPort.startTask(taskId);
-            // Kafka 关闭时只用于开发和测试，文件较小，直接读入内存同步解析
-            sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, readAll(merged.path()));
+            sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged.path());
             Map<String, String> sourceState = jdbcTemplate.queryForObject("""
                     select parse_status, index_status from source
                     where workspace_id = ? and id = ?
@@ -220,12 +308,8 @@ public class UploadService {
             finalIndexStatus = sourceState.get("index_status");
         }
 
-        // Wiki ingest only accepts a source that can enter the indexed READY lifecycle.
-        // A local-only parse must remain usable as PARSED/DISABLED without turning upload
-        // completion into a false 500 or fabricating an indexed state.
-        if (!"DISABLED".equals(finalIndexStatus)) {
-            wikiCommandPort.requestSourceIngest(upload.workspaceId(), sourceId);
-        }
+        // Wiki 编译由资料索引完成后的 SourceRetrievalReadyEvent 触发；这里资料可能仍在解析，提前投递会因未就绪而失败。
+        // 本地解析且未建索引（DISABLED）的资料不进入 Wiki，与之前一致。
 
         int completed = jdbcTemplate.update("""
                 update document_upload
@@ -256,39 +340,58 @@ public class UploadService {
         });
     }
 
+    /** 只登记本次事务独占的新对象，复用的文件对象不参与回滚删除。 */
+    private void cleanupObjectOnRollback(String objectKey) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                if (status == STATUS_COMMITTED) return;
+                try {
+                    storage.delete(BUCKET_SOURCE, objectKey);
+                } catch (RuntimeException ex) {
+                    log.warn("上传回滚对象清理失败：objectKey={}", objectKey, ex);
+                }
+            }
+        });
+    }
+
     private CompleteUploadResponse sourceResult(String workspaceId, String sourceId, String taskId) {
         return jdbcTemplate.query("""
-                select parse_status, index_status from source where workspace_id = ? and id = ?
+                select parse_status, index_status from source where workspace_id = ? and id = ? and status <> 'DELETED'
                 """, rs -> {
             if (!rs.next()) {
-                throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在");
+                throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在", HttpStatus.NOT_FOUND);
             }
             return new CompleteUploadResponse(sourceId, taskId, rs.getString("parse_status"), rs.getString("index_status"));
         }, workspaceId, sourceId);
     }
 
-    private MergedFile mergeChunksToFile(List<Map<String, Object>> chunkRows) {
+    private MergedFile mergeChunksToFile(UploadRow upload, List<Map<String, Object>> chunkRows) {
         java.nio.file.Path file = null;
         try {
             file = java.nio.file.Files.createTempFile("noteweave-upload-", ".bin");
+            String mergedKey = "workspace/%s/upload_tmp/%s/merged".formatted(upload.workspaceId(), upload.id());
+            storage.compose(BUCKET_SOURCE, chunkRows.stream().map(row -> (String) row.get("object_key")).toList(), BUCKET_SOURCE, mergedKey);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (java.io.OutputStream output = new java.security.DigestOutputStream(
-                    new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file)), digest)) {
-                for (Map<String, Object> row : chunkRows) {
-                    output.write(storage.read(BUCKET_SOURCE, (String) row.get("object_key")));
+            long total = 0;
+            try (java.io.InputStream input = new java.security.DigestInputStream(storage.openStream(BUCKET_SOURCE, mergedKey), digest);
+                 java.io.OutputStream output = new java.io.BufferedOutputStream(java.nio.file.Files.newOutputStream(file))) {
+                byte[] buffer = new byte[64 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) {
+                    total += count;
+                    if (total > upload.fileSize()) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "合成对象超过声明大小");
+                    output.write(buffer, 0, count);
                 }
             }
-            return new MergedFile(file, HexFormat.of().formatHex(digest.digest()));
+            if (total != upload.fileSize()) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "合成对象大小与声明不一致");
+            return new MergedFile(file, HexFormat.of().formatHex(digest.digest()), mergedKey);
+        } catch (BusinessException ex) {
+            deleteQuietly(file);
+            throw ex;
         } catch (Exception ex) {
             deleteQuietly(file);
-            throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
-        }
-    }
-
-    private static byte[] readAll(java.nio.file.Path file) {
-        try {
-            return java.nio.file.Files.readAllBytes(file);
-        } catch (java.io.IOException ex) {
             throw new BusinessException("UPLOAD_MERGE_FAILED", "上传分片合并失败");
         }
     }
@@ -302,17 +405,18 @@ public class UploadService {
         }
     }
 
-    private record MergedFile(java.nio.file.Path path, String sha256) {
+    private record MergedFile(java.nio.file.Path path, String sha256, String objectKey) {
     }
 
-    private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, java.nio.file.Path merged) {
+    private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, String mergedKey) {
         List<FileObjectRef> existing = jdbcTemplate.query("""
-                select id, object_key from file_object where workspace_id = ? and sha256 = ?
-                """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key")), upload.workspaceId(), sha256);
+                select id, object_key, file_size from file_object where workspace_id = ? and sha256 = ?
+                """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key"), rs.getLong("file_size")), upload.workspaceId(), sha256);
         if (!existing.isEmpty()) {
             FileObjectRef ref = existing.get(0);
+            if (ref.size() != size) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "同哈希对象的文件大小不一致");
             if (!storage.exists(BUCKET_SOURCE, ref.objectKey())) {
-                storage.writeFile(BUCKET_SOURCE, ref.objectKey(), merged);
+                storage.copy(BUCKET_SOURCE, mergedKey, BUCKET_SOURCE, ref.objectKey());
             }
             jdbcTemplate.update("""
                     update file_object set ref_count = ref_count + 1
@@ -321,22 +425,24 @@ public class UploadService {
             return ref;
         }
         String fileObjectId = Ids.newId();
-        String objectKey = "workspace/%s/file_object/%s-%s".formatted(upload.workspaceId(), sha256, sanitize(upload.fileName()));
-        storage.writeFile(BUCKET_SOURCE, objectKey, merged);
+        // 每次新建使用独立对象键，避免同哈希并发事务回滚时误删另一事务的对象。
+        String objectKey = "workspace/%s/file_object/%s/%s-%s".formatted(upload.workspaceId(), fileObjectId, sha256, sanitize(upload.fileName()));
+        cleanupObjectOnRollback(objectKey);
+        storage.copy(BUCKET_SOURCE, mergedKey, BUCKET_SOURCE, objectKey);
         jdbcTemplate.update("""
                 insert into file_object(id, workspace_id, object_key, sha256, file_size, mime_type, ref_count)
                 values (?, ?, ?, ?, ?, ?, 1)
                 """, fileObjectId, upload.workspaceId(), objectKey, sha256, size, upload.mimeType());
-        return new FileObjectRef(fileObjectId, objectKey);
+        return new FileObjectRef(fileObjectId, objectKey, size);
     }
 
     private UploadRow findUpload(String uploadId) {
         return jdbcTemplate.query("""
-                select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id
+                select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id, expected_sha256, updated_at
                 from document_upload where id = ?
                 """, rs -> {
             if (!rs.next()) {
-                throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在");
+                throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在", HttpStatus.NOT_FOUND);
             }
             return new UploadRow(
                     rs.getString("id"),
@@ -348,18 +454,18 @@ public class UploadService {
                     rs.getInt("total_chunks"),
                     rs.getString("status"),
                     rs.getString("source_id"),
-                    rs.getString("task_id")
+                    rs.getString("task_id"), rs.getString("expected_sha256"), rs.getTimestamp("updated_at").toInstant()
             );
         }, uploadId);
     }
 
     private UploadRow findUploadForUpdate(String uploadId) {
         return jdbcTemplate.query("""
-                select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id
+                select id, workspace_id, file_name, file_size, mime_type, chunk_size, total_chunks, status, source_id, task_id, expected_sha256, updated_at
                 from document_upload where id = ? for update
                 """, rs -> {
             if (!rs.next()) {
-                throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在");
+                throw new BusinessException("UPLOAD_NOT_FOUND", "上传事务不存在", HttpStatus.NOT_FOUND);
             }
             return new UploadRow(
                     rs.getString("id"),
@@ -371,18 +477,9 @@ public class UploadService {
                     rs.getInt("total_chunks"),
                     rs.getString("status"),
                     rs.getString("source_id"),
-                    rs.getString("task_id")
+                    rs.getString("task_id"), rs.getString("expected_sha256"), rs.getTimestamp("updated_at").toInstant()
             );
         }, uploadId);
-    }
-
-    private String sha256(byte[] content) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(content));
-        } catch (Exception ex) {
-            throw new IllegalStateException("SHA-256 not available", ex);
-        }
     }
 
     private void verifyContentMd5(String contentMd5, byte[] content) {
@@ -419,10 +516,12 @@ public class UploadService {
             int totalChunks,
             String status,
             String sourceId,
-            String taskId
+            String taskId,
+            String expectedSha256,
+            Instant updatedAt
     ) {
     }
 
-    private record FileObjectRef(String id, String objectKey) {
+    private record FileObjectRef(String id, String objectKey, long size) {
     }
 }

@@ -1,0 +1,1140 @@
+{
+  "dataset_key": "retrieval-eval-v1",
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-10-14T09:36:13.216992+00:00",
+  "sets": {
+    "first_turn": {
+      "overall": {
+        "cases": 20,
+        "missing_runs": 0,
+        "ranked_cases": 20,
+        "recall_at_10": 0.9,
+        "mrr": 0.6167,
+        "ndcg_at_10": 0.6787,
+        "context_recall": 1.0,
+        "context_precision": 0.1,
+        "context_count": 12.0,
+        "latency_p50_ms": 12514,
+        "latency_p95_ms": 12966
+      },
+      "by_group": {
+        "NUMERIC": {
+          "cases": 4,
+          "missing_runs": 0,
+          "ranked_cases": 4,
+          "recall_at_10": 1.0,
+          "mrr": 0.75,
+          "ndcg_at_10": 0.8155,
+          "context_recall": 1.0,
+          "context_precision": 0.1041,
+          "context_count": 12.0,
+          "latency_p50_ms": 7766,
+          "latency_p95_ms": 12924
+        },
+        "EXACT": {
+          "cases": 5,
+          "missing_runs": 0,
+          "ranked_cases": 5,
+          "recall_at_10": 1.0,
+          "mrr": 0.5333,
+          "ndcg_at_10": 0.6102,
+          "context_recall": 1.0,
+          "context_precision": 0.1,
+          "context_count": 12.0,
+          "latency_p50_ms": 12770,
+          "latency_p95_ms": 13997
+        },
+        "SEMANTIC": {
+          "cases": 11,
+          "missing_runs": 0,
+          "ranked_cases": 11,
+          "recall_at_10": 0.8182,
+          "mrr": 0.6061,
+          "ndcg_at_10": 0.6602,
+          "context_recall": 1.0,
+          "context_precision": 0.0985,
+          "context_count": 12.0,
+          "latency_p50_ms": 12446,
+          "latency_p95_ms": 12879
+        }
+      },
+      "results": [
+        {
+          "case_key": "ft-rrf-params",
+          "question_type": "NUMERIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 7766,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 混合检索里 RRF 的 K 值和向量、关键词两路的权重分别是多少？",
+            "keyword_query": "QA 混合检索里 RRF 的 K 值和向量、关键词两路的权重分别是多少？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-evidence-budget",
+          "question_type": "NUMERIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6724,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 最终交给模型的证据最多几条，总字符上限是多少？",
+            "keyword_query": "QA 最终交给模型的证据最多几条，总字符上限是多少？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-cjk-analyzer",
+          "question_type": "EXACT",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 13997,
+          "retrieval_rewrite": {
+            "standalone_query": "noteweave_cjk_text 分析器是怎么处理中文的？为什么不用默认分析器？",
+            "keyword_query": "noteweave_cjk_text 分析器是怎么处理中文的？为什么不用默认分析器？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.25,
+          "ndcg_at_10": 0.2641,
+          "matched_facts": [
+            0,
+            1
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-memory-cache-ttl",
+          "question_type": "NUMERIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12818,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 编译结果缓存的过期时间是多少？",
+            "keyword_query": "Memory 编译结果缓存的过期时间是多少？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.1667
+        },
+        {
+          "case_key": "ft-wiki-cache-ttl",
+          "question_type": "NUMERIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12924,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 页面版本缓存默认多久过期？",
+            "keyword_query": "Wiki 页面版本缓存默认多久过期？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-wiki-bm25f",
+          "question_type": "EXACT",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6012,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 搜索的 BM25F 里标题、摘要、正文的权重和 k1、b 参数是多少？",
+            "keyword_query": "Wiki 搜索的 BM25F 里标题、摘要、正文的权重和 k1、b 参数是多少？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-wiki-link-propagation",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6423,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 搜索中一个页面命中后，和它相连的页面能分到多少得分？",
+            "keyword_query": "Wiki 搜索中一个页面命中后，和它相连的页面能分到多少得分？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-memory-untrusted-input",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12446,
+          "retrieval_rewrite": {
+            "standalone_query": "哪些来源的内容默认不能写进用户的长期记忆？",
+            "keyword_query": "哪些来源的内容默认不能写进用户的长期记忆？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-validating-state",
+          "question_type": "EXACT",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12514,
+          "retrieval_rewrite": {
+            "standalone_query": "AnswerRun 有没有一个叫 VALIDATING 的状态？引用校验在什么时候做？",
+            "keyword_query": "AnswerRun 有没有一个叫 VALIDATING 的状态？引用校验在什么时候做？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-score-sum",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12313,
+          "retrieval_rewrite": {
+            "standalone_query": "为什么不能把 BM25 和向量的分数归一化以后直接相加？",
+            "keyword_query": "为什么不能把 BM25 和向量的分数归一化以后直接相加？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.1667
+        },
+        {
+          "case_key": "ft-revoke-done",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6959,
+          "retrieval_rewrite": {
+            "standalone_query": "怎样才算记忆撤销已经传播完成？",
+            "keyword_query": "怎样才算记忆撤销已经传播完成？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-vector-source-of-truth",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12879,
+          "retrieval_rewrite": {
+            "standalone_query": "为什么不用向量数据库保存记忆的权威数据？",
+            "keyword_query": "为什么不用向量数据库保存记忆的权威数据？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.3333,
+          "ndcg_at_10": 0.5,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-wiki-delete",
+          "question_type": "EXACT",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12966,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 页面删除以后，链接、索引这些数据怎么处理？",
+            "keyword_query": "Wiki 页面删除以后，链接、索引这些数据怎么处理？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.25,
+          "ndcg_at_10": 0.4307,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.1667
+        },
+        {
+          "case_key": "ft-wiki-concurrent-publish",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12838,
+          "retrieval_rewrite": {
+            "standalone_query": "两个人同时修改并发布同一个 Wiki 页面会怎样？",
+            "keyword_query": "两个人同时修改并发布同一个 Wiki 页面会怎样？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-rerank-timeout",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12651,
+          "retrieval_rewrite": {
+            "standalone_query": "Rerank 调用读超时以后，系统怎么处理这次结果？",
+            "keyword_query": "Rerank 调用读超时以后，系统怎么处理这次结果？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-refusal",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12352,
+          "retrieval_rewrite": {
+            "standalone_query": "检索到了候选但都不能支撑问题时，QA 会怎么回答？",
+            "keyword_query": "检索到了候选但都不能支撑问题时，QA 会怎么回答？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-evidence-vs-memory",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12530,
+          "retrieval_rewrite": {
+            "standalone_query": "Evidence 和 Memory 的用途有什么区别？",
+            "keyword_query": "Evidence 和 Memory 的用途有什么区别？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-auto-approve",
+          "question_type": "EXACT",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12770,
+          "retrieval_rewrite": {
+            "standalone_query": "记忆候选在什么条件下可以自动批准？",
+            "keyword_query": "记忆候选在什么条件下可以自动批准？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.1667,
+          "ndcg_at_10": 0.3562,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-source-diversity",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 11426,
+          "retrieval_rewrite": {
+            "standalone_query": "选证据时怎么避免同一份资料占满全部名额？",
+            "keyword_query": "选证据时怎么避免同一份资料占满全部名额？",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.3333,
+          "ndcg_at_10": 0.5,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833
+        },
+        {
+          "case_key": "ft-auto-fix",
+          "question_type": "SEMANTIC",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12757,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 的自动修复为什么不直接改写页面？",
+            "keyword_query": "Wiki 的自动修复为什么不直接改写页面？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.1667
+        }
+      ]
+    },
+    "multi_turn": {
+      "overall": {
+        "cases": 12,
+        "missing_runs": 0,
+        "ranked_cases": 9,
+        "recall_at_10": 0.8889,
+        "mrr": 0.5123,
+        "ndcg_at_10": 0.6027,
+        "context_recall": 1.0,
+        "context_precision": 0.0926,
+        "context_count": 12.0,
+        "latency_p50_ms": 8904,
+        "latency_p95_ms": 12618,
+        "sufficiency_judged": 12,
+        "sufficiency_accuracy": 0.5
+      },
+      "by_group": {
+        "ANSWERABLE": {
+          "cases": 6,
+          "missing_runs": 0,
+          "ranked_cases": 6,
+          "recall_at_10": 0.8333,
+          "mrr": 0.5185,
+          "ndcg_at_10": 0.5938,
+          "context_recall": 1.0,
+          "context_precision": 0.0972,
+          "context_count": 12.0,
+          "latency_p50_ms": 8268,
+          "latency_p95_ms": 12159,
+          "sufficiency_judged": 6,
+          "sufficiency_accuracy": 0.3333
+        },
+        "PARTIAL": {
+          "cases": 3,
+          "missing_runs": 0,
+          "ranked_cases": 3,
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6205,
+          "context_recall": 1.0,
+          "context_precision": 0.0833,
+          "context_count": 12.0,
+          "latency_p50_ms": 9047,
+          "latency_p95_ms": 12618,
+          "sufficiency_judged": 3,
+          "sufficiency_accuracy": 0.3333
+        },
+        "UNANSWERABLE": {
+          "cases": 3,
+          "missing_runs": 0,
+          "ranked_cases": 0,
+          "recall_at_10": null,
+          "mrr": null,
+          "ndcg_at_10": null,
+          "context_recall": null,
+          "context_precision": null,
+          "context_count": null,
+          "latency_p50_ms": 8244,
+          "latency_p95_ms": 9251,
+          "sufficiency_judged": 3,
+          "sufficiency_accuracy": 1.0
+        }
+      },
+      "results": [
+        {
+          "case_key": "mt-rrf-k",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 8266,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 场景下 Weighted RRF 的 K 取多少？",
+            "keyword_query": "那它的 K 取多少？ QA Weighted RRF K",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-wiki-field-weight",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 8093,
+          "retrieval_rewrite": {
+            "standalone_query": "标题和正文的权重比是多少？",
+            "keyword_query": "标题和正文的权重比是多少？",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.1111,
+          "ndcg_at_10": 0.301,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-memory-cache",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 11709,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory Control Pack 的编译结果缓存多久过期？",
+            "keyword_query": "它的缓存多久过期？ Control Pack 缓存 过期 TTL",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.1667,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "SUFFICIENT",
+            "correct": true
+          }
+        },
+        {
+          "case_key": "mt-wiki-cache",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 12083,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 的页面缓存设计的过期时间是多少？",
+            "keyword_query": "过期时间呢？ Wiki 页面缓存 过期时间 TTL",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.5,
+          "ndcg_at_10": 0.6309,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "SUFFICIENT",
+            "correct": true
+          }
+        },
+        {
+          "case_key": "mt-memory-secrets",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 12159,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 机制对密钥和 Token 这类敏感内容有什么处理规则？",
+            "keyword_query": "那密钥和 Token 这类内容呢？ Memory 密钥 Token 敏感内容 处理规则",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "PARTIAL",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-evidence-count",
+          "question_type": null,
+          "answerability": "ANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 8268,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 回答时证据选择最多挑几条？",
+            "keyword_query": "最多挑几条？ QA 证据选择 最多 条数",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "SUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-graph-budget-values",
+          "question_type": null,
+          "answerability": "PARTIAL",
+          "status": "COMPLETED",
+          "latency_ms": 8904,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 的图扩展有哪些预算参数，这些参数现在分别设成多少？",
+            "keyword_query": "这些参数现在分别设成多少？ Wiki 图扩展 预算参数 当前值",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.25,
+          "ndcg_at_10": 0.4307,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "PARTIAL",
+            "actual": "INSUFFICIENT",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-rerank-vs-vendor",
+          "question_type": null,
+          "answerability": "PARTIAL",
+          "status": "COMPLETED",
+          "latency_ms": 9047,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 的 Rerank Top N 和 Cohere Rerank 接口的默认返回条数比哪个大？",
+            "keyword_query": "和 Cohere Rerank 接口的默认返回条数比哪个大？ QA Rerank Top N Cohere Rerank 默认返回条数 比较",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 0.25,
+          "ndcg_at_10": 0.4307,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "PARTIAL",
+            "actual": "INSUFFICIENT",
+            "correct": false
+          }
+        },
+        {
+          "case_key": "mt-revoke-duration",
+          "question_type": null,
+          "answerability": "PARTIAL",
+          "status": "COMPLETED",
+          "latency_ms": 12618,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 的撤销分哪几类，每一类撤销平均要多长时间生效？",
+            "keyword_query": "每一类撤销平均要多长时间生效？ Memory 撤销 分类 生效时间",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "ranking_source": "candidates",
+          "recall_at_10": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_10": 1.0,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 1.0,
+          "context_count": 12,
+          "context_precision": 0.0833,
+          "sufficiency": {
+            "expected": "PARTIAL",
+            "actual": "PARTIAL",
+            "correct": true
+          }
+        },
+        {
+          "case_key": "mt-redis-nodes",
+          "question_type": null,
+          "answerability": "UNANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 8244,
+          "retrieval_rewrite": {
+            "standalone_query": "那 Redis 集群部署了几个节点？",
+            "keyword_query": "那 Redis 集群部署了几个节点？",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "sufficiency": {
+            "expected": "INSUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": true
+          }
+        },
+        {
+          "case_key": "mt-mysql-version",
+          "question_type": null,
+          "answerability": "UNANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 8197,
+          "retrieval_rewrite": {
+            "standalone_query": "用的 MySQL 是哪个版本？",
+            "keyword_query": "用的 MySQL 是哪个版本？",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "sufficiency": {
+            "expected": "INSUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": true
+          }
+        },
+        {
+          "case_key": "mt-fix-acceptance",
+          "question_type": null,
+          "answerability": "UNANSWERABLE",
+          "status": "COMPLETED",
+          "latency_ms": 9251,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 系统中上个月一共有多少条自动修复（Auto-fix）被接受了？",
+            "keyword_query": "上个月一共有多少条修复被接受了？ 上个月 修复 接受 数量 Wiki Auto-fix",
+            "method": "LLM",
+            "degradation_reasons": [],
+            "is_standalone": false
+          },
+          "sufficiency": {
+            "expected": "INSUFFICIENT",
+            "actual": "INSUFFICIENT",
+            "correct": true
+          }
+        }
+      ]
+    },
+    "wiki_cross_page": {
+      "overall": {
+        "cases": 8,
+        "missing_runs": 0,
+        "ranked_cases": 8,
+        "recall_at_10": 0.25,
+        "mrr": 0.3167,
+        "ndcg_at_10": 0.2213,
+        "context_recall": 0.25,
+        "context_precision": 0.275,
+        "context_count": 5.0,
+        "latency_p50_ms": 7027,
+        "latency_p95_ms": 12853
+      },
+      "by_group": {
+        "CROSS_PAGE": {
+          "cases": 8,
+          "missing_runs": 0,
+          "ranked_cases": 8,
+          "recall_at_10": 0.25,
+          "mrr": 0.3167,
+          "ndcg_at_10": 0.2213,
+          "context_recall": 0.25,
+          "context_precision": 0.275,
+          "context_count": 5.0,
+          "latency_p50_ms": 7027,
+          "latency_p95_ms": 12853
+        }
+      },
+      "results": [
+        {
+          "case_key": "wk-cache-ttl",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6361,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+            "keyword_query": "Memory 编译结果缓存和 Wiki 页面缓存的过期时间分别是多少？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 0.0,
+          "context_count": 5,
+          "context_precision": 0.0
+        },
+        {
+          "case_key": "wk-scoring",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 6434,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 和 Wiki 在检索打分方法上有什么不同？",
+            "keyword_query": "QA 和 Wiki 在检索打分方法上有什么不同？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.5,
+          "mrr": 0.3333,
+          "ndcg_at_10": 0.3066,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 0.5,
+          "context_count": 5,
+          "context_precision": 0.2
+        },
+        {
+          "case_key": "wk-revoke-delete",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 7027,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 的撤销和 Wiki 的页面删除分别怎么保证旧内容不再被读到？",
+            "keyword_query": "Memory 的撤销和 Wiki 的页面删除分别怎么保证旧内容不再被读到？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.5,
+          "mrr": 1.0,
+          "ndcg_at_10": 0.6131,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 0.5,
+          "context_count": 5,
+          "context_precision": 0.8
+        },
+        {
+          "case_key": "wk-vector-truth",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12853,
+          "retrieval_rewrite": {
+            "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+            "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 0.0,
+          "context_count": 5,
+          "context_precision": 0.0
+        },
+        {
+          "case_key": "wk-stale-version",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 9212,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+            "keyword_query": "QA 和 Wiki 怎么防止索引里的旧版本被返回给用户？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 0.0,
+          "context_count": 5,
+          "context_precision": 0.0
+        },
+        {
+          "case_key": "wk-feedback-principle",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 5858,
+          "retrieval_rewrite": {
+            "standalone_query": "Memory 的 Outcome 和 Wiki 的自动修复有什么共同的设计原则？",
+            "keyword_query": "Memory 的 Outcome 和 Wiki 的自动修复有什么共同的设计原则？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.5,
+          "mrr": 1.0,
+          "ndcg_at_10": 0.6131,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 0.5,
+          "context_count": 5,
+          "context_precision": 1.0
+        },
+        {
+          "case_key": "wk-injection",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 7190,
+          "retrieval_rewrite": {
+            "standalone_query": "QA 的 Prompt Injection 测试和 Memory 的污染防线分别防的是什么？",
+            "keyword_query": "QA 的 Prompt Injection 测试和 Memory 的污染防线分别防的是什么？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_10": 0.0,
+          "matched_facts": [],
+          "context_recall": 0.0,
+          "context_count": 5,
+          "context_precision": 0.0
+        },
+        {
+          "case_key": "wk-diversity",
+          "question_type": "CROSS_PAGE",
+          "answerability": null,
+          "status": "COMPLETED",
+          "latency_ms": 12260,
+          "retrieval_rewrite": {
+            "standalone_query": "Wiki 搜索的反链加成和 QA 选证据时的来源多样性分别解决什么问题？",
+            "keyword_query": "Wiki 搜索的反链加成和 QA 选证据时的来源多样性分别解决什么问题？",
+            "method": "RULE",
+            "degradation_reasons": [],
+            "is_standalone": true
+          },
+          "ranking_source": "final_evidence",
+          "recall_at_10": 0.5,
+          "mrr": 0.2,
+          "ndcg_at_10": 0.2372,
+          "matched_facts": [
+            0
+          ],
+          "context_recall": 0.5,
+          "context_count": 5,
+          "context_precision": 0.2
+        }
+      ]
+    }
+  }
+}

@@ -102,7 +102,8 @@ from app.writeback_runtime import (
     list_writeback_requests,
 )
 from app.system_mcp_executor import recover_system_mcp_acquisition_operations
-from app.source_transcription import accept_source_transcription, recover_source_transcriptions
+from app.source_transcription import (accept_source_transcription, recover_source_transcriptions,
+    start_source_transcription_pool, shutdown_source_transcriptions, TranscriptionCapacityExceeded)
 
 settings = load_settings()
 configure_artifact_repository_backend(
@@ -117,14 +118,20 @@ configure_waiting_task_store(settings.artifact_wait_queue_file_path)
 @asynccontextmanager
 async def artifact_worker_lifespan(_: FastAPI):
     recover_system_mcp_acquisition_operations(java_base_url=settings.java_base_url)
-    recover_source_transcriptions()
-    consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
-    consumer_runtime.start()
-    app.state.artifact_consumer_runtime = consumer_runtime
+    consumer_runtime = None
     try:
+        start_source_transcription_pool(settings)
+        recover_source_transcriptions()
+        consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
+        consumer_runtime.start()
+        app.state.artifact_consumer_runtime = consumer_runtime
         yield
     finally:
-        consumer_runtime.stop()
+        try:
+            if consumer_runtime is not None:
+                consumer_runtime.stop()
+        finally:
+            shutdown_source_transcriptions()
 
 
 app = FastAPI(title="NoteWeave Artifact Worker", lifespan=artifact_worker_lifespan)
@@ -655,11 +662,14 @@ async def submit_source_transcription(
     snapshot_id: str,
     mime_type: str,
     file_name: str = "",
+    task_id: str = "",
 ) -> dict[str, object]:
     """Java Host 提交资料的音视频原件；保存后在后台通过 MCP 转写，完成后回调 Java。"""
-    content = await request.body()
-    if len(content) > _MAX_TRANSCRIPTION_BYTES:
-        raise HTTPException(status_code=413, detail="media file exceeds 128 MB")
+    content = bytearray()
+    async for piece in request.stream():
+        if len(content) + len(piece) > _MAX_TRANSCRIPTION_BYTES:
+            raise HTTPException(status_code=413, detail="媒体文件超过 128 MiB 上限")
+        content.extend(piece)
     try:
         return accept_source_transcription(
             workspace_id=workspace_id,
@@ -667,8 +677,12 @@ async def submit_source_transcription(
             snapshot_id=snapshot_id,
             file_name=file_name,
             mime_type=mime_type,
-            content=content,
+            content=bytes(content),
+            task_id=task_id,
         )
+    except TranscriptionCapacityExceeded as exc:
+        raise HTTPException(status_code=429, detail={"code": "SOURCE_TRANSCRIPTION_CAPACITY_EXHAUSTED", "message": str(exc)},
+                            headers={"Retry-After": "5"}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

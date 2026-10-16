@@ -1309,3 +1309,56 @@ button.artifact-output-row:hover {
   }
 }
 
+
+/* 4D 内容校验 */
+.artifact-verification {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+.artifact-verification-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--ink-2);
+}
+
+.artifact-verification-alert {
+  color: var(--danger);
+}
+
+.artifact-verification-note {
+  margin: 0;
+  color: var(--warning);
+}
+
+.artifact-verification-sections {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artifact-verification-sections li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.artifact-badge.tone-muted {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.artifact-verification-rounds ol {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  color: var(--ink-2);
+}

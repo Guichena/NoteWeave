@@ -13,7 +13,8 @@ public record SendMessageRequest(
         @Size(max = 36) String expectedHistoryHeadMessageId,
         @Size(max = 16) String retrievalStrategy,
         @Size(max = 3) List<@NotBlank @Size(max = 16) String> retrievalChannels,
-        @Size(max = 50) List<@NotBlank @Size(max = 120) String> groundingRefs
+        @Size(max = 50) List<@NotBlank @Size(max = 120) String> groundingRefs,
+        @Size(max = 36) String regeneratedFrom
 ) {
     public SendMessageRequest {
         answerMode = answerMode == null
@@ -33,6 +34,7 @@ public record SendMessageRequest(
                 ? null : retrievalStrategy.trim().toUpperCase(Locale.ROOT);
         retrievalChannels = normalizeChannels(retrievalChannels);
         groundingRefs = normalizeRefs(groundingRefs);
+        regeneratedFrom = regeneratedFrom == null || regeneratedFrom.isBlank() ? null : regeneratedFrom.trim();
     }
 
     public SendMessageRequest(
@@ -41,7 +43,7 @@ public record SendMessageRequest(
             String clientRequestId,
             List<String> sourceScopeSourceIds
     ) {
-        this(content, answerMode, clientRequestId, sourceScopeSourceIds, null, null, List.of(), List.of());
+        this(content, answerMode, clientRequestId, sourceScopeSourceIds, null, null, List.of(), List.of(), null);
     }
 
     public SendMessageRequest(
@@ -52,7 +54,7 @@ public record SendMessageRequest(
             String expectedHistoryHeadMessageId
     ) {
         this(content, answerMode, clientRequestId, sourceScopeSourceIds, expectedHistoryHeadMessageId,
-                null, List.of(), List.of());
+                null, List.of(), List.of(), null);
     }
 
     private static List<String> normalizeRefs(List<String> values) {

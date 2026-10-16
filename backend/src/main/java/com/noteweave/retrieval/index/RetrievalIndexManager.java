@@ -45,6 +45,11 @@ public class RetrievalIndexManager {
         try {
             boolean exists = client.indices().exists(e -> e.index(physicalIndex)).value();
             if (exists) {
+                if (type == ProjectionType.QA_CHUNK) {
+                    // 原有别名继续使用原索引，增补字段，避免切换到缺少其他资料的新索引。
+                    client.indices().putMapping(update -> update.index(physicalIndex)
+                            .properties("context_text", contextualText()));
+                }
                 return;
             }
             client.indices().create(c -> c
@@ -165,6 +170,7 @@ public class RetrievalIndexManager {
             properties.put("chunk_no", integer());
             properties.put("heading", text());
             properties.put("content", text());
+            properties.put("context_text", contextualText());
             properties.put("content_embedding", denseVector(dimensions));
         } else {
             properties.put("summary", text());
@@ -208,6 +214,11 @@ public class RetrievalIndexManager {
 
     private Property text() {
         return Property.of(property -> property.text(text -> text.analyzer(TEXT_ANALYZER)));
+    }
+
+    private Property contextualText() {
+        // copy_to 只改变倒排索引，_source.content 仍保留引用所需的原文。
+        return Property.of(property -> property.text(text -> text.analyzer(TEXT_ANALYZER).copyTo("content")));
     }
 
     private Property integer() {

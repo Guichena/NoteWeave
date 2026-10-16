@@ -35,6 +35,29 @@ class ConversationTurnPayloadCodecTest {
         assertThat(restored.retrievalStrategy()).isEqualTo("EXPLICIT");
         assertThat(restored.retrievalChannels()).containsExactly("WORKSPACE", "REPORT");
         assertThat(restored.groundingRefs()).containsExactly("report-1");
+        assertThat(restored.regeneratedFrom()).isNull();
+    }
+
+    @Test
+    void codecShouldRoundTripRegeneratedFrom() {
+        SubmitTurnCommand command = new SubmitTurnCommand(
+                "conversation-1",
+                "original question",
+                "NOTE",
+                "request-1",
+                List.of("source-1"),
+                "head-1",
+                "EXPLICIT",
+                List.of("WORKSPACE", "REPORT"),
+                List.of("report-1"),
+                "run-previous"
+        );
+
+        String preparation = codec.preparationJson(command, "head-1", 7);
+        SubmitTurnCommand restored = codec.readFrozenCommand("conversation-1", preparation);
+
+        assertThat(restored.regeneratedFrom()).isEqualTo("run-previous");
+        assertThat(codec.requestHash(command)).isEqualTo(codec.requestHash(restored));
     }
 
     @Test

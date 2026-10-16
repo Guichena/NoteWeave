@@ -5,7 +5,10 @@ from dataclasses import dataclass, field, replace
 from typing import Callable
 import time
 
+from app.legacy_counter_runtime import requires_counter, counter_completed, run_counter_checks
 from app.branch import plan_branch_recovery
+from app.cell_query_planner import CellColumn, CellQueryContext, question_keywords
+from app.repair_queries import plan_repair_queries
 from app.cell_recovery_policy import (
     CellRecoveryAction,
     CellRecoveryBudget,
@@ -189,6 +192,7 @@ def run_research_loop(
             active_plan,
             latest_decision,
             latest_artifacts,
+            llm_client=llm_client,
         )
         start_round = max(1, max((item.round_no for item in rounds), default=0) + 1)
 
@@ -395,6 +399,7 @@ def run_research_loop(
             artifacts,
             # DR-108: 用指令里已收敛的生效模式，而不是 Cell 级策略的原始请求，
             # 这样「请求 vs 生效」不会再出现两套取值。
+            llm_client=llm_client,
             recovery_mode=(
                 last_directive.recovery_mode if last_directive is not None else ""
             ),
@@ -1021,55 +1026,41 @@ def _augment_plan_for_next_round(
     decision: ResearchLoopDecision,
     artifacts: ResearchRoundArtifacts,
     recovery_mode: str = "",
+    llm_client: LlmClient | None = None,
 ) -> ResearchPlan:
     requested_recovery_mode = str(recovery_mode or "").strip().upper()
     recovery_mode = ""
-    notes: list[str] = []
-    conflict_sources: list[str] = []
     requirement_hints = _build_requirement_recovery_hints(plan, artifacts.ledger)
-    if decision.decision == "COUNTERFACTUAL_RECHECK":
-        conflict_sources = [
-            row.source_title
-            for row in artifacts.ledger.rows
-            if row.row_status == "CONFLICTED"
-        ]
-        if requirement_hints["counterfactual_queries"]:
-            extra_query = requirement_hints["counterfactual_queries"][0]
-        elif conflict_sources:
-            extra_query = (
-                f"{plan.normalized_question} :: counterfactual recheck against "
-                f"{', '.join(conflict_sources[:2])}"
-            )
-        else:
-            extra_query = (
-                f"{plan.normalized_question} :: counterfactual recheck round "
-                f"{decision.round_no + 1}"
-            )
-    elif decision.decision == "EXTRACT_AGAIN":
-        extra_query = (
-            f"{plan.normalized_question} :: evidence extraction retry round "
-            f"{decision.round_no + 1}"
-        )
-        notes = [
-            "recovery mode: reuse existing read windows before opening new sources"
-        ]
+    conflict_sources = [row.source_title for row in artifacts.ledger.rows if row.row_status == "CONFLICTED"]
+    target_columns = set(requirement_hints["target_columns"])
+    selected_columns = [c for c in plan.research_schema.columns if c.key in target_columns]
+    columns = tuple(CellColumn(c.key, c.label, c.description, tuple(c.search_intents))
+                    for c in (selected_columns or plan.research_schema.columns))
+    context = CellQueryContext(question=plan.normalized_question, entity_label=question_keywords(plan.normalized_question, limit=6), columns=columns,
+                               tried_queries=tuple(plan.executed_queries), max_queries=3)
+    cause = ("EVIDENCE_CONFLICT" if decision.decision == "COUNTERFACTUAL_RECHECK" else
+             "FETCH_FAILED" if any(d.fetch_error_reason for d in artifacts.fetched_documents) else
+             "PROVIDER_FAILED" if any(t.status == "failed" and t.tool == "search_web"
+                                      for t in artifacts.tool_traces) else "MARGINAL_GAIN_EXHAUSTED")
+    conflicted_keys = {(c.entity_id, c.column_key) for c in artifacts.evidence_cards if c.relation_type == "CONFLICTS"}
+    claims = [{"claim_text": c.claim_text, "source_domain": c.source_domain}
+              for c in artifacts.evidence_cards if (c.entity_id, c.column_key) in conflicted_keys]
+    if not claims and cause == "EVIDENCE_CONFLICT":
+        claims = [{"claim_text": c.claim_text, "source_domain": c.source_domain} for c in artifacts.evidence_cards]
+    if decision.decision == "EXTRACT_AGAIN":
+        # 重做抽取只复用原文，不生成或发出新检索词。
+        specs, method, strategy, reasons = list(plan.query_specs), "REUSE", "REEXTRACT", []
     else:
-        extra_query = (
-            requirement_hints["target_queries"][0]
-            if requirement_hints["target_queries"]
-            else f"{plan.normalized_question} :: recovery round {decision.round_no + 1}"
-        )
-        notes = []
-
-    query_set = list(plan.query_set)
-    for query in [extra_query, *requirement_hints["target_queries"]]:
-        if query and query not in query_set:
-            query_set.append(query)
+        query_plan, strategy = plan_repair_queries(context, {
+            "repair_cause": cause, "claims": claims, "tried_queries": list(plan.executed_queries),
+            "research_question": plan.normalized_question, "requirement_labels": requirement_hints["requirement_labels"]}, llm_client)
+        specs, method, reasons = query_plan.specs, query_plan.method, query_plan.degradation_reasons
+    query_set = [spec.query for spec in specs]
+    requirement_hints["target_queries"] = query_set if method != "REUSE" else []
     plan_notes = list(plan.notes)
     plan_notes.append(
         f"loop recovery: {decision.decision} because {decision.reason}"
     )
-    plan_notes.extend(notes)
     if requirement_hints["requirement_labels"]:
         plan_notes.append(
             "recovery targets: "
@@ -1086,6 +1077,10 @@ def _augment_plan_for_next_round(
             f"with {len(artifacts.ledger.verifier_decisions)} verifier decisions"
         )
     stop_contract = dict(plan.stop_contract)
+    stop_contract["query_planning_method"] = method
+    stop_contract["query_spec_history"] = [*stop_contract.get("query_spec_history", []),
+        *[spec.model_dump(mode="json") for spec in plan.query_specs]]
+    stop_contract["degradation_reasons"] = list(dict.fromkeys([*stop_contract.get("degradation_reasons", []), *reasons]))
     expanding_horizons = [
         item
         for item in artifacts.evidence_horizon_decisions
@@ -1200,6 +1195,7 @@ def _augment_plan_for_next_round(
     return plan.model_copy(
         update={
             "query_set": query_set,
+            "query_specs": specs,
             "notes": plan_notes,
             "stop_contract": stop_contract,
             "plan_revision": plan.plan_revision + 1,
@@ -1208,6 +1204,11 @@ def _augment_plan_for_next_round(
                 {
                     "revision": plan.plan_revision + 1,
                     "trigger": decision.reason,
+                    "query_planning_method": method,
+                    "strategy": strategy,
+                    "planned_queries": query_set if method != "REUSE" else [],
+                    "tried_queries": list(plan.executed_queries),
+                    "degradation_reasons": reasons,
                     "decision": decision.decision,
                     "round_no": decision.round_no,
                     "affected_cells": [
@@ -1309,8 +1310,6 @@ def _build_requirement_recovery_hints(
     requirement_types: list[str] = []
     requirement_labels: list[str] = []
     target_columns: list[str] = []
-    target_queries: list[str] = []
-    counterfactual_queries: list[str] = []
     target_sources: list[str] = []
     for item in _pending_requirement_progress(ledger):
         requirement_ids.append(item.requirement_id)
@@ -1319,44 +1318,13 @@ def _build_requirement_recovery_hints(
         for column in item.required_columns:
             if column not in target_columns:
                 target_columns.append(column)
-        label = item.label.strip() or item.requirement_id
-        if item.requirement_type == "CONFLICT_FINDING":
-            query = (
-                f"{plan.normalized_question} :: counterfactual evidence check :: "
-                f"{label}"
-            )
-            counterfactual_queries.append(query)
-            target_queries.append(query)
-            target_sources.extend(
-                row.source_title
-                for row in ledger.rows
-                if row.row_status == "CONFLICTED"
-            )
-        elif item.requirement_type == "CONSTRAINT_FINDING":
-            target_queries.append(
-                f"{plan.normalized_question} :: verified evidence search :: {label}"
-            )
-            target_sources.extend(
-                row.source_title
-                for row in ledger.rows
-                if row.row_status in {"NEED_MORE_EVIDENCE", "BLOCKED"}
-            )
-        else:
-            target_queries.append(
-                f"{plan.normalized_question} :: direct answer with evidence :: {label}"
-            )
-            target_sources.extend(
-                row.source_title
-                for row in ledger.rows
-                if row.row_status != "VERIFIED"
-            )
+        target_sources.extend(row.source_title for row in ledger.rows if row.row_status != "VERIFIED")
     return {
         "requirement_ids": list(dict.fromkeys(requirement_ids)),
         "requirement_types": list(dict.fromkeys(requirement_types)),
         "requirement_labels": list(dict.fromkeys(requirement_labels)),
         "target_columns": list(dict.fromkeys(target_columns)),
-        "target_queries": list(dict.fromkeys(target_queries)),
-        "counterfactual_queries": list(dict.fromkeys(counterfactual_queries)),
+        "target_queries": [],
         "target_sources": list(
             dict.fromkeys(
                 source
@@ -1457,6 +1425,18 @@ def _restore_resume_context(
             ledger=ledger,
             global_result=global_result,
         )
+
+    if requires_counter(restored_plan) or any(card.relation_type == "CONFLICTS" for card in evidence_cards):
+        # 旧检查点的 PASS 可能来自模板或章节名，恢复时不能沿用。
+        run_counter_checks(task_input, restored_plan, evidence_cards, read_windows, None, lambda: None)
+        local_result = run_local_verifier(task_input, restored_plan, ledger, search_hits, read_windows,
+                                         evidence_cards, llm_client=None)
+        global_result = run_global_verifier(local_result, ledger, branch_decisions, evidence_cards)
+        if (not final_decision.should_continue and (not restored_plan.counter_checks
+                or any(not counter_completed(r) or r.get("verdict") != "NOT_REFUTED"
+                       for r in restored_plan.counter_checks))):
+            final_decision = final_decision.model_copy(update={"decision": "WRITE_WITH_GUARDRAILS",
+                "reason": "COUNTERFACTUAL_NOT_RUN", "should_continue": False})
 
     return ResumeCheckpointContext(
         plan=restored_plan,

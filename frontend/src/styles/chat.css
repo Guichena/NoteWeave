@@ -1117,3 +1117,57 @@ details[open] > summary .message-sources-peek {
   }
 
 }
+
+.message-action.is-selected {
+  background: var(--tint-blue);
+  color: var(--tint-blue-ink);
+}
+
+.message-feedback-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message-feedback-reasons .secondary-button {
+  padding: 2px 10px;
+  font-size: var(--text-xs);
+}
+
+.message-feedback-done {
+  color: var(--muted);
+}
+
+/* 证据充分性：资料不足或只覆盖部分问题时在回答上方提示 */
+.answer-sufficiency-notice {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  background: var(--tint-gold);
+  color: var(--tint-gold-ink);
+}
+
+.answer-sufficiency-notice.is-insufficient {
+  background: var(--tint-rose);
+  color: var(--tint-rose-ink);
+}
+
+.message-retrieval-rewrite {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.message-source-path {
+  display: block;
+  color: var(--muted);
+}
+
+.message-source-ocr {
+  display: block;
+  color: var(--muted);
+}
+
+.message-source-ocr.is-low {
+  color: var(--warning);
+}

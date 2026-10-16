@@ -38,6 +38,7 @@ public class ResearchRunCommandService {
     private final ResearchAgentCheckpointHydrator checkpointHydrator;
     private final ResearchAgentFeatureFlagService featureFlags;
     private final ResearchContextV2Gate contextGate;
+    private final ResearchPlanningService planningService;
 
     public ResearchRunCommandService(
             JdbcTemplate jdbcTemplate,
@@ -51,7 +52,8 @@ public class ResearchRunCommandService {
             ObjectStorage storage,
             ResearchAgentCheckpointHydrator checkpointHydrator,
             ResearchAgentFeatureFlagService featureFlags,
-            ResearchContextV2Gate contextGate
+            ResearchContextV2Gate contextGate,
+            ResearchPlanningService planningService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -65,6 +67,7 @@ public class ResearchRunCommandService {
         this.checkpointHydrator = checkpointHydrator;
         this.featureFlags = featureFlags;
         this.contextGate = contextGate;
+        this.planningService = planningService;
     }
 
     @Transactional
@@ -87,8 +90,9 @@ public class ResearchRunCommandService {
                 workspaceId, "RESEARCH_RUN", "RESEARCH_RUN", researchRunId, "QUEUED",
                 "Deep Research 任务已创建"
         );
+        // 研究问题作为相关度查询，按需记忆按这次研究选取
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(
-                workspaceId, profileKey);
+                workspaceId, profileKey, request.question());
         ResearchAcquisitionPolicy acquisitionPolicy = ResearchAcquisitionPolicy.compile(
                 request, externalEvidencePolicy);
         List<String> sourceScopeIds = resolveRequestedSourceScopeIds(
@@ -111,6 +115,7 @@ public class ResearchRunCommandService {
         researchAgentRunBootstrapService.bootstrap(
                 researchRunId, executionQuestion == null ? request.question().trim() : executionQuestion,
                 researchIntent);
+        planningService.requirePlanning(researchRunId);
         startCoordinatingTask(taskId, "Research Agent matrix initialized");
         insertTrace(researchRunId, "RUN_CREATED", "Research run 已入队", Map.of(
                 "question", request.question().trim(),
@@ -234,6 +239,7 @@ public class ResearchRunCommandService {
                     resumedResearchRunId,
                     sourceRun.executionQuestion() == null
                             ? sourceRun.question() : sourceRun.executionQuestion(), resumedIntent);
+            planningService.requirePlanning(resumedResearchRunId);
         }
         startCoordinatingTask(taskId, hydrate
                 ? "Research canonical ledger hydrated into agent coordination"

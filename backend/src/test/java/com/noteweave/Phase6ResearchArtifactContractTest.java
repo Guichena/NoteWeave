@@ -5468,6 +5468,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         ir.put("content_digest", irDigest);
         payload.put("content_ir", ir);
         candidate.put("content_ir_digest", irDigest);
+        com.noteweave.artifact.ArtifactSemanticVerificationFixture.attach(payload);
     }
 
     @Test
@@ -5579,6 +5580,9 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 "verification", Map.of("status", "PASS"),
                 "export_trace", Map.of("status", "COMPILED", "file_name", "course.pdf"),
                 "candidate", candidate));
+        payload.put("sections", List.of(Map.of("heading", "Notes",
+                "body", "Frozen subtitle notes", "source_refs", List.of())));
+        com.noteweave.artifact.ArtifactSemanticVerificationFixture.attach(payload);
         Map<String, Object> completion = new LinkedHashMap<>(Map.of(
                 "result_type", "MARKDOWN", "result_title", "Frozen subtitle notes",
                 "result_payload", payload, "trace_summary", "bundle reference gate",

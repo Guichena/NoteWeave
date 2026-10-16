@@ -301,6 +301,9 @@ class TestResearchOutboxPublisherConfig {
                     Map.of("chapters", 6),
                     Map.of()
             ));
+            if (resultPayload.containsKey("candidate")) {
+                com.noteweave.artifact.ArtifactSemanticVerificationFixture.attach(resultPayload);
+            }
             workerTaskCallbackService.complete(taskId, new WorkerCompleteRequest(
                     "MARKDOWN",
                     stub.resultTitle(),

@@ -1,0 +1,1611 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "multi_turn",
+  "case_key": "mt-graph-budget-values",
+  "captured_at": "2026-10-14T09:31:39.874334+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 8904,
+  "evidence": {
+    "run_id": "2ee813be-4722-43af-9f8b-df617f329937",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n…tion Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version Cache 默认 TTL 600 秒、Jitter 120 秒；主动失效和版本比较承担正确性，TTL 只是异常兜底。\n\n发布事务不等待 ES/Graph。页面可见状态与 Projection Ready 分开；读取可以在 Search 暂不可用时走明确的 MySQL/索引降级，但不能返回未经版本校验的旧投影。\n\n参数推导",
+        "content_hash": "0dda69eed20d602cbd015dc5a81568ca5a5a08a0cb21ef1e94a6dd83bf28a758",
+        "location": "chunk:10 · 参数推导",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 341
+      },
+      {
+        "rank": 2,
+        "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。\n\n[adjacent chunk 13 - 指标]\n指标",
+        "content_hash": "bebf675f89528219db8288135789107ceed3fd5983f3d6e9575f7de53d23ac5b",
+        "location": "chunk:12 · 参数推导",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 186
+      },
+      {
+        "rank": 3,
+        "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 19 - 9. 撤销、删除与传播]\n…on 状态并写 Outbox。消费者主动失效 Compiled Pack Cache、全文/向量索引、Memory 评测副本和下游候选；Read Path 同时校验 Revoke Watermark，防止事件延迟期间读到旧 Pack。Source 删除、权限变化或 Evidence 失效通过依赖关系触发相同流程。\n\n撤销传播完成的判据不是“发出事件”，而是：MySQL Head 不可见、Cache Key 失效、索引文档删除或版本落后被拒绝、评测副本清理、对账无残留。旧 Run 为审计可保留当时的 Item ID/Version/Digest，但后续回放必须显示该条目已撤销，不能重新注入正文。\n\n10. 参数与调优",
+        "content_hash": "4b37b861f4715a10accac9892958a6cf8abd08be04e074eeeb5f11104c159d93",
+        "location": "chunk:20 · 10. 参数与调优",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 346
+      },
+      {
+        "rank": 4,
+        "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "2cf6b706-860b-47bd-9d77-942604f469f6",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "[adjacent chunk 7 - 正常、异常与恢复]\n…Build 不可见；完成后经质量回执切换。\n\nAuto-fix 只生成候选 Diff，新 Version 仍经过相同校验和权限路径。\n\n页面删除后，Link/Backlink、Graph、Cache、Search 与 Memory 候选异步清理，读取路径先由 Tombstone 阻断。\n\n恢复时根据 Knowledge Item + Version + Projection Type 重放，不按旧搜索文档反向重建页面。Reconciler 比较 Head、Link Set Digest、Backlink Count、Index Version 和 Issue 状态，补齐缺失投影并隔离过期关系。\n\n链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。\n\n[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n幂等、并发、缓存与一致性\n\n追加 Version 使用 Item + Version No 或 Operation Key 唯一约束；更新 Head 使用 Expected Version。重复 Ingest/Event 按 Source Version + Knowledge Version + Projection Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version…",
+        "content_hash": "7b6e58e58d3535c25984fff366f74a241c46158094de7557512678232403148f",
+        "location": "chunk:8 · 链接、反链与图谱边界",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 1347
+      },
+      {
+        "rank": 5,
+        "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+        "kind": "PASSAGE",
+        "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+        "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+        "passage_id": "7b352987-2dc2-4d66-925f-46a9f93873e1",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "qa-rag.md",
+        "excerpt": "[adjacent chunk 17 - 幂等、并发与一致性]\n…L Version、Retrieval Strategy、Index Version、Normalized Query 和 Source Scope。权限或 Source 变化主动失效。Answer 本身不以模糊 Query Key 全局缓存，因为 Conversation Context、Memory Pack 和 Evidence Version 会改变结果。\n\n同一 Conversation 并发 Turn 通过 Turn Ledger 和 Active History Head 确定顺序；每个 Run 的输入快照独立，晚完成的旧 Run 不能覆盖新消息或 Wiki/Source 版本。\n\n参数推导与调优",
+        "content_hash": "8c1a2bdb68a3ece8a235ad68b95fe72e182281f1b4dd98c8b1cde66432a75d7b",
+        "location": "chunk:18 · 参数推导与调优",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 342
+      },
+      {
+        "rank": 6,
+        "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "92111eee-b8b9-43f0-a664-e0179040c67b",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "Wiki：版本化知识、链接与治理",
+        "content_hash": "0fd53a59b9c9477160d650763a8f7cbeb1325a6677a65b3298681bc6aaa72ef8",
+        "location": "chunk:0 · Wiki：版本化知识、链接与治理",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 16
+      },
+      {
+        "rank": 7,
+        "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "6429bb10-e563-4624-8787-1c0416a9d548",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。\n\n[adjacent chunk 23 - 11. 指标、测试、灰度与回滚]\n11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/A…",
+        "content_hash": "4c0ca009566f7ecc4465cd448f3647c585d26dfe112ef09d3b1daf274edeec43",
+        "location": "chunk:22 · 10. 参数与调优",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 481
+      },
+      {
+        "rank": 8,
+        "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "8bdd283d-e829-42c4-9815-6c229345c7ab",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |",
+        "content_hash": "a69f01c295bfa1f9f4bce8567fa3b97a733d63107ed983cfe349a829fc848946",
+        "location": "chunk:11 · 参数推导",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 791
+      },
+      {
+        "rank": 9,
+        "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "[adjacent chunk 16 - 为什么不用相近方案]\n为什么不用相近方案\n\n| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |\n\n[adjacent chunk 18 - 安全、测试与发布]\n安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold …",
+        "content_hash": "caa0a43b8cb5c1a7f402bef2b369259737cf47b8f07bc76e42bddd7b56dcc83e",
+        "location": "chunk:17 · 为什么不用相近方案",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 971
+      },
+      {
+        "rank": 10,
+        "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。\n\n[adjacent chunk 2 - 用户操作与产物]\n用户操作与产物\n\n用户可以创建知识项、追加版本、改标题、删除页面、查看首页/索引/搜索/关系图/统计/问题/日志，并触发受控链接重建、投影重建或自动修复。最终产物是一个当前有效 Page Version、来源引用、链接集合和治理状态。\n\nSource / Note / Research / Artifact\n  -> Draft Knowledge Version\n  -> Validate Citation and Links\n  -> Publish Current Head\n  -> Search / Link / Backlink / Graph Projection\n  -> Iss…",
+        "content_hash": "e69687942136a912ffab2ef0f2298b87a921a1402c56c4d35d0d6aa86f9ca5ae",
+        "location": "chunk:1 · 业务问题与非目标",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 526
+      },
+      {
+        "rank": 11,
+        "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |",
+        "content_hash": "3e97be05b58fd359914371b6f22074f9dda847a93111ff154fa2aa77d08c6617",
+        "location": "chunk:21 · 10. 参数与调优",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 951
+      },
+      {
+        "rank": 12,
+        "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+        "kind": "PASSAGE",
+        "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+        "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+        "passage_id": "abe6cf92-0da2-4a86-8428-00229a74b4ac",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "qa-rag.md",
+        "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |\n\n[adjacent chunk 20 - 参数推导与调优]\n[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。",
+        "content_hash": "33da617d5eb13d8820ea95c4bee99a44a0adfb7fb04d6242b088873b00e5eb4d",
+        "location": "chunk:19 · 参数推导与调优",
+        "fresh_at": "2026-10-14T09:31:35Z",
+        "character_cost": 1272
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "Wiki 的图扩展有哪些预算参数，这些参数现在分别设成多少？",
+      "keyword_query": "这些参数现在分别设成多少？ Wiki 图扩展 预算参数 当前值",
+      "method": "LLM",
+      "degradation_reasons": [],
+      "is_standalone": false
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "INSUFFICIENT"
+  },
+  "ranked_candidates": [
+    {
+      "rank": 1,
+      "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 10,
+      "score": 0.016020864381520117,
+      "selected": true,
+      "excerpt": "参数推导"
+    },
+    {
+      "rank": 2,
+      "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 12,
+      "score": 0.015855532786885243,
+      "selected": true,
+      "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。"
+    },
+    {
+      "rank": 3,
+      "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 20,
+      "score": 0.015396825396825395,
+      "selected": true,
+      "excerpt": "10. 参数与调优"
+    },
+    {
+      "rank": 4,
+      "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 8,
+      "score": 0.015293560606060606,
+      "selected": true,
+      "excerpt": "链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。"
+    },
+    {
+      "rank": 5,
+      "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 18,
+      "score": 0.015117056856187291,
+      "selected": true,
+      "excerpt": "参数推导与调优"
+    },
+    {
+      "rank": 6,
+      "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 0,
+      "score": 0.015063145809414464,
+      "selected": true,
+      "excerpt": "Wiki：版本化知识、链接与治理"
+    },
+    {
+      "rank": 7,
+      "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 22,
+      "score": 0.01476190476190476,
+      "selected": true,
+      "excerpt": "参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。"
+    },
+    {
+      "rank": 8,
+      "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 11,
+      "score": 0.01433676686987597,
+      "selected": true,
+      "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |"
+    },
+    {
+      "rank": 9,
+      "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 17,
+      "score": 0.01399108138238573,
+      "selected": true,
+      "excerpt": "| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |"
+    },
+    {
+      "rank": 10,
+      "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 1,
+      "score": 0.013536409516943041,
+      "selected": true,
+      "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。"
+    },
+    {
+      "rank": 11,
+      "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 21,
+      "score": 0.01348068498606133,
+      "selected": true,
+      "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |"
+    },
+    {
+      "rank": 12,
+      "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 19,
+      "score": 0.01337719298245614,
+      "selected": true,
+      "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |"
+    },
+    {
+      "rank": 13,
+      "evidence_id": "passage:49103701-806b-4777-8eb4-be6ffd715d9e",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 4,
+      "score": 0.01279279279279279,
+      "selected": false,
+      "excerpt": "| 阶段                   | 方案                              | Bad Case        | 修复                                         |\n|----------------------|---------------------------------|-----------------|--------------------------------------------|\n| V0 保存一段正文            | 页面表原地更新                         | 历史丢失、并发覆盖、旧引用失效 | 不可变 Version + Current Head                 |\n| V1 文本内 Markdown Link | 每次读取临时解析链接                      | 重命名断链、反链昂贵、删除残留 | 稳定 Page ID、Link/Backlink Projection        |\n| V2 全文搜索              | ES 命中即作为 Wiki 结果                | 旧版本或越权页面重新可见    | Workspace/Version Filter + Hydration 复核    |\n| V3 自动建图              | 模型抽概念并直接写 Link                  | 幻觉关系、循环和跨租户污染   | Proposal、Validator、版本化 Link Set            |\n| V4 自动修复              | Issue 触发覆盖页面                    | 无法审阅、修复引入新错误    | Draft Repair + Diff + 新 Version + 审计       |\n| 目标系统                 | Version、Source Backlink、治理和撤销闭环 | 投影与真源收敛复杂       | Rebuild Catalog、Quality Receipt、Reconciler |"
+    },
+    {
+      "rank": 14,
+      "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 20,
+      "score": 0.012457741717376606,
+      "selected": false,
+      "excerpt": "[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。"
+    },
+    {
+      "rank": 15,
+      "evidence_id": "passage:b2037400-d7fe-4dd3-8b84-2c5dbfe606a0",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 18,
+      "score": 0.012329838835862932,
+      "selected": false,
+      "excerpt": "安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold 覆盖多跳、环路、Broken Link、跨 Workspace、旧版本和来源撤销。\n\n重建演练在新 Index/Graph Version 上执行，质量回执通过后切换；回滚切旧 Alias/Bundle，不修改 Head。\n\nPlaywright E2E 验证页面导航、版本、图谱、Issue、修复和来源回链。\n\n[当前实现]\n\nKnowledge Command/Version/Query/Graph/Governance、Wiki Ingest Failure Transaction、Page Version Cache 和前端 Wiki 导航测试提供当前证据。\n\n[生产待验证]\n\n大规模图查询、协同编辑、长期知识新鲜度、自动修复采纳和跨区重建 RTO 尚无生产证据。"
+    },
+    {
+      "rank": 16,
+      "evidence_id": "passage:c9baf4e1-ebfb-47e7-932a-8de428406cb6",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 2,
+      "score": 0.0121658483360611,
+      "selected": false,
+      "excerpt": "用户操作与产物\n\n用户可以创建知识项、追加版本、改标题、删除页面、查看首页/索引/搜索/关系图/统计/问题/日志，并触发受控链接重建、投影重建或自动修复。最终产物是一个当前有效 Page Version、来源引用、链接集合和治理状态。\n\nSource / Note / Research / Artifact\n  -> Draft Knowledge Version\n  -> Validate Citation and Links\n  -> Publish Current Head\n  -> Search / Link / Backlink / Graph Projection\n  -> Issue Detection\n  -> Review / Repair / New Version\n\n[当前实现]\n\nKnowledgeController\n\n、\n\nKnowledgeCommandService\n\n、\n\nKnowledgeVersionService\n\n、\n\nKnowledgeQueryService\n\n、\n\nKnowledgeGraphService\n\n、\n\nKnowledgeGovernanceService\n\n与\n\nWikiIngestService\n\n覆盖页面、版本、链接、查询和治理；相关迁移保存 Knowledge、Version、Citation、Link、Index、日志与任务状态。"
+    },
+    {
+      "rank": 17,
+      "evidence_id": "passage:c7785ce0-c81f-43cf-8391-b41715509419",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 1,
+      "score": 0.01197475758042173,
+      "selected": false,
+      "excerpt": "业务问题与非目标\n\nQA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。\n\nQA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。"
+    },
+    {
+      "rank": 18,
+      "evidence_id": "passage:7ae06379-e7c1-4eaa-9161-995305ab8fe8",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 3,
+      "score": 0.011953542998825523,
+      "selected": false,
+      "excerpt": "Query Understanding 与检索查询合同\n\n[当前实现]\n\nQA 已把用户原问题与检索表达分开。\n\nqa-conversation-rewrite-v1\n\n保存多轮 Query Rewrite 版本，\n\nQaQueryExpansionService\n\n在低召回路径中解析当前问题和主题锚点，生成最多 5 个确定性查询变体，并去除重复和常见问句前缀。它能证明原问题不会被 Expansion 覆盖，也能回放某个策略版本，但没有统一的实体别名表、指代置信度、澄清状态或跨能力 Intent Decision，不能把它描述成完整的自然语言理解系统。\n\n[目标设计]\n\nQA 的理解结果至少保留以下字段："
+    },
+    {
+      "rank": 19,
+      "evidence_id": "passage:31989e17-5c07-4e2f-8c10-94a7b873c071",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 7,
+      "score": 0.01188953488372093,
+      "selected": false,
+      "excerpt": "| 阶段                   | 方案                                | Bad Case                     | 下一步修复                                    |\n|----------------------|-----------------------------------|------------------------------|------------------------------------------|\n| V0 直接 Prompt         | 把用户问题交给模型                         | 幻觉、无法核对、资料边界不清               | 先检索再生成，返回 Source                         |\n| V1 单路 Top K          | BM25 或向量搜索前 K 个 Chunk             | 精确编号和语义问法互相失配；单一 Source 占满候选 | Sparse + Dense，多路融合与来源去重                 |\n| V2 分数相加              | 直接归一化不同检索分数                       | 不同 Provider 分数不可比，权重漂移       | RRF 只使用排名，再做 Rerank                      |\n| V3 Rerank 后全塞 Prompt | Top N 直接拼接                        | 重复片段挤占预算，相关不代表能支撑 Claim      | Relevance Policy、Evidence Selection、字符预算 |\n| V4 有引用回答             | 生成文本附 Citation                    | 引用存在但不支持 Claim，引用版本可能过时      | Manifest、Claim-Evidence Coverage、引用校验与拒答 |\n| 目标系统                 | Versioned Bundle + 离线/Shadow/在线门禁 | 模型、Prompt、索引或评测集漂移           | Release Bundle、质量回执、漂移监控与回滚              |"
+    },
+    {
+      "rank": 20,
+      "evidence_id": "passage:695ee199-ef50-4624-8787-6cfbcf4e9059",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 13,
+      "score": 0.01129032258064516,
+      "selected": false,
+      "excerpt": "指标"
+    }
+  ],
+  "selection_policy": "qa-mmr-token-budget-v3",
+  "retrieval_rewrite": {
+    "standalone_query": "Wiki 的图扩展有哪些预算参数，这些参数现在分别设成多少？",
+    "keyword_query": "这些参数现在分别设成多少？ Wiki 图扩展 预算参数 当前值",
+    "method": "LLM",
+    "degradation_reasons": [],
+    "is_standalone": false
+  },
+  "evidence_sufficiency": "INSUFFICIENT",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "ea2c1088-7ab3-44b0-b61e-03139789e544",
+      "receipt": {
+        "submission_id": "610ea5ea-0aba-4b19-8fec-774476a2ef77",
+        "execution_kind": "ANSWER",
+        "message_id": "7378e1c4-b959-42c5-80fc-a19b4dbc8fa6",
+        "assistant_message_id": "b518cb4f-fe90-4517-8895-c82449353e42",
+        "assistant_request_id": "dd2ff51b-9450-420b-aae6-db1e86a6ac3a",
+        "stream_url": "/api/v2/chat/requests/dd2ff51b-9450-420b-aae6-db1e86a6ac3a/stream",
+        "answer_run_id": "ea2c1088-7ab3-44b0-b61e-03139789e544",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/71e5bc34-a2aa-4d84-ab86-03459fc78f2d/answer-runs/ea2c1088-7ab3-44b0-b61e-03139789e544/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "ea2c1088-7ab3-44b0-b61e-03139789e544",
+        "workspace_id": "71e5bc34-a2aa-4d84-ab86-03459fc78f2d",
+        "conversation_id": "3e30898a-b2f7-4877-9620-ccd2317e5a6c",
+        "mode": "QA",
+        "status": "COMPLETED",
+        "query_message_id": "7378e1c4-b959-42c5-80fc-a19b4dbc8fa6",
+        "answer_message_id": "b518cb4f-fe90-4517-8895-c82449353e42",
+        "assistant_request_id": "dd2ff51b-9450-420b-aae6-db1e86a6ac3a",
+        "retrieval_plan_version": "qa-weknora-hybrid-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1200,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "现有资料不足以回答这个问题，无法据此给出可靠结论。\n\n目前可参考的资料主要集中在以下方向：\n\n- `wiki.md`：可能涉及知识组织、页面结构或相关内容，但不足以支撑本问题的完整回答。\n- `qa-rag.md`：可能涉及问答与检索增强生成相关机制，但缺少与本问题直接对应的证据。\n- `memory.md`：可能涉及记忆机制或相关处理方式，但同样不足以单独得出结论。\n\n如果你能补充更具体的问题背景、希望回答的目标，或允许我基于现有资料做限定范围内的推断，我可以再进一步整理。",
+        "started_at": "2026-10-14T09:31:24Z",
+        "first_token_at": "2026-10-14T09:31:28Z",
+        "finished_at": "2026-10-14T09:31:29Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "Wiki 的图扩展有哪些预算参数？",
+          "keyword_query": "Wiki 的图扩展有哪些预算参数？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "evidence": {
+        "run_id": "ea2c1088-7ab3-44b0-b61e-03139789e544",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n…tion Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version Cache 默认 TTL 600 秒、Jitter 120 秒；主动失效和版本比较承担正确性，TTL 只是异常兜底。\n\n发布事务不等待 ES/Graph。页面可见状态与 Projection Ready 分开；读取可以在 Search 暂不可用时走明确的 MySQL/索引降级，但不能返回未经版本校验的旧投影。\n\n参数推导",
+            "content_hash": "0dda69eed20d602cbd015dc5a81568ca5a5a08a0cb21ef1e94a6dd83bf28a758",
+            "location": "chunk:10 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 341
+          },
+          {
+            "rank": 2,
+            "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "92111eee-b8b9-43f0-a664-e0179040c67b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "Wiki：版本化知识、链接与治理",
+            "content_hash": "0fd53a59b9c9477160d650763a8f7cbeb1325a6677a65b3298681bc6aaa72ef8",
+            "location": "chunk:0 · Wiki：版本化知识、链接与治理",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 16
+          },
+          {
+            "rank": 3,
+            "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。\n\n[adjacent chunk 13 - 指标]\n指标",
+            "content_hash": "bebf675f89528219db8288135789107ceed3fd5983f3d6e9575f7de53d23ac5b",
+            "location": "chunk:12 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 186
+          },
+          {
+            "rank": 4,
+            "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "2cf6b706-860b-47bd-9d77-942604f469f6",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 7 - 正常、异常与恢复]\n…Build 不可见；完成后经质量回执切换。\n\nAuto-fix 只生成候选 Diff，新 Version 仍经过相同校验和权限路径。\n\n页面删除后，Link/Backlink、Graph、Cache、Search 与 Memory 候选异步清理，读取路径先由 Tombstone 阻断。\n\n恢复时根据 Knowledge Item + Version + Projection Type 重放，不按旧搜索文档反向重建页面。Reconciler 比较 Head、Link Set Digest、Backlink Count、Index Version 和 Issue 状态，补齐缺失投影并隔离过期关系。\n\n链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。\n\n[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n幂等、并发、缓存与一致性\n\n追加 Version 使用 Item + Version No 或 Operation Key 唯一约束；更新 Head 使用 Expected Version。重复 Ingest/Event 按 Source Version + Knowledge Version + Projection Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version…",
+            "content_hash": "7b6e58e58d3535c25984fff366f74a241c46158094de7557512678232403148f",
+            "location": "chunk:8 · 链接、反链与图谱边界",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 1347
+          },
+          {
+            "rank": 5,
+            "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 16 - 为什么不用相近方案]\n为什么不用相近方案\n\n| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |\n\n[adjacent chunk 18 - 安全、测试与发布]\n安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold …",
+            "content_hash": "caa0a43b8cb5c1a7f402bef2b369259737cf47b8f07bc76e42bddd7b56dcc83e",
+            "location": "chunk:17 · 为什么不用相近方案",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 971
+          },
+          {
+            "rank": 6,
+            "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "7b352987-2dc2-4d66-925f-46a9f93873e1",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "[adjacent chunk 17 - 幂等、并发与一致性]\n…L Version、Retrieval Strategy、Index Version、Normalized Query 和 Source Scope。权限或 Source 变化主动失效。Answer 本身不以模糊 Query Key 全局缓存，因为 Conversation Context、Memory Pack 和 Evidence Version 会改变结果。\n\n同一 Conversation 并发 Turn 通过 Turn Ledger 和 Active History Head 确定顺序；每个 Run 的输入快照独立，晚完成的旧 Run 不能覆盖新消息或 Wiki/Source 版本。\n\n参数推导与调优",
+            "content_hash": "8c1a2bdb68a3ece8a235ad68b95fe72e182281f1b4dd98c8b1cde66432a75d7b",
+            "location": "chunk:18 · 参数推导与调优",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 342
+          },
+          {
+            "rank": 7,
+            "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 19 - 9. 撤销、删除与传播]\n…on 状态并写 Outbox。消费者主动失效 Compiled Pack Cache、全文/向量索引、Memory 评测副本和下游候选；Read Path 同时校验 Revoke Watermark，防止事件延迟期间读到旧 Pack。Source 删除、权限变化或 Evidence 失效通过依赖关系触发相同流程。\n\n撤销传播完成的判据不是“发出事件”，而是：MySQL Head 不可见、Cache Key 失效、索引文档删除或版本落后被拒绝、评测副本清理、对账无残留。旧 Run 为审计可保留当时的 Item ID/Version/Digest，但后续回放必须显示该条目已撤销，不能重新注入正文。\n\n10. 参数与调优\n\n[adjacent chunk 21 - 10. 参数与调优]\n| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒          …",
+            "content_hash": "6f343a2f22a69edbfc4feef128815de8a17940eb2074d4e496c6128a551f1d33",
+            "location": "chunk:20 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 681
+          },
+          {
+            "rank": 8,
+            "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "6429bb10-e563-4624-8787-1c0416a9d548",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 21 - 10. 参数与调优]\n…并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |\n\n参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。\n\n[adjacent chunk 23 - 11. 指标、测试、灰度与回滚]\n11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/A…",
+            "content_hash": "6738dec86e6ca576cfca30970918e247d0a3d0ca560f8590cbc2ea52c876e126",
+            "location": "chunk:22 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 816
+          },
+          {
+            "rank": 9,
+            "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。\n\n[adjacent chunk 2 - 用户操作与产物]\n用户操作与产物\n\n用户可以创建知识项、追加版本、改标题、删除页面、查看首页/索引/搜索/关系图/统计/问题/日志，并触发受控链接重建、投影重建或自动修复。最终产物是一个当前有效 Page Version、来源引用、链接集合和治理状态。\n\nSource / Note / Research / Artifact\n  -> Draft Knowledge Version\n  -> Validate Citation and Links\n  -> Publish Current Head\n  -> Search / Link / Backlink / Graph Projection\n  -> Iss…",
+            "content_hash": "e69687942136a912ffab2ef0f2298b87a921a1402c56c4d35d0d6aa86f9ca5ae",
+            "location": "chunk:1 · 业务问题与非目标",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 526
+          },
+          {
+            "rank": 10,
+            "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "8bdd283d-e829-42c4-9815-6c229345c7ab",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |",
+            "content_hash": "a69f01c295bfa1f9f4bce8567fa3b97a733d63107ed983cfe349a829fc848946",
+            "location": "chunk:11 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 791
+          },
+          {
+            "rank": 11,
+            "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "abe6cf92-0da2-4a86-8428-00229a74b4ac",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |\n\n[adjacent chunk 20 - 参数推导与调优]\n[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。",
+            "content_hash": "33da617d5eb13d8820ea95c4bee99a44a0adfb7fb04d6242b088873b00e5eb4d",
+            "location": "chunk:19 · 参数推导与调优",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 1272
+          },
+          {
+            "rank": 12,
+            "evidence_id": "passage:c7785ce0-c81f-43cf-8391-b41715509419",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "c7785ce0-c81f-43cf-8391-b41715509419",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "[adjacent chunk 0 - QA：带引用回答与场景化 RAG]\nQA：带引用回答与场景化 RAG\n\n业务问题与非目标\n\nQA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。\n\nQA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。\n\n[adjacent chunk 2 - 用户操作与产物]\n用户操作与产物\n\n用户在 Conversation 中提交问题，得到流式回答、引用列表、来源片段、运行状态和可恢复事件。运行结束后，AnswerRun 保存 Evidence Manifest 与输入快照，资料更新后仍能解释旧回答使用的版本。\n\nTurn Submission\n  -> Query Rewrite / Expansion\n  -> Workspace and Snapshot Filter\n  -> Keyword + Vector Recall\n  -> Weighted RRF\n  -> Rerank\n  -> Evidence Relevance and Diversit…",
+            "content_hash": "d79ddc28f2daa7381ad02150270ca1a9ba1d4ece88c76e30f62fe4abd9bd246f",
+            "location": "chunk:1 · 业务问题与非目标",
+            "fresh_at": "2026-10-14T09:31:27Z",
+            "character_cost": 596
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "Wiki 的图扩展有哪些预算参数？",
+          "keyword_query": "Wiki 的图扩展有哪些预算参数？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "retrieval_summary": {
+        "relevance_policy": "qa-lexical-sufficiency-v2",
+        "degraded": true,
+        "admitted_candidate_count": 12,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "qa-weknora-hybrid-v1",
+          "total_latency_micros": 806899,
+          "raw_candidate_count": 12,
+          "admitted_candidate_count": 12,
+          "selected_evidence_count": 12,
+          "selected_evidence_characters": 7885,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "QA_PASSAGE",
+              "candidate_limit": 12,
+              "raw_candidate_count": 12,
+              "admitted_candidate_count": 12,
+              "latency_micros": 806801,
+              "degraded": true,
+              "degradation_reasons": [
+                "QA_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "selected_count": 12,
+                "ownership_rejected_count": 0,
+                "keyword_candidate_count": 31,
+                "rerank_candidate_count": 40,
+                "evidence_token_budget": 8000,
+                "rrf_candidate_count": 67,
+                "mysql_fallback_used": 0,
+                "query_expansion_count": 0,
+                "selected_token_estimate": 3711,
+                "vector_candidate_count": 60
+              },
+              "ranked_candidates": [
+                {
+                  "rank": 1,
+                  "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 10,
+                  "score": 0.015823235923022094,
+                  "selected": true,
+                  "excerpt": "参数推导"
+                },
+                {
+                  "rank": 2,
+                  "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 0,
+                  "score": 0.01579861111111111,
+                  "selected": true,
+                  "excerpt": "Wiki：版本化知识、链接与治理"
+                },
+                {
+                  "rank": 3,
+                  "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 12,
+                  "score": 0.01553113553113553,
+                  "selected": true,
+                  "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。"
+                },
+                {
+                  "rank": 4,
+                  "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 8,
+                  "score": 0.015062960323117129,
+                  "selected": true,
+                  "excerpt": "链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。"
+                },
+                {
+                  "rank": 5,
+                  "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 17,
+                  "score": 0.014833603896103895,
+                  "selected": true,
+                  "excerpt": "| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |"
+                },
+                {
+                  "rank": 6,
+                  "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 18,
+                  "score": 0.01477272727272727,
+                  "selected": true,
+                  "excerpt": "参数推导与调优"
+                },
+                {
+                  "rank": 7,
+                  "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 20,
+                  "score": 0.014557350235125738,
+                  "selected": true,
+                  "excerpt": "10. 参数与调优"
+                },
+                {
+                  "rank": 8,
+                  "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 22,
+                  "score": 0.014204425711275025,
+                  "selected": true,
+                  "excerpt": "参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。"
+                },
+                {
+                  "rank": 9,
+                  "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 1,
+                  "score": 0.014,
+                  "selected": true,
+                  "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。"
+                },
+                {
+                  "rank": 10,
+                  "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 11,
+                  "score": 0.013376623376623376,
+                  "selected": true,
+                  "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |"
+                },
+                {
+                  "rank": 11,
+                  "evidence_id": "passage:49103701-806b-4777-8eb4-be6ffd715d9e",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 4,
+                  "score": 0.013336680053547524,
+                  "selected": false,
+                  "excerpt": "| 阶段                   | 方案                              | Bad Case        | 修复                                         |\n|----------------------|---------------------------------|-----------------|--------------------------------------------|\n| V0 保存一段正文            | 页面表原地更新                         | 历史丢失、并发覆盖、旧引用失效 | 不可变 Version + Current Head                 |\n| V1 文本内 Markdown Link | 每次读取临时解析链接                      | 重命名断链、反链昂贵、删除残留 | 稳定 Page ID、Link/Backlink Projection        |\n| V2 全文搜索              | ES 命中即作为 Wiki 结果                | 旧版本或越权页面重新可见    | Workspace/Version Filter + Hydration 复核    |\n| V3 自动建图              | 模型抽概念并直接写 Link                  | 幻觉关系、循环和跨租户污染   | Proposal、Validator、版本化 Link Set            |\n| V4 自动修复              | Issue 触发覆盖页面                    | 无法审阅、修复引入新错误    | Draft Repair + Diff + 新 Version + 审计       |\n| 目标系统                 | Version、Source Backlink、治理和撤销闭环 | 投影与真源收敛复杂       | Rebuild Catalog、Quality Receipt、Reconciler |"
+                },
+                {
+                  "rank": 12,
+                  "evidence_id": "passage:b2037400-d7fe-4dd3-8b84-2c5dbfe606a0",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 18,
+                  "score": 0.012706913339824731,
+                  "selected": false,
+                  "excerpt": "安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold 覆盖多跳、环路、Broken Link、跨 Workspace、旧版本和来源撤销。\n\n重建演练在新 Index/Graph Version 上执行，质量回执通过后切换；回滚切旧 Alias/Bundle，不修改 Head。\n\nPlaywright E2E 验证页面导航、版本、图谱、Issue、修复和来源回链。\n\n[当前实现]\n\nKnowledge Command/Version/Query/Graph/Governance、Wiki Ingest Failure Transaction、Page Version Cache 和前端 Wiki 导航测试提供当前证据。\n\n[生产待验证]\n\n大规模图查询、协同编辑、长期知识新鲜度、自动修复采纳和跨区重建 RTO 尚无生产证据。"
+                },
+                {
+                  "rank": 13,
+                  "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 19,
+                  "score": 0.012696029362696029,
+                  "selected": true,
+                  "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |"
+                },
+                {
+                  "rank": 14,
+                  "evidence_id": "passage:c7785ce0-c81f-43cf-8391-b41715509419",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 1,
+                  "score": 0.01264705882352941,
+                  "selected": true,
+                  "excerpt": "业务问题与非目标\n\nQA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。\n\nQA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。"
+                },
+                {
+                  "rank": 15,
+                  "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 21,
+                  "score": 0.01208630759247242,
+                  "selected": false,
+                  "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |"
+                },
+                {
+                  "rank": 16,
+                  "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 20,
+                  "score": 0.011752233833106163,
+                  "selected": false,
+                  "excerpt": "[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。"
+                },
+                {
+                  "rank": 17,
+                  "evidence_id": "passage:31989e17-5c07-4e2f-8c10-94a7b873c071",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 7,
+                  "score": 0.011710963455149501,
+                  "selected": false,
+                  "excerpt": "| 阶段                   | 方案                                | Bad Case                     | 下一步修复                                    |\n|----------------------|-----------------------------------|------------------------------|------------------------------------------|\n| V0 直接 Prompt         | 把用户问题交给模型                         | 幻觉、无法核对、资料边界不清               | 先检索再生成，返回 Source                         |\n| V1 单路 Top K          | BM25 或向量搜索前 K 个 Chunk             | 精确编号和语义问法互相失配；单一 Source 占满候选 | Sparse + Dense，多路融合与来源去重                 |\n| V2 分数相加              | 直接归一化不同检索分数                       | 不同 Provider 分数不可比，权重漂移       | RRF 只使用排名，再做 Rerank                      |\n| V3 Rerank 后全塞 Prompt | Top N 直接拼接                        | 重复片段挤占预算，相关不代表能支撑 Claim      | Relevance Policy、Evidence Selection、字符预算 |\n| V4 有引用回答             | 生成文本附 Citation                    | 引用存在但不支持 Claim，引用版本可能过时      | Manifest、Claim-Evidence Coverage、引用校验与拒答 |\n| 目标系统                 | Versioned Bundle + 离线/Shadow/在线门禁 | 模型、Prompt、索引或评测集漂移           | Release Bundle、质量回执、漂移监控与回滚              |"
+                },
+                {
+                  "rank": 18,
+                  "evidence_id": "passage:695ee199-ef50-4624-8787-6cfbcf4e9059",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 13,
+                  "score": 0.01129032258064516,
+                  "selected": false,
+                  "excerpt": "指标"
+                },
+                {
+                  "rank": 19,
+                  "evidence_id": "passage:b690f0fe-df2b-4693-a0ef-d5cfd1bcc743",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 14,
+                  "score": 0.011202346041055718,
+                  "selected": false,
+                  "excerpt": "| 指标                            | 分子 / 分母                                    | 用途          |\n|-------------------------------|--------------------------------------------|-------------|\n| Page Version Correctness      | 返回当前允许 Version 的页面 / 返回页面                  | 硬正确性门禁      |\n| Supporting Evidence Precision | 支持问题的返回证据 / 返回证据                           | 图扩展噪声       |\n| Supporting Evidence Recall    | 返回的 Gold 证据 / 全部 Gold 证据                   | 多跳覆盖        |\n| Supporting Evidence F1        | Precision 与 Recall 调和均值                    | 汇总关系质量      |\n| Source Backlink Coverage      | 有有效 Source/Evidence 回链的关键 Claim / 关键 Claim | 可追溯性        |\n| Broken Link Rate              | 无有效目标的当前 Link / 当前 Link                    | 治理健康        |\n| Stale Projection Reject       | Hydration 拒绝旧版本数 / 投影候选数                   | 索引陈旧        |\n| Rebuild Convergence           | 与真源一致的页面/链接 / 应重建对象                        | 重建完整性       |\n| Auto-fix Acceptance           | 审核接受的 Fix / 展示 Fix                         | 需要真实用户或受控标注 |"
+                },
+                {
+                  "rank": 20,
+                  "evidence_id": "passage:505f2c84-f744-4166-a65f-7d3ce74cef51",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 9,
+                  "score": 0.010801393728222995,
+                  "selected": false,
+                  "excerpt": "幂等、并发、缓存与一致性\n\n追加 Version 使用 Item + Version No 或 Operation Key 唯一约束；更新 Head 使用 Expected Version。重复 Ingest/Event 按 Source Version + Knowledge Version + Projection Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version Cache 默认 TTL 600 秒、Jitter 120 秒；主动失效和版本比较承担正确性，TTL 只是异常兜底。\n\n发布事务不等待 ES/Graph。页面可见状态与 Projection Ready 分开；读取可以在 Search 暂不可用时走明确的 MySQL/索引降级，但不能返回未经版本校验的旧投影。"
+                }
+              ]
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+              "kind": "PASSAGE",
+              "raw_score": 8.426905,
+              "fused_score": 0.015823235923022094,
+              "rerank_score": 0.015823235923022094,
+              "character_cost": 341
+            },
+            {
+              "rank": 2,
+              "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+              "kind": "PASSAGE",
+              "raw_score": 12.599653,
+              "fused_score": 0.01579861111111111,
+              "rerank_score": 0.01579861111111111,
+              "character_cost": 16
+            },
+            {
+              "rank": 3,
+              "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+              "kind": "PASSAGE",
+              "raw_score": 13.509823,
+              "fused_score": 0.01553113553113553,
+              "rerank_score": 0.01553113553113553,
+              "character_cost": 186
+            },
+            {
+              "rank": 4,
+              "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+              "kind": "PASSAGE",
+              "raw_score": 22.51496,
+              "fused_score": 0.015062960323117129,
+              "rerank_score": 0.015062960323117129,
+              "character_cost": 1347
+            },
+            {
+              "rank": 5,
+              "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+              "kind": "PASSAGE",
+              "raw_score": 6.1219034,
+              "fused_score": 0.014833603896103895,
+              "rerank_score": 0.014833603896103895,
+              "character_cost": 971
+            },
+            {
+              "rank": 6,
+              "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+              "kind": "PASSAGE",
+              "raw_score": 7.673241,
+              "fused_score": 0.01477272727272727,
+              "rerank_score": 0.01477272727272727,
+              "character_cost": 342
+            },
+            {
+              "rank": 7,
+              "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+              "kind": "PASSAGE",
+              "raw_score": 7.323005,
+              "fused_score": 0.014557350235125738,
+              "rerank_score": 0.014557350235125738,
+              "character_cost": 681
+            },
+            {
+              "rank": 8,
+              "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+              "kind": "PASSAGE",
+              "raw_score": 10.244459,
+              "fused_score": 0.014204425711275025,
+              "rerank_score": 0.014204425711275025,
+              "character_cost": 816
+            },
+            {
+              "rank": 9,
+              "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+              "kind": "PASSAGE",
+              "raw_score": 6.3754854,
+              "fused_score": 0.014,
+              "rerank_score": 0.014,
+              "character_cost": 526
+            },
+            {
+              "rank": 10,
+              "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+              "kind": "PASSAGE",
+              "raw_score": 8.426905,
+              "fused_score": 0.013376623376623376,
+              "rerank_score": 0.013376623376623376,
+              "character_cost": 791
+            },
+            {
+              "rank": 11,
+              "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+              "kind": "PASSAGE",
+              "raw_score": 6.8728437,
+              "fused_score": 0.012696029362696029,
+              "rerank_score": 0.012696029362696029,
+              "character_cost": 1272
+            },
+            {
+              "rank": 12,
+              "evidence_id": "passage:c7785ce0-c81f-43cf-8391-b41715509419",
+              "kind": "PASSAGE",
+              "raw_score": 8.452908,
+              "fused_score": 0.01264705882352941,
+              "rerank_score": 0.01264705882352941,
+              "character_cost": 596
+            }
+          ]
+        },
+        "selected_evidence_count": 12,
+        "strategy_profile": "qa-hybrid-mmr-token-v3",
+        "degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "retrieval_latency_micros": 806899,
+        "plan_version": "qa-weknora-hybrid-v1",
+        "selection_policy": "qa-mmr-token-budget-v3",
+        "candidate_count": 12,
+        "selected_evidence_characters": 7885,
+        "maximum_output_tokens": 1200,
+        "trace_schema_version": "retrieval-execution-trace-v1"
+      },
+      "latency_ms": 6000
+    },
+    {
+      "run_id": "2ee813be-4722-43af-9f8b-df617f329937",
+      "receipt": {
+        "submission_id": "10bc6aab-db27-4c41-a82e-5863c6b4ee40",
+        "execution_kind": "ANSWER",
+        "message_id": "b3f68fca-848b-4cd7-ab6a-a8c1a3b2097f",
+        "assistant_message_id": "66996195-a70f-4532-b840-8a0710e216e9",
+        "assistant_request_id": "1a00e05f-9174-44b4-a351-c56538113b9c",
+        "stream_url": "/api/v2/chat/requests/1a00e05f-9174-44b4-a351-c56538113b9c/stream",
+        "answer_run_id": "2ee813be-4722-43af-9f8b-df617f329937",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/71e5bc34-a2aa-4d84-ab86-03459fc78f2d/answer-runs/2ee813be-4722-43af-9f8b-df617f329937/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "2ee813be-4722-43af-9f8b-df617f329937",
+        "workspace_id": "71e5bc34-a2aa-4d84-ab86-03459fc78f2d",
+        "conversation_id": "3e30898a-b2f7-4877-9620-ccd2317e5a6c",
+        "mode": "QA",
+        "status": "COMPLETED",
+        "query_message_id": "b3f68fca-848b-4cd7-ab6a-a8c1a3b2097f",
+        "answer_message_id": "66996195-a70f-4532-b840-8a0710e216e9",
+        "assistant_request_id": "1a00e05f-9174-44b4-a351-c56538113b9c",
+        "retrieval_plan_version": "qa-weknora-hybrid-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1200,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "现有资料不足以回答这个问题，暂时无法给出可靠结论。已选资料主要涉及 wiki.md、memory.md 和 qa-rag.md 等页面，但没有提供与该问题直接相关、足以支撑回答的证据，因此不应据此推断或编造结论。",
+        "started_at": "2026-10-14T09:31:30Z",
+        "first_token_at": "2026-10-14T09:31:38Z",
+        "finished_at": "2026-10-14T09:31:38Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "Wiki 的图扩展有哪些预算参数，这些参数现在分别设成多少？",
+          "keyword_query": "这些参数现在分别设成多少？ Wiki 图扩展 预算参数 当前值",
+          "method": "LLM",
+          "degradation_reasons": [],
+          "is_standalone": false
+        },
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "evidence": {
+        "run_id": "2ee813be-4722-43af-9f8b-df617f329937",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n…tion Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version Cache 默认 TTL 600 秒、Jitter 120 秒；主动失效和版本比较承担正确性，TTL 只是异常兜底。\n\n发布事务不等待 ES/Graph。页面可见状态与 Projection Ready 分开；读取可以在 Search 暂不可用时走明确的 MySQL/索引降级，但不能返回未经版本校验的旧投影。\n\n参数推导",
+            "content_hash": "0dda69eed20d602cbd015dc5a81568ca5a5a08a0cb21ef1e94a6dd83bf28a758",
+            "location": "chunk:10 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 341
+          },
+          {
+            "rank": 2,
+            "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。\n\n[adjacent chunk 13 - 指标]\n指标",
+            "content_hash": "bebf675f89528219db8288135789107ceed3fd5983f3d6e9575f7de53d23ac5b",
+            "location": "chunk:12 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 186
+          },
+          {
+            "rank": 3,
+            "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 19 - 9. 撤销、删除与传播]\n…on 状态并写 Outbox。消费者主动失效 Compiled Pack Cache、全文/向量索引、Memory 评测副本和下游候选；Read Path 同时校验 Revoke Watermark，防止事件延迟期间读到旧 Pack。Source 删除、权限变化或 Evidence 失效通过依赖关系触发相同流程。\n\n撤销传播完成的判据不是“发出事件”，而是：MySQL Head 不可见、Cache Key 失效、索引文档删除或版本落后被拒绝、评测副本清理、对账无残留。旧 Run 为审计可保留当时的 Item ID/Version/Digest，但后续回放必须显示该条目已撤销，不能重新注入正文。\n\n10. 参数与调优",
+            "content_hash": "4b37b861f4715a10accac9892958a6cf8abd08be04e074eeeb5f11104c159d93",
+            "location": "chunk:20 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 346
+          },
+          {
+            "rank": 4,
+            "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "2cf6b706-860b-47bd-9d77-942604f469f6",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 7 - 正常、异常与恢复]\n…Build 不可见；完成后经质量回执切换。\n\nAuto-fix 只生成候选 Diff，新 Version 仍经过相同校验和权限路径。\n\n页面删除后，Link/Backlink、Graph、Cache、Search 与 Memory 候选异步清理，读取路径先由 Tombstone 阻断。\n\n恢复时根据 Knowledge Item + Version + Projection Type 重放，不按旧搜索文档反向重建页面。Reconciler 比较 Head、Link Set Digest、Backlink Count、Index Version 和 Issue 状态，补齐缺失投影并隔离过期关系。\n\n链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。\n\n[adjacent chunk 9 - 幂等、并发、缓存与一致性]\n幂等、并发、缓存与一致性\n\n追加 Version 使用 Item + Version No 或 Operation Key 唯一约束；更新 Head 使用 Expected Version。重复 Ingest/Event 按 Source Version + Knowledge Version + Projection Type 收口。旧事件晚到只更新历史 Build，不改变当前 Head/Alias。\n\nPage Version Cache Key 包含 Workspace、Item、Head Version 与 ACL Version。\n\n[当前实现]\n\nWiki Page Version…",
+            "content_hash": "7b6e58e58d3535c25984fff366f74a241c46158094de7557512678232403148f",
+            "location": "chunk:8 · 链接、反链与图谱边界",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 1347
+          },
+          {
+            "rank": 5,
+            "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "7b352987-2dc2-4d66-925f-46a9f93873e1",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "[adjacent chunk 17 - 幂等、并发与一致性]\n…L Version、Retrieval Strategy、Index Version、Normalized Query 和 Source Scope。权限或 Source 变化主动失效。Answer 本身不以模糊 Query Key 全局缓存，因为 Conversation Context、Memory Pack 和 Evidence Version 会改变结果。\n\n同一 Conversation 并发 Turn 通过 Turn Ledger 和 Active History Head 确定顺序；每个 Run 的输入快照独立，晚完成的旧 Run 不能覆盖新消息或 Wiki/Source 版本。\n\n参数推导与调优",
+            "content_hash": "8c1a2bdb68a3ece8a235ad68b95fe72e182281f1b4dd98c8b1cde66432a75d7b",
+            "location": "chunk:18 · 参数推导与调优",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 342
+          },
+          {
+            "rank": 6,
+            "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "92111eee-b8b9-43f0-a664-e0179040c67b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "Wiki：版本化知识、链接与治理",
+            "content_hash": "0fd53a59b9c9477160d650763a8f7cbeb1325a6677a65b3298681bc6aaa72ef8",
+            "location": "chunk:0 · Wiki：版本化知识、链接与治理",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 16
+          },
+          {
+            "rank": 7,
+            "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "6429bb10-e563-4624-8787-1c0416a9d548",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。\n\n[adjacent chunk 23 - 11. 指标、测试、灰度与回滚]\n11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/A…",
+            "content_hash": "4c0ca009566f7ecc4465cd448f3647c585d26dfe112ef09d3b1daf274edeec43",
+            "location": "chunk:22 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 481
+          },
+          {
+            "rank": 8,
+            "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "8bdd283d-e829-42c4-9815-6c229345c7ab",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |",
+            "content_hash": "a69f01c295bfa1f9f4bce8567fa3b97a733d63107ed983cfe349a829fc848946",
+            "location": "chunk:11 · 参数推导",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 791
+          },
+          {
+            "rank": 9,
+            "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 16 - 为什么不用相近方案]\n为什么不用相近方案\n\n| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |\n\n[adjacent chunk 18 - 安全、测试与发布]\n安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold …",
+            "content_hash": "caa0a43b8cb5c1a7f402bef2b369259737cf47b8f07bc76e42bddd7b56dcc83e",
+            "location": "chunk:17 · 为什么不用相近方案",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 971
+          },
+          {
+            "rank": 10,
+            "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。\n\n[adjacent chunk 2 - 用户操作与产物]\n用户操作与产物\n\n用户可以创建知识项、追加版本、改标题、删除页面、查看首页/索引/搜索/关系图/统计/问题/日志，并触发受控链接重建、投影重建或自动修复。最终产物是一个当前有效 Page Version、来源引用、链接集合和治理状态。\n\nSource / Note / Research / Artifact\n  -> Draft Knowledge Version\n  -> Validate Citation and Links\n  -> Publish Current Head\n  -> Search / Link / Backlink / Graph Projection\n  -> Iss…",
+            "content_hash": "e69687942136a912ffab2ef0f2298b87a921a1402c56c4d35d0d6aa86f9ca5ae",
+            "location": "chunk:1 · 业务问题与非目标",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 526
+          },
+          {
+            "rank": 11,
+            "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |",
+            "content_hash": "3e97be05b58fd359914371b6f22074f9dda847a93111ff154fa2aa77d08c6617",
+            "location": "chunk:21 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 951
+          },
+          {
+            "rank": 12,
+            "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "abe6cf92-0da2-4a86-8428-00229a74b4ac",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |\n\n[adjacent chunk 20 - 参数推导与调优]\n[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。",
+            "content_hash": "33da617d5eb13d8820ea95c4bee99a44a0adfb7fb04d6242b088873b00e5eb4d",
+            "location": "chunk:19 · 参数推导与调优",
+            "fresh_at": "2026-10-14T09:31:35Z",
+            "character_cost": 1272
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "Wiki 的图扩展有哪些预算参数，这些参数现在分别设成多少？",
+          "keyword_query": "这些参数现在分别设成多少？ Wiki 图扩展 预算参数 当前值",
+          "method": "LLM",
+          "degradation_reasons": [],
+          "is_standalone": false
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "INSUFFICIENT"
+      },
+      "retrieval_summary": {
+        "relevance_policy": "qa-lexical-sufficiency-v2",
+        "degraded": true,
+        "admitted_candidate_count": 12,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "qa-weknora-hybrid-v1",
+          "total_latency_micros": 956816,
+          "raw_candidate_count": 12,
+          "admitted_candidate_count": 12,
+          "selected_evidence_count": 12,
+          "selected_evidence_characters": 7570,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "QA_PASSAGE",
+              "candidate_limit": 12,
+              "raw_candidate_count": 12,
+              "admitted_candidate_count": 12,
+              "latency_micros": 956629,
+              "degraded": true,
+              "degradation_reasons": [
+                "QA_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "selected_count": 12,
+                "ownership_rejected_count": 0,
+                "keyword_candidate_count": 43,
+                "rerank_candidate_count": 40,
+                "evidence_token_budget": 8000,
+                "rrf_candidate_count": 69,
+                "mysql_fallback_used": 0,
+                "query_expansion_count": 0,
+                "selected_token_estimate": 3540,
+                "vector_candidate_count": 60
+              },
+              "ranked_candidates": [
+                {
+                  "rank": 1,
+                  "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 10,
+                  "score": 0.016020864381520117,
+                  "selected": true,
+                  "excerpt": "参数推导"
+                },
+                {
+                  "rank": 2,
+                  "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 12,
+                  "score": 0.015855532786885243,
+                  "selected": true,
+                  "excerpt": "参数对比固定 Wiki Dataset、Page/Link Version、Query Set 和 Bundle。Scope Violation、旧 Version 可见、Source Backlink 丢失或关键关系 Precision 回退是停止条件；修复版本需固定回放和 Shadow Build 同时通过。"
+                },
+                {
+                  "rank": 3,
+                  "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 20,
+                  "score": 0.015396825396825395,
+                  "selected": true,
+                  "excerpt": "10. 参数与调优"
+                },
+                {
+                  "rank": 4,
+                  "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 8,
+                  "score": 0.015293560606060606,
+                  "selected": true,
+                  "excerpt": "链接、反链与图谱边界\n\n显式链接来自用户编辑或受控候选，目标使用稳定 Knowledge Item ID；显示标题可以变化。反链是 Link 的反向查询或投影，不单独接受写入。图谱将 Page/Concept 与 Link 组织为查询视图，Graph Node/Edge 不拥有正文与权限。\n\n[目标设计]\n\n图扩展有\n\nmax_hops\n\n、\n\nmax_nodes\n\n、\n\nmax_edges\n\n和字符预算。每扩一跳都重新施加 Workspace、当前 Head、治理状态与 Source 可见性。环路按 Page/Version/Relation Identity 去重。关系置信度不能覆盖显式用户关系，模型抽取关系保持 Proposal 状态。\n\nWiki 的搜索与图谱结合方式是“候选并集 + 当前版本 Hydration + Evidence Assembly”，不把 PageRank 或图相邻直接当成事实支持。\n\n[当前实现]\n\nKnowledgeWikiSearchEngine\n\n在当前工作台的有效页面上做 BM25F：标题、摘要、正文三个字段分别做长度归一，按 3:2:1 加权合并词频后套用 BM25 饱和函数（k1=1.2，b=0.75），IDF 按工作台内的页面统计；中文按相邻两字切词，与检索索引的分析器一致。文本得分之后沿已解析的页面链接传播一次，相连页面获得对方得分的 35%；被引用和被反链多的页面有按对数增长、上限 30% 的加成；低于最高分 15% 的长尾被去掉。没有页面命中时返回空，不再拿最近更新的页面充当证据。"
+                },
+                {
+                  "rank": 5,
+                  "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 18,
+                  "score": 0.015117056856187291,
+                  "selected": true,
+                  "excerpt": "参数推导与调优"
+                },
+                {
+                  "rank": 6,
+                  "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 0,
+                  "score": 0.015063145809414464,
+                  "selected": true,
+                  "excerpt": "Wiki：版本化知识、链接与治理"
+                },
+                {
+                  "rank": 7,
+                  "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 22,
+                  "score": 0.01476190476190476,
+                  "selected": true,
+                  "excerpt": "参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。"
+                },
+                {
+                  "rank": 8,
+                  "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 11,
+                  "score": 0.01433676686987597,
+                  "selected": true,
+                  "excerpt": "| 参数                  | 太小            | 太大                   | 观察指标                              |\n|---------------------|---------------|----------------------|-----------------------------------|\n| Page Search K       | Gold Page 漏召回 | 旧/弱相关页面 Hydration 增加 | Page Recall、P95                   |\n| Graph Hops          | 多跳证据缺失        | 节点爆炸、弱关系污染           | Supporting Evidence F1、Node Count |\n| Node/Edge Budget    | 关系链被截断        | 延迟、Prompt 和可视化拥挤     | Expansion Precision、P99           |\n| Link Rebuild Batch  | 重建过慢          | DB/ES 写放大与锁等待        | Rebuild Duration、Pool Saturation  |\n| Cache TTL           | 命中率低          | 陈旧权限/Head 风险窗口大      | Hit、Stale Reject、ACL Change Lag   |\n| Auto-fix Confidence | 候选过少          | 错误修复与人工负担            | Precision、Review Reject Rate      |"
+                },
+                {
+                  "rank": 9,
+                  "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 17,
+                  "score": 0.01399108138238573,
+                  "selected": true,
+                  "excerpt": "| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evidence 仍需关系库 | 图查询规模/深度成为可测瓶颈时作为投影      |\n| Elasticsearch 当前文档覆盖 | 旧版本和审计丢失，删除/权限难证明              | 不作为真源                    |\n| 自动抽取所有概念关系           | 误关系会长期污染导航和检索                  | 有独立 Gold、审核和低误注入率后扩大自动接受 |\n| Wiki 与 Note 合并       | Note 是草稿/阅读工作流，Wiki 是发布/治理对象   | 保持写回衔接，不合并状态机            |"
+                },
+                {
+                  "rank": 10,
+                  "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 1,
+                  "score": 0.013536409516943041,
+                  "selected": true,
+                  "excerpt": "业务问题与非目标\n\nWiki 把用户确认过的知识组织成可导航页面。页面需要不可变版本、当前 Head、显式链接、反链、来源回链、搜索、关系图、治理状态和修复记录。检索能找到文本不代表知识已经被发布，也不代表旧版本仍可见。\n\nWiki 不把模型生成的回答自动当成页面真源，不用图数据库或 Elasticsearch 保存页面权威版本，也不允许自动修复绕过审批和 Workspace ACL。"
+                },
+                {
+                  "rank": 11,
+                  "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 21,
+                  "score": 0.01348068498606133,
+                  "selected": true,
+                  "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |"
+                },
+                {
+                  "rank": 12,
+                  "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 19,
+                  "score": 0.01337719298245614,
+                  "selected": true,
+                  "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |"
+                },
+                {
+                  "rank": 13,
+                  "evidence_id": "passage:49103701-806b-4777-8eb4-be6ffd715d9e",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 4,
+                  "score": 0.01279279279279279,
+                  "selected": false,
+                  "excerpt": "| 阶段                   | 方案                              | Bad Case        | 修复                                         |\n|----------------------|---------------------------------|-----------------|--------------------------------------------|\n| V0 保存一段正文            | 页面表原地更新                         | 历史丢失、并发覆盖、旧引用失效 | 不可变 Version + Current Head                 |\n| V1 文本内 Markdown Link | 每次读取临时解析链接                      | 重命名断链、反链昂贵、删除残留 | 稳定 Page ID、Link/Backlink Projection        |\n| V2 全文搜索              | ES 命中即作为 Wiki 结果                | 旧版本或越权页面重新可见    | Workspace/Version Filter + Hydration 复核    |\n| V3 自动建图              | 模型抽概念并直接写 Link                  | 幻觉关系、循环和跨租户污染   | Proposal、Validator、版本化 Link Set            |\n| V4 自动修复              | Issue 触发覆盖页面                    | 无法审阅、修复引入新错误    | Draft Repair + Diff + 新 Version + 审计       |\n| 目标系统                 | Version、Source Backlink、治理和撤销闭环 | 投影与真源收敛复杂       | Rebuild Catalog、Quality Receipt、Reconciler |"
+                },
+                {
+                  "rank": 14,
+                  "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 20,
+                  "score": 0.012457741717376606,
+                  "selected": false,
+                  "excerpt": "[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。"
+                },
+                {
+                  "rank": 15,
+                  "evidence_id": "passage:b2037400-d7fe-4dd3-8b84-2c5dbfe606a0",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 18,
+                  "score": 0.012329838835862932,
+                  "selected": false,
+                  "excerpt": "安全、测试与发布\n\n页面正文、外部 Source 和 Link Label 都是不可信内容。模型抽取链接或修复只产生 Proposal；服务端重验 Workspace、目标页面、当前 Version、Source 权限和审批。导出与链接预览不得让模型控制任意 URL。\n\n单测覆盖 Version、Head CAS、Link/Backlink、治理 Issue 与 Auto-fix Proposal。\n\nRepository/MySQL 测试覆盖并发发布、当前版本查询和删除 Tombstone。\n\nKafka/Ingest 测试覆盖重复、乱序、失败事务和旧版本事件。\n\n固定 Wiki Gold 覆盖多跳、环路、Broken Link、跨 Workspace、旧版本和来源撤销。\n\n重建演练在新 Index/Graph Version 上执行，质量回执通过后切换；回滚切旧 Alias/Bundle，不修改 Head。\n\nPlaywright E2E 验证页面导航、版本、图谱、Issue、修复和来源回链。\n\n[当前实现]\n\nKnowledge Command/Version/Query/Graph/Governance、Wiki Ingest Failure Transaction、Page Version Cache 和前端 Wiki 导航测试提供当前证据。\n\n[生产待验证]\n\n大规模图查询、协同编辑、长期知识新鲜度、自动修复采纳和跨区重建 RTO 尚无生产证据。"
+                },
+                {
+                  "rank": 16,
+                  "evidence_id": "passage:c9baf4e1-ebfb-47e7-932a-8de428406cb6",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 2,
+                  "score": 0.0121658483360611,
+                  "selected": false,
+                  "excerpt": "用户操作与产物\n\n用户可以创建知识项、追加版本、改标题、删除页面、查看首页/索引/搜索/关系图/统计/问题/日志，并触发受控链接重建、投影重建或自动修复。最终产物是一个当前有效 Page Version、来源引用、链接集合和治理状态。\n\nSource / Note / Research / Artifact\n  -> Draft Knowledge Version\n  -> Validate Citation and Links\n  -> Publish Current Head\n  -> Search / Link / Backlink / Graph Projection\n  -> Issue Detection\n  -> Review / Repair / New Version\n\n[当前实现]\n\nKnowledgeController\n\n、\n\nKnowledgeCommandService\n\n、\n\nKnowledgeVersionService\n\n、\n\nKnowledgeQueryService\n\n、\n\nKnowledgeGraphService\n\n、\n\nKnowledgeGovernanceService\n\n与\n\nWikiIngestService\n\n覆盖页面、版本、链接、查询和治理；相关迁移保存 Knowledge、Version、Citation、Link、Index、日志与任务状态。"
+                },
+                {
+                  "rank": 17,
+                  "evidence_id": "passage:c7785ce0-c81f-43cf-8391-b41715509419",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 1,
+                  "score": 0.01197475758042173,
+                  "selected": false,
+                  "excerpt": "业务问题与非目标\n\nQA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。\n\nQA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。"
+                },
+                {
+                  "rank": 18,
+                  "evidence_id": "passage:7ae06379-e7c1-4eaa-9161-995305ab8fe8",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 3,
+                  "score": 0.011953542998825523,
+                  "selected": false,
+                  "excerpt": "Query Understanding 与检索查询合同\n\n[当前实现]\n\nQA 已把用户原问题与检索表达分开。\n\nqa-conversation-rewrite-v1\n\n保存多轮 Query Rewrite 版本，\n\nQaQueryExpansionService\n\n在低召回路径中解析当前问题和主题锚点，生成最多 5 个确定性查询变体，并去除重复和常见问句前缀。它能证明原问题不会被 Expansion 覆盖，也能回放某个策略版本，但没有统一的实体别名表、指代置信度、澄清状态或跨能力 Intent Decision，不能把它描述成完整的自然语言理解系统。\n\n[目标设计]\n\nQA 的理解结果至少保留以下字段："
+                },
+                {
+                  "rank": 19,
+                  "evidence_id": "passage:31989e17-5c07-4e2f-8c10-94a7b873c071",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 7,
+                  "score": 0.01188953488372093,
+                  "selected": false,
+                  "excerpt": "| 阶段                   | 方案                                | Bad Case                     | 下一步修复                                    |\n|----------------------|-----------------------------------|------------------------------|------------------------------------------|\n| V0 直接 Prompt         | 把用户问题交给模型                         | 幻觉、无法核对、资料边界不清               | 先检索再生成，返回 Source                         |\n| V1 单路 Top K          | BM25 或向量搜索前 K 个 Chunk             | 精确编号和语义问法互相失配；单一 Source 占满候选 | Sparse + Dense，多路融合与来源去重                 |\n| V2 分数相加              | 直接归一化不同检索分数                       | 不同 Provider 分数不可比，权重漂移       | RRF 只使用排名，再做 Rerank                      |\n| V3 Rerank 后全塞 Prompt | Top N 直接拼接                        | 重复片段挤占预算，相关不代表能支撑 Claim      | Relevance Policy、Evidence Selection、字符预算 |\n| V4 有引用回答             | 生成文本附 Citation                    | 引用存在但不支持 Claim，引用版本可能过时      | Manifest、Claim-Evidence Coverage、引用校验与拒答 |\n| 目标系统                 | Versioned Bundle + 离线/Shadow/在线门禁 | 模型、Prompt、索引或评测集漂移           | Release Bundle、质量回执、漂移监控与回滚              |"
+                },
+                {
+                  "rank": 20,
+                  "evidence_id": "passage:695ee199-ef50-4624-8787-6cfbcf4e9059",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 13,
+                  "score": 0.01129032258064516,
+                  "selected": false,
+                  "excerpt": "指标"
+                }
+              ]
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "passage:97a8fb06-44ef-40e1-85c8-d3a9c3435b11",
+              "kind": "PASSAGE",
+              "raw_score": 71.01094,
+              "fused_score": 0.016020864381520117,
+              "rerank_score": 0.016020864381520117,
+              "character_cost": 341
+            },
+            {
+              "rank": 2,
+              "evidence_id": "passage:fbe0e52c-5986-4a44-8504-4c02a7c5ae55",
+              "kind": "PASSAGE",
+              "raw_score": 90.121475,
+              "fused_score": 0.015855532786885243,
+              "rerank_score": 0.015855532786885243,
+              "character_cost": 186
+            },
+            {
+              "rank": 3,
+              "evidence_id": "passage:4fe8617c-a2c6-40ca-a5e9-11c888b9f7b6",
+              "kind": "PASSAGE",
+              "raw_score": 63.415215,
+              "fused_score": 0.015396825396825395,
+              "rerank_score": 0.015396825396825395,
+              "character_cost": 346
+            },
+            {
+              "rank": 4,
+              "evidence_id": "passage:2cf6b706-860b-47bd-9d77-942604f469f6",
+              "kind": "PASSAGE",
+              "raw_score": 71.517975,
+              "fused_score": 0.015293560606060606,
+              "rerank_score": 0.015293560606060606,
+              "character_cost": 1347
+            },
+            {
+              "rank": 5,
+              "evidence_id": "passage:7b352987-2dc2-4d66-925f-46a9f93873e1",
+              "kind": "PASSAGE",
+              "raw_score": 63.621754,
+              "fused_score": 0.015117056856187291,
+              "rerank_score": 0.015117056856187291,
+              "character_cost": 342
+            },
+            {
+              "rank": 6,
+              "evidence_id": "passage:92111eee-b8b9-43f0-a664-e0179040c67b",
+              "kind": "PASSAGE",
+              "raw_score": 71.39803,
+              "fused_score": 0.015063145809414464,
+              "rerank_score": 0.015063145809414464,
+              "character_cost": 16
+            },
+            {
+              "rank": 7,
+              "evidence_id": "passage:6429bb10-e563-4624-8787-1c0416a9d548",
+              "kind": "PASSAGE",
+              "raw_score": 77.77574,
+              "fused_score": 0.01476190476190476,
+              "rerank_score": 0.01476190476190476,
+              "character_cost": 481
+            },
+            {
+              "rank": 8,
+              "evidence_id": "passage:8bdd283d-e829-42c4-9815-6c229345c7ab",
+              "kind": "PASSAGE",
+              "raw_score": 69.16337,
+              "fused_score": 0.01433676686987597,
+              "rerank_score": 0.01433676686987597,
+              "character_cost": 791
+            },
+            {
+              "rank": 9,
+              "evidence_id": "passage:61b42b9a-e2f8-4c00-aad5-af78eaca8e0b",
+              "kind": "PASSAGE",
+              "raw_score": 23.460293,
+              "fused_score": 0.01399108138238573,
+              "rerank_score": 0.01399108138238573,
+              "character_cost": 971
+            },
+            {
+              "rank": 10,
+              "evidence_id": "passage:1b7c0c22-8fca-44e0-9854-1dc76c4d556d",
+              "kind": "PASSAGE",
+              "raw_score": 25.37973,
+              "fused_score": 0.013536409516943041,
+              "rerank_score": 0.013536409516943041,
+              "character_cost": 526
+            },
+            {
+              "rank": 11,
+              "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+              "kind": "PASSAGE",
+              "raw_score": 81.78517,
+              "fused_score": 0.01348068498606133,
+              "rerank_score": 0.01348068498606133,
+              "character_cost": 951
+            },
+            {
+              "rank": 12,
+              "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+              "kind": "PASSAGE",
+              "raw_score": 58.012596,
+              "fused_score": 0.01337719298245614,
+              "rerank_score": 0.01337719298245614,
+              "character_cost": 1272
+            }
+          ]
+        },
+        "selected_evidence_count": 12,
+        "strategy_profile": "qa-hybrid-mmr-token-v3",
+        "degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "retrieval_latency_micros": 956816,
+        "plan_version": "qa-weknora-hybrid-v1",
+        "selection_policy": "qa-mmr-token-budget-v3",
+        "candidate_count": 12,
+        "selected_evidence_characters": 7570,
+        "maximum_output_tokens": 1200,
+        "trace_schema_version": "retrieval-execution-trace-v1"
+      },
+      "latency_ms": 8904
+    }
+  ]
+}

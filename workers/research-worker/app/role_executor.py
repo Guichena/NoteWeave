@@ -59,17 +59,22 @@ class RoleProfile:
 
 class RoleProfileCatalog:
     _PROFILES = {
+        # 一次探测检索，模型生成一次加修复一次
+        "PLANNING": RoleProfile(
+            "planning-v1", "research_planning", 0.2,
+            frozenset({"search"}), 1, 0, 0, 2,
+        ),
         "WIDE_DISCOVERY": RoleProfile(
             "wide-discovery-v1", "wide_discovery", 0.2,
-            frozenset({"search", "read"}), 8, 0, 12, 2,
+            frozenset({"search", "read"}), 3, 0, 12, 4,
         ),
         "DEEP_CELL": RoleProfile(
             "deep-cell-v1", "deep_cell_extract", 0.1,
-            frozenset({"search", "fetch", "read", "extract"}), 4, 4, 8, 4,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 64,
         ),
         "COUNTERFACTUAL": RoleProfile(
             "counterfactual-v1", "counterfactual_verify", 0.0,
-            frozenset({"search", "fetch", "read", "extract"}), 6, 6, 10, 4, True,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 64, True,
         ),
         "CELL_VERIFIER": RoleProfile(
             "cell-verifier-v1", "cell_verify", 0.0,
@@ -82,7 +87,7 @@ class RoleProfileCatalog:
         # Runtime aliases retained for the MA4 task snapshot vocabulary.
         "EVIDENCE_AUDIT": RoleProfile(
             "evidence-audit-v1", "cell_verify", 0.0,
-            frozenset({"read"}), 0, 0, 8, 1,
+            frozenset({"read"}), 0, 0, 8, 80,
         ),
         "SYNTHESIS": RoleProfile(
             "synthesis-v1", "report_synthesis", 0.0,

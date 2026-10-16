@@ -2,7 +2,9 @@ package com.noteweave.upload;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 
+import com.noteweave.common.BusinessException;
 import org.junit.jupiter.api.Test;
 
 class UploadSecurityPolicyTest {
@@ -11,9 +13,17 @@ class UploadSecurityPolicyTest {
 
     @Test
     void metadataMustMatchSafeTextExtensionAndMime() {
+        assertThatCode(() -> policy.validateMetadata(new CreateUploadRequest(
+                "document.docx", 10, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 10, 1)))
+                .doesNotThrowAnyException();
         assertThatThrownBy(() -> policy.validateMetadata(new CreateUploadRequest(
                 "payload.exe", 10, "application/octet-stream", 10, 1)))
-                .hasMessageContaining("仅支持");
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("UPLOAD_FILE_TYPE_UNSUPPORTED"));
+        assertThatThrownBy(() -> policy.validateMetadata(new CreateUploadRequest(
+                "document.docx", 10, "text/markdown", 10, 1)))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("UPLOAD_FILE_TYPE_UNSUPPORTED"));
         assertThatThrownBy(() -> policy.validateMetadata(new CreateUploadRequest(
                 "../payload.md", 10, "text/markdown", 10, 1)))
                 .hasMessageContaining("文件名");

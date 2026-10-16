@@ -16,25 +16,40 @@ public class MemoryCandidateGate {
             double marginalUtility,
             String conflictStatus
     ) {
+        return evaluate(signal, marginalUtility, conflictStatus,
+                MemorySlots.categoryOf(signal.signalText()), "USER");
+    }
+
+    public GateDecision evaluate(
+            MemorySignalService.SignalRow signal,
+            double marginalUtility,
+            String conflictStatus,
+            String category,
+            String scope
+    ) {
         String scopeStatus = validScope(signal) ? "VALID" : "INVALID";
-        String evidenceGateStatus = signal.confidenceScore()
-                >= policy.minimumEvidenceConfidence() ? "PASS" : "NEEDS_REVIEW";
-        double riskScore = policy.riskScore(
-                signal.sourceType(),
-                signal.signalType(),
-                signal.taskNeighborhood(),
-                conflictStatus);
+        MemoryEvidence.Posterior prior = MemoryEvidence.prior(
+                MemoryEvidence.bandOf(signal.sourceType(), false));
+        boolean evidencePass = signal.confidenceScore() >= policy.minimumEvidenceConfidence()
+                && prior.variance() <= policy.maximumPosteriorVariance();
+        String evidenceGateStatus = evidencePass ? "PASS" : "NEEDS_REVIEW";
+        double riskScore = policy.riskScore(category, scope, conflictStatus);
         boolean ready = "PASS".equals(evidenceGateStatus)
                 && marginalUtility >= policy.minimumAutoPromotionUtility()
                 && riskScore < policy.reviewRequiredRisk()
                 && "VALID".equals(scopeStatus)
-                && !"CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus);
+                && !blocking(conflictStatus);
         return new GateDecision(
                 policy.version(),
                 evidenceGateStatus,
                 riskScore,
                 scopeStatus,
                 ready ? "READY" : "NEEDS_REVIEW");
+    }
+
+    private boolean blocking(String conflictStatus) {
+        return "CONFLICTING_ACTIVE_MEMORY".equals(conflictStatus)
+                || "CONFLICT_CHECK_NOT_RUN".equals(conflictStatus);
     }
 
     private boolean validScope(MemorySignalService.SignalRow signal) {

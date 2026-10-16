@@ -39,7 +39,7 @@ from app.models import (
 from app.skill_graph import execute_skill_graph
 from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
-from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
+from app.generation_runtime import ArtifactConfigurationRequiredError
 from app.export_runtime import export_artifact_if_required
 from app.candidate_file_manifest import build_required_files
 from app.artifact_content_ir import build_content_ir
@@ -63,9 +63,22 @@ PHASE_SEQUENCE = [
 PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1caa4581b9eb3ca2eec8"
 
 
+PRE_OUTPUT_CONTRACT_CATALOG_DIGEST = "08108539a76c23dc3fcc4c23fee6c6cd3f8bba29895cd6ccc50f3425dadcb2f0"
+PRE_TYPED_NODE_CATALOG_DIGEST = "ac422e1c25a0bad1dff81474d99a2e6345440e587553e33e43b18873aabfe691"
+PRE_STATEMENT_CATALOG_DIGESTS = {
+    "6213388175d1399d6a98f2692bbf76165665fcc40e9cefb3dc09e0bc5a3ea7d1",
+    "409075da8e53f72951f12409345c38de513c83b9c112745d94044ae7c73f7de1",
+}
+PRE_SECTION_CATALOG_DIGESTS = {
+    "0d632b23ee593fdd861cc657e9a134d48a226654102f1b506a95552d8b036e83",
+    "2d0d504383f1d3edfdbcee9e95f76c872aced89ad7f37e6d5671c6f8f9552acd",
+}
+
+
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
-            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST}:
+            CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
+            *PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
         inputs = task_input.input_payload.inputs
@@ -74,18 +87,19 @@ def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
             raise ValueError("legacy catalog Run cannot declare a new acquisition policy")
 
 
-def run_artifact_task(task_input: ArtifactTaskInput) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)
     if task_input.input_payload.skill_key == "video_learning_deck":
         return run_video_deck_task(task_input)
-    return _run_artifact_task(task_input)
+    return _run_artifact_task(task_input, passage_search=passage_search)
 
 
 def resume_artifact_task(
     task_input: ArtifactTaskInput,
     resume_checkpoint: dict[str, object],
+    *, passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     _require_published_catalog(task_input)
     try:
@@ -102,7 +116,19 @@ def resume_artifact_task(
     raw_plan = resume_checkpoint.get("execution_plan")
     if not isinstance(raw_plan, dict):
         raise ValueError("artifact resume checkpoint is missing execution_plan")
+    if task_input.catalog_digest in {*PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS} and raw_plan.get("action_origin") == "BUILTIN":
+        # 只重绑当前注册图声明，检查点里的冻结意图、权限和输入仍原样读取。
+        from app.compiler import _resolve_node_sequence
+        from app.registry import resolve_production_action
+        action = resolve_production_action(raw_plan["action_key"])
+        if _is_frozen_default_graph(raw_plan["action_key"], raw_plan.get("skill_graph_key"), action):
+            from app.artifact_skill_catalog import resolve_generation_mode
+            raw_plan = {**raw_plan, "skill_graph_key": action.default_skill_graph_key,
+                "generation_mode": resolve_generation_mode(raw_plan.get("skill_key", ""), raw_plan["action_key"]),
+                "node_sequence": [node.model_dump(mode="json")
+                    for node in _resolve_node_sequence(action.default_skill_graph_key)]}
     validated_plan = ArtifactExecutionPlan.model_validate(raw_plan)
+    _migrate_frozen_builtin_graph(task_input, validated_plan)
     raw_content_objects = resume_checkpoint.get("canonical_content_objects")
     raw_context_pack = resume_checkpoint.get("context_pack")
     if not isinstance(raw_content_objects, list) or not isinstance(raw_context_pack, dict):
@@ -121,7 +147,39 @@ def resume_artifact_task(
         ],
         checkpoint_context_pack=ContextPack.model_validate(raw_context_pack),
         resume_stage=checkpoint_stage,
+        passage_search=passage_search,
     )
+
+
+def _migrate_frozen_builtin_graph(task_input, plan):
+    """旧内置图仅迁移执行声明，保留输入、意图、权限和已发生的模型调用。"""
+    if task_input.catalog_digest not in {PRE_VIDEO_POLICY_CATALOG_DIGEST,
+            PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
+            *PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS} or plan.action_origin != "BUILTIN":
+        return
+    from app.compiler import _resolve_node_sequence
+    from app.registry import resolve_production_action, resolve_prompt_recipe, resolve_skill_graph
+    from app.artifact_skill_catalog import resolve_generation_mode
+    action = resolve_production_action(plan.action_key)
+    if not _is_frozen_default_graph(plan.action_key, plan.skill_graph_key, action):
+        return
+    plan.skill_graph_key = action.default_skill_graph_key
+    plan.generation_mode = resolve_generation_mode(plan.skill_key, plan.action_key)
+    plan.node_sequence = _resolve_node_sequence(plan.skill_graph_key)
+    plan.runtime_plan.graph_key = plan.skill_graph_key
+    plan.runtime_plan.graph_name = resolve_skill_graph(plan.skill_graph_key).graph_name
+    plan.runtime_plan.activated_nodes = [node.skill_key for node in plan.node_sequence]
+    plan.required_phrases = []
+    if plan.prompt_recipe.recipe_id == action.default_prompt_recipe_id:
+        plan.prompt_recipe = resolve_prompt_recipe(action.default_prompt_recipe_id).model_copy(deep=True)
+    note = "旧内置图已迁移到类型化节点，原冻结意图和权限保留"
+    if note not in plan.notes:
+        plan.notes.append(note)
+
+
+def _is_frozen_default_graph(action_key, graph_key, action):
+    previous = {"STUDY_GUIDE": "generic_artifact_v1"}
+    return graph_key == action.default_skill_graph_key or graph_key == previous.get(action_key)
 
 
 def _run_artifact_task(
@@ -131,6 +189,7 @@ def _run_artifact_task(
     checkpoint_content_objects: list[CanonicalContentObject] | None = None,
     checkpoint_context_pack: ContextPack | None = None,
     resume_stage: str = "",
+    passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     llm_client = build_default_llm_client()
     has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
@@ -138,7 +197,10 @@ def _run_artifact_task(
         raise ArtifactConfigurationRequiredError(
             "Artifact LLM is not configured and the task has no source content to extract"
         )
-    plan = compiled_plan or build_execution_plan(task_input)
+    plan = compiled_plan or build_execution_plan(task_input, llm_client=llm_client)
+    reserve = getattr(llm_client, "reserve_prior_calls", None)
+    if compiled_plan is not None and callable(reserve):
+        reserve(plan.execution_spec.compilation_trace.get("llm_calls", 0))
     canonical_content_objects = (
         list(checkpoint_content_objects)
         if checkpoint_content_objects is not None
@@ -232,18 +294,14 @@ def _run_artifact_task(
         return _build_material_only_result(
             task_input, plan, capability_resolution, canonical_content_objects)
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
-        task_input,
-        plan,
-        section_generator=lambda _fallback_sections: generate_artifact_sections(
-            task_input=task_input,
-            plan=plan,
-            canonical_content_objects=canonical_content_objects,
-            llm_client=llm_client,
-        ),
+        task_input, plan, canonical_content_objects=canonical_content_objects,
+        llm_client=llm_client, passage_search=passage_search,
     )
     if generation_trace is None:
         raise RuntimeError("artifact skill graph did not produce a section draft")
-    repaired_checks: list[str] = []
+    repaired_checks = [f"章节修复完成：{heading}" for record in
+        generation_trace.get("state", {}).get("verification", {}).get("repair_rounds", [])
+        for heading in record.get("repaired_sections", [])]
     artifact_title = resolve_artifact_title(task_input, plan)
     rendered_markdown = render_markdown(task_input, plan, repaired_sections)
     runtime_notes = render_runtime_notes(task_input, plan)
@@ -321,6 +379,8 @@ def _run_artifact_task(
             "sections": [section.model_dump(mode="json") for section in repaired_sections],
             "node_traces": [trace.model_dump(mode="json") for trace in node_traces],
             "generation_trace": generation_trace,
+            "intent_compilation_trace": plan.execution_spec.compilation_trace,
+            "llm_usage": llm_client.usage_summary() if callable(getattr(llm_client, "usage_summary", None)) else {},
             "export_trace": export_trace,
             "canonical_content_objects": [
                 cco.model_dump(mode="json") for cco in canonical_content_objects

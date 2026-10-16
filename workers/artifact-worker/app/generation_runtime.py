@@ -10,10 +10,6 @@ from app.models import (
 )
 
 
-MAX_SOURCE_CONTEXT_CHARS = 24_000
-MAX_SOURCE_ITEM_CHARS = 6_000
-
-
 class ArtifactConfigurationRequiredError(RuntimeError):
     error_code = "CONFIGURATION_REQUIRED"
 
@@ -24,13 +20,20 @@ def generate_artifact_sections(
     plan: ArtifactExecutionPlan,
     canonical_content_objects: list[CanonicalContentObject],
     llm_client: LlmClient | None,
+    section_materials: list[dict[str, object]] | None = None,
+    retrieved_sources: list[dict[str, object]] | None = None,
+    retrieval_trace: dict[str, object] | None = None,
 ) -> tuple[list[ArtifactSectionDraft], dict[str, object]]:
     if llm_client is None:
         raise ArtifactConfigurationRequiredError(
             "Artifact LLM is not configured; controlled artifact generation cannot start"
         )
 
-    source_payload = _build_source_payload(canonical_content_objects)
+    if section_materials is None:
+        from app.retrieval_runtime import execute_retrieve_node
+        section_materials, retrieved_sources, retrieval_trace, _ = execute_retrieve_node(
+            task_input, plan, canonical_content_objects)
+    source_payload = retrieved_sources or []
     raw_response = llm_client.complete_json(
         "artifact.generate",
         {
@@ -43,7 +46,8 @@ def generate_artifact_sections(
             "constraints": plan.execution_spec.constraints,
             "outline": plan.outline,
             "required_phrases": plan.required_phrases,
-            "output_contract": plan.output_contract,
+            "output_contract": plan.declared_output_contract,
+            "output_language": plan.execution_spec.output_language,
             "prompt_recipe": plan.prompt_recipe.model_dump(mode="json"),
             "control_pack": {
                 "style_constraints": task_input.control_pack.style_constraints,
@@ -53,6 +57,11 @@ def generate_artifact_sections(
                 "evidence_policy": task_input.control_pack.evidence_policy,
             },
             "sources": source_payload,
+            "section_materials": [{k: v for k, v in pack.items() if k != "passages"} | {
+                "passages": [{"chunk_id": p["chunk_id"], "title": p["title"],
+                    "selected_chars": len(p["content"]), "truncated": p["truncated"]} for p in pack["passages"]]
+                } for pack in section_materials],
+            "material_policy": "Each section must use only its assigned chunk_ids from sources, within selected_chars. Cite their supplied source titles.",
         },
     )
     parsed = parse_json_payload(raw_response)
@@ -64,7 +73,7 @@ def generate_artifact_sections(
         raise ArtifactConfigurationRequiredError(
             "Artifact LLM returned no usable content; extractive fallback is disabled"
         )
-    return generated_sections, _trace(
+    trace = _trace(
         mode="LLM_GENERATION",
         provider=getattr(llm_client, "provider_name", "unknown"),
         model=getattr(llm_client, "model_name", "unknown"),
@@ -73,37 +82,8 @@ def generate_artifact_sections(
         generated_section_count=len(generated_sections),
         source_count=len(source_payload),
     )
-
-
-def _build_source_payload(
-    canonical_content_objects: list[CanonicalContentObject],
-) -> list[dict[str, str]]:
-    remaining = MAX_SOURCE_CONTEXT_CHARS
-    payload: list[dict[str, str]] = []
-    for item in canonical_content_objects:
-        if remaining <= 0:
-            break
-        content = item.plain_text.strip()
-        if not content:
-            continue
-        content = content[: min(MAX_SOURCE_ITEM_CHARS, remaining)]
-        remaining -= len(content)
-        payload.append(
-            {
-                "source_id": _source_id_from_trace(item.source_trace),
-                "title": item.title,
-                "kind": item.kind,
-                "content": content,
-            }
-        )
-    return payload
-
-
-def _source_id_from_trace(source_trace: list[str]) -> str:
-    for value in source_trace:
-        if value.startswith("source:"):
-            return value.removeprefix("source:")
-    return ""
+    trace["retrieval"] = retrieval_trace or {}
+    return generated_sections, trace
 
 
 def _parse_sections(

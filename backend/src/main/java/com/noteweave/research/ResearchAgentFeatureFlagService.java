@@ -33,9 +33,9 @@ class ResearchAgentFeatureFlagService {
             @Value("${noteweave.research.intent-matrix-v2:false}") boolean intentMatrix,
             @Value("${noteweave.research.runnable-work-v2:false}") boolean runnableWork,
             @Value("${noteweave.research.checkpoint-hydration-v2:false}") boolean checkpointHydration,
-            @Value("${noteweave.research.evidence-audit-v1:false}") boolean evidenceAudit,
+            @Value("${noteweave.research.evidence-audit-v1:true}") boolean evidenceAudit,
             @Value("${noteweave.research.worker-synthesis-v1:false}") boolean workerSynthesis,
-            @Value("${noteweave.research.wide-discovery-v1:false}") boolean wideDiscovery,
+            @Value("${noteweave.research.wide-discovery-v1:true}") boolean wideDiscovery,
             @Value("${noteweave.research.wide-discovery-auto-accept:false}") boolean discoveryAutoAccept,
             @Value("${noteweave.research.wide-discovery-accepted-precision:0.0}") double acceptedPrecision,
             @Value("${noteweave.research.wide-discovery-precision-threshold:0.90}") double precisionThreshold
@@ -79,7 +79,11 @@ class ResearchAgentFeatureFlagService {
                 """, rs -> rs.next() ? rs.getString(1) : null, runId);
         if (raw == null || raw.isBlank()) return Map.of();
         try {
-            return objectMapper.readValue(raw, new TypeReference<>() { });
+            // JSON 列在部分驱动下以带引号的字符串返回，需要再解析一层
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(raw);
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            if (!node.isObject()) throw new IllegalStateException("Research Agent feature flag snapshot is not an object");
+            return objectMapper.convertValue(node, new TypeReference<Map<String, Object>>() { });
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Research Agent feature flag snapshot is invalid", exception);
         }

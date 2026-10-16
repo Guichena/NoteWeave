@@ -9,6 +9,7 @@ import com.noteweave.answer.AnswerCancellationRegistry;
 import com.noteweave.answer.AnswerRunRef;
 import com.noteweave.answer.AnswerRunResponse;
 import com.noteweave.answer.AnswerRunService;
+import com.noteweave.memory.MemoryApplicationFeedbackService;
 import com.noteweave.conversation.ConversationTurnModule;
 import com.noteweave.conversation.SubmitTurnCommand;
 import com.noteweave.conversation.TurnReceipt;
@@ -40,7 +41,8 @@ class ChatControllerDispatchTest {
                 direct,
                 direct,
                 answerRunService,
-                mock(AnswerCancellationRegistry.class)
+                mock(AnswerCancellationRegistry.class),
+                mock(MemoryApplicationFeedbackService.class)
         );
 
         controller.sendMessage("conversation-1", request);
@@ -65,7 +67,8 @@ class ChatControllerDispatchTest {
                 direct,
                 direct,
                 answerRunService,
-                mock(AnswerCancellationRegistry.class)
+                mock(AnswerCancellationRegistry.class),
+                mock(MemoryApplicationFeedbackService.class)
         );
 
         controller.streamAnswerRun(

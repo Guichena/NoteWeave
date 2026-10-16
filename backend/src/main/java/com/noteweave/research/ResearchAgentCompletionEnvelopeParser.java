@@ -105,7 +105,19 @@ public class ResearchAgentCompletionEnvelopeParser {
             JsonNode candidates = array(root, "candidates");
             candidates.forEach(item -> {
                 if (!item.isObject()) throw invalid("Candidate item must be an object");
-                exactFields(item, CANDIDATE_FIELDS, "candidate");
+                Set<String> candidateFields = fieldNames(item);
+                Set<String> allowed = new HashSet<>(CANDIDATE_FIELDS);
+                allowed.add("equivalent_claims");
+                if (!candidateFields.containsAll(CANDIDATE_FIELDS) || !allowed.containsAll(candidateFields)) {
+                    throw invalid("候选字段不符合约定");
+                }
+                if (item.has("equivalent_claims")) {
+                    if (!v2) throw invalid("等价证据需要完成信封 v2");
+                    array(item, "equivalent_claims").forEach(claim -> {
+                        if (!claim.isObject()) throw invalid("等价证据必须是对象");
+                        exactFields(claim, Set.of("evidence_key", "claim_text", "source_domain"), "等价证据");
+                    });
+                }
                 integral(item, "base_cell_version");
                 integral(item, "confidence_ppm");
                 JsonNode keys = array(item, "evidence_keys");
@@ -117,6 +129,12 @@ public class ResearchAgentCompletionEnvelopeParser {
                 object(root, "role_result");
             } else if (v2) {
                 validateExtractionDiagnostics(object(root, "extraction_diagnostics"));
+                if (root.get("extraction_diagnostics").has("execution_report")) {
+                    ResearchRepairExecutionService.validateReport(root.get("extraction_diagnostics").get("execution_report"));
+                }
+                if (root.get("extraction_diagnostics").has("claim_clusters")) {
+                    ResearchClaimClusterService.validateClusters(root.get("extraction_diagnostics").get("claim_clusters"));
+                }
             }
             return mapper.treeToValue(root, ResearchAgentCompletionEnvelope.class);
         } catch (BusinessException exception) {

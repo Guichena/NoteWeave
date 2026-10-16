@@ -42,8 +42,24 @@ public record RetrievalExecutionTrace(
             long latencyMicros,
             boolean degraded,
             List<String> degradationReasons,
-            java.util.Map<String, Long> measurements
+            java.util.Map<String, Long> measurements,
+            List<RankedCandidateTrace> rankedCandidates
     ) {
+        public StepTrace(
+                int stepIndex,
+                String channel,
+                int candidateLimit,
+                int rawCandidateCount,
+                int admittedCandidateCount,
+                long latencyMicros,
+                boolean degraded,
+                List<String> degradationReasons,
+                java.util.Map<String, Long> measurements
+        ) {
+            this(stepIndex, channel, candidateLimit, rawCandidateCount, admittedCandidateCount,
+                    latencyMicros, degraded, degradationReasons, measurements, List.of());
+        }
+
         public StepTrace {
             channel = channel == null ? "" : channel;
             candidateLimit = Math.max(0, candidateLimit);
@@ -54,6 +70,28 @@ public record RetrievalExecutionTrace(
                     ? List.of() : List.copyOf(degradationReasons);
             measurements = measurements == null
                     ? java.util.Map.of() : java.util.Map.copyOf(measurements);
+            rankedCandidates = rankedCandidates == null ? List.of() : List.copyOf(rankedCandidates);
+        }
+    }
+
+    /**
+     * 证据挑选前的候选排序（重排后的前若干条），用于离线评测检索排序本身的质量，
+     * 与最终进入上下文的证据分开计算。excerpt 只保留命中段落正文，不含相邻段落。
+     */
+    public record RankedCandidateTrace(
+            int rank,
+            String evidenceId,
+            String sourceId,
+            int chunkNo,
+            double score,
+            boolean selected,
+            String excerpt
+    ) {
+        public RankedCandidateTrace {
+            rank = Math.max(1, rank);
+            evidenceId = evidenceId == null ? "" : evidenceId;
+            sourceId = sourceId == null ? "" : sourceId;
+            excerpt = excerpt == null ? "" : excerpt;
         }
     }
 

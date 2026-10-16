@@ -10,6 +10,8 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.conversation.ConversationTurnModule;
 import com.noteweave.conversation.SubmitTurnCommand;
 import com.noteweave.conversation.TurnReceipt;
+import com.noteweave.memory.AnswerFeedbackResponse;
+import com.noteweave.memory.MemoryApplicationFeedbackService;
 import jakarta.validation.Valid;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
@@ -39,6 +41,7 @@ public class ChatController {
     private final Executor sseConnectionExecutor;
     private final AnswerRunService answerRunService;
     private final AnswerCancellationRegistry answerCancellationRegistry;
+    private final MemoryApplicationFeedbackService applicationFeedbackService;
 
     public ChatController(
             ChatService chatService,
@@ -47,7 +50,8 @@ public class ChatController {
             @Qualifier("answerIoExecutor") Executor answerIoExecutor,
             @Qualifier("sseConnectionExecutor") Executor sseConnectionExecutor,
             AnswerRunService answerRunService,
-            AnswerCancellationRegistry answerCancellationRegistry
+            AnswerCancellationRegistry answerCancellationRegistry,
+            MemoryApplicationFeedbackService applicationFeedbackService
     ) {
         this.chatService = chatService;
         this.conversationTurnModule = conversationTurnModule;
@@ -56,6 +60,7 @@ public class ChatController {
         this.sseConnectionExecutor = sseConnectionExecutor;
         this.answerRunService = answerRunService;
         this.answerCancellationRegistry = answerCancellationRegistry;
+        this.applicationFeedbackService = applicationFeedbackService;
     }
 
     @PostMapping("/messages/{messageId}/source-draft")
@@ -141,6 +146,16 @@ public class ChatController {
             @PathVariable String runId
     ) {
         return ApiResponse.success(answerRunService.evidenceManifest(workspaceId, runId));
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/answer-runs/{runId}/feedback")
+    ApiResponse<AnswerFeedbackResponse> submitAnswerFeedback(
+            @PathVariable String workspaceId,
+            @PathVariable String runId,
+            @Valid @RequestBody AnswerFeedbackRequest request
+    ) {
+        return ApiResponse.success(applicationFeedbackService.recordAnswerFeedback(
+                workspaceId, runId, request.rating(), request.reason()));
     }
 
     @DeleteMapping("/workspaces/{workspaceId}/answer-runs/{runId}")

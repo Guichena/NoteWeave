@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "noteweave.pipeline-manifest.v1",
+  "title": "30 份真实资料与人工标注清单",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite_id", "expected_sample_count", "sample_root", "samples"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "suite_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+    "expected_sample_count": {"const": 30},
+    "sample_root": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "samples": {
+      "type": "array", "maxItems": 30,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["sample_id", "input_path", "sha256", "mime_type", "gold_text_path", "gold_layout_path"],
+        "properties": {
+          "sample_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+          "input_path": {"type": "string", "minLength": 1, "maxLength": 1024},
+          "sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+          "mime_type": {"type": "string", "minLength": 1, "maxLength": 255},
+          "gold_text_path": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024},
+          "gold_layout_path": {"type": ["string", "null"], "minLength": 1, "maxLength": 1024}
+        }
+      }
+    }
+  }
+}

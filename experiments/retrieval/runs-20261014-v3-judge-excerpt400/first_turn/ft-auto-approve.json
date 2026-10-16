@@ -1,0 +1,1010 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "first_turn",
+  "case_key": "ft-auto-approve",
+  "captured_at": "2026-10-14T09:28:59.795174+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 12770,
+  "evidence": {
+    "run_id": "def62fa2-05db-4d77-90a5-17c7ed792d44",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "passage:601809e2-5032-464a-8227-834730880924",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "601809e2-5032-464a-8227-834730880924",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 14 - 6. 生命周期与状态机 > 6.2 异常与恢复]\n…或 ACL 变化 | 发布 Tombstone/Revoke Event                | 所有引用条目转为 Stale/Revoke，索引和 Cache 对账完成 |\n| Outcome 写入失败      | Run 结果不回滚，Outcome 走独立 Outbox 重试          | 幂等写入后进入候选队列                          |\n| 编译策略故障            | 保留上一稳定 Revision，停止发布新 Pack               | 固定回放通过且灰度窗口回到基线                      |\n\n7. 候选、审核与污染防护",
+        "content_hash": "fcae87a01fbd5805f0b457a59001f6a1e0278e4c1f3941d56845c6060e5a7369",
+        "location": "chunk:15 · 7. 候选、审核与污染防护",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 362
+      },
+      {
+        "rank": 2,
+        "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 20 - 10. 参数与调优]\n10. 参数与调优\n\n| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |\n\n[adjacent chunk 22 - 10. 参数与调优]\n参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。",
+        "content_hash": "60eb33ef966ab1ff03824a6b9f107eb74074c2e67bd610862693594257331b16",
+        "location": "chunk:21 · 10. 参数与调优",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 1168
+      },
+      {
+        "rank": 3,
+        "evidence_id": "passage:96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "12. 技术取舍与迁移条件\n\n不用 LangGraph Checkpoint 代替 Memory：Checkpoint 解决单线程运行恢复，缺少跨运行审核、Scope、有效期与撤销。\n\n不直接接入黑盒自动记忆服务：可以借鉴抽取、去重和搜索，但对象级 ACL、Evidence 绑定、Revision 与审计必须留在 NoteWeave 控制面。\n\n不以向量数据库作为 Memory 真源：相似度不能表达 Head、冲突、撤销、权限和确定性编译；向量仅是可重建召回投影。\n\n不默认建立完整时间知识图谱：关系查询和有效期复杂到平面 Item 难以表达，且图投影收益在固定回放中明确时再引入；MySQL 仍保存治理真源。\n\n不把所有 Memory 常驻 Prompt：只允许小型稳定约束进入固定 Pack，其余按任务召回，降低 Token 成本与越权面。\n\n[adjacent chunk 25 - 13. 面试入口]\n13. 面试入口\n\n面试主回答与追问见\n\nContext 与 Memory 一体化手册\n\n。",
+        "content_hash": "92d96571a0162524378b69d95a83dee46809669250bcd4399d706148a9876bed",
+        "location": "chunk:24 · 12. 技术取舍与迁移条件",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 453
+      },
+      {
+        "rank": 4,
+        "evidence_id": "passage:1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 9 - 5. 从初版到受控闭环]\n5. 从初版到受控闭环\n\n| 阶段       | 简单方案                              | Bad Case                       | 修复与新问题                                      |\n|----------|-----------------------------------|--------------------------------|---------------------------------------------|\n| V0 会话拼接  | 把历史对话截断后放入 Prompt                 | Token 膨胀、旧错误反复出现、跨任务噪声         | 分离 Conversation/Checkpoint 与长期 Memory       |\n| V1 自动摘要  | 定期生成一段用户画像                        | 摘要覆盖细节，错误无法定位或撤销               | 引入 Signal、Candidate 与稳定 Item ID             |\n| V2 自动写入  | 模型抽取事实后直接保存                       | Prompt Injection、误抽取和一次性偏好长期污染 | 加入策略、人工/规则 Review 和敏感字段门禁                   |\n| V3 版本化   | Item/Version、冲突与有效期               | 召回结果仍可能跨运行类型或越权                | 引入 Scope、Runtime Revision 与类型化 Control Pack |\n| V4 反馈闭环  | 记录 Usage 与 Outcome                | 系统若自动学习可能形成错误强化                | Outcome 只生成新 Candidate，重新走审核                |\n| V5 确定性编译 | Bundle 固定 Revision、策略、Token 预算与排序 | Cache 和索引撤销传播有延迟               | Revoke Event、读时校验、主动失效与对账                   |\n\n[adjacent chunk 11 - 6. 生命周期与状态机]\n6. 生命周期与状态机\n\nstateDiagram-v2\n    [*] --> OBSERVED\n    OBSERVED --> CANDIDATE\n    CANDIDATE --> APPROVED\n    CANDIDATE --> REJECTED\n    CANDIDATE --> NEEDS_REVISION\n    NEEDS_REVISION --> CANDIDATE\n    APPROVED --> ACTIVE\n    ACTIVE --> SUPERSEDED\n    ACTIVE --> STALE\n    ACTIVE --> REVOKED\n    STALE…",
+        "content_hash": "39775387d24714a322938990277b9b161025ab54a5e35c1b98f8faf369f3be83",
+        "location": "chunk:10 · 5. 从初版到受控闭环",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 1406
+      },
+      {
+        "rank": 5,
+        "evidence_id": "passage:ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 4 - 3. Evidence 与 Memory 的信任域]\n…Source/External Snapshot  | 绑定 Signal 来源和审核 Revision，不复制来源真相  |\n| 时效性  | 由来源版本、抓取时间和引用状态决定               | 由 Valid From/To、TTL、冲突和 Revoke 决定 |\n| 使用门槛 | Claim 必须有合适 Evidence 支撑         | 只有当前有效且 Scope 匹配的条目可编译            |\n| 失败后果 | 事实不可验证或引用错误                     | 错误长期污染后续运行                        |\n\nMemory 可以记住“用户希望报告先给结论”，但不能把一次 Research 生成的结论无审核地记成事实。需要复用的事实应保存对 Source/Wiki/Evidence 的稳定引用与版本条件；引用失效时 Memory 条目进入\n\nSTALE\n\n或待复核，而不是继续把旧文本注入上下文。\n\n[adjacent chunk 6 - 4. 领域模型与不变量]\n4. 领域模型与不变量",
+        "content_hash": "43175590a993b7425355595f2ce31a3015464dd641050c7862e0e1db76a51d17",
+        "location": "chunk:5 · 3. Evidence 与 Memory 的信任域",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 540
+      },
+      {
+        "rank": 6,
+        "evidence_id": "passage:255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "7.2 污染防线\n\n网页、附件、Tool Output 和模型中间文本默认不能创建用户长期 Memory。\n\n直接 Prompt Injection 与间接 Prompt Injection 在抽取前后都做规则和模型双通道检测。\n\n密钥、Token、Cookie、身份证明、支付信息和高敏原文拒绝进入 Candidate、Prompt、Trace 与 Baggage。\n\n跨 Workspace 候选即使文本相同也不能合并；去重键必须包含 Workspace 和 Owner Scope。\n\n自动批准只适用于低风险、用户明确、Schema 可确定性验证的偏好，策略服务故障时 Fail Closed。\n\nMemory 不授予工具权限。即使条目记录“允许导出”，执行时仍由服务端重新鉴权与审批。\n\nNegative Outcome、用户纠正和 Evidence 失效触发复核，不允许系统自行把新答案覆盖成真相。\n\n[adjacent chunk 18 - 8. 确定性 Control Pack 编译]\n8. 确定性 Control Pack 编译\n\nCompiler 的输入为\n\nworkspace_id\n\n、\n\nuser_id\n\n、运行类型、对象 Scope、Runtime Revision、ACL Epoch、任务查询、Token 预算、策略版本和 Release Bundle。相同输入必须生成相同条目顺序、裁剪结果和 Digest。\n\n编译顺序：\n\n只读取 Active Head，排除 Rejected、Revoked、Expired、Stale 与 Superseded。\n\n应用 Workspace、用户、运行类型、对象和敏感级别过滤。\n\n先加入小型强约束，再对候选做相关性、时效、置信…",
+        "content_hash": "61be7be94f10b7f3bcc7825b025b7b4921324af7eeaebea37dcb9a36e0356a0b",
+        "location": "chunk:17 · 7. 候选、审核与污染防护 > 7.2 污染防线",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 752
+      },
+      {
+        "rank": 7,
+        "evidence_id": "passage:c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 22 - 10. 参数与调优]\n参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。\n\n11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/Artifact/Research Control Pack 的 Scope 与 Schema 隔离。\n\n固定回放：Candidate 抽取、冲突处理、排序、预算裁剪和 Shadow Recall 对照。\n\n安全红队：恶意 Source、间接 Prompt Injection、敏感字段、跨 Workspace 文本碰撞和工具授权诱导。\n\n故障注入：Compiler Kill、Cache/Redis 故障、Outbox 延迟、索引删除失败和乱序 Revoke。\n\nE2E：创建 Signal、审核、Revision、使用记录、纠正、撤销和 Inspector 验证。\n\n[生产待验证]\n\n候选阈值、人工成本、用户采纳、长期污染、知识新鲜度和真实 Token 收益必须在真实用户与持续时间窗中验证。灰度按 Workspace Allowlist 和 Policy Version 进行，先 Shadow Recall，再只读提示，最后才允许低风险自动批准。回滚将新 Compiler 停止发布、恢复旧策略与稳定 Revision；已产生的新 Version 不删除，只停止成为 Active Head。",
+        "content_hash": "c7a488a2cb0eb9fe77e1bc4ec72a511e386ed9a80312701170b5f7026d06c9eb",
+        "location": "chunk:23 · 11. 指标、测试、灰度与回滚",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 974
+      },
+      {
+        "rank": 8,
+        "evidence_id": "passage:003c9540-c3d7-45bb-9aef-8138cecf620b",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "003c9540-c3d7-45bb-9aef-8138cecf620b",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "7.1 哪些内容可以进入 Candidate\n\n高价值 Signal 包括用户明确偏好、反复稳定的格式要求、用户纠正、持续目标、Workspace 治理约束和经验证事实的引用。低价值或高风险输入包括临时情绪、模型推测、第三方网页指令、认证材料、完整隐私原文、一次性任务细节和无法定位来源的结论。\n\n候选策略同时考虑：明确性、稳定性、未来复用价值、来源可信度、敏感级别、冲突、时效和可撤销性。置信度只用于排队和辅助审核，不赋予写入权限。",
+        "content_hash": "e626aa2ca208a2e1b01749743604e23b9d927316a4959416b51203ccce17bc86",
+        "location": "chunk:16 · 7. 候选、审核与污染防护 > 7.1 哪些内容可以进入 Candidate",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 217
+      },
+      {
+        "rank": 9,
+        "evidence_id": "passage:babaa694-7ffe-4b65-85ac-2a6d68009aff",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "babaa694-7ffe-4b65-85ac-2a6d68009aff",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 11 - 6. 生命周期与状态机]\n…-> APPROVED\n    CANDIDATE --> REJECTED\n    CANDIDATE --> NEEDS_REVISION\n    NEEDS_REVISION --> CANDIDATE\n    APPROVED --> ACTIVE\n    ACTIVE --> SUPERSEDED\n    ACTIVE --> STALE\n    ACTIVE --> REVOKED\n    STALE --> CANDIDATE: revalidation\n    SUPERSEDED --> [*]\n    REVOKED --> [*]\n    REJECTED --> [*]\n\n6.1 正常路径\n\n用户明确保存、纠正反馈、Run Observation 或系统治理事件形成 Signal。\n\nExtractor 生成结构化 Candidate，带来源、类型、Scope、置信度、敏感级别与有效期建议。\n\n策略先做去重、冲突、敏感字段、Workspace 与来源可信度检查，再进入人工或规则 Review。\n\n批准后创建或追加 Memory Version，Compiler 生成新的 Runtime Revision。\n\nRun 创建时按类型、权限、有效期、相关性和 Token 预算编译 Control Pack，并固化 Digest。\n\nRun 结束记录 Usage 与 Outcome。Outcome 若提示错误或冲突，只生成新 Candidate。\n\n[adjacent chunk 13 - 6. 生命周期与状态机 > 6.2 异常与恢复]\n6.2 异常与恢复",
+        "content_hash": "30dc0d9288eecd4b95cdd90f53f43e9fe63d9f348fae03b1043994be807e26f1",
+        "location": "chunk:12 · 6. 生命周期与状态机 > 6.1 正常路径",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 733
+      },
+      {
+        "rank": 10,
+        "evidence_id": "passage:d83abc56-5173-4d7c-858c-3621b9f22081",
+        "kind": "PASSAGE",
+        "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+        "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+        "passage_id": "d83abc56-5173-4d7c-858c-3621b9f22081",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "memory.md",
+        "excerpt": "[adjacent chunk 0 - Memory 机制详细设计]\nMemory 机制详细设计\n\n本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。\n\n1. 业务问题、产物与非目标\n\nMemory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Research 和 Artifact 只读取当前有效 Revision 中与当前 Scope、预算和任务相关的条目。\n\nMemory 的非目标：\n\n不保存全部聊天并自动塞回 Prompt。\n\n不把 Source、Research Evidence 或 Wiki 页面复制成第二份事实真源。\n\n不把相似度高等同于可信、可见或仍然有效。\n\n不允许模型根据一次结果直接改写长期记忆。\n\n不承诺召回更多就能提升回答质量或降低 Token 成本。\n\n[adjacent chunk 2 - 2. 当前事实与目标边界]\n2. 当前事实与目标边界\n\n[当前实现]\n\n迁移包含两代数据模型：\n\nmemory_signal\n\n、\n\nmemory_candidate\n\n、\n\nmemory_outcome\n\n、\n\nmemory_usage_log\n\n等候选与反馈结构；\n\nmemory_object\n\n、\n\nmemory_version\n\n、\n\nmemory_review_decision\n\n等对象与审核结构；\n\nV080\n\n创建\n\nmemory_item\n\n、\n\nmemory_runtime_revision\n\n、\n\nmemory_event\n\n等 canonical runtime，\n\nV082\n\n将 Compiler…",
+        "content_hash": "30765784bb7311c23c39bd037632839ac6c2a847e198785cadcd36f798ae072f",
+        "location": "chunk:1 · 1. 业务问题、产物与非目标",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 826
+      },
+      {
+        "rank": 11,
+        "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+        "kind": "PASSAGE",
+        "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+        "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+        "passage_id": "2693ca8b-0567-4dc7-892d-3c484ca170c6",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "qa-rag.md",
+        "excerpt": "[adjacent chunk 19 - 参数推导与调优]\n…rovider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |\n\n[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。\n\n[adjacent chunk 21 - 指标与阈值动作]\n指标与阈值动作",
+        "content_hash": "91d67a7510474a1d678068bb9a1aa33e682fa952b0eb972e993e6224bf861336",
+        "location": "chunk:20 · 参数推导与调优",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 578
+      },
+      {
+        "rank": 12,
+        "evidence_id": "passage:a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+        "kind": "PASSAGE",
+        "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+        "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+        "passage_id": "a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+        "knowledge_item_id": null,
+        "knowledge_version_id": null,
+        "title": "wiki.md",
+        "excerpt": "[adjacent chunk 15 - 指标]\n指标按 Workspace、页面类型、版本年龄、链接类型、风险和 Bundle 切片。生产采纳、治理成本和知识新鲜度属于\n\n[生产待验证]\n\n。\n\n为什么不用相近方案\n\n[adjacent chunk 17 - 为什么不用相近方案]\n| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evid…",
+        "content_hash": "23ed3e0023f4c8347d2f8a470a783e47f8d496c1c4d664a6b6f2f3559409b0cd",
+        "location": "chunk:16 · 为什么不用相近方案",
+        "fresh_at": "2026-10-14T09:28:49Z",
+        "character_cost": 443
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "记忆候选在什么条件下可以自动批准？",
+      "keyword_query": "记忆候选在什么条件下可以自动批准？",
+      "method": "RULE",
+      "degradation_reasons": [],
+      "is_standalone": true
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "SUFFICIENT"
+  },
+  "ranked_candidates": [
+    {
+      "rank": 1,
+      "evidence_id": "passage:601809e2-5032-464a-8227-834730880924",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 15,
+      "score": 0.015220700152207,
+      "selected": true,
+      "excerpt": "7. 候选、审核与污染防护"
+    },
+    {
+      "rank": 2,
+      "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 21,
+      "score": 0.014906832298136646,
+      "selected": true,
+      "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |"
+    },
+    {
+      "rank": 3,
+      "evidence_id": "passage:96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 24,
+      "score": 0.014838709677419355,
+      "selected": true,
+      "excerpt": "12. 技术取舍与迁移条件\n\n不用 LangGraph Checkpoint 代替 Memory：Checkpoint 解决单线程运行恢复，缺少跨运行审核、Scope、有效期与撤销。\n\n不直接接入黑盒自动记忆服务：可以借鉴抽取、去重和搜索，但对象级 ACL、Evidence 绑定、Revision 与审计必须留在 NoteWeave 控制面。\n\n不以向量数据库作为 Memory 真源：相似度不能表达 Head、冲突、撤销、权限和确定性编译；向量仅是可重建召回投影。\n\n不默认建立完整时间知识图谱：关系查询和有效期复杂到平面 Item 难以表达，且图投影收益在固定回放中明确时再引入；MySQL 仍保存治理真源。\n\n不把所有 Memory 常驻 Prompt：只允许小型稳定约束进入固定 Pack，其余按任务召回，降低 Token 成本与越权面。"
+    },
+    {
+      "rank": 4,
+      "evidence_id": "passage:1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 10,
+      "score": 0.01401918976545842,
+      "selected": true,
+      "excerpt": "| 阶段       | 简单方案                              | Bad Case                       | 修复与新问题                                      |\n|----------|-----------------------------------|--------------------------------|---------------------------------------------|\n| V0 会话拼接  | 把历史对话截断后放入 Prompt                 | Token 膨胀、旧错误反复出现、跨任务噪声         | 分离 Conversation/Checkpoint 与长期 Memory       |\n| V1 自动摘要  | 定期生成一段用户画像                        | 摘要覆盖细节，错误无法定位或撤销               | 引入 Signal、Candidate 与稳定 Item ID             |\n| V2 自动写入  | 模型抽取事实后直接保存                       | Prompt Injection、误抽取和一次性偏好长期污染 | 加入策略、人工/规则 Review 和敏感字段门禁                   |\n| V3 版本化   | Item/Version、冲突与有效期               | 召回结果仍可能跨运行类型或越权                | 引入 Scope、Runtime Revision 与类型化 Control Pack |\n| V4 反馈闭环  | 记录 Usage 与 Outcome                | 系统若自动学习可能形成错误强化                | Outcome 只生成新 Candidate，重新走审核                |\n| V5 确定性编译 | Bundle 固定 Revision、策略、Token 预算与排序 | Cache 和索引撤销传播有延迟               | Revoke Event、读时校验、主动失效与对账                   |"
+    },
+    {
+      "rank": 5,
+      "evidence_id": "passage:ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 5,
+      "score": 0.013755707762557075,
+      "selected": true,
+      "excerpt": "Memory 可以记住“用户希望报告先给结论”，但不能把一次 Research 生成的结论无审核地记成事实。需要复用的事实应保存对 Source/Wiki/Evidence 的稳定引用与版本条件；引用失效时 Memory 条目进入\n\nSTALE\n\n或待复核，而不是继续把旧文本注入上下文。"
+    },
+    {
+      "rank": 6,
+      "evidence_id": "passage:255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 17,
+      "score": 0.013454618152738903,
+      "selected": true,
+      "excerpt": "7.2 污染防线\n\n网页、附件、Tool Output 和模型中间文本默认不能创建用户长期 Memory。\n\n直接 Prompt Injection 与间接 Prompt Injection 在抽取前后都做规则和模型双通道检测。\n\n密钥、Token、Cookie、身份证明、支付信息和高敏原文拒绝进入 Candidate、Prompt、Trace 与 Baggage。\n\n跨 Workspace 候选即使文本相同也不能合并；去重键必须包含 Workspace 和 Owner Scope。\n\n自动批准只适用于低风险、用户明确、Schema 可确定性验证的偏好，策略服务故障时 Fail Closed。\n\nMemory 不授予工具权限。即使条目记录“允许导出”，执行时仍由服务端重新鉴权与审批。\n\nNegative Outcome、用户纠正和 Evidence 失效触发复核，不允许系统自行把新答案覆盖成真相。"
+    },
+    {
+      "rank": 7,
+      "evidence_id": "passage:c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 23,
+      "score": 0.013437499999999998,
+      "selected": true,
+      "excerpt": "11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/Artifact/Research Control Pack 的 Scope 与 Schema 隔离。\n\n固定回放：Candidate 抽取、冲突处理、排序、预算裁剪和 Shadow Recall 对照。\n\n安全红队：恶意 Source、间接 Prompt Injection、敏感字段、跨 Workspace 文本碰撞和工具授权诱导。\n\n故障注入：Compiler Kill、Cache/Redis 故障、Outbox 延迟、索引删除失败和乱序 Revoke。\n\nE2E：创建 Signal、审核、Revision、使用记录、纠正、撤销和 Inspector 验证。\n\n[生产待验证]\n\n候选阈值、人工成本、用户采纳、长期污染、知识新鲜度和真实 Token 收益必须在真实用户与持续时间窗中验证。灰度按 Workspace Allowlist 和 Policy Version 进行，先 Shadow Recall，再只读提示，最后才允许低风险自动批准。回滚将新 Compiler 停止发布、恢复旧策略与稳定 Revision；已产生的新 Version 不删除，只停止成为 Active Head。"
+    },
+    {
+      "rank": 8,
+      "evidence_id": "passage:003c9540-c3d7-45bb-9aef-8138cecf620b",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 16,
+      "score": 0.013386123680241327,
+      "selected": true,
+      "excerpt": "7.1 哪些内容可以进入 Candidate\n\n高价值 Signal 包括用户明确偏好、反复稳定的格式要求、用户纠正、持续目标、Workspace 治理约束和经验证事实的引用。低价值或高风险输入包括临时情绪、模型推测、第三方网页指令、认证材料、完整隐私原文、一次性任务细节和无法定位来源的结论。\n\n候选策略同时考虑：明确性、稳定性、未来复用价值、来源可信度、敏感级别、冲突、时效和可撤销性。置信度只用于排队和辅助审核，不赋予写入权限。"
+    },
+    {
+      "rank": 9,
+      "evidence_id": "passage:babaa694-7ffe-4b65-85ac-2a6d68009aff",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 12,
+      "score": 0.012991869918699186,
+      "selected": true,
+      "excerpt": "6.1 正常路径\n\n用户明确保存、纠正反馈、Run Observation 或系统治理事件形成 Signal。\n\nExtractor 生成结构化 Candidate，带来源、类型、Scope、置信度、敏感级别与有效期建议。\n\n策略先做去重、冲突、敏感字段、Workspace 与来源可信度检查，再进入人工或规则 Review。\n\n批准后创建或追加 Memory Version，Compiler 生成新的 Runtime Revision。\n\nRun 创建时按类型、权限、有效期、相关性和 Token 预算编译 Control Pack，并固化 Digest。\n\nRun 结束记录 Usage 与 Outcome。Outcome 若提示错误或冲突，只生成新 Candidate。"
+    },
+    {
+      "rank": 10,
+      "evidence_id": "passage:d83abc56-5173-4d7c-858c-3621b9f22081",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 1,
+      "score": 0.012914813547724939,
+      "selected": true,
+      "excerpt": "1. 业务问题、产物与非目标\n\nMemory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Research 和 Artifact 只读取当前有效 Revision 中与当前 Scope、预算和任务相关的条目。\n\nMemory 的非目标：\n\n不保存全部聊天并自动塞回 Prompt。\n\n不把 Source、Research Evidence 或 Wiki 页面复制成第二份事实真源。\n\n不把相似度高等同于可信、可见或仍然有效。\n\n不允许模型根据一次结果直接改写长期记忆。\n\n不承诺召回更多就能提升回答质量或降低 Token 成本。"
+    },
+    {
+      "rank": 11,
+      "evidence_id": "passage:b2f5be74-fbe5-4599-9064-d7f346c67baa",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 18,
+      "score": 0.012558685446009389,
+      "selected": false,
+      "excerpt": "8. 确定性 Control Pack 编译\n\nCompiler 的输入为\n\nworkspace_id\n\n、\n\nuser_id\n\n、运行类型、对象 Scope、Runtime Revision、ACL Epoch、任务查询、Token 预算、策略版本和 Release Bundle。相同输入必须生成相同条目顺序、裁剪结果和 Digest。\n\n编译顺序：\n\n只读取 Active Head，排除 Rejected、Revoked、Expired、Stale 与 Superseded。\n\n应用 Workspace、用户、运行类型、对象和敏感级别过滤。\n\n先加入小型强约束，再对候选做相关性、时效、置信度和冲突惩罚排序。\n\n对同一逻辑 Item 只保留当前有效 Version，对互斥条目拒绝自动并存。\n\n按确定性 Token 估算裁剪，输出 Item ID、Version、来源摘要与使用限制。\n\n写入 Compiled Pack Cache，Key 包含 Revision、ACL Epoch、Run Type、Query Digest 与 Policy Version。\n\nShadow Recall 使用同一候选集生成对照 Pack，但不进入正式 Prompt，只记录离线比较数据。这样可以评估新召回或排序策略，而不把实验结果直接暴露给用户。"
+    },
+    {
+      "rank": 12,
+      "evidence_id": "passage:ba5d4e7a-b4f1-4a77-b8ce-c943e16fc835",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 14,
+      "score": 0.012433734939759036,
+      "selected": false,
+      "excerpt": "| 异常                | 处理                                       | 恢复条件                                 |\n|-------------------|------------------------------------------|--------------------------------------|\n| 重复 Signal         | 以来源 ID、规范化内容摘要和时间窗去重                     | 返回已有 Signal/Candidate，不重复审核          |\n| 同一事实冲突            | 标记 `CONFLICTED` ，同时保留来源与时间               | Reviewer 决定替换、并存、缩小 Scope 或拒绝        |\n| Review 并发         | 使用 Candidate/Item Version 条件更新           | 失败方重新读取新 Head，不覆盖先提交结果               |\n| Compiler 中断       | Revision 在单事务或两阶段 Manifest 下发布           | 未完成 Revision 不成为 Active Head         |\n| 缓存命中旧 Pack        | 校验 Revision、ACL Epoch 和 Revoke Watermark | 主动失效并重新编译                            |\n| Source 删除或 ACL 变化 | 发布 Tombstone/Revoke Event                | 所有引用条目转为 Stale/Revoke，索引和 Cache 对账完成 |\n| Outcome 写入失败      | Run 结果不回滚，Outcome 走独立 Outbox 重试          | 幂等写入后进入候选队列                          |\n| 编译策略故障            | 保留上一稳定 Revision，停止发布新 Pack               | 固定回放通过且灰度窗口回到基线                      |"
+    },
+    {
+      "rank": 13,
+      "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 20,
+      "score": 0.011983805668016195,
+      "selected": true,
+      "excerpt": "[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。"
+    },
+    {
+      "rank": 14,
+      "evidence_id": "passage:7ca3e5f3-5010-459e-a0e3-c4169c17b5cb",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 25,
+      "score": 0.011769278606965174,
+      "selected": false,
+      "excerpt": "| 方案                      | 不直接采用                   | 迁移或引入条件                       |\n|-------------------------|-------------------------|-------------------------------|\n| 纯向量 RAG                 | 精确编号、专名、权限过滤与版本语义不足     | 作为混合召回一路，不独占策略                |\n| 只用 BM25                 | 同义改写、跨语言和抽象问题 Recall 受限 | 保留为确定性基线和降级                   |\n| 分数归一化相加                 | Provider 分数分布漂移，跨模型难比较  | 有稳定校准集和版本化校准器时评估              |\n| GraphRAG                | 构建、更新和全局查询成本高           | 多跳/全局问题占比高且离线评测证明净收益          |\n| QA 直接升级 Agent           | 单轮问题的成本、状态和安全复杂度不划算     | 需要多步工具、冲突验证和长报告时转 Research    |\n| Memory 参与 Evidence Rank | 偏好和内部记忆会伪装成外部事实         | Memory 只影响表达和过程，事实仍需 Evidence |"
+    },
+    {
+      "rank": 15,
+      "evidence_id": "passage:7bbd871a-7294-47cd-bc4f-c08e3c0feb81",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 2,
+      "score": 0.01158315177923021,
+      "selected": false,
+      "excerpt": "2. 当前事实与目标边界\n\n[当前实现]\n\n迁移包含两代数据模型：\n\nmemory_signal\n\n、\n\nmemory_candidate\n\n、\n\nmemory_outcome\n\n、\n\nmemory_usage_log\n\n等候选与反馈结构；\n\nmemory_object\n\n、\n\nmemory_version\n\n、\n\nmemory_review_decision\n\n等对象与审核结构；\n\nV080\n\n创建\n\nmemory_item\n\n、\n\nmemory_runtime_revision\n\n、\n\nmemory_event\n\n等 canonical runtime，\n\nV082\n\n将 Compiler 切换到该运行时。当前最高迁移基线为\n\nV104\n\n。\n\n[当前实现]\n\n/api/v2/workspaces/{workspaceId}/memory\n\n下提供 Signal、Promotion、Chat/Artifact/Research Control Pack、Shadow Recall、Observation、Review、Revision Review、Object Version、Revoke、Outcome 和 Review Decision 等能力；Runtime Inspector 提供 Workspace 级检查面。\n\n[当前实现]\n\n编译结果缓存默认开启，TTL 180 秒、Jitter 30 秒。它们是配置事实，不是撤销传播 SLO；撤销不能只等待 TTL 自然过期。\n\n[当前实现]\n\n测试覆盖 Workspace 归属、Signal/Promotion、审核、Revision、Revoke、Control Pack 与运行类型等契约。没有本轮新执行结果时，只能说明存在测试保护，不能声称当前分支零失败。\n\n[目标设计]\n\nMemory 将审核后的条目、编译策略、运行 Revision、Release Bundle 和使用 Outcome 形成闭环，并把缓存、检索与向量表示保持为可重建投影。"
+    },
+    {
+      "rank": 16,
+      "evidence_id": "passage:a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+      "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+      "chunk_no": 16,
+      "score": 0.011564320932317346,
+      "selected": true,
+      "excerpt": "为什么不用相近方案"
+    },
+    {
+      "rank": 17,
+      "evidence_id": "passage:f688d261-11bc-4152-b394-da715aaec060",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 0,
+      "score": 0.011475409836065573,
+      "selected": false,
+      "excerpt": "Memory 机制详细设计\n\n本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。"
+    },
+    {
+      "rank": 18,
+      "evidence_id": "passage:34118095-5dfe-4aeb-90e2-2ca3f95f2dc4",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 25,
+      "score": 0.01129032258064516,
+      "selected": false,
+      "excerpt": "13. 面试入口\n\n面试主回答与追问见\n\nContext 与 Memory 一体化手册\n\n。"
+    },
+    {
+      "rank": 19,
+      "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+      "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+      "chunk_no": 19,
+      "score": 0.01125124875124875,
+      "selected": false,
+      "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |"
+    },
+    {
+      "rank": 20,
+      "evidence_id": "passage:fd2272ec-d6fd-4bac-8b1b-4c0007d91faa",
+      "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+      "chunk_no": 19,
+      "score": 0.011235294117647059,
+      "selected": false,
+      "excerpt": "9. 撤销、删除与传播\n\n撤销分三类：运行时撤销使新 Run 立即不可见；合规删除清理允许删除的正文与投影；审计保留只保存最小化 ID、摘要、时间和决策，不保留可恢复敏感内容。\n\n[目标设计]\n\nRevoke 事务更新 Item/Version 状态并写 Outbox。消费者主动失效 Compiled Pack Cache、全文/向量索引、Memory 评测副本和下游候选；Read Path 同时校验 Revoke Watermark，防止事件延迟期间读到旧 Pack。Source 删除、权限变化或 Evidence 失效通过依赖关系触发相同流程。\n\n撤销传播完成的判据不是“发出事件”，而是：MySQL Head 不可见、Cache Key 失效、索引文档删除或版本落后被拒绝、评测副本清理、对账无残留。旧 Run 为审计可保留当时的 Item ID/Version/Digest，但后续回放必须显示该条目已撤销，不能重新注入正文。"
+    }
+  ],
+  "selection_policy": "qa-mmr-token-budget-v3",
+  "retrieval_rewrite": {
+    "standalone_query": "记忆候选在什么条件下可以自动批准？",
+    "keyword_query": "记忆候选在什么条件下可以自动批准？",
+    "method": "RULE",
+    "degradation_reasons": [],
+    "is_standalone": true
+  },
+  "evidence_sufficiency": "SUFFICIENT",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "def62fa2-05db-4d77-90a5-17c7ed792d44",
+      "receipt": {
+        "submission_id": "3b927477-1702-4fde-a666-eaaea0dd22b6",
+        "execution_kind": "ANSWER",
+        "message_id": "bcd02fd0-3722-4aa9-90c5-4a3b5a2537ef",
+        "assistant_message_id": "183ba158-7b8b-4e27-9443-5e6bc695f431",
+        "assistant_request_id": "6a69aa1e-9dec-4c9d-aa4c-e98ff2203a04",
+        "stream_url": "/api/v2/chat/requests/6a69aa1e-9dec-4c9d-aa4c-e98ff2203a04/stream",
+        "answer_run_id": "def62fa2-05db-4d77-90a5-17c7ed792d44",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/71e5bc34-a2aa-4d84-ab86-03459fc78f2d/answer-runs/def62fa2-05db-4d77-90a5-17c7ed792d44/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "def62fa2-05db-4d77-90a5-17c7ed792d44",
+        "workspace_id": "71e5bc34-a2aa-4d84-ab86-03459fc78f2d",
+        "conversation_id": "d1dbc9a2-844b-4fcc-9561-0c74669e15b1",
+        "mode": "QA",
+        "status": "COMPLETED",
+        "query_message_id": "bcd02fd0-3722-4aa9-90c5-4a3b5a2537ef",
+        "answer_message_id": "183ba158-7b8b-4e27-9443-5e6bc695f431",
+        "assistant_request_id": "6a69aa1e-9dec-4c9d-aa4c-e98ff2203a04",
+        "retrieval_plan_version": "qa-weknora-hybrid-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1200,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "Memory 不是聊天存档，也不是 Evidence 的替代品。它要解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题，最终产物不是一个永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Research 和 Artifact 只读取当前有效 Revision 中与当前 Scope、预算和任务相关的条目。\n\n## 哪些内容可以进入 Candidate\n\n高价值 Signal 包括用户明确偏好、反复稳定的格式要求、用户纠正、持续目标、Workspace 治理约束，以及经验证事实的引用。低价值或高风险输入包括临时情绪、模型推测、第三方网页指令、认证材料、完整隐私原文、一次性任务细节和无法定位来源的结论。\n\n候选策略要同时考虑明确性、稳定性、未来复用价值、来源可信度、敏感级别、冲突、时效和可撤销性。置信度只用于排队和辅助审核，不赋予写入权限。\n\n## 生命周期与状态机\n\n正常路径是：用户明确保存、纠正反馈、Run Observation 或系统治理事件形成 Signal；Extractor 生成结构化 Candidate，带来源、类型、Scope、置信度、敏感级别与有效期建议；策略先做去重、冲突、敏感字段、Workspace 与来源可信度检查，再进入人工或规则 Review；批准后创建或追加 Memory Version，Compiler 生成新的 Runtime Revision；Run 创建时按类型、权限、有效期、相关性和 Token 预算编译 Control Pack 并固化 Digest；Run 结束记录 Usage 与 Outcome，若 Outcome 提示错误或冲突，只生成新 Candidate。\n\n状态机方面，Candidate 可以流转到 Approved、Rejected 或 Needs Revision，Needs Revision 可回到 Candidate；Approved 进入 Active，Active 可进入 Superseded、Stale 或 Revoked；Stale 可经重新验证回到 Candidate，Superseded、Revoked 和 Rejected 为终态。\n\n异常恢复方面，ACL 变化会发布 Tombstone/Revoke Event，所有引用条目转为 Stale/Revoke，并完成索引和 Cache 对账；Outcome 写入失败时 Run 结果不回滚，Outcome 走独立 Outbox 重试，幂等写入后进入候选队列；编译策略故障时保留上一稳定 Revision，停止发布新 Pack，待固定回放通过且灰度窗口回到基线后恢复。\n\n## Evidence 与 Memory 的信任域\n\nMemory 绑定 Signal 来源和审核 Revision，不复制来源真相；时效性由 Valid From/To、TTL、冲突和 Revoke 决定；只有当前有效且 Scope 匹配的条目才可编译；失败后果是错误长期污染后续运行。Memory 可以记住“用户希望报告先给结论”，但不能把一次 Research 生成的结论无审核地记成事实。需要复用的事实应保存对 Source/Wiki/Evidence 的稳定引用与版本条件，引用失效时 Memory 条目进入 Stale 或待复核，而不是继续把旧文本注入上下文。\n\n## 从初版到受控闭环\n\n- V0 会话拼接：把历史对话截断后放入 Prompt，导致 Token 膨胀、旧错误反复出现、跨任务噪声，修复方向是分离 Conversation/Checkpoint 与长期 Memory。\n- V1 自动摘要：定期生成一段用户画像，摘要覆盖细节，错误无法定位或撤销，因此引入 Signal、Candidate 与稳定 Item ID。\n- V2 自动写入：模型抽取事实后直接保存，带来 Prompt Injection、误抽取和一次性偏好长期污染，于是加入策略、人工/规则 Review 和敏感字段门禁。\n- V3 版本化：引入 Item/Version、冲突与有效期，但召回结果仍可能跨运行类型或越权，因此引入 Scope、Runtime Revision 与类型化 Control Pack。\n- V4 反馈闭环：记录 Usage 与 Outcome，若系统自动学习可能形成错误强化，因此需要独立 Outbox 与人工复核等机制。\n\n## 候选、审核与污染防护\n\n网页、附件、Tool Output 和模型中间文本默认不能创建用户长期 Memory。直接与间接 Prompt Injection 在抽取前后都做规则和模型双通道检测。密钥、Token、Cookie、身份证明、支付信息和高敏原文拒绝进入 Candidate、Prompt、Trace 与 Baggage。跨 Workspace 候选即使文本相同也不能合并，去重键必须包含 Workspace 和 Owner Scope。自动批准只适用于低风险、用户明确、Schema 可确定性验证的偏好，策略服务故障时 Fail Closed。Memory 不授予工具权限，即使条目记录“允许导出”，执行时仍由服务端重新鉴权与审批。Negative Outcome、用户纠正和 Evidence 失效触发复核，不允许系统自行把新答案覆盖成真相。\n\n## 确定性 Control Pack 编译\n\nCompiler 的输入包括 workspace_id、user_id、运行类型、对象 Scope、Runtime Revision、ACL Epoch、任务查询、Token 预算、策略版本和 Release Bundle，相同输入必须生成相同条目顺序、裁剪结果和 Digest。\n\n编译顺序为：只读取 Active Head，排除 Rejected、Revoked、Expired、Stale 与 Superseded；应用 Workspace、用户、运行类型、对象和敏感级别过滤；先加入小型强约束，再对候选做相关性、时效、置信度等方面的排序与裁剪。\n\n## 参数与调优\n\n| 参数 | 当前事实或目标初值 | 推导与失败模式 |\n| --- | --- | --- |\n| Compiled Pack Cache TTL/Jitter | 当前实现 180/30 秒 | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读",
+        "started_at": "2026-10-14T09:28:47Z",
+        "first_token_at": "2026-10-14T09:28:52Z",
+        "finished_at": "2026-10-14T09:28:57Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "记忆候选在什么条件下可以自动批准？",
+          "keyword_query": "记忆候选在什么条件下可以自动批准？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "SUFFICIENT"
+      },
+      "evidence": {
+        "run_id": "def62fa2-05db-4d77-90a5-17c7ed792d44",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "passage:601809e2-5032-464a-8227-834730880924",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "601809e2-5032-464a-8227-834730880924",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 14 - 6. 生命周期与状态机 > 6.2 异常与恢复]\n…或 ACL 变化 | 发布 Tombstone/Revoke Event                | 所有引用条目转为 Stale/Revoke，索引和 Cache 对账完成 |\n| Outcome 写入失败      | Run 结果不回滚，Outcome 走独立 Outbox 重试          | 幂等写入后进入候选队列                          |\n| 编译策略故障            | 保留上一稳定 Revision，停止发布新 Pack               | 固定回放通过且灰度窗口回到基线                      |\n\n7. 候选、审核与污染防护",
+            "content_hash": "fcae87a01fbd5805f0b457a59001f6a1e0278e4c1f3941d56845c6060e5a7369",
+            "location": "chunk:15 · 7. 候选、审核与污染防护",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 362
+          },
+          {
+            "rank": 2,
+            "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 20 - 10. 参数与调优]\n10. 参数与调优\n\n| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |\n\n[adjacent chunk 22 - 10. 参数与调优]\n参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。",
+            "content_hash": "60eb33ef966ab1ff03824a6b9f107eb74074c2e67bd610862693594257331b16",
+            "location": "chunk:21 · 10. 参数与调优",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 1168
+          },
+          {
+            "rank": 3,
+            "evidence_id": "passage:96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "12. 技术取舍与迁移条件\n\n不用 LangGraph Checkpoint 代替 Memory：Checkpoint 解决单线程运行恢复，缺少跨运行审核、Scope、有效期与撤销。\n\n不直接接入黑盒自动记忆服务：可以借鉴抽取、去重和搜索，但对象级 ACL、Evidence 绑定、Revision 与审计必须留在 NoteWeave 控制面。\n\n不以向量数据库作为 Memory 真源：相似度不能表达 Head、冲突、撤销、权限和确定性编译；向量仅是可重建召回投影。\n\n不默认建立完整时间知识图谱：关系查询和有效期复杂到平面 Item 难以表达，且图投影收益在固定回放中明确时再引入；MySQL 仍保存治理真源。\n\n不把所有 Memory 常驻 Prompt：只允许小型稳定约束进入固定 Pack，其余按任务召回，降低 Token 成本与越权面。\n\n[adjacent chunk 25 - 13. 面试入口]\n13. 面试入口\n\n面试主回答与追问见\n\nContext 与 Memory 一体化手册\n\n。",
+            "content_hash": "92d96571a0162524378b69d95a83dee46809669250bcd4399d706148a9876bed",
+            "location": "chunk:24 · 12. 技术取舍与迁移条件",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 453
+          },
+          {
+            "rank": 4,
+            "evidence_id": "passage:1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 9 - 5. 从初版到受控闭环]\n5. 从初版到受控闭环\n\n| 阶段       | 简单方案                              | Bad Case                       | 修复与新问题                                      |\n|----------|-----------------------------------|--------------------------------|---------------------------------------------|\n| V0 会话拼接  | 把历史对话截断后放入 Prompt                 | Token 膨胀、旧错误反复出现、跨任务噪声         | 分离 Conversation/Checkpoint 与长期 Memory       |\n| V1 自动摘要  | 定期生成一段用户画像                        | 摘要覆盖细节，错误无法定位或撤销               | 引入 Signal、Candidate 与稳定 Item ID             |\n| V2 自动写入  | 模型抽取事实后直接保存                       | Prompt Injection、误抽取和一次性偏好长期污染 | 加入策略、人工/规则 Review 和敏感字段门禁                   |\n| V3 版本化   | Item/Version、冲突与有效期               | 召回结果仍可能跨运行类型或越权                | 引入 Scope、Runtime Revision 与类型化 Control Pack |\n| V4 反馈闭环  | 记录 Usage 与 Outcome                | 系统若自动学习可能形成错误强化                | Outcome 只生成新 Candidate，重新走审核                |\n| V5 确定性编译 | Bundle 固定 Revision、策略、Token 预算与排序 | Cache 和索引撤销传播有延迟               | Revoke Event、读时校验、主动失效与对账                   |\n\n[adjacent chunk 11 - 6. 生命周期与状态机]\n6. 生命周期与状态机\n\nstateDiagram-v2\n    [*] --> OBSERVED\n    OBSERVED --> CANDIDATE\n    CANDIDATE --> APPROVED\n    CANDIDATE --> REJECTED\n    CANDIDATE --> NEEDS_REVISION\n    NEEDS_REVISION --> CANDIDATE\n    APPROVED --> ACTIVE\n    ACTIVE --> SUPERSEDED\n    ACTIVE --> STALE\n    ACTIVE --> REVOKED\n    STALE…",
+            "content_hash": "39775387d24714a322938990277b9b161025ab54a5e35c1b98f8faf369f3be83",
+            "location": "chunk:10 · 5. 从初版到受控闭环",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 1406
+          },
+          {
+            "rank": 5,
+            "evidence_id": "passage:ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 4 - 3. Evidence 与 Memory 的信任域]\n…Source/External Snapshot  | 绑定 Signal 来源和审核 Revision，不复制来源真相  |\n| 时效性  | 由来源版本、抓取时间和引用状态决定               | 由 Valid From/To、TTL、冲突和 Revoke 决定 |\n| 使用门槛 | Claim 必须有合适 Evidence 支撑         | 只有当前有效且 Scope 匹配的条目可编译            |\n| 失败后果 | 事实不可验证或引用错误                     | 错误长期污染后续运行                        |\n\nMemory 可以记住“用户希望报告先给结论”，但不能把一次 Research 生成的结论无审核地记成事实。需要复用的事实应保存对 Source/Wiki/Evidence 的稳定引用与版本条件；引用失效时 Memory 条目进入\n\nSTALE\n\n或待复核，而不是继续把旧文本注入上下文。\n\n[adjacent chunk 6 - 4. 领域模型与不变量]\n4. 领域模型与不变量",
+            "content_hash": "43175590a993b7425355595f2ce31a3015464dd641050c7862e0e1db76a51d17",
+            "location": "chunk:5 · 3. Evidence 与 Memory 的信任域",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 540
+          },
+          {
+            "rank": 6,
+            "evidence_id": "passage:255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "7.2 污染防线\n\n网页、附件、Tool Output 和模型中间文本默认不能创建用户长期 Memory。\n\n直接 Prompt Injection 与间接 Prompt Injection 在抽取前后都做规则和模型双通道检测。\n\n密钥、Token、Cookie、身份证明、支付信息和高敏原文拒绝进入 Candidate、Prompt、Trace 与 Baggage。\n\n跨 Workspace 候选即使文本相同也不能合并；去重键必须包含 Workspace 和 Owner Scope。\n\n自动批准只适用于低风险、用户明确、Schema 可确定性验证的偏好，策略服务故障时 Fail Closed。\n\nMemory 不授予工具权限。即使条目记录“允许导出”，执行时仍由服务端重新鉴权与审批。\n\nNegative Outcome、用户纠正和 Evidence 失效触发复核，不允许系统自行把新答案覆盖成真相。\n\n[adjacent chunk 18 - 8. 确定性 Control Pack 编译]\n8. 确定性 Control Pack 编译\n\nCompiler 的输入为\n\nworkspace_id\n\n、\n\nuser_id\n\n、运行类型、对象 Scope、Runtime Revision、ACL Epoch、任务查询、Token 预算、策略版本和 Release Bundle。相同输入必须生成相同条目顺序、裁剪结果和 Digest。\n\n编译顺序：\n\n只读取 Active Head，排除 Rejected、Revoked、Expired、Stale 与 Superseded。\n\n应用 Workspace、用户、运行类型、对象和敏感级别过滤。\n\n先加入小型强约束，再对候选做相关性、时效、置信…",
+            "content_hash": "61be7be94f10b7f3bcc7825b025b7b4921324af7eeaebea37dcb9a36e0356a0b",
+            "location": "chunk:17 · 7. 候选、审核与污染防护 > 7.2 污染防线",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 752
+          },
+          {
+            "rank": 7,
+            "evidence_id": "passage:c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 22 - 10. 参数与调优]\n参数实验记录数据集、Workspace/用户/运行类型切片、Policy/Extractor/Embedding/Reranker/Compiler 版本、Token 预算和观察窗口。Candidate 阈值要同时观察审核通过率、漏记率、错误注入率和人工审核量，不能只优化接受率。\n\n11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/Artifact/Research Control Pack 的 Scope 与 Schema 隔离。\n\n固定回放：Candidate 抽取、冲突处理、排序、预算裁剪和 Shadow Recall 对照。\n\n安全红队：恶意 Source、间接 Prompt Injection、敏感字段、跨 Workspace 文本碰撞和工具授权诱导。\n\n故障注入：Compiler Kill、Cache/Redis 故障、Outbox 延迟、索引删除失败和乱序 Revoke。\n\nE2E：创建 Signal、审核、Revision、使用记录、纠正、撤销和 Inspector 验证。\n\n[生产待验证]\n\n候选阈值、人工成本、用户采纳、长期污染、知识新鲜度和真实 Token 收益必须在真实用户与持续时间窗中验证。灰度按 Workspace Allowlist 和 Policy Version 进行，先 Shadow Recall，再只读提示，最后才允许低风险自动批准。回滚将新 Compiler 停止发布、恢复旧策略与稳定 Revision；已产生的新 Version 不删除，只停止成为 Active Head。",
+            "content_hash": "c7a488a2cb0eb9fe77e1bc4ec72a511e386ed9a80312701170b5f7026d06c9eb",
+            "location": "chunk:23 · 11. 指标、测试、灰度与回滚",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 974
+          },
+          {
+            "rank": 8,
+            "evidence_id": "passage:003c9540-c3d7-45bb-9aef-8138cecf620b",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "003c9540-c3d7-45bb-9aef-8138cecf620b",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "7.1 哪些内容可以进入 Candidate\n\n高价值 Signal 包括用户明确偏好、反复稳定的格式要求、用户纠正、持续目标、Workspace 治理约束和经验证事实的引用。低价值或高风险输入包括临时情绪、模型推测、第三方网页指令、认证材料、完整隐私原文、一次性任务细节和无法定位来源的结论。\n\n候选策略同时考虑：明确性、稳定性、未来复用价值、来源可信度、敏感级别、冲突、时效和可撤销性。置信度只用于排队和辅助审核，不赋予写入权限。",
+            "content_hash": "e626aa2ca208a2e1b01749743604e23b9d927316a4959416b51203ccce17bc86",
+            "location": "chunk:16 · 7. 候选、审核与污染防护 > 7.1 哪些内容可以进入 Candidate",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 217
+          },
+          {
+            "rank": 9,
+            "evidence_id": "passage:babaa694-7ffe-4b65-85ac-2a6d68009aff",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "babaa694-7ffe-4b65-85ac-2a6d68009aff",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 11 - 6. 生命周期与状态机]\n…-> APPROVED\n    CANDIDATE --> REJECTED\n    CANDIDATE --> NEEDS_REVISION\n    NEEDS_REVISION --> CANDIDATE\n    APPROVED --> ACTIVE\n    ACTIVE --> SUPERSEDED\n    ACTIVE --> STALE\n    ACTIVE --> REVOKED\n    STALE --> CANDIDATE: revalidation\n    SUPERSEDED --> [*]\n    REVOKED --> [*]\n    REJECTED --> [*]\n\n6.1 正常路径\n\n用户明确保存、纠正反馈、Run Observation 或系统治理事件形成 Signal。\n\nExtractor 生成结构化 Candidate，带来源、类型、Scope、置信度、敏感级别与有效期建议。\n\n策略先做去重、冲突、敏感字段、Workspace 与来源可信度检查，再进入人工或规则 Review。\n\n批准后创建或追加 Memory Version，Compiler 生成新的 Runtime Revision。\n\nRun 创建时按类型、权限、有效期、相关性和 Token 预算编译 Control Pack，并固化 Digest。\n\nRun 结束记录 Usage 与 Outcome。Outcome 若提示错误或冲突，只生成新 Candidate。\n\n[adjacent chunk 13 - 6. 生命周期与状态机 > 6.2 异常与恢复]\n6.2 异常与恢复",
+            "content_hash": "30dc0d9288eecd4b95cdd90f53f43e9fe63d9f348fae03b1043994be807e26f1",
+            "location": "chunk:12 · 6. 生命周期与状态机 > 6.1 正常路径",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 733
+          },
+          {
+            "rank": 10,
+            "evidence_id": "passage:d83abc56-5173-4d7c-858c-3621b9f22081",
+            "kind": "PASSAGE",
+            "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+            "source_snapshot_id": "363ef77f-dea6-427d-8cb7-0527b4f16b2c",
+            "passage_id": "d83abc56-5173-4d7c-858c-3621b9f22081",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "memory.md",
+            "excerpt": "[adjacent chunk 0 - Memory 机制详细设计]\nMemory 机制详细设计\n\n本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。\n\n1. 业务问题、产物与非目标\n\nMemory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Research 和 Artifact 只读取当前有效 Revision 中与当前 Scope、预算和任务相关的条目。\n\nMemory 的非目标：\n\n不保存全部聊天并自动塞回 Prompt。\n\n不把 Source、Research Evidence 或 Wiki 页面复制成第二份事实真源。\n\n不把相似度高等同于可信、可见或仍然有效。\n\n不允许模型根据一次结果直接改写长期记忆。\n\n不承诺召回更多就能提升回答质量或降低 Token 成本。\n\n[adjacent chunk 2 - 2. 当前事实与目标边界]\n2. 当前事实与目标边界\n\n[当前实现]\n\n迁移包含两代数据模型：\n\nmemory_signal\n\n、\n\nmemory_candidate\n\n、\n\nmemory_outcome\n\n、\n\nmemory_usage_log\n\n等候选与反馈结构；\n\nmemory_object\n\n、\n\nmemory_version\n\n、\n\nmemory_review_decision\n\n等对象与审核结构；\n\nV080\n\n创建\n\nmemory_item\n\n、\n\nmemory_runtime_revision\n\n、\n\nmemory_event\n\n等 canonical runtime，\n\nV082\n\n将 Compiler…",
+            "content_hash": "30765784bb7311c23c39bd037632839ac6c2a847e198785cadcd36f798ae072f",
+            "location": "chunk:1 · 1. 业务问题、产物与非目标",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 826
+          },
+          {
+            "rank": 11,
+            "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+            "kind": "PASSAGE",
+            "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+            "source_snapshot_id": "a908b71f-b7c7-45a6-84b2-1b9e965c59be",
+            "passage_id": "2693ca8b-0567-4dc7-892d-3c484ca170c6",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "qa-rag.md",
+            "excerpt": "[adjacent chunk 19 - 参数推导与调优]\n…rovider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |\n\n[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。\n\n[adjacent chunk 21 - 指标与阈值动作]\n指标与阈值动作",
+            "content_hash": "91d67a7510474a1d678068bb9a1aa33e682fa952b0eb972e993e6224bf861336",
+            "location": "chunk:20 · 参数推导与调优",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 578
+          },
+          {
+            "rank": 12,
+            "evidence_id": "passage:a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+            "kind": "PASSAGE",
+            "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+            "source_snapshot_id": "90e50feb-b983-4371-b3f1-2601e76b6a09",
+            "passage_id": "a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+            "knowledge_item_id": null,
+            "knowledge_version_id": null,
+            "title": "wiki.md",
+            "excerpt": "[adjacent chunk 15 - 指标]\n指标按 Workspace、页面类型、版本年龄、链接类型、风险和 Bundle 切片。生产采纳、治理成本和知识新鲜度属于\n\n[生产待验证]\n\n。\n\n为什么不用相近方案\n\n[adjacent chunk 17 - 为什么不用相近方案]\n| 方案                   | 不直接采用                          | 迁移条件                     |\n|----------------------|--------------------------------|--------------------------|\n| 文本文件作为唯一真源           | 多用户 ACL、事务、版本和跨对象审计困难          | 单用户本地产品可考虑               |\n| 图数据库作为页面真源           | 正文版本、事务与 Source Evid…",
+            "content_hash": "23ed3e0023f4c8347d2f8a470a783e47f8d496c1c4d664a6b6f2f3559409b0cd",
+            "location": "chunk:16 · 为什么不用相近方案",
+            "fresh_at": "2026-10-14T09:28:49Z",
+            "character_cost": 443
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "记忆候选在什么条件下可以自动批准？",
+          "keyword_query": "记忆候选在什么条件下可以自动批准？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "SUFFICIENT"
+      },
+      "retrieval_summary": {
+        "relevance_policy": "qa-lexical-sufficiency-v2",
+        "degraded": true,
+        "admitted_candidate_count": 12,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "qa-weknora-hybrid-v1",
+          "total_latency_micros": 812892,
+          "raw_candidate_count": 12,
+          "admitted_candidate_count": 12,
+          "selected_evidence_count": 12,
+          "selected_evidence_characters": 8452,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "QA_PASSAGE",
+              "candidate_limit": 12,
+              "raw_candidate_count": 12,
+              "admitted_candidate_count": 12,
+              "latency_micros": 812744,
+              "degraded": true,
+              "degradation_reasons": [
+                "QA_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "selected_count": 12,
+                "ownership_rejected_count": 0,
+                "keyword_candidate_count": 42,
+                "rerank_candidate_count": 40,
+                "evidence_token_budget": 8000,
+                "rrf_candidate_count": 68,
+                "mysql_fallback_used": 0,
+                "query_expansion_count": 0,
+                "selected_token_estimate": 4054,
+                "vector_candidate_count": 60
+              },
+              "ranked_candidates": [
+                {
+                  "rank": 1,
+                  "evidence_id": "passage:601809e2-5032-464a-8227-834730880924",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 15,
+                  "score": 0.015220700152207,
+                  "selected": true,
+                  "excerpt": "7. 候选、审核与污染防护"
+                },
+                {
+                  "rank": 2,
+                  "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 21,
+                  "score": 0.014906832298136646,
+                  "selected": true,
+                  "excerpt": "| 参数                             | 当前事实或目标初值                           | 推导与失败模式                                     |\n|--------------------------------|-------------------------------------|---------------------------------------------|\n| Compiled Pack Cache TTL/Jitter | `[当前实现]` 180/30 秒                   | 只减轻读负载；TTL 过长扩大陈旧窗口，撤销仍需主动失效与读时水位校验         |\n| Candidate 阈值                   | `[目标设计]` 不设跨类型统一值                   | 在偏好、事实引用、约束等类型上分别用 Precision-Recall 和人工成本选择 |\n| 自动批准                           | `[目标设计]` 仅低风险明确偏好，默认关闭              | 开启前要求危险错误注入率和撤销残留率达到门槛                      |\n| Control Pack 预算                | `[目标设计]` 占模型输入预算的固定上限并按 Run Type 分配 | 过小遗漏关键约束，过大挤压 Evidence 与任务输入                |\n| 撤销传播                           | `[目标设计]` 以能力 SLO 定义，不用 Cache TTL 代替 | 超阈值停止自动编译并触发对账；连续一个滞回窗口无残留后恢复               |\n| 冲突并存上限                         | `[目标设计]` 同一逻辑事实默认 1 个 Active Head   | 多时点事实用 Valid From/To 表达，不能靠相似向量随机选一个        |"
+                },
+                {
+                  "rank": 3,
+                  "evidence_id": "passage:96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 24,
+                  "score": 0.014838709677419355,
+                  "selected": true,
+                  "excerpt": "12. 技术取舍与迁移条件\n\n不用 LangGraph Checkpoint 代替 Memory：Checkpoint 解决单线程运行恢复，缺少跨运行审核、Scope、有效期与撤销。\n\n不直接接入黑盒自动记忆服务：可以借鉴抽取、去重和搜索，但对象级 ACL、Evidence 绑定、Revision 与审计必须留在 NoteWeave 控制面。\n\n不以向量数据库作为 Memory 真源：相似度不能表达 Head、冲突、撤销、权限和确定性编译；向量仅是可重建召回投影。\n\n不默认建立完整时间知识图谱：关系查询和有效期复杂到平面 Item 难以表达，且图投影收益在固定回放中明确时再引入；MySQL 仍保存治理真源。\n\n不把所有 Memory 常驻 Prompt：只允许小型稳定约束进入固定 Pack，其余按任务召回，降低 Token 成本与越权面。"
+                },
+                {
+                  "rank": 4,
+                  "evidence_id": "passage:1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 10,
+                  "score": 0.01401918976545842,
+                  "selected": true,
+                  "excerpt": "| 阶段       | 简单方案                              | Bad Case                       | 修复与新问题                                      |\n|----------|-----------------------------------|--------------------------------|---------------------------------------------|\n| V0 会话拼接  | 把历史对话截断后放入 Prompt                 | Token 膨胀、旧错误反复出现、跨任务噪声         | 分离 Conversation/Checkpoint 与长期 Memory       |\n| V1 自动摘要  | 定期生成一段用户画像                        | 摘要覆盖细节，错误无法定位或撤销               | 引入 Signal、Candidate 与稳定 Item ID             |\n| V2 自动写入  | 模型抽取事实后直接保存                       | Prompt Injection、误抽取和一次性偏好长期污染 | 加入策略、人工/规则 Review 和敏感字段门禁                   |\n| V3 版本化   | Item/Version、冲突与有效期               | 召回结果仍可能跨运行类型或越权                | 引入 Scope、Runtime Revision 与类型化 Control Pack |\n| V4 反馈闭环  | 记录 Usage 与 Outcome                | 系统若自动学习可能形成错误强化                | Outcome 只生成新 Candidate，重新走审核                |\n| V5 确定性编译 | Bundle 固定 Revision、策略、Token 预算与排序 | Cache 和索引撤销传播有延迟               | Revoke Event、读时校验、主动失效与对账                   |"
+                },
+                {
+                  "rank": 5,
+                  "evidence_id": "passage:ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 5,
+                  "score": 0.013755707762557075,
+                  "selected": true,
+                  "excerpt": "Memory 可以记住“用户希望报告先给结论”，但不能把一次 Research 生成的结论无审核地记成事实。需要复用的事实应保存对 Source/Wiki/Evidence 的稳定引用与版本条件；引用失效时 Memory 条目进入\n\nSTALE\n\n或待复核，而不是继续把旧文本注入上下文。"
+                },
+                {
+                  "rank": 6,
+                  "evidence_id": "passage:255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 17,
+                  "score": 0.013454618152738903,
+                  "selected": true,
+                  "excerpt": "7.2 污染防线\n\n网页、附件、Tool Output 和模型中间文本默认不能创建用户长期 Memory。\n\n直接 Prompt Injection 与间接 Prompt Injection 在抽取前后都做规则和模型双通道检测。\n\n密钥、Token、Cookie、身份证明、支付信息和高敏原文拒绝进入 Candidate、Prompt、Trace 与 Baggage。\n\n跨 Workspace 候选即使文本相同也不能合并；去重键必须包含 Workspace 和 Owner Scope。\n\n自动批准只适用于低风险、用户明确、Schema 可确定性验证的偏好，策略服务故障时 Fail Closed。\n\nMemory 不授予工具权限。即使条目记录“允许导出”，执行时仍由服务端重新鉴权与审批。\n\nNegative Outcome、用户纠正和 Evidence 失效触发复核，不允许系统自行把新答案覆盖成真相。"
+                },
+                {
+                  "rank": 7,
+                  "evidence_id": "passage:c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 23,
+                  "score": 0.013437499999999998,
+                  "selected": true,
+                  "excerpt": "11. 指标、测试、灰度与回滚\n\n完整指标契约见\n\n评测指标报告\n\n。Memory 至少关注：Candidate 审核通过率、错误注入率、撤销残留率、冲突发现率、Control Pack 命中率、有效采用率、人工修改率、负反馈率、编译确定性、编译 P95/P99、Pack Token 占用和单位有效记忆成本。\n\n测试体系：\n\n领域与属性测试：状态机合法转移、去重、版本单调、同输入同 Digest、已撤销条目永不进入新 Pack。\n\nRepository/数据库集成：并发 Review、Revision 发布、Revoke Outbox、ACL Epoch 与读时校验。\n\n契约测试：Chat/Artifact/Research Control Pack 的 Scope 与 Schema 隔离。\n\n固定回放：Candidate 抽取、冲突处理、排序、预算裁剪和 Shadow Recall 对照。\n\n安全红队：恶意 Source、间接 Prompt Injection、敏感字段、跨 Workspace 文本碰撞和工具授权诱导。\n\n故障注入：Compiler Kill、Cache/Redis 故障、Outbox 延迟、索引删除失败和乱序 Revoke。\n\nE2E：创建 Signal、审核、Revision、使用记录、纠正、撤销和 Inspector 验证。\n\n[生产待验证]\n\n候选阈值、人工成本、用户采纳、长期污染、知识新鲜度和真实 Token 收益必须在真实用户与持续时间窗中验证。灰度按 Workspace Allowlist 和 Policy Version 进行，先 Shadow Recall，再只读提示，最后才允许低风险自动批准。回滚将新 Compiler 停止发布、恢复旧策略与稳定 Revision；已产生的新 Version 不删除，只停止成为 Active Head。"
+                },
+                {
+                  "rank": 8,
+                  "evidence_id": "passage:003c9540-c3d7-45bb-9aef-8138cecf620b",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 16,
+                  "score": 0.013386123680241327,
+                  "selected": true,
+                  "excerpt": "7.1 哪些内容可以进入 Candidate\n\n高价值 Signal 包括用户明确偏好、反复稳定的格式要求、用户纠正、持续目标、Workspace 治理约束和经验证事实的引用。低价值或高风险输入包括临时情绪、模型推测、第三方网页指令、认证材料、完整隐私原文、一次性任务细节和无法定位来源的结论。\n\n候选策略同时考虑：明确性、稳定性、未来复用价值、来源可信度、敏感级别、冲突、时效和可撤销性。置信度只用于排队和辅助审核，不赋予写入权限。"
+                },
+                {
+                  "rank": 9,
+                  "evidence_id": "passage:babaa694-7ffe-4b65-85ac-2a6d68009aff",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 12,
+                  "score": 0.012991869918699186,
+                  "selected": true,
+                  "excerpt": "6.1 正常路径\n\n用户明确保存、纠正反馈、Run Observation 或系统治理事件形成 Signal。\n\nExtractor 生成结构化 Candidate，带来源、类型、Scope、置信度、敏感级别与有效期建议。\n\n策略先做去重、冲突、敏感字段、Workspace 与来源可信度检查，再进入人工或规则 Review。\n\n批准后创建或追加 Memory Version，Compiler 生成新的 Runtime Revision。\n\nRun 创建时按类型、权限、有效期、相关性和 Token 预算编译 Control Pack，并固化 Digest。\n\nRun 结束记录 Usage 与 Outcome。Outcome 若提示错误或冲突，只生成新 Candidate。"
+                },
+                {
+                  "rank": 10,
+                  "evidence_id": "passage:d83abc56-5173-4d7c-858c-3621b9f22081",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 1,
+                  "score": 0.012914813547724939,
+                  "selected": true,
+                  "excerpt": "1. 业务问题、产物与非目标\n\nMemory 解决的是跨运行复用稳定偏好、约束、工作方式和经审核事实的问题。它的最终产物不是一段永久文本，而是一个可追溯、可版本化、可撤销、按运行类型编译的 Control Pack。Chat、Research 和 Artifact 只读取当前有效 Revision 中与当前 Scope、预算和任务相关的条目。\n\nMemory 的非目标：\n\n不保存全部聊天并自动塞回 Prompt。\n\n不把 Source、Research Evidence 或 Wiki 页面复制成第二份事实真源。\n\n不把相似度高等同于可信、可见或仍然有效。\n\n不允许模型根据一次结果直接改写长期记忆。\n\n不承诺召回更多就能提升回答质量或降低 Token 成本。"
+                },
+                {
+                  "rank": 11,
+                  "evidence_id": "passage:b2f5be74-fbe5-4599-9064-d7f346c67baa",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 18,
+                  "score": 0.012558685446009389,
+                  "selected": false,
+                  "excerpt": "8. 确定性 Control Pack 编译\n\nCompiler 的输入为\n\nworkspace_id\n\n、\n\nuser_id\n\n、运行类型、对象 Scope、Runtime Revision、ACL Epoch、任务查询、Token 预算、策略版本和 Release Bundle。相同输入必须生成相同条目顺序、裁剪结果和 Digest。\n\n编译顺序：\n\n只读取 Active Head，排除 Rejected、Revoked、Expired、Stale 与 Superseded。\n\n应用 Workspace、用户、运行类型、对象和敏感级别过滤。\n\n先加入小型强约束，再对候选做相关性、时效、置信度和冲突惩罚排序。\n\n对同一逻辑 Item 只保留当前有效 Version，对互斥条目拒绝自动并存。\n\n按确定性 Token 估算裁剪，输出 Item ID、Version、来源摘要与使用限制。\n\n写入 Compiled Pack Cache，Key 包含 Revision、ACL Epoch、Run Type、Query Digest 与 Policy Version。\n\nShadow Recall 使用同一候选集生成对照 Pack，但不进入正式 Prompt，只记录离线比较数据。这样可以评估新召回或排序策略，而不把实验结果直接暴露给用户。"
+                },
+                {
+                  "rank": 12,
+                  "evidence_id": "passage:ba5d4e7a-b4f1-4a77-b8ce-c943e16fc835",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 14,
+                  "score": 0.012433734939759036,
+                  "selected": false,
+                  "excerpt": "| 异常                | 处理                                       | 恢复条件                                 |\n|-------------------|------------------------------------------|--------------------------------------|\n| 重复 Signal         | 以来源 ID、规范化内容摘要和时间窗去重                     | 返回已有 Signal/Candidate，不重复审核          |\n| 同一事实冲突            | 标记 `CONFLICTED` ，同时保留来源与时间               | Reviewer 决定替换、并存、缩小 Scope 或拒绝        |\n| Review 并发         | 使用 Candidate/Item Version 条件更新           | 失败方重新读取新 Head，不覆盖先提交结果               |\n| Compiler 中断       | Revision 在单事务或两阶段 Manifest 下发布           | 未完成 Revision 不成为 Active Head         |\n| 缓存命中旧 Pack        | 校验 Revision、ACL Epoch 和 Revoke Watermark | 主动失效并重新编译                            |\n| Source 删除或 ACL 变化 | 发布 Tombstone/Revoke Event                | 所有引用条目转为 Stale/Revoke，索引和 Cache 对账完成 |\n| Outcome 写入失败      | Run 结果不回滚，Outcome 走独立 Outbox 重试          | 幂等写入后进入候选队列                          |\n| 编译策略故障            | 保留上一稳定 Revision，停止发布新 Pack               | 固定回放通过且灰度窗口回到基线                      |"
+                },
+                {
+                  "rank": 13,
+                  "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 20,
+                  "score": 0.011983805668016195,
+                  "selected": true,
+                  "excerpt": "[目标设计]\n\n固定 Dataset、Snapshot、Index、模型与 Prompt，对 BM25、Vector、RRF、Rerank 和 Evidence Selection 做逐层消融。新策略若 Scope Violation > 0、Citation Accuracy 低于门禁、关键分桶 Recall 明显回退或 P99/成本超预算，停止灰度。恢复需修复版本在固定回放和 Shadow 窗口同时通过。"
+                },
+                {
+                  "rank": 14,
+                  "evidence_id": "passage:7ca3e5f3-5010-459e-a0e3-c4169c17b5cb",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 25,
+                  "score": 0.011769278606965174,
+                  "selected": false,
+                  "excerpt": "| 方案                      | 不直接采用                   | 迁移或引入条件                       |\n|-------------------------|-------------------------|-------------------------------|\n| 纯向量 RAG                 | 精确编号、专名、权限过滤与版本语义不足     | 作为混合召回一路，不独占策略                |\n| 只用 BM25                 | 同义改写、跨语言和抽象问题 Recall 受限 | 保留为确定性基线和降级                   |\n| 分数归一化相加                 | Provider 分数分布漂移，跨模型难比较  | 有稳定校准集和版本化校准器时评估              |\n| GraphRAG                | 构建、更新和全局查询成本高           | 多跳/全局问题占比高且离线评测证明净收益          |\n| QA 直接升级 Agent           | 单轮问题的成本、状态和安全复杂度不划算     | 需要多步工具、冲突验证和长报告时转 Research    |\n| Memory 参与 Evidence Rank | 偏好和内部记忆会伪装成外部事实         | Memory 只影响表达和过程，事实仍需 Evidence |"
+                },
+                {
+                  "rank": 15,
+                  "evidence_id": "passage:7bbd871a-7294-47cd-bc4f-c08e3c0feb81",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 2,
+                  "score": 0.01158315177923021,
+                  "selected": false,
+                  "excerpt": "2. 当前事实与目标边界\n\n[当前实现]\n\n迁移包含两代数据模型：\n\nmemory_signal\n\n、\n\nmemory_candidate\n\n、\n\nmemory_outcome\n\n、\n\nmemory_usage_log\n\n等候选与反馈结构；\n\nmemory_object\n\n、\n\nmemory_version\n\n、\n\nmemory_review_decision\n\n等对象与审核结构；\n\nV080\n\n创建\n\nmemory_item\n\n、\n\nmemory_runtime_revision\n\n、\n\nmemory_event\n\n等 canonical runtime，\n\nV082\n\n将 Compiler 切换到该运行时。当前最高迁移基线为\n\nV104\n\n。\n\n[当前实现]\n\n/api/v2/workspaces/{workspaceId}/memory\n\n下提供 Signal、Promotion、Chat/Artifact/Research Control Pack、Shadow Recall、Observation、Review、Revision Review、Object Version、Revoke、Outcome 和 Review Decision 等能力；Runtime Inspector 提供 Workspace 级检查面。\n\n[当前实现]\n\n编译结果缓存默认开启，TTL 180 秒、Jitter 30 秒。它们是配置事实，不是撤销传播 SLO；撤销不能只等待 TTL 自然过期。\n\n[当前实现]\n\n测试覆盖 Workspace 归属、Signal/Promotion、审核、Revision、Revoke、Control Pack 与运行类型等契约。没有本轮新执行结果时，只能说明存在测试保护，不能声称当前分支零失败。\n\n[目标设计]\n\nMemory 将审核后的条目、编译策略、运行 Revision、Release Bundle 和使用 Outcome 形成闭环，并把缓存、检索与向量表示保持为可重建投影。"
+                },
+                {
+                  "rank": 16,
+                  "evidence_id": "passage:a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+                  "source_id": "34fe4ad7-6e3c-4b34-a973-e91be2b8d257",
+                  "chunk_no": 16,
+                  "score": 0.011564320932317346,
+                  "selected": true,
+                  "excerpt": "为什么不用相近方案"
+                },
+                {
+                  "rank": 17,
+                  "evidence_id": "passage:f688d261-11bc-4152-b394-da715aaec060",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 0,
+                  "score": 0.011475409836065573,
+                  "selected": false,
+                  "excerpt": "Memory 机制详细设计\n\n本文是 Signal、Candidate、Review、Revision、Revoke、Control Pack 与 Outcome 的权威设计。Memory 不是聊天存档，也不是 Evidence 的替代品。"
+                },
+                {
+                  "rank": 18,
+                  "evidence_id": "passage:34118095-5dfe-4aeb-90e2-2ca3f95f2dc4",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 25,
+                  "score": 0.01129032258064516,
+                  "selected": false,
+                  "excerpt": "13. 面试入口\n\n面试主回答与追问见\n\nContext 与 Memory 一体化手册\n\n。"
+                },
+                {
+                  "rank": 19,
+                  "evidence_id": "passage:abe6cf92-0da2-4a86-8428-00229a74b4ac",
+                  "source_id": "342e159f-161d-47a6-a679-bbe49eb8b7af",
+                  "chunk_no": 19,
+                  "score": 0.01125124875124875,
+                  "selected": false,
+                  "excerpt": "| 参数               | 太小的失败模式             | 太大的失败模式                      | 调优证据                                   |\n|------------------|---------------------|------------------------------|----------------------------------------|\n| Recall K         | Gold Evidence 进不了候选 | ES/Embedding 延迟和噪声上升         | Recall@K 曲线与候选 P95                     |\n| Fusion Ceiling   | 融合前截断正确一路           | Rerank 输入与内存放大               | Recall、Rerank Cost、Tail Latency        |\n| RRF K            | 头部一路垄断              | 排名差异被压平                      | nDCG/MRR 与分桶 Bad Case                  |\n| Channel Weight   | 某类问法长期漏召回           | 另一通道贡献被淹没                    | 精确词、语义改写、跨语言分桶                         |\n| Rerank Top N     | 正确候选未进入精排           | Provider 成本和 P99 增长          | nDCG、P95/P99、单位成功成本                    |\n| Evidence Count   | Claim 覆盖不足          | 重复、Prompt 稀释、成本上升            | Claim-Evidence Coverage 与 Faithfulness |\n| Character Budget | 上下文被截断              | Token 成本和 Lost-in-the-middle | 引用覆盖、生成延迟、Token                        |"
+                },
+                {
+                  "rank": 20,
+                  "evidence_id": "passage:fd2272ec-d6fd-4bac-8b1b-4c0007d91faa",
+                  "source_id": "b6d07495-7109-4156-a238-4b4d047711c1",
+                  "chunk_no": 19,
+                  "score": 0.011235294117647059,
+                  "selected": false,
+                  "excerpt": "9. 撤销、删除与传播\n\n撤销分三类：运行时撤销使新 Run 立即不可见；合规删除清理允许删除的正文与投影；审计保留只保存最小化 ID、摘要、时间和决策，不保留可恢复敏感内容。\n\n[目标设计]\n\nRevoke 事务更新 Item/Version 状态并写 Outbox。消费者主动失效 Compiled Pack Cache、全文/向量索引、Memory 评测副本和下游候选；Read Path 同时校验 Revoke Watermark，防止事件延迟期间读到旧 Pack。Source 删除、权限变化或 Evidence 失效通过依赖关系触发相同流程。\n\n撤销传播完成的判据不是“发出事件”，而是：MySQL Head 不可见、Cache Key 失效、索引文档删除或版本落后被拒绝、评测副本清理、对账无残留。旧 Run 为审计可保留当时的 Item ID/Version/Digest，但后续回放必须显示该条目已撤销，不能重新注入正文。"
+                }
+              ]
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "passage:601809e2-5032-464a-8227-834730880924",
+              "kind": "PASSAGE",
+              "raw_score": 8.756613,
+              "fused_score": 0.015220700152207,
+              "rerank_score": 0.015220700152207,
+              "character_cost": 362
+            },
+            {
+              "rank": 2,
+              "evidence_id": "passage:05f085bc-cfc4-452a-90a5-2b64bbfe6893",
+              "kind": "PASSAGE",
+              "raw_score": 18.157951,
+              "fused_score": 0.014906832298136646,
+              "rerank_score": 0.014906832298136646,
+              "character_cost": 1168
+            },
+            {
+              "rank": 3,
+              "evidence_id": "passage:96d4f0c9-16f2-42cd-9ba2-6554a0f54a0b",
+              "kind": "PASSAGE",
+              "raw_score": 18.781898,
+              "fused_score": 0.014838709677419355,
+              "rerank_score": 0.014838709677419355,
+              "character_cost": 453
+            },
+            {
+              "rank": 4,
+              "evidence_id": "passage:1a95b9f4-7dad-4ebf-8a05-4a5ad0572b82",
+              "kind": "PASSAGE",
+              "raw_score": 5.0158396,
+              "fused_score": 0.01401918976545842,
+              "rerank_score": 0.01401918976545842,
+              "character_cost": 1406
+            },
+            {
+              "rank": 5,
+              "evidence_id": "passage:ca789d68-3c47-466e-a787-8ff3f5b88ae9",
+              "kind": "PASSAGE",
+              "raw_score": 9.309493,
+              "fused_score": 0.013755707762557075,
+              "rerank_score": 0.013755707762557075,
+              "character_cost": 540
+            },
+            {
+              "rank": 6,
+              "evidence_id": "passage:255a52cd-7d1c-458f-8fe2-9247a6a80eff",
+              "kind": "PASSAGE",
+              "raw_score": 20.803318,
+              "fused_score": 0.013454618152738903,
+              "rerank_score": 0.013454618152738903,
+              "character_cost": 752
+            },
+            {
+              "rank": 7,
+              "evidence_id": "passage:c0a2a5f4-3e1e-47ef-8a9d-ed5679680123",
+              "kind": "PASSAGE",
+              "raw_score": 16.014498,
+              "fused_score": 0.013437499999999998,
+              "rerank_score": 0.013437499999999998,
+              "character_cost": 974
+            },
+            {
+              "rank": 8,
+              "evidence_id": "passage:003c9540-c3d7-45bb-9aef-8138cecf620b",
+              "kind": "PASSAGE",
+              "raw_score": 13.400911,
+              "fused_score": 0.013386123680241327,
+              "rerank_score": 0.013386123680241327,
+              "character_cost": 217
+            },
+            {
+              "rank": 9,
+              "evidence_id": "passage:babaa694-7ffe-4b65-85ac-2a6d68009aff",
+              "kind": "PASSAGE",
+              "raw_score": 5.232521,
+              "fused_score": 0.012991869918699186,
+              "rerank_score": 0.012991869918699186,
+              "character_cost": 733
+            },
+            {
+              "rank": 10,
+              "evidence_id": "passage:d83abc56-5173-4d7c-858c-3621b9f22081",
+              "kind": "PASSAGE",
+              "raw_score": 7.9339476,
+              "fused_score": 0.012914813547724939,
+              "rerank_score": 0.012914813547724939,
+              "character_cost": 826
+            },
+            {
+              "rank": 11,
+              "evidence_id": "passage:2693ca8b-0567-4dc7-892d-3c484ca170c6",
+              "kind": "PASSAGE",
+              "raw_score": 14.939875,
+              "fused_score": 0.011983805668016195,
+              "rerank_score": 0.011983805668016195,
+              "character_cost": 578
+            },
+            {
+              "rank": 12,
+              "evidence_id": "passage:a1cbc511-554d-43f3-b2e9-cab195d0b0ab",
+              "kind": "PASSAGE",
+              "raw_score": 10.265317,
+              "fused_score": 0.011564320932317346,
+              "rerank_score": 0.011564320932317346,
+              "character_cost": 443
+            }
+          ]
+        },
+        "selected_evidence_count": 12,
+        "strategy_profile": "qa-hybrid-mmr-token-v3",
+        "degradation_reasons": [
+          "QA_RERANK_UNAVAILABLE"
+        ],
+        "retrieval_latency_micros": 812892,
+        "plan_version": "qa-weknora-hybrid-v1",
+        "selection_policy": "qa-mmr-token-budget-v3",
+        "candidate_count": 12,
+        "selected_evidence_characters": 8452,
+        "maximum_output_tokens": 1200,
+        "trace_schema_version": "retrieval-execution-trace-v1"
+      },
+      "latency_ms": 12770
+    }
+  ]
+}

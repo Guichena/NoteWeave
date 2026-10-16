@@ -12,6 +12,7 @@ from app.models import (
     ResearchTaskInput,
 )
 from app.recovery_targets import build_recovery_targets
+from app.legacy_counter_runtime import counter_completed, counter_targets
 
 
 def build_research_report_structure(
@@ -54,10 +55,16 @@ def build_research_report_structure(
     cells_by_row_id: dict[str, list[object]] = {}
     for cell in ledger.cells:
         cells_by_row_id.setdefault(cell.row_id, []).append(cell)
+    check_by_evidence = {str(r.get("evidence_id") or ""): r for r in plan.counter_checks}
+    counter_blocked = {card.evidence_id for card in counter_targets(plan, evidence_cards)
+                       if not counter_completed(check_by_evidence.get(card.evidence_id, {}))
+                       or check_by_evidence[card.evidence_id].get("verdict") != "NOT_REFUTED"}
+    blocked_row_ids = {cell.row_id for cell in ledger.cells if counter_blocked.intersection(cell.evidence_refs)}
     verified_rows = [
         row
         for row in ledger.rows
         if row.evidence_id in valid_evidence_ids and row.row_status == "VERIFIED"
+        and row.evidence_id not in counter_blocked and row.row_id not in blocked_row_ids
     ]
     conflicted_rows = [
         row
@@ -67,7 +74,8 @@ def build_research_report_structure(
     guarded_rows = [
         row
         for row in ledger.rows
-        if row.evidence_id in valid_evidence_ids and row.row_status not in {"VERIFIED", "CONFLICTED"}
+        if row.evidence_id in valid_evidence_ids and (row.row_status not in {"VERIFIED", "CONFLICTED"}
+        or row.evidence_id in counter_blocked or row.row_id in blocked_row_ids)
     ]
 
     next_actions = [
@@ -253,6 +261,7 @@ def build_research_report_structure(
         },
         "counterfactual_summary": counterfactual_summary,
         "conflict_and_counterfactual_review": {
+            "atomic_counter_checks": list(plan.counter_checks),
             "local_verifier_status": local_result.status,
             "global_verifier_decision": global_result.decision,
             "evidence_policy": evidence_policy,
@@ -693,6 +702,14 @@ def write_research_report(
             )
     else:
         lines.append("- No conflict row is currently blocking synthesis.")
+
+    for check in conflict_review.get("atomic_counter_checks", []):
+        lines.append(f"- 反证结论：{check.get('claim_text', '')}；结果：{check.get('verdict', 'NOT_RUN')}")
+        for fact in check.get("facts", []):
+            lines.append(f"  - 原子事实：{fact.get('claim_text', '')}；结果：{fact.get('verdict', 'NOT_RUN')}")
+            lines.append(f"    检索词：{fact.get('query', '')}")
+            for citation in fact.get("citations", []):
+                lines.append(f"    原文：{citation.get('quote_text', '')}；窗口：{citation.get('window_id', '')}")
 
     for branch_decision in list(conflict_review.get("branch_decisions", [])):
         lines.append(

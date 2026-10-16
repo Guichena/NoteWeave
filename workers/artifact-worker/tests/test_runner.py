@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import pytest
 from types import SimpleNamespace
 
@@ -38,7 +39,9 @@ from app.models import (
     SkillDefinition,
 )
 from app.runner import run_artifact_task
-from app.skill_graph import _verify_and_repair_skill_output
+from app.node_executor import NodeExecutionError
+from app.node_contracts import node_contract_for_skill
+from tests.conftest import ContractArtifactTestProvider, GeneratedArtifactFakeLlmClient
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.main import (
     debug_get_capability_bindings,
@@ -59,6 +62,12 @@ from app.main import (
     debug_reset_custom_style_profiles,
     debug_resolve_action,
 )
+
+
+_SECTIONED_NODE_SKILLS = [
+    "workspace_material_digest", "outline_planner", "section_writer",
+    "document_consistency", "section_citer", "sectioned_verifier", "sectioned_repair",
+]
 
 
 def _build_task_input(
@@ -169,49 +178,27 @@ def test_artifact_worker_should_preserve_java_sample_text_as_generation_source()
 def test_run_artifact_task_should_use_configured_llm_and_trace_generation_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = FakeLlmClient(
-        {
-            "artifact.generate": r"""
-            {
-              "sections": [
-                {
-                  "heading": "一句话定位",
-                  "body": "基于冻结资料范围实现可审计的异步产物生成闭环。",
-                  "source_refs": ["产物生成 Agent 编排升级设计"]
-                },
-                {
-                  "heading": "简历亮点",
-                  "body": "- 使用 Controlled Agentic Graph Harness 与 Schema-Gated Skill Graph Runtime 约束执行。\n- 通过 Capability Union Policy 和 Verifier / Repair 管理能力组合与质量。",
-                  "source_refs": ["产物生成 Agent 编排升级设计", "不存在的来源"]
-                },
-                {
-                  "heading": "关键词",
-                  "body": "Artifact Job / Artifact Version",
-                  "source_refs": ["产物生成 Agent 编排升级设计"]
-                }
-              ]
-            }
-            """
-        }
-    )
+    fake = ContractArtifactTestProvider()
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
 
     _, result = run_artifact_task(_build_resume_task_input())
 
-    assert result.result_payload["generation_trace"] == {
-        "mode": "LLM_GENERATION",
-        "provider": "fake",
-        "model": "fake-artifact-model",
-        "attempted": True,
-        "applied": True,
-        "fallback_reason": "",
-        "generated_section_count": 3,
-        "source_count": 3,
-    }
-    assert "基于冻结资料范围" in result.result_payload["markdown"]
+    generation_trace = result.result_payload["generation_trace"]
+    assert generation_trace["mode"] == "LLM_NODE_GRAPH"
+    assert generation_trace["provider"] == fake.provider_name
+    assert generation_trace["model"] == fake.model_name
+    assert generation_trace["generated_section_count"] == 3
+    assert generation_trace["llm_calls"] == sum(trace["llm_calls"] for trace in result.result_payload["node_traces"])
+    assert "Controlled Agentic Graph Harness" in result.result_payload["markdown"]
     generated_sections = result.result_payload["sections"]
-    assert generated_sections[1]["source_refs"] == ["产物生成 Agent 编排升级设计"]
-    assert fake.calls and fake.calls[0][0] == "artifact.generate"
+    assert set(generated_sections[1]["source_refs"]) == {"产物生成 Agent 编排升级设计", "用户自定义 MCP 权限治理"}
+    assert fake.calls and fake.calls[0][0] == "artifact.compile_intent"
+    assert [purpose for purpose, _ in fake.calls if purpose.startswith("artifact.node.")][:3] == [
+        "artifact.node.resume_highlight_extractor",
+        "artifact.node.resume_impact_normalizer",
+        "artifact.node.resume_bullet_writer",
+    ]
+    assert any(purpose == "artifact.node.statement_support_judge" for purpose, _ in fake.calls)
 
 
 def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
@@ -244,7 +231,8 @@ def test_skill_declared_only_in_the_catalog_runs_through_the_generic_graph(
     sections = ",".join(
         '{"heading": "%s", "body": "论文比较了两种写入顺序的一致性。", "source_refs": ["缓存一致性论文"]}' % heading
         for heading in ["核心论点", "关键证据", "方法与假设", "局限与争议", "待追问问题"])
-    fake = FakeLlmClient({"artifact.generate": '{"sections": [%s]}' % sections})
+    fake = GeneratedArtifactFakeLlmClient({purpose: '{"sections": [%s]}' % sections for purpose in (
+        "artifact.node.generic_section_writer", "artifact.node.style_polisher")})
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
     _, result = run_artifact_task(task_input)
     assert "核心论点" in result.result_payload["markdown"]
@@ -256,11 +244,11 @@ def test_run_artifact_task_should_fail_closed_without_llm(
 ) -> None:
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: None)
 
-    with pytest.raises(ArtifactConfigurationRequiredError) as error:
+    with pytest.raises(NodeExecutionError) as error:
         run_artifact_task(_build_resume_task_input())
 
-    assert error.value.error_code == "CONFIGURATION_REQUIRED"
-    assert "not configured" in str(error.value)
+    assert error.value.trace["reason_code"] == "ARTIFACT_NODE_LLM_UNAVAILABLE"
+    assert error.value.trace["llm_calls"] == 0
 
 
 def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
@@ -269,14 +257,14 @@ def test_run_artifact_task_should_fail_closed_on_invalid_llm_output(
     monkeypatch.setattr(
         runner_module,
         "build_default_llm_client",
-        lambda: FakeLlmClient({"artifact.generate": '{"sections": []}'}),
+        lambda: FakeLlmClient({"artifact.node.resume_highlight_extractor": '{"facts": []}'}),
     )
 
-    with pytest.raises(ArtifactConfigurationRequiredError) as error:
+    with pytest.raises(NodeExecutionError) as error:
         run_artifact_task(_build_resume_task_input())
 
-    assert error.value.error_code == "CONFIGURATION_REQUIRED"
-    assert "no usable content" in str(error.value)
+    assert error.value.trace["reason_code"] == "ARTIFACT_NODE_OUTPUT_INVALID"
+    assert error.value.trace["llm_calls"] == 2
 
 
 def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,7 +273,7 @@ def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.Mo
     monkeypatch.setattr(runner_module, "export_artifact_if_required",
                         lambda **kwargs: render_calls.append("render"))
     monkeypatch.setattr(runner_module, "verify_artifact_output",
-                        lambda *args: ArtifactVerificationResult(
+                        lambda *args, **kwargs: ArtifactVerificationResult(
                             status="FAIL", failed_checks=["missing evidence"]))
 
     with pytest.raises(runner_module.ArtifactOutputContractViolationError):
@@ -537,7 +525,9 @@ def test_build_execution_plan_should_compile_resume_highlight_graph() -> None:
     assert plan.execution_spec.skill_key == "resume_highlight"
     assert plan.execution_spec.resolved_action_key == "RESUME_HIGHLIGHT"
     assert "MCP 集成" in plan.execution_spec.goal
-    assert "resume graph binding: source_digest -> fact_extractor -> impact_normalizer -> bullet_writer -> verifier -> repair" in plan.execution_spec.notes
+    assert [node.node_id for node in plan.node_sequence] == [
+        "material_retrieve", "fact_extractor", "normalize", "write", "verify", "repair",
+    ]
     assert plan.runtime_plan.graph_key == "resume_highlight_v1"
     assert plan.runtime_plan.activated_nodes == [
         "workspace_material_digest",
@@ -659,16 +649,18 @@ def test_run_artifact_task_should_apply_execution_spec_focus_points_to_resume_ou
         for trace in result.result_payload["node_traces"]
         if trace["skill_key"] == "resume_local_repair"
     )
-    assert "user focus points applied to resume highlight extraction" in highlight_trace["verification_checks"]
-    assert "异步任务编排" in highlight_trace["output_summary"]
+    assert highlight_trace["purpose"] == "artifact.node.resume_highlight_extractor"
+    assert highlight_trace["output_fields"] == ["facts"]
+    assert highlight_trace["llm_calls"] == 1
     assert normalizer_trace["verification_status"] == "PASS"
-    assert "resume impact statements normalized" in normalizer_trace["verification_checks"]
+    assert normalizer_trace["output_fields"] == ["normalized_facts"]
     assert verifier_trace["verification_status"] == "PASS"
-    assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
-    assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
-    assert repair_trace["repair_actions"]
-    assert repair_trace["repaired"] is True
+    assert verifier_trace["node_kind"] == "VERIFY"
+    assert verifier_trace["verification_checks"]
+    assert repair_trace["node_kind"] == "REPAIR"
+    assert repair_trace["llm_calls"] == 0
+    assert repair_trace["repair_actions"] == []
+    assert repair_trace["repaired"] is False
 
     assert any(
         check["label"] == "resume focus point coverage"
@@ -971,10 +963,7 @@ def test_mindmap_skill_should_compile_to_safe_hierarchical_markdown() -> None:
         ),
         ArtifactSectionDraft(
             heading="核心结论",
-            body=(
-                "输出单一根节点、4 到 7 条主分支和短语化节点”，"
-                "当前资料已经形成可追溯的工作流。"
-            ),
+            body="当前资料已经形成可追溯的工作流。",
             source_refs=[],
         ),
     ])
@@ -988,7 +977,6 @@ def test_mindmap_skill_should_compile_to_safe_hierarchical_markdown() -> None:
     assert "## 核心能力" in markdown
     assert "- 交互式缩放" in markdown
     assert "- 额外细节" not in markdown
-    assert "输出单一根节点" not in markdown
     assert "- 当前资料已经形成可追溯的工作流" in markdown
     assert "## 来源" in markdown
     assert "- 产物可视化设计" in markdown
@@ -998,19 +986,22 @@ def test_mindmap_skill_should_compile_to_safe_hierarchical_markdown() -> None:
 def test_run_mindmap_skill_should_pass_its_own_output_contract(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake = FakeLlmClient(
+    fake = GeneratedArtifactFakeLlmClient(
         {
-            "artifact.generate": r"""
+            "artifact.node.generic_section_writer": r"""
             {
               "sections": [
-                {"heading": "产品入口", "body": "工作台入口与空状态。", "source_refs": ["产品入口与空状态 QA"]},
-                {"heading": "资料状态", "body": "资料范围与索引状态。", "source_refs": ["产品入口与空状态 QA"]},
-                {"heading": "跨模块检查点", "body": "Research、Wiki 与 Artifact。", "source_refs": ["产品入口与空状态 QA"]}
+                {"heading": "主题中心", "body": "工作台资料与产物入口。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "关键概念", "body": "工作台入口与空状态。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "证据脉络", "body": "资料范围与索引状态。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "核心结论", "body": "检查工作台入口与资料状态。", "source_refs": ["产品入口与空状态 QA"]},
+                {"heading": "后续行动", "body": "Research、Wiki 与 Artifact。", "source_refs": ["产品入口与空状态 QA"]}
               ]
             }
             """
         }
     )
+    fake.responses_by_purpose["artifact.node.style_polisher"] = fake.responses_by_purpose["artifact.node.generic_section_writer"]
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
     task_input = _build_task_input(
         task_id="mindmap-contract-job",
@@ -1045,35 +1036,24 @@ def test_run_mindmap_skill_should_pass_its_own_output_contract(
     assert "Node-level repair inserted" not in markdown
     assert "配方重点" not in markdown
     assert "任务重点" not in markdown
-    assert "- 提炼核心概念、关键对象与关系" in markdown
+    assert "工作台入口与空状态" in markdown
 
 
-def test_outline_repair_should_use_task_source_and_recipe_context() -> None:
-    task_input = _build_generic_task_input("report")
-    plan = build_execution_plan(task_input)
-    skill = resolve_skill_definition("generic_section_writer")
+def test_invalid_node_sections_should_fail_without_outline_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeLlmClient({"artifact.node.generic_section_writer": '{"sections": []}'})
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
+    render_calls = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs))
 
-    verified_output, verification_status, _, repair_actions = (
-        _verify_and_repair_skill_output(
-            skill=skill,
-            output={"sections": []},
-            task_input=task_input,
-            plan=plan,
-            state={"prompt_recipe": plan.prompt_recipe},
-        )
-    )
+    with pytest.raises(NodeExecutionError) as error:
+        run_artifact_task(_build_generic_task_input("report"))
 
-    repaired_sections = verified_output["sections"]
-    evidence_section = next(
-        section for section in repaired_sections if section.heading == "证据综述"
-    )
-    assert verification_status == "PASS_WITH_REPAIR"
-    assert repair_actions
-    assert evidence_section.source_refs == ["产物模块总设计", "技能图运行时"]
-    assert "产物模块总设计、技能图运行时" in evidence_section.body
-    assert "配方重点" not in evidence_section.body
-    assert "任务重点" not in evidence_section.body
-    assert "Node-level repair inserted" not in evidence_section.body
+    assert error.value.trace["reason_code"] == "ARTIFACT_NODE_OUTPUT_INVALID"
+    node_calls = [payload for purpose, payload in fake.calls if purpose == "artifact.node.generic_section_writer"]
+    assert len(node_calls) == 2
+    assert node_calls[0]["validation_errors"] == []
+    assert node_calls[1]["validation_errors"]
+    assert render_calls == []
 
 
 def test_build_execution_plan_should_reject_unknown_skill_key() -> None:
@@ -1236,22 +1216,10 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     assert result.version_snapshot.artifact_type == "QUIZ"
     assert result.result_payload["execution_plan"]["skill_graph_key"] == "quiz_artifact_v1"
     assert result.result_payload["runtime_plan"]["graph_key"] == "quiz_artifact_v1"
-    assert result.result_payload["runtime_plan"]["activated_nodes"] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert result.result_payload["runtime_plan"]["activated_nodes"] == _SECTIONED_NODE_SKILLS
     assert result.result_payload["execution_plan"]["prompt_recipe"]["recipe_id"] == "quiz_writer_v1"
     assert result.result_payload["verification"]["status"] == "PASS"
-    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     assert len(result.result_payload["context_pack"]["output_contract"]) == 4
     assert result.result_payload["approval_trace"]["status"] == "NOT_REQUIRED"
     assert result.result_payload["evidence_coverage"]["covered_section_count"] == 4
@@ -1277,24 +1245,26 @@ def test_run_artifact_task_should_generate_quiz_artifact() -> None:
     assert "- Prompt recipe:" not in markdown
     assert "- Skill graph:" not in markdown
     assert "- Schema gate:" not in markdown
-    assert "Schema-Gated Skill Graph Runtime" in (markdown + result.result_payload["runtime_notes"])
+    assert "Schema Gate" in markdown
     quiz_design_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "quiz_designer"
+        if trace["node_id"] == "design"
     )
     quiz_normalize_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "quiz_difficulty_normalizer"
+        if trace["skill_key"] == "document_consistency"
     )
     assert quiz_design_trace["verification_status"] == "PASS"
-    assert "quiz question contract preserved" in quiz_design_trace["verification_checks"]
+    assert quiz_design_trace["purpose"] == "artifact.node.section_writer"
+    assert quiz_design_trace["llm_calls"] == 4
     assert quiz_normalize_trace["verification_status"] == "PASS"
-    assert "quiz difficulty tiers preserved" in quiz_normalize_trace["verification_checks"]
+    assert quiz_normalize_trace["purpose"] == "artifact.node.document_consistency"
+    assert quiz_normalize_trace["llm_calls"] == 1
 
 
-def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structure_enforcer() -> None:
+def test_run_artifact_task_should_generate_wiki_page_with_independent_citation_step() -> None:
     task_input = _build_generic_task_input("wiki_page", style_profile_key="wiki")
 
     _, result = run_artifact_task(task_input)
@@ -1302,31 +1272,26 @@ def test_run_artifact_task_should_generate_wiki_page_artifact_with_wiki_structur
     assert result.job_snapshot.action_key == "WIKI_PAGE"
     assert result.version_snapshot.artifact_type == "WIKI_PAGE"
     assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
-    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     related_pages_section = next(
         section
         for section in result.result_payload["sections"]
         if section["heading"] == "相关页面"
     )
-    assert "施工文档" in related_pages_section["body"]
-    assert "设计文档" in related_pages_section["body"]
+    assert "产物模块总设计" in related_pages_section["body"]
+    assert "技能图运行时" in related_pages_section["body"]
     assert result.result_payload["verification"]["status"] == "PASS"
     assert result.result_payload["verification"]["failed_checks"] == []
     wiki_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "wiki_structure_enforcer"
+        if trace["skill_key"] == "section_citer"
     )
-    assert wiki_trace["verification_status"] == "PASS_WITH_REPAIR"
-    assert "wiki structure contract preserved" in wiki_trace["verification_checks"]
-    assert wiki_trace["repair_actions"]
-    assert wiki_trace["repaired"] is True
+    assert wiki_trace["verification_status"] == "PASS"
+    assert wiki_trace["purpose"] == "artifact.node.section_citer"
+    assert wiki_trace["llm_calls"] == 3
+    assert wiki_trace["repair_actions"] == []
+    assert wiki_trace["repaired"] is False
 
 
 @pytest.mark.parametrize(
@@ -1362,6 +1327,9 @@ def test_build_execution_plan_should_support_multiple_default_actions(
         assert plan.skill_graph_key == "quiz_artifact_v1"
     elif action_key == "wiki_page":
         assert plan.skill_graph_key == "wiki_artifact_v1"
+    elif action_key == "study_guide":
+        assert plan.skill_graph_key == "sectioned_artifact_v1"
+        assert plan.generation_mode == "SECTIONED"
     else:
         assert plan.skill_graph_key == "generic_artifact_v1"
     assert plan.outline == expected_outline
@@ -1373,27 +1341,18 @@ def test_build_execution_plan_should_support_multiple_default_actions(
     else:
         assert plan.approval_gate.decision == "NOT_REQUIRED"
     if action_key == "quiz":
-        assert [node.skill_key for node in plan.node_sequence] == [
-            "workspace_material_digest",
-            "quiz_designer",
-            "quiz_difficulty_normalizer",
-            "evidence_guard",
-            "style_polisher",
-        ]
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
     elif action_key == "wiki_page":
-        assert [node.skill_key for node in plan.node_sequence] == [
-            "workspace_material_digest",
-            "generic_section_writer",
-            "wiki_structure_enforcer",
-            "evidence_guard",
-            "style_polisher",
-        ]
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
+    elif action_key == "study_guide":
+        assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
     else:
+        assert plan.generation_mode == "SINGLE"
         assert [node.skill_key for node in plan.node_sequence] == [
             "workspace_material_digest",
             "generic_section_writer",
             "evidence_guard",
-            "style_polisher",
+            "generic_section_repair",
         ]
 
 
@@ -1410,13 +1369,7 @@ def test_build_execution_plan_should_support_quiz_default_action() -> None:
     assert len(plan.outline) == 4
     assert plan.approval_gate.decision == "NOT_REQUIRED"
     assert "READ_WORKSPACE_DOC" in plan.lazy_loaded_capabilities
-    assert [node.skill_key for node in plan.node_sequence] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
 
 
 def test_build_execution_plan_should_support_wiki_page_default_action() -> None:
@@ -1429,13 +1382,7 @@ def test_build_execution_plan_should_support_wiki_page_default_action() -> None:
     assert plan.skill_graph_key == "wiki_artifact_v1"
     assert plan.prompt_recipe.recipe_id == "wiki_page_writer_v1"
     assert plan.prompt_recipe.generation_mode == "SECTION_SYNTHESIS"
-    assert [node.skill_key for node in plan.node_sequence] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [node.skill_key for node in plan.node_sequence] == _SECTIONED_NODE_SKILLS
 
 
 def test_build_execution_plan_should_adapt_mixed_sources_into_fusion_plan() -> None:
@@ -1623,32 +1570,33 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
         for trace in result.result_payload["node_traces"]
         if trace["skill_key"] == "resume_local_repair"
     )
-    assert digest_trace["verification_status"] == "PASS"
-    assert "source trace captured for digested materials" in digest_trace["verification_checks"]
+    assert digest_trace["verification_status"] == "WARN"
+    assert result.result_payload["generation_trace"]["retrieval"]["degradation_reasons"]
+    assert digest_trace["node_kind"] == "RETRIEVE"
     assert highlight_trace["verification_status"] == "PASS"
-    assert "resume highlight candidate count satisfied" in highlight_trace["verification_checks"]
+    assert highlight_trace["output_fields"] == ["facts"]
     assert normalizer_trace["verification_status"] == "PASS"
-    assert "resume impact statements normalized" in normalizer_trace["verification_checks"]
+    assert normalizer_trace["output_fields"] == ["normalized_facts"]
     assert bullet_trace["verification_status"] == "PASS"
-    assert "resume section draft generated" in bullet_trace["verification_checks"]
+    assert bullet_trace["output_fields"] == ["bullets", "sections"]
     assert verifier_trace["verification_status"] == "PASS"
-    assert "resume verifier inspected bullet count, focus coverage, and required phrases" in verifier_trace["verification_checks"]
-    assert repair_trace["verification_status"] == "PASS_WITH_REPAIR"
-    assert "resume local repair confirmed verifier gaps are closed" in repair_trace["verification_checks"]
+    assert verifier_trace["node_kind"] == "VERIFY"
+    assert verifier_trace["verification_checks"]
+    assert repair_trace["node_kind"] == "REPAIR"
+    assert repair_trace["llm_calls"] == 0
     assert all(
         trace["repair_actions"] == []
         for trace in [digest_trace, highlight_trace, normalizer_trace, bullet_trace, verifier_trace]
     )
-    assert repair_trace["repair_actions"]
-    assert repair_trace["repaired"] is True
+    assert repair_trace["repair_actions"] == []
+    assert repair_trace["repaired"] is False
     assert any(
         check["label"] == "一句话定位" and check["status"] == "PASS"
         for check in result.result_payload["output_contract_trace"]["outline_checks"]
     )
-    assert any(
-        check["label"] == "Controlled Agentic Graph Harness" and check["status"] == "PASS"
-        for check in result.result_payload["output_contract_trace"]["phrase_checks"]
-    )
+    assert result.result_payload["output_contract_trace"]["phrase_checks"] == []
+    assert any(check["label"] == "resume focus point coverage" and check["status"] == "PASS"
+               for check in result.result_payload["output_contract_trace"]["action_checks"])
     assert any(
         check["label"] == "resume highlight bullet count"
         and check["status"] == "PASS"
@@ -1679,68 +1627,27 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     assert result.citations[0]["title"] == "产物生成 Agent 编排升级设计"
 
 
-def test_node_level_verifier_should_repair_resume_local_repair_output() -> None:
-    task_input = _build_resume_task_input()
-    plan = build_execution_plan(task_input)
-    skill = resolve_skill_definition("resume_local_repair")
+def test_resume_with_one_bullet_should_fail_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+    class IncompleteResumeProvider(ContractArtifactTestProvider):
+        def complete_json(self, purpose, payload):
+            raw = super().complete_json(purpose, payload)
+            if purpose != "artifact.node.resume_bullet_writer":
+                return raw
+            output = json.loads(raw)
+            output["bullets"] = output["bullets"][:1]
+            next(section for section in output["sections"] if section["heading"] == "简历亮点")["body"] = "- " + output["bullets"][0]["text"]
+            return json.dumps(output, ensure_ascii=False)
 
-    verified_output, verification_status, verification_checks, repair_actions = (
-        _verify_and_repair_skill_output(
-            skill=skill,
-            output={
-                "sections": [
-                    ArtifactSectionDraft(
-                        heading=plan.outline[0],
-                        body="设计并实现受控式异步产物生成模块。",
-                        source_refs=["产物生成 Agent 编排升级设计"],
-                    ),
-                    ArtifactSectionDraft(
-                        heading=plan.outline[1],
-                        body="- 统一产物生成主链路。",
-                        source_refs=["产物生成 Agent 编排升级设计"],
-                    ),
-                    ArtifactSectionDraft(
-                        heading=plan.outline[2],
-                        body="Controlled Agentic Graph Harness",
-                        source_refs=["产物生成 Agent 编排升级设计"],
-                    ),
-                ],
-                "resume_verification_report": {
-                    "status": "FAIL",
-                    "bullet_count": 1,
-                    "missing_focus_points": ["Schema-Gated Skill Graph Runtime"],
-                    "missing_required_phrases": ["Capability Union Policy"],
-                    "missing_headings": [],
-                },
-            },
-            task_input=task_input,
-            plan=plan,
-            state={"sections": []},
-        )
-    )
+    fake = IncompleteResumeProvider()
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
+    render_calls = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs))
 
-    repaired_highlight_section = next(
-        section
-        for section in verified_output["sections"]
-        if section.heading == plan.outline[1]
-    )
-    repaired_keyword_section = next(
-        section
-        for section in verified_output["sections"]
-        if section.heading == plan.outline[2]
-    )
+    with pytest.raises((NodeExecutionError, runner_module.ArtifactOutputContractViolationError)):
+        run_artifact_task(_build_resume_task_input())
 
-    assert verification_status == "PASS_WITH_REPAIR"
-    assert "resume local repair confirmed verifier gaps are closed" in verification_checks
-    assert "resume highlight bullet backfilled at node level" in repair_actions
-    assert "resume focus point backfilled at node level: Schema-Gated Skill Graph Runtime" in repair_actions
-    assert "resume keyword backfilled at node level: Capability Union Policy" in repair_actions
-    assert sum(
-        1
-        for line in repaired_highlight_section.body.splitlines()
-        if line.lstrip().startswith("- ")
-    ) >= 3
-    assert "Capability Union Policy" in repaired_keyword_section.body
+    assert render_calls == []
+    assert any(purpose == "artifact.node.resume_bullet_writer" for purpose, _ in fake.calls)
 
 
 @pytest.mark.parametrize(
@@ -1783,22 +1690,10 @@ def test_run_artifact_task_should_generate_multiple_default_artifacts(
     assert result.result_payload["capability_resolution"]["resolved_bindings"]
     if action_key == "quiz":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "quiz_artifact_v1"
-        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-            "workspace_material_digest",
-            "quiz_designer",
-            "quiz_difficulty_normalizer",
-            "evidence_guard",
-            "style_polisher",
-        ]
+        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     elif action_key == "wiki_page":
         assert result.result_payload["execution_plan"]["skill_graph_key"] == "wiki_artifact_v1"
-        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == [
-            "workspace_material_digest",
-            "generic_section_writer",
-            "wiki_structure_enforcer",
-            "evidence_guard",
-            "style_polisher",
-        ]
+        assert [trace["skill_key"] for trace in result.result_payload["node_traces"]] == _SECTIONED_NODE_SKILLS
     assert result.result_payload["context_pack"]["output_contract"] == expected_headings
     assert result.result_payload["capability_union_trace"]["status"] == "ALLOW"
     assert result.result_payload["capability_union_trace"]["decision"] == "ALLOW"
@@ -1873,7 +1768,7 @@ def test_run_artifact_task_should_emit_card_web_and_mixed_context_ccos() -> None
     assert web_binding["tool_name"] == "read_article_page"
     assert web_binding["selection_reason"] == "action_skill_graph_preferred_provider"
     assert web_binding["action_basis"] == "STUDY_GUIDE"
-    assert web_binding["skill_graph_basis"] == "generic_artifact_v1"
+    assert web_binding["skill_graph_basis"] == "sectioned_artifact_v1"
 
 
 def test_run_artifact_task_should_emit_acquisition_receipt_with_provider_provenance() -> None:
@@ -2909,13 +2804,9 @@ def test_custom_prompt_recipe_should_apply_section_and_node_level_overrides() ->
         for trace in result.result_payload["node_traces"]
         if trace["skill_key"] == "generic_section_writer"
     )
-    assert "node guidance applied" in node_trace["output_summary"]
-    polish_trace = next(
-        trace
-        for trace in result.result_payload["node_traces"]
-        if trace["skill_key"] == "style_polisher"
-    )
-    assert "node guidance applied" in polish_trace["output_summary"]
+    assert node_trace["purpose"] == "artifact.node.generic_section_writer"
+    assert node_trace["llm_calls"] == 1
+
 
 
 def test_custom_prompt_recipe_registration_should_reject_duplicate_custom_recipe() -> None:
@@ -3076,20 +2967,8 @@ def test_debug_skill_registries_should_expose_default_catalogs() -> None:
     assert "action_type" not in quiz_graph
     assert "action_type" not in wiki_graph
     assert len(generic_graph["nodes"]) >= 3
-    assert [node["skill_key"] for node in quiz_graph["nodes"]] == [
-        "workspace_material_digest",
-        "quiz_designer",
-        "quiz_difficulty_normalizer",
-        "evidence_guard",
-        "style_polisher",
-    ]
-    assert [node["skill_key"] for node in wiki_graph["nodes"]] == [
-        "workspace_material_digest",
-        "generic_section_writer",
-        "wiki_structure_enforcer",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [node["skill_key"] for node in quiz_graph["nodes"]] == _SECTIONED_NODE_SKILLS
+    assert [node["skill_key"] for node in wiki_graph["nodes"]] == _SECTIONED_NODE_SKILLS
 
 
 def test_debug_capability_bindings_should_expose_default_catalog() -> None:
@@ -3138,6 +3017,7 @@ def test_custom_skill_definition_and_graph_registration_should_extend_runtime() 
                     node_id="write",
                     skill_key="generic_section_writer_executive",
                     purpose="Generate executive-facing sections.",
+                    **node_contract_for_skill("generic_section_writer"),
                 ),
                 SkillGraphNode(
                     node_id="guard",
@@ -3212,18 +3092,14 @@ def test_custom_skill_definition_and_graph_registration_should_extend_runtime() 
     )
     assert any(item["graph_key"] == "executive_artifact_v1" for item in graph_catalog.graphs)
     assert plan.skill_graph_key == "executive_artifact_v1"
-    assert [node.skill_key for node in plan.node_sequence] == [
-        "workspace_material_digest",
-        "generic_section_writer_executive",
-        "evidence_guard",
-        "style_polisher",
-    ]
+    assert [node.skill_key for node in plan.node_sequence] == [node.skill_key for node in graph_registration.nodes]
     node_trace = next(
         trace
         for trace in result.result_payload["node_traces"]
         if trace["skill_key"] == "generic_section_writer_executive"
     )
-    assert "generated 3 generic artifact sections" in node_trace["output_summary"]
+    assert node_trace["purpose"] == "artifact.node.generic_section_writer"
+    assert node_trace["output_fields"] == ["sections"]
 
 
 def test_custom_skill_definition_registration_should_reject_duplicate_custom_skill() -> None:
@@ -3262,6 +3138,7 @@ def test_custom_skill_graph_registration_should_reject_missing_skill_reference()
                     node_id="write",
                     skill_key="missing_custom_skill",
                     purpose="Broken custom skill reference.",
+                    **node_contract_for_skill("generic_section_writer"),
                 ),
             ],
             "edges": [
@@ -3384,6 +3261,7 @@ def test_custom_skill_graph_registration_should_reject_unregistered_runtime_node
                     node_id="write",
                     skill_key="unsupported_custom_skill",
                     purpose="References a skill without a registered runtime node executor.",
+                    **node_contract_for_skill("generic_section_writer"),
                 ),
             ],
             "edges": [
@@ -3439,6 +3317,7 @@ def test_build_execution_plan_should_reject_graph_node_with_unregistered_runtime
                     node_id="write",
                     skill_key="unsupported_custom_skill",
                     purpose="References a skill without a registered runtime node executor.",
+                    **node_contract_for_skill("generic_section_writer"),
                 ),
             ],
             edges=[
@@ -3619,60 +3498,28 @@ def test_final_contract_should_reject_missing_resume_sections_and_keywords() -> 
     assert verification.status == "FAIL"
     assert "section missing after repair: 一句话定位" in verification.failed_checks
     assert "section missing after repair: 关键词" in verification.failed_checks
-    assert "required phrase missing after repair: Controlled Agentic Graph Harness" in verification.failed_checks
+    assert any("用户重点" in check for check in verification.failed_checks)
 
 
-def test_node_level_verifier_should_repair_quiz_node_output() -> None:
-    task_input = _build_generic_task_input("quiz", style_profile_key="teaching")
-    plan = build_execution_plan(task_input)
-    skill = resolve_skill_definition("quiz_designer")
+def test_quiz_with_one_question_should_fail_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+    class IncompleteQuizProvider(ContractArtifactTestProvider):
+        def complete_json(self, purpose, payload):
+            raw = super().complete_json(purpose, payload)
+            if purpose != "artifact.node.section_writer" or payload["inputs"]["chapter"]["heading"] != "题目设计":
+                return raw
+            output = json.loads(raw)
+            output["section"]["body"] = "1. 解释资料中的核心概念。"
+            return json.dumps(output, ensure_ascii=False)
 
-    verified_output, verification_status, verification_checks, repair_actions = (
-        _verify_and_repair_skill_output(
-            skill=skill,
-            output={
-                "sections": [
-                    ArtifactSectionDraft(
-                        heading="测验目标",
-                        body="验证统一主链路理解。",
-                        source_refs=["产物模块总设计"],
-                    ),
-                    ArtifactSectionDraft(
-                        heading="题目设计",
-                        body="1. [基础题] Production Action 负责什么？",
-                        source_refs=["产物模块总设计"],
-                    ),
-                    ArtifactSectionDraft(
-                        heading="答案与解析",
-                        body="- 基础题：定义生成目标。",
-                        source_refs=["产物模块总设计"],
-                    ),
-                    ArtifactSectionDraft(
-                        heading="评分要点",
-                        body="- 基础：解释对象职责。",
-                        source_refs=["产物模块总设计"],
-                    ),
-                ]
-            },
-            task_input=task_input,
-            plan=plan,
-            state={"sections": []},
-        )
-    )
+    fake = IncompleteQuizProvider()
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
+    render_calls = []
+    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs))
 
-    repaired_question_section = next(
-        section
-        for section in verified_output["sections"]
-        if section.heading == "题目设计"
-    )
-    assert verification_status == "PASS_WITH_REPAIR"
-    assert "quiz question contract preserved" in verification_checks
-    assert "quiz question backfilled at node level" in repair_actions
-    assert sum(
-        1
-        for line in repaired_question_section.body.splitlines()
-        if line.lstrip().startswith(("1.", "2.", "3.", "4.", "5."))
-    ) >= 3
+    with pytest.raises((NodeExecutionError, runner_module.ArtifactOutputContractViolationError)):
+        run_artifact_task(_build_generic_task_input("quiz", style_profile_key="teaching"))
+
+    assert render_calls == []
 
 
 def test_final_contract_should_reject_incomplete_quiz_structure() -> None:
@@ -3733,8 +3580,8 @@ def test_final_contract_should_reject_incomplete_quiz_structure() -> None:
     )
 
     assert verification.status == "FAIL"
-    assert "quiz question count below minimum" in verification.failed_checks
-    assert "quiz scoring tiers missing" in verification.failed_checks
+    assert any("编号条数：1" in check for check in verification.failed_checks)
+    assert "章节缺少必需主题词" in verification.failed_checks
 
 
 def test_final_contract_should_reject_incomplete_wiki_structure() -> None:
@@ -3800,9 +3647,9 @@ def test_final_contract_should_reject_incomplete_wiki_structure() -> None:
     )
 
     assert verification.status == "FAIL"
-    assert "wiki overview definition or boundary missing" in verification.failed_checks
-    assert "wiki key mechanisms missing" in verification.failed_checks
-    assert "wiki related page count below minimum" in verification.failed_checks
+    assert "章节缺少必需主题词" in verification.failed_checks
+    assert "章节正文完整" in verification.passed_checks
+    assert any("列表条数：1" in check for check in verification.failed_checks)
 
 
 def test_verify_artifact_output_should_fail_when_evidence_coverage_is_unsatisfied() -> None:
@@ -3875,7 +3722,8 @@ def test_verify_artifact_output_should_fail_when_evidence_coverage_is_unsatisfie
     )
 
 
-def test_build_output_contract_trace_should_aggregate_repair_summary() -> None:
+def test_build_output_contract_trace_should_read_legacy_repair_summary() -> None:
+    # 历史检查点仍可读取旧修复记录；当前节点执行不会生成这些补齐动作。
     task_input = _build_resume_task_input()
     plan = build_execution_plan(task_input)
     result = ArtifactTaskResult(

@@ -41,7 +41,7 @@ class ResearchAgentTaskSnapshot(_Strict):
     task_id: str = Field(min_length=1, max_length=64)
     research_run_id: str = Field(min_length=1, max_length=64)
     workspace_id: str = Field(min_length=1, max_length=64)
-    role: Literal["DEEP_CELL", "WIDE_DISCOVERY", "COUNTERFACTUAL", "EVIDENCE_AUDIT", "SYNTHESIS"]
+    role: Literal["DEEP_CELL", "WIDE_DISCOVERY", "COUNTERFACTUAL", "EVIDENCE_AUDIT", "SYNTHESIS", "PLANNING"]
     entity_id: str = Field(min_length=1, max_length=160)
     branch_id: str = Field(min_length=1, max_length=96)
     plan_revision: int = Field(ge=0)
@@ -64,9 +64,9 @@ class ResearchAgentTaskSnapshot(_Strict):
 
     @model_validator(mode="after")
     def validate_quorum_scope(self) -> "ResearchAgentTaskSnapshot":
-        if self.role == "WIDE_DISCOVERY":
+        if self.role in {"WIDE_DISCOVERY", "PLANNING"}:
             if self.target_cells:
-                raise ValueError("WIDE_DISCOVERY must not own canonical cell targets")
+                raise ValueError(f"{self.role} must not own canonical cell targets")
         elif not self.target_cells:
             raise ValueError("runtime role requires canonical cell targets")
         values = (self.logical_task_key, self.quorum_group_key, self.candidate_quorum, self.candidate_slot, self.high_risk)

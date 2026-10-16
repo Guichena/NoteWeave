@@ -10,6 +10,10 @@ public interface SourceTranscriptionPort {
 
     void submit(Request request, Path mediaFile);
 
-    record Request(String workspaceId, String sourceId, String snapshotId, String fileName, String mimeType) {
+    record Request(String workspaceId, String sourceId, String snapshotId, String fileName, String mimeType,
+                   String taskId) {
+        public Request(String workspaceId, String sourceId, String snapshotId, String fileName, String mimeType) {
+            this(workspaceId, sourceId, snapshotId, fileName, mimeType, null);
+        }
     }
 }

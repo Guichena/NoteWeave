@@ -2,6 +2,7 @@ package com.noteweave;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.closeTo;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -55,7 +56,7 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data.legacy_pack.memory_object_ids").isEmpty())
                 .andExpect(jsonPath("$.data.legacy_pack.memory_references").isEmpty())
                 .andExpect(jsonPath("$.data.legacy_pack.compilation_trace.policy_version")
-                        .value("memory-compiler-policy-v1"));
+                        .value("memory-compiler-policy-v2"));
     }
 
     @Test
@@ -363,6 +364,30 @@ class MemoryRuntimeContractTest {
                         .value(accepted.revisionId()))
                 .andExpect(jsonPath("$.data.snapshot.memory_revision_refs[0].memory_version_id")
                         .value(org.hamcrest.Matchers.not(reviewRequired.revisionId())));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/evidence",
+                        workspaceId, answerRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memory_references.length()").value(1))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_class").value("ALWAYS_ON"))
+                .andExpect(jsonPath("$.data.memory_references[0].selection_reason")
+                        .value("适用于全部回答的常驻约束"))
+                .andExpect(jsonPath("$.data.memory_references[0].display_text")
+                        .value("Use the approved snapshot preference"))
+                .andExpect(jsonPath("$.data.memory_references[0].relevance").doesNotExist());
+        jdbcTemplate.update("""
+                update run_input_snapshot
+                set replay_availability = 'METADATA_ONLY'
+                where answer_run_id = ?
+                """, answerRunId);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/evidence",
+                        workspaceId, answerRunId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.memory_references.length()").value(1))
+                .andExpect(jsonPath("$.data.memory_references[0].memory_version_id")
+                        .value(accepted.revisionId()))
+                .andExpect(jsonPath("$.data.memory_references[0].display_text").doesNotExist());
     }
 
     @Test
@@ -524,14 +549,25 @@ class MemoryRuntimeContractTest {
                 .andExpect(jsonPath("$.data[0].task_neighborhoods[0]").value("CHAT_NOTE"))
                 .andExpect(jsonPath("$.data[0].gate.result").value("NEEDS_REVIEW"))
                 .andExpect(jsonPath("$.data[0].gate.source_type").value("MODEL_INFERENCE"))
-                .andExpect(jsonPath("$.data[0].gate.evidence_score").value(0.35))
+                .andExpect(jsonPath("$.data[0].gate.evidence_score", closeTo(0.3333, 0.0002)))
                 .andExpect(jsonPath("$.data[0].gate.evidence_threshold").value(0.70))
                 .andExpect(jsonPath("$.data[1].revision_status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[1].item_status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data[1].memory_scope").value("WORKSPACE"))
                 .andExpect(jsonPath("$.data[1].gate.result").value("READY"))
                 .andExpect(jsonPath("$.data[1].gate.source_type").value("USER_FEEDBACK"))
-                .andExpect(jsonPath("$.data[1].conflict_status").value("NO_CONFLICT"));
+                .andExpect(jsonPath("$.data[1].conflict_status").value("NO_CONFLICT"))
+                .andExpect(jsonPath("$.data[1].slot_key").value("format.structure"))
+                .andExpect(jsonPath("$.data[1].conflict.type").value("NONE"))
+                .andExpect(jsonPath("$.data[0].slot_key").value("answer.style"))
+                .andExpect(jsonPath("$.data[0].conflict.type").value("NONE"))
+                .andExpect(jsonPath("$.data[1].confidence.alpha", closeTo(4.0, 0.001)))
+                .andExpect(jsonPath("$.data[1].confidence.beta", closeTo(1.0, 0.001)))
+                .andExpect(jsonPath("$.data[1].confidence.mean", closeTo(0.8, 0.001)))
+                .andExpect(jsonPath("$.data[1].reinforcement_count").value(0))
+                .andExpect(jsonPath("$.data[0].confidence.alpha", closeTo(1.0, 0.001)))
+                .andExpect(jsonPath("$.data[0].confidence.beta", closeTo(2.0, 0.001)))
+                .andExpect(jsonPath("$.data[0].confidence.mean", closeTo(1.0 / 3.0, 0.001)));
     }
 
     @Test

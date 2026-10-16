@@ -1,0 +1,62 @@
+{
+  "schema_version": "research-upgrade-evaluation-readiness.v1",
+  "stage": "1F",
+  "status": "NOT_RUN",
+  "checked_at": "2026-10-12T18:43:50.291612+00:00",
+  "code_base_commit": "93c2b3eb05425b019f8e02f8b16c07c8ec86c020",
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "dataset_sha256": "eae903336aef6ebc04d48f8e48ce737f2986f4b9176dbf1a2dd0d1bfa814fb00",
+  "case_count": 20,
+  "case_keys": [
+    "cmp-postgres-mysql-json",
+    "cmp-openai-anthropic-tools",
+    "cmp-kafka-pulsar-ordering",
+    "cmp-terraform-pulumi-state",
+    "cmp-redis-valkey-persistence",
+    "cmp-vite-webpack-hmr",
+    "cmp-grpc-graphql",
+    "cmp-otel-prometheus-metrics",
+    "survey-vector-db-hybrid",
+    "survey-rust-edition-2024",
+    "survey-http3-loss-recovery",
+    "survey-oauth-oidc",
+    "fact-k8s-sidecar",
+    "fact-python-free-threading",
+    "fact-java-virtual-threads",
+    "fact-pg-17-incremental-backup",
+    "conflict-microservice-speed",
+    "conflict-typescript-defects",
+    "conflict-coverage-threshold",
+    "conflict-ssr-web-vitals"
+  ],
+  "local_tcp_ports_open": {
+    "3000": false,
+    "8080": false
+  },
+  "missing_eval_environment_names": [
+    "NOTEWEAVE_EVAL_USERNAME",
+    "NOTEWEAVE_EVAL_EMAIL",
+    "NOTEWEAVE_EVAL_PASSWORD"
+  ],
+  "reason_codes": [
+    "EVALUATION_ACCOUNT_UNCONFIGURED",
+    "EVALUATION_API_NOT_LISTENING"
+  ],
+  "baseline_dataset_key": "research-eval-v1",
+  "comparable_quality_baseline_available": false,
+  "metrics": {
+    "effective_cell_completion_rate": null,
+    "citation_support_rate": null,
+    "llm_calls_per_question": null
+  },
+  "notes": [
+    "尚未运行真实模型与检索，不填模拟质量指标。",
+    "现有旧基线来自不同数据集，需要在同一冻结数据集上补跑改造前后两组。"
+  ],
+  "commands": {
+    "run": "python scripts/deepresearch/run_quality_eval.py --execute",
+    "score": "python scripts/deepresearch/score_quality_eval.py"
+  },
+  "implementation_commit": "45dc4711496e6ba66d4bb39eb0983a3e07c55485"
+}

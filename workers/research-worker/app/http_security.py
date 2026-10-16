@@ -125,6 +125,10 @@ class _PinnedResponse:
     def read(self, *args, **kwargs):  # noqa: ANN002, ANN003, ANN201
         return self._response.read(*args, **kwargs)
 
+    @property
+    def headers(self):  # noqa: ANN201
+        return self._response.headers
+
     def __enter__(self):
         return self
 

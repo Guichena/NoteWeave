@@ -131,6 +131,108 @@ class TopicSegmenterV2Test {
     }
 
     @Test
+    void alignedVectorsStayOnTheCurrentTopic() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("c2", 2, "台南牛肉汤和安平老街", 1f, 0f)));
+
+        assertThat(projection.segments()).hasSize(1);
+        assertThat(projection.segments().get(0).reason()).isEqualTo("ACTIVE_TOPIC_SIMILAR");
+        assertThat(projection.segments().get(0).ruleVersion()).isEqualTo(TopicSegmenterV2.SEMANTIC_RULE_VERSION);
+        assertThat(projection.degradationReasons()).isEmpty();
+    }
+
+    @Test
+    void orthogonalVectorStartingWithContinuationOpensANewTopic() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("n2", 2, "这个是全新的主题", 0f, 1f)));
+
+        assertThat(projection.segments()).hasSize(2);
+        assertThat(projection.segments().get(1).reason()).isEqualTo("DEPTH_BOUNDARY");
+        assertThat(projection.segments().get(1).status()).isEqualTo("CONFIDENT");
+        assertThat(projection.segments().get(1).topicId())
+                .isNotEqualTo(projection.segments().get(0).topicId());
+    }
+
+    @Test
+    void continuationCueNeedsEnoughCosine() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("c2", 2, "这点再展开", 1f, 0f)));
+
+        assertThat(projection.segments()).hasSize(1);
+        assertThat(projection.segments().get(0).reason()).isEqualTo("CONTINUATION_WITH_SEMANTICS");
+    }
+
+    @Test
+    void explicitSwitchStillSplitsWhenVectorsAlign() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("t2", 2, "改聊台南旅行。", 1f, 0f)));
+
+        assertThat(projection.segments()).hasSize(2);
+        assertThat(projection.segments().get(1).reason()).isEqualTo("EXPLICIT_TOPIC_SWITCH");
+    }
+
+    @Test
+    void explicitReturnReusesTheAlignedTopic() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("t2", 2, "改聊台南旅行。", 0f, 1f),
+                message("c3", 3, "回到缓存一致性。", 1f, 0f)));
+
+        assertThat(projection.segments()).hasSize(3);
+        assertThat(projection.segments().get(2).topicId()).isEqualTo(projection.segments().get(0).topicId());
+        assertThat(projection.segments().get(2).reason()).isEqualTo("EXPLICIT_TOPIC_RETURN");
+        assertThat(projection.segments().get(2).status()).isEqualTo("CONFIDENT");
+    }
+
+    @Test
+    void depthDropOpensABoundaryWhenAdjacentCosineFalls() {
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(List.of(
+                message("c1", 1, "缓存一致性有哪些方案，先更新数据库还是先删除缓存？", 1f, 0f),
+                message("c2", 2, "删除缓存失败以后消息队列怎么重试", 1f, 0.05f),
+                message("t3", 3, "台南安平老街牛肉汤", 0.4f, 1f)));
+
+        assertThat(projection.segments()).hasSize(2);
+        assertThat(projection.segments().get(0).endSeq()).isEqualTo(2);
+        assertThat(projection.segments().get(1).reason()).isEqualTo("DEPTH_BOUNDARY");
+        assertThat(projection.segments().get(1).status()).isEqualTo("CONFIDENT");
+    }
+
+    @Test
+    void missingVectorsMatchTheLexicalSegmentsAndRecordDegradation() throws Exception {
+        List<TopicSegmenterV2.Message> messages = messages(goldCase("A_TO_B_TO_A"));
+        TopicSegmenterV2.Projection lexical = segmenter.segment(messages);
+        TopicSegmenterV2.Projection degraded = segmenter.segmentSemantic(messages, List.of());
+
+        assertThat(degraded.segments()).isEqualTo(lexical.segments());
+        assertThat(degraded.degradationReasons()).containsExactly(TopicSegmenterV2.VECTOR_UNAVAILABLE);
+        assertThat(segmenter.segmentSemantic(List.of(
+                new TopicSegmenterV2.Message("a1", 1, "ASSISTANT", "好的。")), List.of())
+                .degradationReasons()).isEmpty();
+    }
+
+    @Test
+    void semanticFixedPrefixKeepsTheStoredRuleVersion() {
+        List<TopicSegmenterV2.Message> messages = List.of(
+                message("m1", 1, "解释缓存一致性。", 1f, 0f),
+                message("m2", 2, "Kafka 消费者组的分区再均衡是怎么触发的？", 0f, 1f),
+                message("m3", 3, "这点再展开", 1f, 0f));
+        TopicSegmenterV2.Segment stored = new TopicSegmenterV2.Segment("segment-old", "topic-old", 1, 2,
+                "CONFIDENT", "SHORT_FOLLOW_UP", "topic-segmenter-v2-a1");
+
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, List.of(stored));
+
+        assertThat(projection.segments()).hasSize(1);
+        assertThat(projection.segments().get(0).segmentId()).isEqualTo("segment-old");
+        assertThat(projection.segments().get(0).endSeq()).isEqualTo(3);
+        assertThat(projection.segments().get(0).ruleVersion()).isEqualTo("topic-segmenter-v2-a1");
+        assertThat(projection.segments().get(0).reason()).isEqualTo("CONTINUATION_WITH_SEMANTICS");
+    }
+
+    @Test
     void duplicateOrOutOfOrderSequenceIsRejected() {
         assertThatThrownBy(() -> segmenter.segment(List.of(
                 new TopicSegmenterV2.Message("one", 1, "USER", "A"),
@@ -145,6 +247,10 @@ class TopicSegmenterV2Test {
             }
         }
         throw new IllegalArgumentException("unknown gold scenario: " + scenario);
+    }
+
+    private static TopicSegmenterV2.Message message(String id, int seq, String text, float x, float y) {
+        return new TopicSegmenterV2.Message(id, seq, "USER", text, List.of(x, y));
     }
 
     private List<TopicSegmenterV2.Message> messages(JsonNode entry) {

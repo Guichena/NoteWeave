@@ -12,12 +12,14 @@ public record SubmitTurnCommand(
         String expectedHistoryHeadMessageId,
         String retrievalStrategy,
         List<String> retrievalChannels,
-        List<String> groundingRefs
+        List<String> groundingRefs,
+        String regeneratedFrom
 ) {
     public SubmitTurnCommand {
         sourceScope = sourceScope == null ? List.of() : List.copyOf(sourceScope);
         retrievalChannels = retrievalChannels == null ? List.of() : List.copyOf(retrievalChannels);
         groundingRefs = groundingRefs == null ? List.of() : List.copyOf(groundingRefs);
+        regeneratedFrom = regeneratedFrom == null || regeneratedFrom.isBlank() ? null : regeneratedFrom.trim();
     }
 
     public static SubmitTurnCommand from(String conversationId, SendMessageRequest request) {
@@ -30,8 +32,24 @@ public record SubmitTurnCommand(
                 request.expectedHistoryHeadMessageId(),
                 request.retrievalStrategy(),
                 request.retrievalChannels(),
-                request.groundingRefs()
+                request.groundingRefs(),
+                request.regeneratedFrom()
         );
+    }
+
+    public SubmitTurnCommand(
+            String conversationId,
+            String content,
+            String requestedTurnMode,
+            String clientRequestId,
+            List<String> sourceScope,
+            String expectedHistoryHeadMessageId,
+            String retrievalStrategy,
+            List<String> retrievalChannels,
+            List<String> groundingRefs
+    ) {
+        this(conversationId, content, requestedTurnMode, clientRequestId, sourceScope,
+                expectedHistoryHeadMessageId, retrievalStrategy, retrievalChannels, groundingRefs, null);
     }
 
     public SubmitTurnCommand(
@@ -52,6 +70,6 @@ public record SubmitTurnCommand(
 
     SendMessageRequest toLegacyAnswerRequest() {
         return new SendMessageRequest(content, requestedTurnMode, clientRequestId, sourceScope, null,
-                retrievalStrategy, retrievalChannels, groundingRefs);
+                retrievalStrategy, retrievalChannels, groundingRefs, null);
     }
 }

@@ -38,9 +38,9 @@ class SourceParseProjectionDisabledTest {
                         'PROCESSING', 'PENDING', 'PENDING')
                 """);
         jdbcTemplate.update("""
-                insert into source_snapshot(id, source_id, parse_status, index_status)
-                values ('snapshot-1', 'source-1', 'PENDING', 'PENDING')
-                """);
+                insert into source_snapshot(id, source_id, file_object_id, sha256, parse_status, index_status)
+                values ('snapshot-1', 'source-1', 'file-1', ?, 'PENDING', 'PENDING')
+                """, hash("parsed content"));
 
         DocumentChunker documentChunker = new DocumentChunker(600, 80);
         SourceMessagingMode messagingMode = mock(SourceMessagingMode.class);
@@ -117,6 +117,10 @@ class SourceParseProjectionDisabledTest {
                 create table source_snapshot (
                     id varchar(64) primary key,
                     source_id varchar(64) not null,
+                    file_object_id varchar(64),
+                    sha256 varchar(64),
+                    object_key varchar(500),
+                    version_no int default 1 not null,
                     parse_status varchar(32) not null,
                     index_status varchar(32) not null,
                     processing_stage varchar(32), index_attempt_count int default 0 not null,
@@ -136,6 +140,9 @@ class SourceParseProjectionDisabledTest {
                     location_info varchar(500),
                     page_start int,
                     page_end int,
+                    structure_metadata_json clob,
+                    text_origin varchar(16),
+                    ocr_confidence double,
                     projection_status varchar(32) default 'PENDING',
                     projected_at timestamp
                 )
@@ -167,5 +174,14 @@ class SourceParseProjectionDisabledTest {
                     status varchar(32)
                 )
                 """);
+    }
+
+    private static String hash(String content) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new AssertionError(exception);
+        }
     }
 }

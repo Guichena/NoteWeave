@@ -1,22 +1,29 @@
 import * as artifacts from "./fixtures/artifacts";
 import * as memory from "./fixtures/memory";
-import { evidenceByRun, messages, sources } from "./fixtures/chat";
-import { researchTasks, runDetails, runs, runningRun } from "./fixtures/research";
+import { answerFeedback, evidenceByRun, evidenceMetaByRun, messages, sources } from "./fixtures/chat";
+import { researchInsights, researchPlan, researchTasks, runDetails, runs, runningRun } from "./fixtures/research";
 import { reprocessMockSource, sourceTaskEvents, sourceTasks } from "./fixtures/sources";
 import * as wiki from "./fixtures/wiki";
+import { DEFAULT_SOURCE_FORMATS } from "../features/sources/sourceFiles";
 
 type Handler = (match: RegExpMatchArray, request: Request, url: URL) => unknown | Promise<unknown>;
 
 // 每条路由返回与后端一致的响应信封；未匹配的请求交给真实接口处理。
 const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/sources$/, () => sources],
+  // 5A 格式列表：与内置列表一致，实际支持范围以后端为准
+  ["GET", /^\/api\/v2\/uploads\/formats$/, () => DEFAULT_SOURCE_FORMATS],
   // 历史消息只在第一页返回，后续分页为空，与后端分页行为一致。
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/conversations\/[^/]+\/messages$/, (_m, _r, url) => (
     url.searchParams.get("after_seq") === "0" ? messages : []
   )],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/answer-runs\/([^/]+)\/evidence$/, (m) => (
-    evidenceByRun[m[1]] ? { run_id: m[1], evidence: evidenceByRun[m[1]] } : undefined
+    evidenceByRun[m[1]] ? { run_id: m[1], evidence: evidenceByRun[m[1]], ...evidenceMetaByRun[m[1]] } : undefined
   )],
+  ["POST", /^\/api\/v2\/workspaces\/[^/]+\/answer-runs\/([^/]+)\/feedback$/, async (m, request) => {
+    answerFeedback[m[1]] = await request.json();
+    return { run_id: m[1], recorded: true };
+  }],
   ["GET", /^\/api\/v2\/workspaces\/([^/]+)\/wiki-settings$/, (m) => ({ workspace_id: m[1], wiki_enabled: true })],
   // 知识库页面会用 wiki-home 返回的 workspace_id 继续请求，这里按请求路径回填。
   ["GET", /^\/api\/v2\/workspaces\/([^/]+)\/wiki-home$/, (m) => ({ ...wiki.home, workspace_id: m[1] })],
@@ -43,6 +50,17 @@ const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
     return run ? { ...run, workspace_id: m[1] } : undefined;
   }],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/[^/]+\/collection$/, () => null],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan$/, (m) => researchPlan.read(m[1])],
+  ["POST", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan\/approve$/, (m) => researchPlan.approve(m[1])],
+  ["PUT", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/plan$/, async (m, request) => (
+    researchPlan.revise(m[1], await request.json())
+  )],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/cells$/, (m) => researchInsights.cells(m[1])],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/replans$/, (m) => researchInsights.replans(m[1])],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/counter-checks$/, (m) => researchInsights.counterChecks(m[1])],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/discovery-proposals$/, (m) => (
+    researchInsights.discoveryProposals(m[1])
+  )],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/research-runs\/([^/]+)\/checkpoints\/(\d+)$/, (m) => {
     const checkpoint = runDetails[m[1]]?.closed_loop_state.checkpoints.find((item) => item.checkpoint_no === Number(m[2]));
     return checkpoint ? { ...checkpoint, counterfactual_summary: null, payload: {} } : undefined;
@@ -72,6 +90,9 @@ const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
   ["POST", /^\/api\/v2\/workspaces\/[^/]+\/artifact-jobs\/[^/]+\/versions\/\d+\/writeback$/, () => ({ status: "ACCEPTED" })],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/video-learning-bundles$/, () => artifacts.videoLearning],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/memory\/items$/, () => memory.listItems()],
+  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/memory\/control-pack\/chat$/, (_m, _r, url) => (
+    memory.previewControlPack(url.searchParams.get("answer_mode") ?? "QA", url.searchParams.get("query") ?? "")
+  )],
   ["POST", /^\/api\/v2\/workspaces\/[^/]+\/memory\/signals$/, async (_m, request) => memory.createSignal(await request.json())],
   ["POST", /^\/api\/v2\/workspaces\/[^/]+\/memory\/promotions$/, async (_m, request) => memory.promoteSignals((await request.json()).signal_ids)],
   ["POST", /^\/api\/v2\/workspaces\/[^/]+\/memory\/revisions\/([^/]+)\/review$/, async (m, request) => memory.decide(m[1], (await request.json()).decision)],

@@ -31,6 +31,14 @@ public class ResearchRunReadRepository {
         this.objectMapper = objectMapper;
     }
 
+    /** 多智能体研究各任务实际执行的检索词，按执行先后排列；旧的单循环研究没有这些记录。 */
+    public List<String> agentTaskQueries(String researchRunId) {
+        return jdbcTemplate.queryForList("""
+                select query_text from research_task_query
+                where research_run_id = ? order by created_at, id
+                """, String.class, researchRunId);
+    }
+
     public List<ResearchRunListRow> listRows(String workspaceId) {
         return listRows(workspaceId, 50, 0);
     }

@@ -167,7 +167,10 @@ class Phase5MemoryContractTest {
 
         assertThat(jdbcTemplate.queryForObject(
                 "select status from memory_item where id = ?",
-                String.class, existingItemId)).isEqualTo("DELETED");
+                String.class, existingItemId)).isEqualTo("SUPERSEDED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select valid_until from memory_runtime_revision where memory_item_id = ? and status = 'SUPERSEDED'",
+                java.sql.Timestamp.class, existingItemId)).isNotNull();
         assertThat(jdbcTemplate.queryForObject(
                 "select status from memory_item where id = ?",
                 String.class, candidateId)).isEqualTo("ACTIVE");

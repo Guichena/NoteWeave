@@ -6,6 +6,7 @@ from app.action_resolver import resolve_requested_action
 from app.capability_resolver import resolve_capability_bindings
 from app.content_runtime import build_content_acquisition_plan
 from app.intent_compiler import compile_execution_spec
+from app.artifact_skill_catalog import resolve_generation_mode, resolve_output_contract
 from app.models import (
     ArtifactExecutionPlan,
     ArtifactRuntimePlan,
@@ -19,7 +20,7 @@ from app.policy import (
     evaluate_writeback_gate,
     resolve_writeback_capabilities,
 )
-from app.runtime_node_registry import ensure_runtime_node_skill_registered
+from app.runtime_node_registry import ensure_runtime_node_contract_registered
 from app.registry import (
     resolve_prompt_recipe,
     resolve_production_action,
@@ -29,7 +30,8 @@ from app.registry import (
 )
 
 
-def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan:
+def build_execution_plan(task_input: ArtifactTaskInput, llm_client=None) -> ArtifactExecutionPlan:
+    # 先进行本地绑定和门控，再允许模型编译用户意图。
     execution_spec = compile_execution_spec(task_input)
     action_resolution = resolve_requested_action(task_input)
     action_key = action_resolution.resolved_action_key
@@ -65,6 +67,9 @@ def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan
         raise ValueError("schema gate rejected plan: source scope must not be empty")
 
     node_sequence = _resolve_node_sequence(skill_graph.graph_key)
+    generation_mode = resolve_generation_mode(execution_spec.skill_key, action_key)
+    if action.action_origin == "CUSTOM" and any(node.prompt_recipe_id == "node.section_writer.v1" for node in node_sequence):
+        generation_mode = "SECTIONED"
     lazy_loaded_capabilities = _collect_required_capabilities(
         content_acquisition_plan.required_capabilities,
         writeback_capabilities,
@@ -136,6 +141,8 @@ def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan
             "forbidden patterns: "
             + "; ".join(task_input.control_pack.forbidden_patterns)
         )
+    if llm_client is not None:
+        execution_spec = compile_execution_spec(task_input, llm_client=llm_client)
     runtime_plan = _build_runtime_plan(
         graph_key=skill_graph.graph_key,
         graph_name=skill_graph.graph_name,
@@ -145,7 +152,9 @@ def build_execution_plan(task_input: ArtifactTaskInput) -> ArtifactExecutionPlan
     )
 
     return ArtifactExecutionPlan(
+        generation_mode=generation_mode,
         plan_id=f"plan-{task_input.task_id}",
+        declared_output_contract=resolve_output_contract(execution_spec.skill_key, action_key),
         skill_key=execution_spec.skill_key,
         action_key=action_key,
         action_display_name=action.display_name,
@@ -227,17 +236,13 @@ def _resolve_node_sequence(graph_key: str) -> list[ArtifactSkillNodePlan]:
         node_id = queue.popleft()
         node = node_map[node_id]
         skill_definition = resolve_skill_definition(node.skill_key)
-        ensure_runtime_node_skill_registered(
-            skill_definition,
-            graph_key=graph.graph_key,
-            node_skill_key=node.skill_key,
+        ensure_runtime_node_contract_registered(
+            node, skill_definition,
             error_prefix="schema gate rejected plan",
         )
         ordered_nodes.append(
             ArtifactSkillNodePlan(
-                node_id=node.node_id,
-                skill_key=node.skill_key,
-                purpose=node.purpose,
+                **node.model_dump(mode="json"),
             )
         )
         for neighbor in adjacency[node_id]:

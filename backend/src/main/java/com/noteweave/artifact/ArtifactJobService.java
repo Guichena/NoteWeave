@@ -118,10 +118,11 @@ public class ArtifactJobService {
                         "QUEUED", "右侧产物 Skill 任务已创建")
                 : taskService.createTaskForActor(workspaceId, "ARTIFACT_JOB", "ARTIFACT_JOB", artifactJobId,
                         "QUEUED", "右侧产物 Skill 任务已创建", actorUserId);
+        // 用户的产物要求作为相关度查询，按需记忆才会按这次任务选取
         MemoryControlPackResponse controlPack = actorUserId == null
-                ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey)
+                ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey, userRequirement)
                 : memoryCompilerService.compileArtifactControlPackForActor(
-                        workspaceId, skillKey, actorUserId);
+                        workspaceId, skillKey, actorUserId, userRequirement);
         artifactJobWriteRepository.persistInitialJob(
                 artifactJobId,
                 workspaceId,
@@ -395,6 +396,7 @@ public class ArtifactJobService {
         exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionDetailRow row = artifactJobReadRepository.getVersionDetail(
                 workspaceId, artifactJobId, versionNo);
+        ArtifactRuntimeTraceResponse runtimeTrace = artifactPayloadReadModelAssembler.readRuntimeTrace(row.resultPayloadJson());
         return new ArtifactVersionDetailResponse(
                 row.versionId(),
                 row.artifactJobId(),
@@ -404,7 +406,8 @@ public class ArtifactJobService {
                 row.contentMarkdown(),
                 row.traceSummary(),
                 artifactPayloadReadModelAssembler.readCitations(row.citationsJson()),
-                artifactPayloadReadModelAssembler.readRuntimeTrace(row.resultPayloadJson()),
+                runtimeTrace == null ? null : runtimeTrace.verification(),
+                runtimeTrace,
                 artifactJobReadRepository.loadArtifactFiles(row.versionId()),
                 row.createdAt()
         );
@@ -510,7 +513,7 @@ public class ArtifactJobService {
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         String markdown = extractMarkdown(request.resultPayload());
-        requireVerifiedCandidate(request);
+        requireVerifiedCandidate(row, request);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
         contextV2ShadowSnapshots.activeRequirement(
@@ -627,17 +630,21 @@ public class ArtifactJobService {
         }
     }
 
-    private void requireVerifiedCandidate(com.noteweave.worker.WorkerCompleteRequest request) {
-        if (request.resultPayload() == null || !request.resultPayload().containsKey("candidate")) {
-            return; // Legacy Worker callbacks remain readable during rollout.
+    private void requireVerifiedCandidate(ArtifactJobTaskRow row, com.noteweave.worker.WorkerCompleteRequest request) {
+        boolean currentCatalog = catalogDigestFrom(row.compilerVersion()).equals(artifactSkillCatalogService.catalogDigest());
+        boolean frozenVideo = Set.of("knowledge_blog", "interview_qa", "video_learning_deck").contains(row.skillKey());
+        boolean requiredEvidence = currentCatalog
+                ? artifactSkillCatalogService.requiresEvidence(row.skillKey()) : frozenEvidenceRequired(request.resultPayload());
+        ArtifactCandidateVerificationPolicy.validate(request.resultPayload(), currentCatalog && !frozenVideo, requiredEvidence);
+    }
+
+    private boolean frozenEvidenceRequired(Map<String, Object> payload) {
+        if (payload != null && payload.get("execution_plan") instanceof Map<?, ?> plan
+                && plan.get("declared_output_contract") instanceof Map<?, ?> contract
+                && contract.get("citation") instanceof Map<?, ?> citation) {
+            return !("NONE".equals(citation.get("density")) || "OPTIONAL".equals(citation.get("density")));
         }
-        Object raw = request.resultPayload().get("verification");
-        if (!(raw instanceof Map<?, ?> verification)
-                || !("PASS".equals(verification.get("status"))
-                || "WARN".equals(verification.get("status")))) {
-            throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED",
-                    "Candidate content did not pass final verification", HttpStatus.CONFLICT);
-        }
+        return true;
     }
 
     private void requireFrozenSourcesVisible(ArtifactJobTaskRow row) {

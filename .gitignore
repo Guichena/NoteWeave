@@ -46,3 +46,19 @@ Thumbs.db
 
 # Vite 本地环境变量覆盖
 frontend/.env*.local
+
+# 本地/代理/测试产物
+.claude/
+CLAUDE.md
+AGENTS.md
+docker-compose.wsl.yml
+.env.*
+!.env.example
+!**/.env.example
+**/.env.*
+!**/.env*.example
+frontend/playwright-report/
+playwright-report/
+test-results/
+coverage/
+logs/

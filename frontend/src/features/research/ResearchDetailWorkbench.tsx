@@ -6,10 +6,14 @@ import { ResearchCheckpointEvidenceReviewPanel } from "./ResearchCheckpointEvide
 import { ResearchCheckpointProvenancePanel } from "./ResearchCheckpointProvenancePanel";
 import { ResearchCheckpointReplayPanel } from "./ResearchCheckpointReplayPanel";
 import { ResearchCheckpointSnapshotPanel } from "./ResearchCheckpointSnapshotPanel";
+import { ResearchCellsPanel } from "./ResearchCellsPanel";
 import { ResearchClosedLoopStatePanel } from "./ResearchClosedLoopStatePanel";
+import { ResearchDiscoveryPanel } from "./ResearchDiscoveryPanel";
+import { ResearchPlanPanel } from "./ResearchPlanPanel";
 import { ResearchProcessOverview } from "./ResearchProcessOverview";
 import { ResearchProcessStageLanes } from "./ResearchProcessStageLanes";
 import { ResearchProcessTraceBrowser } from "./ResearchProcessTraceBrowser";
+import { ResearchRepairPanel } from "./ResearchRepairPanel";
 import { ResearchRoundTimeline } from "./ResearchRoundTimeline";
 import { deriveResearchEvidenceMetrics } from "./derived";
 import {
@@ -133,6 +137,9 @@ export function ResearchDetailWorkbench({
 
         {tab === "process" ? (
           <div className="research-detail-section-stack">
+            <ResearchPlanPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} onStarted={onRefresh} />
+            <ResearchCellsPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} refreshKey={run.updated_at} />
+            <ResearchDiscoveryPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} refreshKey={run.updated_at} />
             <ResearchProcessOverview
               processSummary={process}
               searchReadTimeline={effectiveTimeline}
@@ -232,6 +239,7 @@ export function ResearchDetailWorkbench({
 
         {tab === "audit" ? (
           <div className="research-detail-section-stack">
+            <ResearchRepairPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} refreshKey={run.updated_at} />
             <ResearchAuditOverview
               verifierGateLead={`local=${audit?.local_verifier_status || closedLoop.local_verifier_status || "-"} · global=${audit?.global_verifier_decision || closedLoop.global_verifier_decision || "-"}`}
               verifierGateDetail={`final=${audit?.final_loop_decision || closedLoop.final_loop_decision || "-"}`}

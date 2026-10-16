@@ -3,9 +3,12 @@ package com.noteweave.retrieval.projection;
 import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.source.SourceCatalogVersionService;
+import com.noteweave.source.SourceRetrievalReadyEvent;
 import com.noteweave.task.TaskService;
 import java.util.List;
 import java.util.Locale;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,6 +19,7 @@ public class SourceRetrievalProjectionFinalizer {
     private final RetrievalProjectionRepository projectionRepository;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final TaskService taskService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public SourceRetrievalProjectionFinalizer(
             JdbcTemplate jdbcTemplate,
@@ -23,10 +27,22 @@ public class SourceRetrievalProjectionFinalizer {
             SourceCatalogVersionService sourceCatalogVersionService,
             TaskService taskService
     ) {
+        this(jdbcTemplate, projectionRepository, sourceCatalogVersionService, taskService, event -> { });
+    }
+
+    @Autowired
+    public SourceRetrievalProjectionFinalizer(
+            JdbcTemplate jdbcTemplate,
+            RetrievalProjectionRepository projectionRepository,
+            SourceCatalogVersionService sourceCatalogVersionService,
+            TaskService taskService,
+            ApplicationEventPublisher eventPublisher
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.projectionRepository = projectionRepository;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.taskService = taskService;
+        this.eventPublisher = eventPublisher;
     }
 
     public List<StaleSnapshot> staleSnapshots(String workspaceId, String sourceId, String currentSnapshotId) {
@@ -99,6 +115,8 @@ public class SourceRetrievalProjectionFinalizer {
             projectionRepository.markSnapshotStale(stale.sourceSnapshotId());
         }
         sourceCatalogVersionService.bump(workspaceId);
+        // 下游（Wiki 编译）在本事务提交后开始，此时资料已可读
+        eventPublisher.publishEvent(new SourceRetrievalReadyEvent(workspaceId, sourceId));
         if (taskId != null && !taskId.isBlank()) {
             taskService.completeTask(taskId, "INDEXED",
                     "资料的 QA 与 Note 检索投影均已完成", sourceId);

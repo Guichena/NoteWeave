@@ -450,7 +450,9 @@ public class ResearchRunQueryService {
                         closedLoopState,
                         verifierSummary,
                         sourceScope.size(),
-                        researchArtifactCandidate
+                        researchArtifactCandidate,
+                        // 只在详情里补多智能体研究的检索词；列表逐条查询会让查询次数随研究数增长
+                        researchRunReadRepository.agentTaskQueries(row.researchRunId())
                 ),
                 closedLoopState.harnessControlState(),
                 closedLoopState.auditSummaries(),

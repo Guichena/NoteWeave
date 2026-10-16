@@ -52,6 +52,10 @@ public class ArtifactPayloadReadModelAssembler {
         }
     }
 
+    private Map<String, Object> traceMap(Object raw) {
+        return raw instanceof Map<?, ?> map ? normalizeObjectMap(map) : Map.of();
+    }
+
     public ArtifactRuntimeTraceResponse readRuntimeTrace(String json) {
         if (json == null || json.isBlank()) {
             return null;
@@ -67,8 +71,12 @@ public class ArtifactPayloadReadModelAssembler {
         Map<String, Object> runtimeTracePayload;
         if (nestedRuntimeTrace instanceof Map<?, ?> nestedMap) {
             runtimeTracePayload = normalizeObjectMap(nestedMap);
+            // 新载荷的顶层校验结果为最终结果，兼容仅在运行诊断中保存结果的历史版本。
+            copyRuntimeTraceField(payload, runtimeTracePayload, "verification");
         } else {
             LinkedHashMap<String, Object> runtimeTrace = new LinkedHashMap<>();
+            copyRuntimeTraceField(payload, runtimeTrace, "intent_compilation_trace");
+            copyRuntimeTraceField(payload, runtimeTrace, "llm_usage");
             copyRuntimeTraceField(payload, runtimeTrace, "verification");
             copyRuntimeTraceField(payload, runtimeTrace, "generation_trace");
             copyRuntimeTraceField(payload, runtimeTrace, "export_trace");
@@ -152,7 +160,9 @@ public class ArtifactPayloadReadModelAssembler {
                         ArtifactAcquisitionCallbackTraceResponse.class,
                         "ARTIFACT_RUNTIME_ACQUISITION_CALLBACK_PARSE_FAILED",
                         "产物运行时 acquisition callback trace 解析失败"
-                )
+                ),
+                traceMap(runtimeTracePayload.get("intent_compilation_trace")),
+                traceMap(runtimeTracePayload.get("llm_usage"))
         );
     }
 

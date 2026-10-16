@@ -1,11 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { BookOpen, Check, CircleAlert, LoaderCircle, MessageSquareQuote, Plus, RefreshCw } from "lucide-react";
 import { formatRelativeTime } from "../../shared/util/datetime";
-import type { MemoryApi } from "./api";
+import { memoryApi as defaultMemoryApi, type MemoryApi } from "./api";
+import { MemoryInjectionPreview } from "./MemoryInjectionPreview";
 import type { MemoryItem, MemoryReviewDecision } from "./model";
 import {
   MEMORY_NEIGHBORHOOD_OPTIONS,
   buildGateChecks,
+  describeConfidence,
+  describeConflict,
   describeKind,
   describeNeighborhoods,
   describeSource,
@@ -109,6 +112,10 @@ export function MemoryReviewWorkbench({ workspaceId, api }: MemoryReviewWorkbenc
           <p className="memory-quiet">还没有生效的记忆。在对话里提出长期要求（例如以后先给结论），或在上方添加一条偏好。</p>
         )}
       </section>
+
+      {groups.active.length > 0 ? (
+        <MemoryInjectionPreview workspaceId={workspaceId} items={items} api={api ?? defaultMemoryApi} />
+      ) : null}
     </section>
   );
 }
@@ -217,6 +224,7 @@ function MemoryPendingCard({ item, busy, onDecide }: {
           ))}
         </ul>
       ) : null}
+      <ConflictNote item={item} />
       {!recheck && checks.some((check) => !check.passed) ? (
         <p className="memory-card-note">{checks.filter((check) => !check.passed).map((check) => check.hint).join("；")}。</p>
       ) : null}
@@ -248,6 +256,7 @@ function MemoryActiveRow({ item, busy, onDecide }: {
           适用于{describeNeighborhoods(item.task_neighborhoods)} · 来自{describeSource(item)}
           {item.application_count > 0 ? ` · 已用于 ${item.application_count} 次回答` : " · 尚未使用"}
           {item.memory_scope === "USER" ? " · 仅自己可见" : ""}
+          {describeConfidence(item) ? ` · ${describeConfidence(item)}` : ""}
         </small>
       </div>
       {confirming ? (
@@ -261,6 +270,20 @@ function MemoryActiveRow({ item, busy, onDecide }: {
           停用
         </button>
       )}
+    </div>
+  );
+}
+
+function ConflictNote({ item }: { item: MemoryItem }) {
+  const conflict = describeConflict(item);
+  if (!conflict) return null;
+  if (!conflict.blocking) {
+    return <p className="memory-card-note">模型暂时不可用，没有完成冲突检查。请确认它和生效中的记忆不矛盾后再生效。</p>;
+  }
+  return (
+    <div className="memory-conflict" role="note">
+      <strong>与生效中的记忆冲突：{conflict.label}</strong>
+      {conflict.conflictingText ? <span className="memory-conflict-text">{conflict.conflictingText}</span> : null}
     </div>
   );
 }

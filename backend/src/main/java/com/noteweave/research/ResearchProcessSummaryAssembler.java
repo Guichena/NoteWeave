@@ -23,16 +23,33 @@ public class ResearchProcessSummaryAssembler {
             int sourceScopeCount,
             ResearchArtifactCandidateResponse researchArtifactCandidate
     ) {
+        return build(reportStructure, closedLoopState, verifierSummary, sourceScopeCount,
+                researchArtifactCandidate, List.of());
+    }
+
+    /**
+     * agentTaskQueries 是多智能体研究各任务实际执行的检索词。这类研究没有单循环轮次，
+     * 轮次里的检索词为空时用它填充检索词列表，否则检索时间线始终显示没有检索。
+     */
+    public ResearchProcessSummaryResponse build(
+            ResearchReportStructureResponse reportStructure,
+            ResearchClosedLoopStateResponse closedLoopState,
+            ResearchVerifierSummaryResponse verifierSummary,
+            int sourceScopeCount,
+            ResearchArtifactCandidateResponse researchArtifactCandidate,
+            List<String> agentTaskQueries
+    ) {
         return new ResearchProcessSummaryResponse(
                 sourceScopeCount,
-                buildSearchReadTimeline(closedLoopState),
+                buildSearchReadTimeline(closedLoopState, agentTaskQueries),
                 buildSourceEvidenceSummary(reportStructure, researchArtifactCandidate),
                 buildAuditSummary(closedLoopState, verifierSummary)
         );
     }
 
     private ResearchSearchReadTimelineResponse buildSearchReadTimeline(
-            ResearchClosedLoopStateResponse closedLoopState
+            ResearchClosedLoopStateResponse closedLoopState,
+            List<String> agentTaskQueries
     ) {
         List<Map<String, Object>> loopRounds = closedLoopState == null ? List.of() : closedLoopState.loopRounds();
         List<ResearchLoopRoundSummaryResponse> roundResponses = new ArrayList<>();
@@ -56,6 +73,9 @@ public class ResearchProcessSummaryAssembler {
                     blankIfNull(stringValue(round.get("branch_decision"))),
                     blankIfNull(stringValue(round.get("global_decision")))
             ));
+        }
+        if (allQueries.isEmpty() && agentTaskQueries != null) {
+            agentTaskQueries.stream().filter(query -> query != null && !query.isBlank()).forEach(allQueries::add);
         }
         return new ResearchSearchReadTimelineResponse(
                 loopRounds.size(),

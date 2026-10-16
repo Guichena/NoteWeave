@@ -187,6 +187,10 @@ _PLAN_DIGEST_IGNORED_STOP_CONTRACT_KEYS = frozenset(
     {
         # ``loop_runtime._record_wall_clock_consumption`` 每轮原地写入。
         "wall_clock_seconds_consumed",
+        "query_spec_history",
+        "query_planning_method",
+        "degradation_reasons",
+        "counter_search_calls",
     }
 )
 
@@ -875,6 +879,8 @@ def plan_digest(plan: ResearchPlan) -> str:
     }
     content = {
         "query_set": [str(item) for item in plan.query_set],
+        "query_specs": [{"query": spec.query, "family": spec.family, "search_angle": spec.search_angle,
+                         "search_lane": spec.search_lane, "column_keys": spec.column_keys} for spec in plan.query_specs],
         "report_sections": [str(item) for item in plan.report_sections],
         "research_type": str(plan.research_type or ""),
         "target_entity_type": str(plan.target_entity_type or ""),

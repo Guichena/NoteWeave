@@ -27,6 +27,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, String> actionBindings;
     private final Map<String, List<String>> requiredFileRoles;
     private final Map<String, String> publishedVersions;
+    private final Map<String, Boolean> evidenceRequiredByKey;
     private final String catalogDigest;
     /** 目录里的描述与展示信息：前端的产物卡片和默认输入提示都从这里读取，新增产物不需要改代码。 */
     private final Map<String, String> descriptions;
@@ -48,11 +49,17 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             throw new IllegalStateException("unsupported artifact Skill catalog version");
         }
         Map<String, ArtifactSkillDefinition> skills = new LinkedHashMap<>();
+        Map<String, Object> graphDefinitions = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
                 throw new IllegalStateException("invalid artifact Skill catalog entry");
             }
             validatePublishedEntry(entry, schema);
+            Object previousGraph = graphDefinitions.putIfAbsent(
+                    String.valueOf(entry.get("graph_key")), entry.get("graph_definition"));
+            if (previousGraph != null && !previousGraph.equals(entry.get("graph_definition"))) {
+                throw new IllegalStateException("发布目录中共享技能图的声明不一致");
+            }
             String key = String.valueOf(entry.get("skill_key"));
             Map<String, Object> inputSchema = new LinkedHashMap<>();
             schema.forEach((field, value) -> inputSchema.put(String.valueOf(field), value));
@@ -69,10 +76,14 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         Map<String, String> bindings = new LinkedHashMap<>();
         Map<String, List<String>> requiredRoles = new LinkedHashMap<>();
         Map<String, String> versions = new LinkedHashMap<>();
+        Map<String, Boolean> evidenceRequired = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             Map<?, ?> entry = (Map<?, ?>) rawEntry;
             String key = String.valueOf(entry.get("skill_key"));
             versions.put(key, String.valueOf(entry.get("version")));
+            Map<?, ?> contract = (Map<?, ?>) entry.get("output_contract");
+            Map<?, ?> citation = (Map<?, ?>) contract.get("citation");
+            evidenceRequired.put(key, "PER_SECTION".equals(citation.get("density")));
             bindings.put(key, String.valueOf(entry.get("action_key")));
             if (!(entry.get("required_file_roles") instanceof List<?> roles)) {
                 throw new IllegalStateException("Skill has no required file roles: " + key);
@@ -103,6 +114,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         this.actionBindings = Map.copyOf(bindings);
         this.requiredFileRoles = Map.copyOf(requiredRoles);
         this.publishedVersions = Map.copyOf(versions);
+        this.evidenceRequiredByKey = Map.copyOf(evidenceRequired);
     }
 
     public String catalogDigest() {
@@ -113,15 +125,19 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return publishedVersions.get(resolveSkill(skillKey).skillKey());
     }
 
+    boolean requiresEvidence(String skillKey) {
+        return evidenceRequiredByKey.get(resolveSkill(skillKey).skillKey());
+    }
+
     public List<String> requiredFileRoles(String skillKey) {
         return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
     }
 
     private static final Set<String> REQUIRED_ENTRY_FIELDS = Set.of("skill_key", "version", "display_name",
             "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
-            "required_file_roles", "capability_allowlist", "action_key");
+            "required_file_roles", "capability_allowlist", "action_key", "output_contract", "graph_definition");
     /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
-    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition");
+    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition", "generation_mode");
 
     static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
         Set<String> fields = new java.util.HashSet<>();
@@ -132,7 +148,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 || (entry.containsKey("presentation") && !validPresentation(entry.get("presentation")))
                 || (entry.containsKey("definition") && !(entry.get("definition") instanceof Map<?, ?>))
                 || !"1.0.0".equals(entry.get("version"))
-                || !"artifact-content-v1".equals(entry.get("output_schema_ref"))
+                || !("artifact-" + entry.get("skill_key") + "-output.v1").equals(entry.get("output_schema_ref"))
                 || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
                 || !"object".equals(schema.get("type"))
                 || !(schema.get("properties") instanceof Map<?, ?> properties)
@@ -142,6 +158,9 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME").containsAll(capabilities)) {
             throw new IllegalStateException("unsupported artifact Skill publication policy");
         }
+        ArtifactOutputContractPublicationPolicy.validate(entry.get("output_contract"));
+        ArtifactNodeGraphPublicationPolicy.validate(
+                entry.get("graph_key"), entry.get("graph_definition"), entry.get("output_contract"), generationMode(entry));
         Object required = schema.containsKey("required") ? schema.get("required") : List.of();
         if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
             throw new IllegalStateException("published Skill has invalid required inputs");
@@ -153,6 +172,14 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 throw new IllegalStateException("unsupported published Skill input field");
             }
         }
+    }
+
+    private static String generationMode(Map<?, ?> entry) {
+        Object value = entry.containsKey("generation_mode") ? entry.get("generation_mode") : "SINGLE";
+        if (!(value instanceof String mode) || !Set.of("SINGLE", "SECTIONED").contains(mode)) {
+            throw new IllegalStateException("产物生成模式必须是 SINGLE 或 SECTIONED");
+        }
+        return mode;
     }
 
     private static boolean validPresentation(Object value) {

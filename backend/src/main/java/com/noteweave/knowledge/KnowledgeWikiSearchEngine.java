@@ -1,15 +1,21 @@
 package com.noteweave.knowledge;
 
 import com.noteweave.common.text.LexicalTerms;
+import com.noteweave.retrieval.lexical.Bm25fScorer;
+import com.noteweave.retrieval.provider.EmbeddingClient;
+import com.noteweave.retrieval.provider.RerankClient;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -24,9 +30,13 @@ import org.springframework.stereotype.Component;
  * 让通过链接组织起来的概念页、对比页也能进入候选。被引用和被反链多的页面有一个按对数增长、
  * 带上限的小幅加成。页面必须覆盖足够比例的查询词项才算命中，再去掉得分低于最高分一定比例的长尾；
  * 没有页面命中时返回空，不再拿最近更新的页面充数。
+ * <p>
+ * 索引可用时走词项与向量两路 RRF，乘上权威度后做 Rerank，不再做一跳链接传播。
+ * 索引不可用时才回到内存 BM25F，并且最多读取最近 500 页。
  */
 @Component
 final class KnowledgeWikiSearchEngine {
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeWikiSearchEngine.class);
 
     static final double K1 = 1.2d;
     static final double B = 0.75d;
@@ -46,30 +56,67 @@ final class KnowledgeWikiSearchEngine {
      * 页面很少的工作台里 IDF 失真，命中词的权重会被压得很低。
      */
     static final double MIN_QUERY_COVERAGE = 0.3d;
-    /** 单个工作台参与检索的页面上限，避免异常数据把整张表读进内存。 */
-    private static final int SEARCH_PAGE_CEILING = 5_000;
+    /** Elasticsearch 不可用时，内存 BM25F 只读最近更新的页面。 */
+    static final int DEGRADED_PAGE_CEILING = 500;
     private static final int BROWSE_LIMIT = 120;
+    private static final String CURRENT_PREFIX = "当前问题：";
+    private static final String ANCHOR_PREFIX = "主题锚点：";
 
     private final JdbcTemplate jdbcTemplate;
+    private final WikiPageIndex pageIndex;
+    private final EmbeddingClient embeddingClient;
+    private final RerankClient rerankClient;
+    private final ThreadLocal<List<String>> degradation = new ThreadLocal<>();
 
     KnowledgeWikiSearchEngine(JdbcTemplate jdbcTemplate) {
+        this(jdbcTemplate, null, null, null);
+    }
+
+    @Autowired
+    KnowledgeWikiSearchEngine(
+            JdbcTemplate jdbcTemplate,
+            WikiPageIndex pageIndex,
+            EmbeddingClient embeddingClient,
+            RerankClient rerankClient
+    ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.pageIndex = pageIndex;
+        this.embeddingClient = embeddingClient;
+        this.rerankClient = rerankClient;
+    }
+
+    List<String> consumeDegradationReasons() {
+        List<String> reasons = degradation.get();
+        degradation.remove();
+        return reasons == null ? List.of() : List.copyOf(reasons);
     }
 
     List<WikiSearchRow> search(String workspaceId, String query) {
-        Query parsed = Query.parse(query);
+        return search(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    List<WikiSearchRow> search(String workspaceId, String query, WikiLexicalBoost boost) {
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Query parsed = Query.parse(query).withExtraTerms(safeBoost);
         if (parsed.terms().isEmpty()) {
+            degradation.set(List.of());
             return loadRows(workspaceId);
         }
-        return rank(workspaceId, parsed).stream().map(ScoredWikiRow::row).toList();
+        return rank(workspaceId, query, parsed, safeBoost).stream().map(ScoredWikiRow::row).toList();
     }
 
     List<KnowledgePageHit> findRelevantPages(String workspaceId, String query) {
-        Query parsed = Query.parse(query);
+        return findRelevantPages(workspaceId, query, WikiLexicalBoost.none());
+    }
+
+    List<KnowledgePageHit> findRelevantPages(String workspaceId, String query, WikiLexicalBoost boost) {
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Query parsed = Query.parse(query).withExtraTerms(safeBoost);
         if (parsed.terms().isEmpty()) {
+            degradation.set(List.of());
             return List.of();
         }
-        return rank(workspaceId, parsed).stream()
+        return rank(workspaceId, query, parsed, safeBoost).stream()
                 .map(row -> row.row().toPageHit((int) Math.round(row.score() * 100)))
                 .toList();
     }
@@ -79,12 +126,34 @@ final class KnowledgeWikiSearchEngine {
         return loadRows(workspaceId, BROWSE_LIMIT);
     }
 
-    private List<ScoredWikiRow> rank(String workspaceId, Query query) {
-        List<WikiSearchRow> rows = loadRows(workspaceId, SEARCH_PAGE_CEILING);
+    private List<ScoredWikiRow> rank(
+            String workspaceId,
+            String rawQuery,
+            Query query,
+            WikiLexicalBoost boost
+    ) {
+        if (pageIndex != null && pageIndex.available()) {
+            Optional<List<ScoredWikiRow>> hybrid = rankHybrid(workspaceId, rawQuery, boost);
+            if (hybrid.isPresent()) {
+                return hybrid.get();
+            }
+            log.warn("Wiki 索引检索不可用，改走内存 BM25F");
+        }
+        degradation.set(List.of(WikiHybridRanker.INDEX_UNAVAILABLE));
+        return rankLexical(workspaceId, query, boost, DEGRADED_PAGE_CEILING);
+    }
+
+    private List<ScoredWikiRow> rankLexical(
+            String workspaceId,
+            Query query,
+            WikiLexicalBoost boost,
+            int limit
+    ) {
+        List<WikiSearchRow> rows = loadRows(workspaceId, limit);
         if (rows.isEmpty()) {
             return List.of();
         }
-        Map<String, Double> lexical = bm25f(rows, query);
+        Map<String, Double> lexical = bm25f(rows, query, boost);
         Map<String, Double> neighbor = neighborScores(workspaceId, lexical);
         List<ScoredWikiRow> scored = new ArrayList<>();
         for (WikiSearchRow row : rows) {
@@ -110,56 +179,233 @@ final class KnowledgeWikiSearchEngine {
                 .toList();
     }
 
+    /**
+     * 词项通道失败时返回 empty，调用方改走内存 BM25F。
+     * 两路都没有命中时返回空列表，避免把空索引当成全部页面。
+     */
+    private Optional<List<ScoredWikiRow>> rankHybrid(
+            String workspaceId,
+            String rawQuery,
+            WikiLexicalBoost boost
+    ) {
+        List<String> reasons = new ArrayList<>();
+        String lexical = lexicalText(rawQuery);
+        String vector = vectorText(rawQuery, lexical);
+        WikiPageIndex.SearchResult keyword = pageIndex.keywordSearch(
+                workspaceId, lexical, boost, WikiHybridRanker.CHANNEL_LIMIT);
+        if (!keyword.available()) {
+            return Optional.empty();
+        }
+        WikiPageIndex.SearchResult vectors = WikiPageIndex.SearchResult.ready(List.of());
+        List<Float> embedding = embed(vector, reasons);
+        if (!embedding.isEmpty()) {
+            vectors = pageIndex.vectorSearch(
+                    workspaceId, embedding, WikiHybridRanker.CHANNEL_LIMIT);
+            if (!vectors.available()) {
+                reasons.add(WikiHybridRanker.EMBEDDING_UNAVAILABLE);
+                vectors = WikiPageIndex.SearchResult.ready(List.of());
+            }
+        }
+        List<WikiHybridRanker.Ranked> fused = WikiHybridRanker.fuse(
+                toChannel(keyword.hits()), toChannel(vectors.hits()));
+        if (fused.isEmpty()) {
+            degradation.set(List.copyOf(reasons));
+            return Optional.of(List.of());
+        }
+        Map<String, WikiSearchRow> rows = loadByIds(
+                workspaceId, fused.stream().map(WikiHybridRanker.Ranked::itemId).toList());
+        List<WikiHybridRanker.Ranked> present = new ArrayList<>();
+        for (WikiHybridRanker.Ranked ranked : fused) {
+            if (rows.containsKey(ranked.itemId())) {
+                present.add(ranked);
+            }
+        }
+        if (present.isEmpty()) {
+            degradation.set(List.copyOf(reasons));
+            return Optional.of(List.of());
+        }
+        List<WikiHybridRanker.Ranked> reranked = rerank(vector, present, rows, reasons);
+        degradation.set(List.copyOf(reasons));
+        List<ScoredWikiRow> scored = new ArrayList<>();
+        for (WikiHybridRanker.Ranked ranked : reranked) {
+            scored.add(new ScoredWikiRow(withCounts(rows.get(ranked.itemId()), ranked), ranked.score()));
+        }
+        return Optional.of(scored);
+    }
+
+    private List<Float> embed(String text, List<String> reasons) {
+        if (embeddingClient == null || !embeddingClient.isEnabled()) {
+            reasons.add(WikiHybridRanker.EMBEDDING_UNAVAILABLE);
+            return List.of();
+        }
+        if (text == null || text.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<Float> vector = embeddingClient.embedQuery(text).singleVector();
+            if (vector == null || vector.isEmpty()) {
+                reasons.add(WikiHybridRanker.EMBEDDING_UNAVAILABLE);
+                return List.of();
+            }
+            return vector;
+        } catch (RuntimeException ex) {
+            log.warn("Wiki 向量不可用: {}", ex.toString());
+            reasons.add(WikiHybridRanker.EMBEDDING_UNAVAILABLE);
+            return List.of();
+        }
+    }
+
+    private List<WikiHybridRanker.Ranked> rerank(
+            String query,
+            List<WikiHybridRanker.Ranked> fused,
+            Map<String, WikiSearchRow> rows,
+            List<String> reasons
+    ) {
+        if (rerankClient == null || !rerankClient.isEnabled()) {
+            reasons.add(WikiHybridRanker.RERANK_UNAVAILABLE);
+            return fused;
+        }
+        int window = Math.min(WikiHybridRanker.RERANK_LIMIT, fused.size());
+        List<String> documents = new ArrayList<>();
+        for (int index = 0; index < window; index++) {
+            documents.add(rerankDocument(rows.get(fused.get(index).itemId())));
+        }
+        try {
+            RerankClient.RerankResult result = rerankClient.rerank(query, documents, window);
+            List<WikiHybridRanker.Ranked> reranked = WikiHybridRanker.rerank(
+                    fused, result == null ? null : result.hits());
+            if (reranked == null) {
+                reasons.add(WikiHybridRanker.RERANK_UNAVAILABLE);
+                return fused;
+            }
+            return reranked;
+        } catch (RuntimeException ex) {
+            log.warn("Wiki Rerank 不可用: {}", ex.toString());
+            reasons.add(WikiHybridRanker.RERANK_UNAVAILABLE);
+            return fused;
+        }
+    }
+
+    private static String rerankDocument(WikiSearchRow row) {
+        if (row == null) {
+            return "";
+        }
+        return String.join("\n",
+                row.title() == null ? "" : row.title(),
+                row.summary() == null ? "" : row.summary(),
+                row.content() == null ? "" : row.content());
+    }
+
+    private static List<WikiHybridRanker.ChannelHit> toChannel(List<WikiPageIndex.Hit> hits) {
+        List<WikiHybridRanker.ChannelHit> channel = new ArrayList<>();
+        if (hits == null) {
+            return channel;
+        }
+        for (WikiPageIndex.Hit hit : hits) {
+            channel.add(new WikiHybridRanker.ChannelHit(
+                    hit.itemId(),
+                    hit.outgoingCount(),
+                    hit.backlinkCount(),
+                    hit.citationCount(),
+                    hit.unresolvedCount()));
+        }
+        return channel;
+    }
+
+    private static WikiSearchRow withCounts(WikiSearchRow base, WikiHybridRanker.Ranked ranked) {
+        return new WikiSearchRow(
+                base.itemId(),
+                base.title(),
+                base.pageKind(),
+                base.versionId(),
+                base.versionNo(),
+                base.content(),
+                base.summary(),
+                base.updatedAt(),
+                ranked.outgoingCount(),
+                ranked.backlinkCount(),
+                ranked.citationCount(),
+                ranked.unresolvedCount());
+    }
+
+    /** 有前缀时去掉前缀再拼接，否则用原文。词项检索不用二元词项。 */
+    private static String lexicalText(String raw) {
+        String text = raw == null ? "" : raw;
+        List<String> parts = new ArrayList<>();
+        boolean prefixed = false;
+        for (String line : text.split("\\R")) {
+            String value = line.strip();
+            if (value.startsWith(CURRENT_PREFIX)) {
+                prefixed = true;
+                parts.add(value.substring(CURRENT_PREFIX.length()).strip());
+            } else if (value.startsWith(ANCHOR_PREFIX)) {
+                prefixed = true;
+                parts.add(value.substring(ANCHOR_PREFIX.length()).strip());
+            }
+        }
+        if (prefixed) {
+            return String.join(" ", parts).strip();
+        }
+        return text.strip();
+    }
+
+    /** 向量和 Rerank 优先用当前问题那一行。 */
+    private static String vectorText(String raw, String lexical) {
+        String text = raw == null ? "" : raw;
+        for (String line : text.split("\\R")) {
+            String value = line.strip();
+            if (value.startsWith(CURRENT_PREFIX)) {
+                return value.substring(CURRENT_PREFIX.length()).strip();
+            }
+        }
+        return lexical == null ? "" : lexical;
+    }
+
     /** BM25F：三个字段各自做长度归一，按字段权重合并成一个词频后再饱和。 */
     static Map<String, Double> bm25f(List<WikiSearchRow> rows, Query query) {
-        Set<String> terms = query.terms();
-        List<Field[]> documents = new ArrayList<>(rows.size());
-        double[] totalLength = new double[3];
-        Map<String, Integer> documentFrequency = new HashMap<>();
+        return bm25f(rows, query, WikiLexicalBoost.none());
+    }
+
+    static Map<String, Double> bm25f(List<WikiSearchRow> rows, Query query, WikiLexicalBoost boost) {
+        if (rows == null || rows.isEmpty() || query == null || query.terms().isEmpty()) {
+            return Map.of();
+        }
+        WikiLexicalBoost safeBoost = boost == null ? WikiLexicalBoost.none() : boost;
+        Set<String> mustBoost = boostTokens(safeBoost.mustTerms());
+        Set<String> titleBoost = boostTokens(safeBoost.titleTerms());
+        Set<String> bodyBoost = boostTokens(safeBoost.bodyTerms());
+        Map<String, Double> termBoosts = new HashMap<>();
+        for (String term : mustBoost) {
+            termBoosts.put(term, Bm25fScorer.FIELD_TERM_BOOST);
+        }
+        Map<String, Set<String>> fieldTermBoosts = new HashMap<>();
+        if (!titleBoost.isEmpty()) {
+            fieldTermBoosts.put("title", titleBoost);
+        }
+        if (!bodyBoost.isEmpty()) {
+            fieldTermBoosts.put("content", bodyBoost);
+        }
+        List<Bm25fScorer.Document> documents = new ArrayList<>(rows.size());
         for (WikiSearchRow row : rows) {
-            Field[] fields = {
-                    Field.of(row.title(), TITLE_WEIGHT),
-                    Field.of(row.summary(), SUMMARY_WEIGHT),
-                    Field.of(row.content(), CONTENT_WEIGHT)};
-            documents.add(fields);
-            Set<String> seen = new HashSet<>();
-            for (int index = 0; index < fields.length; index++) {
-                totalLength[index] += fields[index].length();
-                for (String term : terms) {
-                    if (fields[index].frequency(term) > 0) seen.add(term);
-                }
-            }
-            seen.forEach(term -> documentFrequency.merge(term, 1, Integer::sum));
-        }
-        int count = rows.size();
-        double[] averageLength = new double[3];
-        for (int index = 0; index < 3; index++) {
-            averageLength[index] = Math.max(1.0d, totalLength[index] / count);
-        }
-        Map<String, Double> idf = new HashMap<>();
-        for (String term : terms) {
-            int df = documentFrequency.getOrDefault(term, 0);
-            idf.put(term, Math.log(1.0d + (count - df + 0.5d) / (df + 0.5d)));
+            Map<String, String> fields = new HashMap<>();
+            fields.put("title", row.title() == null ? "" : row.title());
+            fields.put("summary", row.summary() == null ? "" : row.summary());
+            fields.put("content", row.content() == null ? "" : row.content());
+            documents.add(new Bm25fScorer.Document(row.itemId(), fields));
         }
         Map<String, Double> scores = new HashMap<>();
-        for (int document = 0; document < count; document++) {
-            Field[] fields = documents.get(document);
-            double score = 0.0d;
-            Set<String> matched = new HashSet<>();
-            for (String term : terms) {
-                double weighted = 0.0d;
-                for (int index = 0; index < fields.length; index++) {
-                    int frequency = fields[index].frequency(term);
-                    if (frequency == 0) continue;
-                    double normalization = 1.0d - B + B * fields[index].length() / averageLength[index];
-                    weighted += fields[index].weight() * frequency / normalization;
-                }
-                if (weighted == 0.0d) continue;
-                matched.add(term);
-                score += idf.get(term) * weighted / (K1 + weighted);
-            }
-            if (score > 0.0d && query.covered(matched)) {
-                scores.put(rows.get(document).itemId(), score);
+        for (Bm25fScorer.Hit hit : new Bm25fScorer().score(
+                K1,
+                List.of(
+                        new Bm25fScorer.FieldSpec("title", TITLE_WEIGHT, B),
+                        new Bm25fScorer.FieldSpec("summary", SUMMARY_WEIGHT, B),
+                        new Bm25fScorer.FieldSpec("content", CONTENT_WEIGHT, B)),
+                documents,
+                query.terms(),
+                termBoosts,
+                fieldTermBoosts)) {
+            if (query.covered(hit.matchedTerms())) {
+                scores.put(hit.id(), hit.score());
             }
         }
         return scores;
@@ -194,12 +440,35 @@ final class KnowledgeWikiSearchEngine {
                        v.content,
                        coalesce(v.summary, '') as summary,
                        i.updated_at,
-                       (select count(*) from knowledge_item_link l where l.source_item_id = i.id) as outgoing_count,
-                       (select count(*) from knowledge_item_link l where l.target_item_id = i.id) as backlink_count,
-                       (select count(*) from knowledge_version_citation c where c.knowledge_version_id = v.id) as citation_count,
-                       (select count(*) from knowledge_item_link l where l.source_item_id = i.id and l.relation_status = 'UNRESOLVED') as unresolved_count
+                       coalesce(out_l.outgoing_count, 0) as outgoing_count,
+                       coalesce(back_l.backlink_count, 0) as backlink_count,
+                       coalesce(cit.citation_count, 0) as citation_count,
+                       coalesce(unres.unresolved_count, 0) as unresolved_count
                 from knowledge_item i
                 join knowledge_version v on v.id = i.latest_version_id
+                left join (
+                    select source_item_id, count(*) as outgoing_count
+                    from knowledge_item_link
+                    where workspace_id = ?
+                    group by source_item_id
+                ) out_l on out_l.source_item_id = i.id
+                left join (
+                    select target_item_id, count(*) as backlink_count
+                    from knowledge_item_link
+                    where workspace_id = ?
+                    group by target_item_id
+                ) back_l on back_l.target_item_id = i.id
+                left join (
+                    select knowledge_version_id, count(*) as citation_count
+                    from knowledge_version_citation
+                    group by knowledge_version_id
+                ) cit on cit.knowledge_version_id = v.id
+                left join (
+                    select source_item_id, count(*) as unresolved_count
+                    from knowledge_item_link
+                    where workspace_id = ? and relation_status = 'UNRESOLVED'
+                    group by source_item_id
+                ) unres on unres.source_item_id = i.id
                 where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
                 order by i.updated_at desc
                 limit ?
@@ -216,33 +485,76 @@ final class KnowledgeWikiSearchEngine {
                 rs.getInt("backlink_count"),
                 rs.getInt("citation_count"),
                 rs.getInt("unresolved_count")
-        ), workspaceId, limit);
+        ), workspaceId, workspaceId, workspaceId, workspaceId, limit);
+    }
+
+    /** 混合检索只回填身份和正文，计数用索引里的字段。 */
+    private Map<String, WikiSearchRow> loadByIds(String workspaceId, List<String> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", itemIds.stream().map(id -> "?").toList());
+        Object[] args = new Object[itemIds.size() + 1];
+        args[0] = workspaceId;
+        for (int index = 0; index < itemIds.size(); index++) {
+            args[index + 1] = itemIds.get(index);
+        }
+        List<WikiSearchRow> rows = jdbcTemplate.query("""
+                select i.id,
+                       i.title,
+                       coalesce(i.page_kind, 'TOPIC') as page_kind,
+                       v.id as version_id,
+                       v.version_no,
+                       v.content,
+                       coalesce(v.summary, '') as summary,
+                       i.updated_at
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ?
+                  and i.item_type = 'WIKI'
+                  and i.status = 'ACTIVE'
+                  and i.id in (%s)
+                """.formatted(placeholders), (rs, rowNum) -> new WikiSearchRow(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("page_kind"),
+                rs.getString("version_id"),
+                rs.getInt("version_no"),
+                rs.getString("content"),
+                rs.getString("summary"),
+                toInstant(rs.getTimestamp("updated_at")),
+                0, 0, 0, 0
+        ), args);
+        Map<String, WikiSearchRow> byId = new HashMap<>();
+        for (WikiSearchRow row : rows) {
+            byId.put(row.itemId(), row);
+        }
+        return byId;
     }
 
     private Instant toInstant(Timestamp value) {
         return value == null ? Instant.now() : value.toInstant();
     }
 
-    private record Field(Map<String, Integer> frequencies, int length, double weight) {
-        static Field of(String text, double weight) {
-            List<String> tokens = LexicalTerms.tokens(text);
-            Map<String, Integer> frequencies = new HashMap<>();
-            tokens.forEach(token -> frequencies.merge(token, 1, Integer::sum));
-            return new Field(frequencies, tokens.size(), weight);
-        }
-
-        int frequency(String term) {
-            return frequencies.getOrDefault(term, 0);
-        }
-    }
-
     private record ScoredWikiRow(WikiSearchRow row, double score) {
     }
 
+    private static Set<String> boostTokens(List<String> terms) {
+        Set<String> tokens = new java.util.LinkedHashSet<>();
+        if (terms == null) {
+            return tokens;
+        }
+        for (String term : terms) {
+            tokens.addAll(LexicalTerms.queryTerms(term));
+        }
+        return tokens;
+    }
+
     /**
-     * 检索词项。回答链路传进来的是带对话上下文的组合查询（"当前问题：……""主题锚点：……"加上对话窗口和摘要），
-     * 这里只取当前问题和主题锚点；页面覆盖其中任意一组词项的足够比例即算命中，
-     * 这样省略了主语的追问（例如"第二点为什么成立"）可以靠主题锚点找到页面。
+     * 检索词项。回答链路传入改写后的关键词查询；追问会拆成「当前问题：」和「主题锚点：」两行。
+     * 直接搜索仍可能带来旧的多行查询，解析时只取这两行；
+     * 页面覆盖其中任意一组词项的足够比例即算命中。
+     * 加权词并进 terms，不并进 groups，因此不会改变覆盖判定。
      */
     record Query(Set<String> terms, List<Set<String>> groups) {
         private static final String CURRENT_PREFIX = "当前问题：";
@@ -266,6 +578,17 @@ final class KnowledgeWikiSearchEngine {
             Set<String> terms = new java.util.LinkedHashSet<>();
             groups.forEach(terms::addAll);
             return new Query(terms, groups);
+        }
+
+        Query withExtraTerms(WikiLexicalBoost boost) {
+            if (boost == null || boost.empty()) {
+                return this;
+            }
+            Set<String> expanded = new java.util.LinkedHashSet<>(terms);
+            expanded.addAll(boostTokens(boost.mustTerms()));
+            expanded.addAll(boostTokens(boost.titleTerms()));
+            expanded.addAll(boostTokens(boost.bodyTerms()));
+            return new Query(expanded, groups);
         }
 
         boolean covered(Set<String> matched) {

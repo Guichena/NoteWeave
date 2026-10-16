@@ -50,6 +50,9 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>infrastructure failure with zero promotable cells -&gt; {@code INFRASTRUCTURE_FAILURE};</li>
  *   <li>every cell resolved -&gt; {@code COMPLETED_VERIFIED};</li>
  *   <li>all required cells resolved (and at least one cell promoted) -&gt; {@code COMPLETED_WITH_LIMITATIONS};</li>
+ *   <li>at least half of the required cells resolved (and at least one cell promoted) -&gt;
+ *       {@code COMPLETED_WITH_LIMITATIONS} with {@code REQUIRED_CELLS_PARTIALLY_RESOLVED}: the verified
+ *       part is reported as a conclusion and the unresolved required cells stay listed as limitations;</li>
  *   <li>otherwise -&gt; {@code INSUFFICIENT_EVIDENCE}. This branch is only reachable from the terminal
  *       barrier, where no task is active and no runnable work exists, so the remaining budget cannot be
  *       spent on more evidence.</li>
@@ -94,6 +97,13 @@ public class ResearchAgentRunCompletionGate {
     public static final String REASON_ALL_REQUIRED_CELLS_VERIFIED = "ALL_REQUIRED_CELLS_VERIFIED";
     /** Stable reason code for an honest partial completion. */
     public static final String REASON_UNRESOLVED_CELLS_REMAIN = "UNRESOLVED_CELLS_REMAIN";
+    /** Some required cells are unresolved, but enough are verified to report a partial conclusion. */
+    public static final String REASON_REQUIRED_CELLS_PARTIALLY_RESOLVED = "REQUIRED_CELLS_PARTIALLY_RESOLVED";
+    /**
+     * 必需研究项中已核验的比例达到该值时给出部分结论。要求全部必需项都核验才下结论时，只要有一项
+     * 没找到证据，报告就只剩零散事实；比例过低时结论又不可靠，取一半作为折中。
+     */
+    public static final double PARTIAL_REQUIRED_COVERAGE = 0.5d;
     /** Stable reason code for a business "no acceptable evidence" outcome. */
     public static final String REASON_INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE";
     /** Stable reason code for exhausted hard budget. */
@@ -136,7 +146,7 @@ public class ResearchAgentRunCompletionGate {
      * Matrix columns that describe the limits of an answer rather than the answer itself. A cell in one
      * of these columns may stay unresolved while the Run still completes honestly with limitations.
      */
-    private static final Set<String> LIMITATION_COLUMN_KEYS = Set.of("limitations", "implications");
+    static final Set<String> LIMITATION_COLUMN_KEYS = Set.of("limitations", "implications");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -338,6 +348,27 @@ public class ResearchAgentRunCompletionGate {
                     unresolvedCells, dedupe(partialLimitations), dedupe(partialReasons));
         }
 
+        // 3b. Required cells only partly resolved: report the verified part as a conclusion when at
+        // least half of the required cells are verified. The unresolved required cells stay listed and
+        // the reason codes mark the answer as partial, so it never reads as a complete answer.
+        if (!promotable.isEmpty() && requiredCoverage(tableState) >= PARTIAL_REQUIRED_COVERAGE) {
+            List<String> partialLimitations = new ArrayList<>(limitations);
+            partialLimitations.add(REASON_REQUIRED_CELLS_PARTIALLY_RESOLVED);
+            partialLimitations.add(REASON_UNRESOLVED_CELLS_REMAIN);
+            List<String> partialReasons = new ArrayList<>();
+            partialReasons.add(REASON_REQUIRED_CELLS_PARTIALLY_RESOLVED);
+            partialReasons.add(REASON_UNRESOLVED_CELLS_REMAIN);
+            partialReasons.addAll(budgetReasonCodes(budgetState));
+            if (conflict) {
+                partialReasons.add(REASON_EVIDENCE_CONFLICT);
+                partialReasons.add(REASON_CONFLICTED_CELL);
+            }
+            if (conflictExhausted) partialReasons.add(REASON_CONFLICT_REPAIR_EXHAUSTED);
+            if (infrastructure) partialReasons.add(infraState.reasonCode());
+            return new CompletionDecision(CompletionTerminalState.COMPLETED_WITH_LIMITATIONS, promotable,
+                    unresolvedCells, dedupe(partialLimitations), dedupe(partialReasons));
+        }
+
         // 4. No acceptable evidence: a business outcome, never FAILED and never COMPLETED_*.
         // DR-303 (D-27): a cell that ended in an explicit conflict keeps this honest business terminal
         // state but carries CONFLICTED_CELL so it is never indistinguishable from missing evidence.
@@ -354,6 +385,16 @@ public class ResearchAgentRunCompletionGate {
                 unresolvedCells, limitations, dedupe(reasons));
     }
 
+    /** 必需研究项中已核验的比例；没有必需项时为 0。 */
+    double requiredCoverage(TableState tableState) {
+        List<CellState> required = tableState.cells().stream()
+                .filter(cell -> requiredColumnKey(tableState, cell.columnKey()))
+                .toList();
+        if (required.isEmpty()) return 0d;
+        long resolved = required.stream().filter(CellState::resolved).count();
+        return (double) resolved / required.size();
+    }
+
     private boolean requiredColumnKey(TableState tableState, String columnKey) {
         return tableState.requiredColumnKeys() == null || tableState.requiredColumnKeys().contains(columnKey);
     }
@@ -365,6 +406,7 @@ public class ResearchAgentRunCompletionGate {
         // spent and it is still unresolved" never collapses into an open conflict.
         if (CONFLICT_EXHAUSTED_CELL_STATUS.equals(cell.status())) return REASON_CONFLICT_REPAIR_EXHAUSTED;
         if (CONFLICTED_CELL_STATUS.equals(cell.status())) return REASON_CONFLICTED_CELL;
+        if (cell.status() != null && cell.status().startsWith("SEMANTIC_")) return cell.status();
         if (RESOLVED_CELL_STATUS.equals(cell.status())) return "EVIDENCE_MISSING";
         return requiredColumnKey(tableState, cell.columnKey()) ? "REQUIRED_CELL_UNRESOLVED" : "OPTIONAL_CELL_UNRESOLVED";
     }
@@ -460,14 +502,20 @@ public class ResearchAgentRunCompletionGate {
     public boolean failedTasksAreEvidenceOutcomes(String runId) {
         List<String> reasons = jdbcTemplate.queryForList("""
                 select coalesce(terminal_reason, '') from research_agent_task
-                where research_run_id = ? and status = 'FAILED'
+                where research_run_id = ? and status = 'FAILED' and role <> 'PLANNING'
                 """, String.class, runId);
         return !reasons.isEmpty() && EVIDENCE_TERMINATION_REASONS.containsAll(reasons);
     }
 
     public TableState loadTableState(String runId) {
         List<CellState> cells = jdbcTemplate.query("""
-                select cell_key, column_key, cell_status, candidate_value, evidence_refs_json
+                select cell_key, column_key,
+                    case when cell_status in ('CONFLICTED','CONFLICT_EXHAUSTED') then cell_status
+                    when semantic_audit_status in ('PENDING','NOT_RUN','CONFLICT','BLOCKED') then concat('SEMANTIC_', semantic_audit_status)
+                    when cell_status = 'VERIFIED' and not exists (
+                        select 1 from research_counter_eligible_cell eligible where eligible.id = research_cell.id
+                    ) then 'COUNTER_CHECK_PENDING' else cell_status end as cell_status,
+                    candidate_value, evidence_refs_json
                 from research_cell
                 where research_run_id = ?
                 order by cast(cell_key as binary), cell_key
@@ -515,6 +563,7 @@ public class ResearchAgentRunCompletionGate {
 
     public BudgetState loadBudgetState(String runId) {
         List<String> reasons = new ArrayList<>();
+        reasons.addAll(jdbcTemplate.queryForList("select stop_reason from research_discovery_loop where research_run_id = ? and stop_reason = 'LOOP_BUDGET_EXHAUSTED'", String.class, runId));
         for (String signal : persistedSignals(runId)) {
             String normalized = signal.trim().toUpperCase(Locale.ROOT);
             if (RESOURCE_REASON_CODES.contains(normalized)) reasons.add(normalized);

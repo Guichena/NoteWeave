@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class AgentRole(str, Enum):
+    PLANNING = "PLANNING"
     WIDE_DISCOVERY = "WIDE_DISCOVERY"
     DEEP_CELL = "DEEP_CELL"
     COUNTERFACTUAL = "COUNTERFACTUAL"

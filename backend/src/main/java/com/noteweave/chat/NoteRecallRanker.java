@@ -1,17 +1,19 @@
 package com.noteweave.chat;
 
 import com.noteweave.chat.NoteRetrievalService.CandidateSource;
+import com.noteweave.common.text.LexicalTerms;
+import com.noteweave.retrieval.NoteRetrievalStrategyProfile;
+import com.noteweave.retrieval.lexical.Bm25fScorer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,12 +23,65 @@ public class NoteRecallRanker {
     private static final int VERIFY_LIMIT = 6;
 
     public Map<String, MetadataRank> rankMetadata(List<CandidateSource> candidates, Set<String> rawTerms) {
-        List<String> rankedTerms = rankTerms(rawTerms);
+        List<String> queryTerms = queryTerms(rawTerms);
         Map<String, MetadataRank> metadataRanks = new HashMap<>();
+        if (candidates == null || candidates.isEmpty() || queryTerms.isEmpty()) {
+            return metadataRanks;
+        }
+        List<Bm25fScorer.Document> documents = new ArrayList<>(candidates.size());
         for (CandidateSource source : candidates) {
-            metadataRanks.put(source.sourceId(), metadataRank(source, rawTerms, rankedTerms));
+            documents.add(new Bm25fScorer.Document(source.sourceId(), metadataFields(source)));
+        }
+        Map<String, Bm25fScorer.Hit> hits = new HashMap<>();
+        for (Bm25fScorer.Hit hit : new Bm25fScorer().score(
+                Bm25fScorer.DEFAULT_K1,
+                NoteRetrievalStrategyProfile.metadataFields(),
+                documents,
+                new LinkedHashSet<>(queryTerms),
+                Map.of(),
+                Map.of())) {
+            hits.put(hit.id(), hit);
+        }
+        for (CandidateSource source : candidates) {
+            Bm25fScorer.Hit hit = hits.get(source.sourceId());
+            if (hit == null) {
+                metadataRanks.put(source.sourceId(), MetadataRank.empty());
+                continue;
+            }
+            List<String> covered = queryTerms.stream().filter(hit.matchedTerms()::contains).toList();
+            metadataRanks.put(source.sourceId(), new MetadataRank(
+                    Math.max(1, (int) Math.round(hit.score() * 1_000d)),
+                    hit.matchedFields(),
+                    covered,
+                    covered.size(),
+                    queryTerms.size()));
         }
         return metadataRanks;
+    }
+
+    private List<String> queryTerms(Set<String> rawTerms) {
+        Set<String> terms = new LinkedHashSet<>();
+        if (rawTerms != null) {
+            for (String raw : rawTerms) {
+                terms.addAll(LexicalTerms.queryTerms(raw));
+            }
+        }
+        return List.copyOf(terms);
+    }
+
+    private Map<String, String> metadataFields(CandidateSource source) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("title", text(source.title()));
+        fields.put("summary", text(source.summary()));
+        fields.put("tags", text(source.tagsJson()));
+        fields.put("metadata", text(source.metadataJson()));
+        fields.put("sample_text", text(source.sampleText()));
+        fields.put("source_type", text(source.sourceType()));
+        return fields;
+    }
+
+    private String text(String value) {
+        return value == null ? "" : value;
     }
 
     public Selection select(List<ScoredCandidate> scored) {
@@ -132,185 +187,12 @@ public class NoteRecallRanker {
                 result.add(source.source().withVerifyAdmissionReason("relation-expansion"));
             }
         }
-        for (ScoredCandidate source : candidates) {
-            if (result.size() >= limit) {
-                break;
-            }
-            if (seen.add(source.sourceId())) {
-                result.add(source.source().withVerifyAdmissionReason(
-                        "candidate:" + source.selectionReason() + ":window-fallback"));
-            }
-        }
-        for (ScoredCandidate source : expansions) {
-            if (result.size() >= limit) {
-                break;
-            }
-            if (seen.add(source.sourceId())) {
-                result.add(source.source().withVerifyAdmissionReason("relation-expansion:window-fallback"));
-            }
-        }
         return result;
     }
 
     private String type(String value) {
         String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
         return normalized.isBlank() ? "UNKNOWN" : normalized;
-    }
-
-    private List<String> rankTerms(Set<String> terms) {
-        List<String> ranked = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        Pattern tokenPattern = Pattern.compile("[A-Za-z0-9][A-Za-z0-9+_./-]*");
-        for (String raw : terms) {
-            String text = raw == null ? "" : raw.trim();
-            if (text.isBlank()) {
-                continue;
-            }
-            List<String> candidates = new ArrayList<>();
-            candidates.add(text);
-            Matcher matcher = tokenPattern.matcher(text);
-            while (matcher.find()) {
-                candidates.add(matcher.group());
-            }
-            for (String candidate : candidates) {
-                String term = candidate.strip().replaceAll("^[\\p{Punct}]+|[\\p{Punct}]+$", "");
-                if (term.isBlank()) {
-                    continue;
-                }
-                String key = term.toLowerCase(Locale.ROOT);
-                boolean hasDigit = term.chars().anyMatch(Character::isDigit);
-                boolean hasUpper = term.chars().anyMatch(Character::isUpperCase);
-                if (seen.contains(key) || rankStopword(key)) {
-                    continue;
-                }
-                if (term.length() < 4 && !hasDigit && !hasUpper && !containsCjk(term)) {
-                    continue;
-                }
-                seen.add(key);
-                ranked.add(term);
-            }
-        }
-        if (ranked.isEmpty()) {
-            ranked.addAll(terms);
-        }
-        return ranked;
-    }
-
-    private boolean rankStopword(String value) {
-        return Set.of(
-                "about", "after", "and", "are", "consisting", "does", "from", "have",
-                "into", "larger", "than", "that", "the", "their", "this", "with"
-        ).contains(value);
-    }
-
-    private boolean containsCjk(String term) {
-        for (int i = 0; i < term.length(); i++) {
-            Character.UnicodeScript script = Character.UnicodeScript.of(term.charAt(i));
-            if (script == Character.UnicodeScript.HAN
-                    || script == Character.UnicodeScript.HIRAGANA
-                    || script == Character.UnicodeScript.KATAKANA
-                    || script == Character.UnicodeScript.HANGUL) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private MetadataRank metadataRank(CandidateSource source, Set<String> rawTerms, List<String> rankedTerms) {
-        List<String> queryTerms = rankedTerms.isEmpty() ? new ArrayList<>(rawTerms) : rankedTerms;
-        if (queryTerms.isEmpty()) {
-            return MetadataRank.empty();
-        }
-        String title = safeLower(source.title());
-        String summary = safeLower(source.summary());
-        String tags = safeLower(source.tagsJson());
-        String metadata = safeLower(source.metadataJson());
-        String sample = safeLower(source.sampleText());
-        String sourceType = safeLower(source.sourceType());
-
-        double score = 0.0d;
-        Set<String> covered = new LinkedHashSet<>();
-        Set<String> matchedFields = new LinkedHashSet<>();
-        for (String term : queryTerms) {
-            String needle = term.toLowerCase(Locale.ROOT);
-            double termScore = 0.0d;
-            int titleHits = termHits(title, needle);
-            if (titleHits > 0) {
-                matchedFields.add("title");
-                termScore += 22.0d * Math.min(titleHits, 3);
-            }
-            int summaryHits = termHits(summary, needle);
-            if (summaryHits > 0) {
-                matchedFields.add("summary");
-                termScore += 14.0d * Math.min(summaryHits, 3);
-            }
-            int tagsHits = termHits(tags, needle);
-            if (tagsHits > 0) {
-                matchedFields.add("tags");
-                termScore += 10.0d * Math.min(tagsHits, 3);
-            }
-            int metadataHits = termHits(metadata, needle);
-            if (metadataHits > 0) {
-                matchedFields.add("metadata");
-                termScore += 10.0d * Math.min(metadataHits, 3);
-            }
-            int sampleHits = termHits(sample, needle);
-            if (sampleHits > 0) {
-                matchedFields.add("sample_text");
-                termScore += 6.0d * Math.min(sampleHits, 3);
-            }
-            int typeHits = termHits(sourceType, needle);
-            if (typeHits > 0) {
-                matchedFields.add("source_type");
-                termScore += 1.0d * Math.min(typeHits, 3);
-            }
-            if (termScore > 0) {
-                covered.add(term);
-                score += termScore * termWeight(term);
-            }
-        }
-        score += 5.0d * covered.size() / queryTerms.size();
-        return new MetadataRank(
-                Math.max(0, (int) Math.round(score)),
-                new ArrayList<>(matchedFields),
-                new ArrayList<>(covered),
-                covered.size(),
-                queryTerms.size()
-        );
-    }
-
-    private int termHits(String haystack, String needle) {
-        if (haystack == null || haystack.isBlank() || needle == null || needle.isBlank()) {
-            return 0;
-        }
-        int hits = 0;
-        int index = 0;
-        while ((index = haystack.indexOf(needle, index)) >= 0) {
-            hits++;
-            index += needle.length();
-        }
-        return hits;
-    }
-
-    private double termWeight(String term) {
-        double weight = 1.0d;
-        if (term.length() >= 7) {
-            weight += 0.5d;
-        }
-        if (term.chars().anyMatch(Character::isDigit)) {
-            weight += 1.0d;
-        }
-        if (term.chars().anyMatch(Character::isUpperCase)) {
-            weight += 0.6d;
-        }
-        if (term.chars().anyMatch(ch -> "/+-_.".indexOf(ch) >= 0)) {
-            weight += 0.4d;
-        }
-        return weight;
-    }
-
-    private String safeLower(String value) {
-        return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
 
     public record MetadataRank(

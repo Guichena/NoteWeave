@@ -11,7 +11,7 @@ class ResearchAgentRoleCapabilityRegistryTest {
     @Test
     void deepCellAndCounterfactualRemainDefaultSchedulable() {
         ResearchAgentRoleCapabilityRegistry registry =
-                new ResearchAgentRoleCapabilityRegistry(false, false, false);
+                new ResearchAgentRoleCapabilityRegistry(false, false, false, false);
 
         assertThat(registry.requireSchedulable("DEEP_CELL").mutationAuthority())
                 .isEqualTo("CELL_CANDIDATE");
@@ -22,7 +22,7 @@ class ResearchAgentRoleCapabilityRegistryTest {
     @Test
     void controlledRolesAreFailClosedByDefault() {
         ResearchAgentRoleCapabilityRegistry registry =
-                new ResearchAgentRoleCapabilityRegistry(false, false, false);
+                new ResearchAgentRoleCapabilityRegistry(false, false, false, false);
 
         assertThatThrownBy(() -> registry.requireSchedulable("EVIDENCE_AUDIT"))
                 .isInstanceOf(BusinessException.class)
@@ -37,7 +37,7 @@ class ResearchAgentRoleCapabilityRegistryTest {
     @Test
     void discoveryNeverReceivesCellMutationAuthority() {
         ResearchAgentRoleCapabilityRegistry registry =
-                new ResearchAgentRoleCapabilityRegistry(false, false, true);
+                new ResearchAgentRoleCapabilityRegistry(false, false, true, false);
 
         ResearchAgentRoleCapabilityRegistry.Capability capability =
                 registry.requireSchedulable("WIDE_DISCOVERY");
@@ -49,7 +49,7 @@ class ResearchAgentRoleCapabilityRegistryTest {
     @Test
     void auditAndSynthesisAreToolFreeWhenEnabled() {
         ResearchAgentRoleCapabilityRegistry registry =
-                new ResearchAgentRoleCapabilityRegistry(true, true, false);
+                new ResearchAgentRoleCapabilityRegistry(true, true, false, false);
 
         assertThat(registry.requireSchedulable("EVIDENCE_AUDIT").allowedTools()).isEmpty();
         assertThat(registry.requireSchedulable("SYNTHESIS").allowedTools()).isEmpty();

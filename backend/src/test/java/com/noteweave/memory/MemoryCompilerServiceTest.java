@@ -63,14 +63,22 @@ class MemoryCompilerServiceTest {
                 .compileChatControlPack("workspace", "QA");
 
         assertThat(pack.styleConstraints()).containsExactly(
-                "user exact", "workspace exact", "workspace broad", "common");
+                "common", "workspace broad", "workspace exact", "user exact");
         assertThat(pack.memoryReferences())
                 .extracting(MemoryReferenceResponse::memoryObjectId)
-                .containsExactly("user-exact", "workspace-exact", "workspace-broad", "common");
+                .containsExactly("common", "workspace-broad", "workspace-exact", "user-exact");
+        assertThat(pack.memoryReferences()).allSatisfy(reference -> {
+            assertThat(reference.memoryClass()).isEqualTo(MemoryCompilerPolicy.ALWAYS_ON);
+            assertThat(reference.selectionReason()).isEqualTo(MemoryCompilerPolicy.REASON_ALWAYS_ON);
+            assertThat(reference.relevance()).isNull();
+            assertThat(reference.displayText()).isNotBlank();
+        });
         assertThat(pack.compilationTrace().policyVersion())
-                .isEqualTo("memory-compiler-policy-v1");
+                .isEqualTo("memory-compiler-policy-v2");
         assertThat(pack.compilationTrace().candidateCount()).isEqualTo(4);
         assertThat(pack.compilationTrace().truncated()).isFalse();
+        assertThat(pack.compilationTrace().decisions()).hasSize(4)
+                .allMatch(MemoryCompilationTraceResponse.Decision::selected);
     }
 
     @Test
@@ -97,6 +105,10 @@ class MemoryCompilerServiceTest {
         assertThat(pack.compilationTrace().droppedCount()).isGreaterThan(0);
         assertThat(pack.compilationTrace().truncated()).isTrue();
         assertThat(pack.memoryReferences().get(0).memoryObjectId()).isEqualTo("memory-0");
+        assertThat(pack.compilationTrace().decisions())
+                .filteredOn(decision -> !decision.selected())
+                .isNotEmpty()
+                .allMatch(decision -> MemoryCompilerPolicy.REASON_BUDGET.equals(decision.reason()));
     }
 
     @Test
@@ -148,7 +160,88 @@ class MemoryCompilerServiceTest {
                 .isNotEqualTo(requestedKeys.getAllValues().get(0).stateFingerprint());
     }
 
+    @Test
+    void shouldLeaveOnDemandMemoryOutUntilTheQuerySharesTerms() {
+        seed("style", "WORKSPACE", "owner", 0.80,
+                List.of("CHAT_QA"), "回答保持简洁", Instant.now());
+        seedTerminology("page-number", "引用时保留页码");
+        MemoryCompilerService compiler = service(capabilityCatalog());
+
+        MemoryControlPackResponse missed = compiler.compileChatControlPack("workspace", "QA", "缓存怎么失效");
+        assertThat(missed.terminologyPolicy()).isEmpty();
+        assertThat(missed.styleConstraints()).containsExactly("回答保持简洁");
+        assertThat(missed.compilationTrace().truncated()).isFalse();
+        assertThat(missed.compilationTrace().degradationReasons())
+                .containsExactly("MEMORY_RELEVANCE_VECTOR_UNAVAILABLE");
+        assertThat(missed.compilationTrace().decisions())
+                .anySatisfy(decision -> {
+                    assertThat(decision.memoryObjectId()).isEqualTo("page-number");
+                    assertThat(decision.selected()).isFalse();
+                    assertThat(decision.reason()).isEqualTo(MemoryCompilerPolicy.REASON_IRRELEVANT);
+                });
+
+        MemoryControlPackResponse blank = compiler.compileChatControlPack("workspace", "QA", "  ");
+        assertThat(blank.terminologyPolicy()).isEmpty();
+        assertThat(blank.compilationTrace().degradationReasons())
+                .containsExactly("MEMORY_RELEVANCE_QUERY_ABSENT");
+
+        MemoryControlPackResponse hit = compiler.compileChatControlPack("workspace", "QA", "论文页码在哪里");
+        assertThat(hit.terminologyPolicy()).containsExactly("引用时保留页码");
+        assertThat(hit.memoryReferences()).anySatisfy(reference -> {
+            assertThat(reference.memoryObjectId()).isEqualTo("page-number");
+            assertThat(reference.memoryClass()).isEqualTo(MemoryCompilerPolicy.ON_DEMAND);
+            assertThat(reference.relevance()).isNotNull().isGreaterThan(0);
+            assertThat(reference.selectionReason()).isEqualTo(MemoryCompilerPolicy.REASON_ON_DEMAND);
+            assertThat(reference.displayText()).isEqualTo("引用时保留页码");
+        });
+        assertThat(hit.memoryReferences()).anySatisfy(reference -> {
+            assertThat(reference.memoryObjectId()).isEqualTo("style");
+            assertThat(reference.memoryClass()).isEqualTo(MemoryCompilerPolicy.ALWAYS_ON);
+            assertThat(reference.relevance()).isNull();
+        });
+    }
+
+    @Test
+    void shouldAddNormalizedQueryToCacheKeyOnlyWhenOnDemandMemoryExists() {
+        seed("style", "WORKSPACE", "owner", 0.80,
+                List.of("CHAT_QA"), "回答保持简洁", Instant.now());
+        MemoryCompilerService compiler = service(capabilityCatalog());
+        compiler.compileChatControlPack("workspace", "QA", "论文页码");
+        compiler.compileChatControlPack("workspace", "QA", "  论文   页码 ");
+
+        ArgumentCaptor<MemoryCompiledPackCache.CacheKey> alwaysOnKeys =
+                ArgumentCaptor.forClass(MemoryCompiledPackCache.CacheKey.class);
+        verify(compiledPackCache, atLeast(2)).get(alwaysOnKeys.capture());
+        assertThat(alwaysOnKeys.getAllValues().get(0).requestFingerprint())
+                .isEqualTo(alwaysOnKeys.getAllValues().get(1).requestFingerprint());
+
+        seedTerminology("page-number", "引用时保留页码");
+        compiler.compileChatControlPack("workspace", "QA", "论文页码");
+        compiler.compileChatControlPack("workspace", "QA", "缓存失效");
+        ArgumentCaptor<MemoryCompiledPackCache.CacheKey> demandKeys =
+                ArgumentCaptor.forClass(MemoryCompiledPackCache.CacheKey.class);
+        verify(compiledPackCache, atLeast(4)).get(demandKeys.capture());
+        assertThat(demandKeys.getAllValues().get(2).requestFingerprint())
+                .isNotEqualTo(demandKeys.getAllValues().get(3).requestFingerprint());
+
+        MemoryCompilerService disabled = service(capabilityCatalog(), false);
+        disabled.compileChatControlPack("workspace", "QA", "论文页码");
+        disabled.compileChatControlPack("workspace", "QA", "缓存失效");
+        ArgumentCaptor<MemoryCompiledPackCache.CacheKey> disabledKeys =
+                ArgumentCaptor.forClass(MemoryCompiledPackCache.CacheKey.class);
+        verify(compiledPackCache, atLeast(2)).get(disabledKeys.capture());
+        List<MemoryCompiledPackCache.CacheKey> latest = disabledKeys.getAllValues();
+        assertThat(latest.get(latest.size() - 2).requestFingerprint())
+                .isEqualTo(latest.get(latest.size() - 1).requestFingerprint());
+        assertThat(disabled.compileChatControlPack("workspace", "QA", "缓存失效").terminologyPolicy())
+                .containsExactly("引用时保留页码");
+    }
+
     private MemoryCompilerService service(CapabilityCatalogPort catalog) {
+        return service(catalog, true);
+    }
+
+    private MemoryCompilerService service(CapabilityCatalogPort catalog, boolean queryInjectionEnabled) {
         StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
         if (catalog != null) {
             beanFactory.addBean("capabilityCatalog", catalog);
@@ -160,7 +253,11 @@ class MemoryCompilerServiceTest {
                 currentUserProvider,
                 new MemoryCompilerPolicy(),
                 compiledPackCache,
-                new SimpleMeterRegistry()
+                new SimpleMeterRegistry(),
+                new MemoryTextEmbeddingStore(jdbcTemplate,
+                        (com.noteweave.retrieval.provider.EmbeddingClient) null, objectMapper),
+                beanFactory.getBeanProvider(com.noteweave.retrieval.provider.EmbeddingClient.class),
+                queryInjectionEnabled
         );
     }
 
@@ -178,6 +275,12 @@ class MemoryCompilerServiceTest {
                     memory_scope varchar(32) not null,
                     current_revision_id varchar(36),
                     utility_score decimal(5,4) not null,
+                    semantic_slot_key varchar(128),
+                    evidence_alpha decimal(12,4),
+                    evidence_beta decimal(12,4),
+                    last_reinforced_at timestamp,
+                    text_embedding longtext,
+                    text_embedding_hash varchar(64),
                     status varchar(32) not null,
                     review_status varchar(32) not null,
                     created_at timestamp not null,
@@ -208,9 +311,31 @@ class MemoryCompilerServiceTest {
             String style,
             Instant updatedAt
     ) {
+        seed(id, scope, owner, utility, neighborhoods, style, updatedAt, null, false);
+    }
+
+    private void seedTerminology(String id, String text) {
+        seed(id, "WORKSPACE", "owner", 0.90, List.of("CHAT_QA"), text, Instant.now(),
+                "terminology.term", true);
+    }
+
+    private void seed(
+            String id,
+            String scope,
+            String owner,
+            double utility,
+            List<String> neighborhoods,
+            String style,
+            Instant updatedAt,
+            String slotKey,
+            boolean terminology
+    ) {
         String versionId = "version-" + id;
-        MemorySignalService.MemoryCompileHints compileHints = new MemorySignalService.MemoryCompileHints(
-                List.of(style), List.of(), List.of(), List.of(), List.of(), List.of());
+        MemorySignalService.MemoryCompileHints compileHints = terminology
+                ? new MemorySignalService.MemoryCompileHints(
+                        List.of(), List.of(), List.of(style), List.of(), List.of(), List.of())
+                : new MemorySignalService.MemoryCompileHints(
+                        List.of(style), List.of(), List.of(), List.of(), List.of(), List.of());
         String payloadJson = write(java.util.Map.of(
                 "task_neighborhoods", neighborhoods,
                 "compile_hints", compileHints,
@@ -218,10 +343,10 @@ class MemoryCompilerServiceTest {
         jdbcTemplate.update("""
                 insert into memory_item(
                     id, workspace_id, owner_user_id, memory_scope, current_revision_id,
-                    utility_score,
+                    utility_score, semantic_slot_key,
                     status, review_status, created_at, updated_at
-                ) values (?, 'workspace', ?, ?, ?, ?, 'ACTIVE', 'APPROVED', ?, ?)
-                """, id, owner, scope, versionId, utility,
+                ) values (?, 'workspace', ?, ?, ?, ?, ?, 'ACTIVE', 'APPROVED', ?, ?)
+                """, id, owner, scope, versionId, utility, slotKey,
                 Timestamp.from(updatedAt.minusSeconds(60)), Timestamp.from(updatedAt));
         jdbcTemplate.update("""
                 insert into memory_runtime_revision(

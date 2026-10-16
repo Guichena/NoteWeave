@@ -31,7 +31,8 @@ public class AnswerSubmissionService {
             RetrievalPlan retrievalPlan,
             EvidenceBundle evidenceBundle,
             String promptVersion,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
         String runId = answerRunService.createAndStartRetrieval(
                 workspaceId, conversationId, mode, queryMessageId, retrievalPlan);
@@ -44,7 +45,8 @@ public class AnswerSubmissionService {
                 generationGateway.configuredModel(),
                 evidenceBundle,
                 promptVersion,
-                maximumOutputTokens
+                maximumOutputTokens,
+                evidenceSufficiency
         );
         return runId;
     }
@@ -59,7 +61,8 @@ public class AnswerSubmissionService {
             RetrievalPlan retrievalPlan,
             EvidenceBundle evidenceBundle,
             String promptVersion,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
         answerRunService.startPreparedRetrieval(workspaceId, runId, retrievalPlan);
         answerRunService.prepareGeneration(
@@ -71,7 +74,8 @@ public class AnswerSubmissionService {
                 generationGateway.configuredModel(),
                 evidenceBundle,
                 promptVersion,
-                maximumOutputTokens
+                maximumOutputTokens,
+                evidenceSufficiency
         );
     }
 }

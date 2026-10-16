@@ -1782,3 +1782,202 @@
     border-radius: 0;
   }
 }
+
+/* 研究表格：模型规划的研究对象与维度，确认阶段可修改 */
+.research-plan-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.research-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.research-plan-status {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--tint-blue);
+  color: var(--tint-blue-ink);
+}
+
+.research-plan-status.status-review {
+  background: var(--tint-violet);
+  color: var(--tint-violet-ink);
+}
+
+.research-plan-status.status-ready {
+  background: var(--tint-green);
+  color: var(--tint-green-ink);
+}
+
+.research-plan-objective {
+  margin: 0;
+}
+
+.research-plan-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-plan-list li {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.research-plan-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+.research-plan-columns li {
+  display: grid;
+  gap: 2px;
+}
+
+.research-plan-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.research-plan-editor label {
+  display: grid;
+  gap: 4px;
+}
+
+.research-plan-editor textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.research-plan-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 单元格结论、反证与修复、宽搜索发现 */
+.research-cells-panel,
+.research-repair-panel,
+.research-discovery-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.research-cells-scroll {
+  overflow-x: auto;
+}
+
+.research-cells-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.research-cells-table th,
+.research-cells-table td {
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.research-cells-table th[scope="row"] {
+  white-space: nowrap;
+}
+
+.research-cell {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.research-cell.active {
+  outline: 2px solid var(--tint-blue-ink);
+  outline-offset: 1px;
+}
+
+.research-cell.status-verified { border-left-color: var(--tint-green-ink); }
+.research-cell.status-candidate_ready { border-left-color: var(--tint-blue-ink); }
+.research-cell.status-conflicted { border-left-color: var(--tint-rose-ink); }
+.research-cell.status-gap { border-left-color: var(--tint-gold-ink); }
+
+.research-cell-value {
+  overflow-wrap: anywhere;
+}
+
+.research-cell-empty {
+  color: var(--muted);
+}
+
+.research-cell-detail {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.research-cell-detail ul,
+.research-repair-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.research-cell-detail li,
+.research-repair-item {
+  display: grid;
+  gap: 2px;
+}
+
+.research-repair-item {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.research-repair-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.research-verdict,
+.research-strategy,
+.research-proposal-status {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  background: var(--tint-blue);
+  color: var(--tint-blue-ink);
+}
+
+.research-verdict.verdict-refuted,
+.research-conflict.status-open small { background: var(--tint-rose); color: var(--tint-rose-ink); }
+.research-verdict.verdict-not_refuted,
+.research-proposal-status.status-accepted { background: var(--tint-green); color: var(--tint-green-ink); }
+.research-verdict.verdict-not_run,
+.research-proposal-status.status-rejected { background: var(--tint-gold); color: var(--tint-gold-ink); }
+.research-strategy,
+.research-proposal-status.status-shadow { background: var(--tint-violet); color: var(--tint-violet-ink); }

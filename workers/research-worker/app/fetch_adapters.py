@@ -17,6 +17,12 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
 from app.http_security import resolve_public_http_addresses
+from app.mcp_search_client import (
+    TAVILY_EXTRACT_TOOL,
+    McpSearchClient,
+    McpToolError,
+    default_mcp_search_client,
+)
 from app.models import (
     ResearchFetchedDocument,
     ResearchPlan,
@@ -555,6 +561,102 @@ class JinaUrlSnapshotTransport:
             "fetch_attempts": ["JINA"],
             "transport_fallback_code": "EMPTY_FETCH_TEXT",
         }
+
+
+class TavilyMcpUrlSnapshotTransport:
+    """经搜索代理 MCP 服务调用 Tavily Extract 读取网页正文。
+
+    目标地址仍先做公网校验；正文按查询挑选相关段落后再交给后续抽取，与 Jina 读取的处理一致。
+    """
+
+    METHOD = "TAVILY_EXTRACT"
+
+    def __init__(
+        self,
+        client: McpSearchClient,
+        max_retries: int = 3,
+        requests_per_second: float = 0.0,
+    ) -> None:
+        self.client = client
+        self.max_retries = max(1, max_retries)
+        self.rate_limiter = FixedIntervalRateLimiter(requests_per_second)
+
+    def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
+        try:
+            validate_public_http_url(url)
+        except ValueError as exc:
+            return _blocked_url_result(self.METHOD, str(exc))
+        failure_code = "EMPTY_FETCH_TEXT"
+        reason = "tavily extract returned no readable text"
+        for attempt in range(1, self.max_retries + 1):
+            self.rate_limiter.acquire()
+            retryable = False
+            try:
+                data = self.client.call_tool(
+                    TAVILY_EXTRACT_TOOL, {"urls": [url], "extract_depth": "basic"}
+                )
+                text = _tavily_extract_text(data, url)
+                cleaned_text = _select_query_relevant_text(text, query, token_budget) if text else ""
+                if cleaned_text:
+                    injection_signals = detect_prompt_injection(cleaned_text)
+                    return {
+                        "text": cleaned_text,
+                        "snapshot_key": _snapshot_key(url, cleaned_text),
+                        "snapshot_status": "FETCHED",
+                        "fetch_status": "FETCHED",
+                        "fetch_method": self.METHOD,
+                        "content_origin": "FETCHED_SNAPSHOT",
+                        "content_type_label": "WEBPAGE",
+                        "fetch_error_reason": "",
+                        "fetch_failure_code": "",
+                        "fetch_attempts": [self.METHOD],
+                        "transport_attempt_count": attempt,
+                        "transport_fallback_code": "",
+                        "untrusted_content": True,
+                        "prompt_injection_detected": bool(injection_signals),
+                        "prompt_injection_signals": injection_signals,
+                    }
+                failure_code, reason = "EMPTY_FETCH_TEXT", "tavily extract returned no readable text"
+            except McpToolError as exc:
+                retryable = exc.retryable
+                failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else "FETCH_REJECTED"
+                reason = "tavily extract failed after retries" if retryable else "tavily extract rejected"
+            except urllib.error.HTTPError as exc:
+                retryable = exc.code in {408, 429} or exc.code >= 500
+                failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else "FETCH_REJECTED"
+                reason = f"tavily extract http {exc.code}"
+            except (OSError, TimeoutError, ValueError, http.client.HTTPException) as exc:
+                retryable = _is_retryable_fetch_error(exc)
+                failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else _non_retryable_fetch_failure_code(exc)
+                reason = "tavily extract failed after retries"
+            if not retryable or attempt >= self.max_retries:
+                break
+            time.sleep(min(2 ** (attempt - 1), 4))
+        return {
+            "snapshot_status": "FETCH_FAILED",
+            "fetch_status": "FALLBACK_USED",
+            "fetch_method": self.METHOD,
+            "content_origin": "SEARCH_SNIPPET_FALLBACK",
+            "content_type_label": "WEBPAGE",
+            "fetch_error_reason": reason,
+            "fetch_failure_code": failure_code,
+            "fetch_attempts": [self.METHOD],
+            "transport_fallback_code": failure_code,
+        }
+
+
+def _tavily_extract_text(data: dict[str, object], url: str) -> str:
+    results = data.get("results")
+    if not isinstance(results, list):
+        return ""
+    texts = [
+        str(item.get("raw_content") or "").strip()
+        for item in results
+        if isinstance(item, dict) and str(item.get("url") or "").rstrip("/") == url.rstrip("/")
+    ]
+    if not texts:
+        texts = [str(item.get("raw_content") or "").strip() for item in results if isinstance(item, dict)]
+    return next((text for text in texts if text), "")
 
 
 class CompositeUrlSnapshotTransport:
@@ -1150,6 +1252,15 @@ def _build_default_url_snapshot_transport() -> UrlSnapshotTransport | None:
     )
 
     transports: list[UrlSnapshotTransport] = []
+    mcp_client = default_mcp_search_client()
+    if mcp_client is not None:
+        transports.append(
+            TavilyMcpUrlSnapshotTransport(
+                client=mcp_client,
+                max_retries=settings.fetch_max_retries,
+                requests_per_second=settings.fetch_requests_per_second,
+            )
+        )
     if jina_api_key:
         transports.append(
             JinaUrlSnapshotTransport(

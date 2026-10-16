@@ -48,6 +48,45 @@ export type MemoryItem = {
   gate: MemoryGate | null;
   last_confirmed_at: string | null;
   created_at: string;
+  /** 2A：记忆对应的设置项，例如 answer.language。 */
+  slot_key?: string | null;
+  /** 2A：待确认项与哪条生效记忆冲突。 */
+  conflict?: MemoryConflict | null;
+  /** 2B：证据累积评分的 Beta 后验。 */
+  confidence?: MemoryConfidence | null;
+  reinforcement_count?: number | null;
+  last_reinforced_at?: string | null;
+};
+
+export type MemoryConflictType = "SLOT_VALUE" | "POLARITY" | "SEMANTIC" | "NONE" | "CHECK_NOT_RUN";
+
+export type MemoryConflict = {
+  type: MemoryConflictType | string;
+  conflicting_item_id?: string | null;
+  conflicting_text?: string | null;
+};
+
+export type MemoryConfidence = {
+  alpha: number;
+  beta: number;
+  mean: number;
+  variance: number;
+};
+
+/** 编入一次回答的记忆及入选原因（2C）。 */
+export type MemoryReference = {
+  memory_object_id: string;
+  memory_version_id?: string | null;
+  utility_score?: number | null;
+  /** ALWAYS_ON 为常驻约束，ON_DEMAND 为按问题相关度选入。 */
+  memory_class?: "ALWAYS_ON" | "ON_DEMAND" | string | null;
+  relevance?: number | null;
+  selection_reason?: string | null;
+  display_text?: string | null;
+};
+
+export type MemoryControlPack = {
+  memory_references: MemoryReference[];
 };
 
 /** 添加偏好时提交的信号；来源固定为用户反馈。 */

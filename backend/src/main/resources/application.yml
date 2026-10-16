@@ -58,12 +58,16 @@ noteweave:
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
-    intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:false}
+    intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:true}
+    # 由 PLANNING 角色调用模型规划研究表格；关闭后直接使用规则生成的表格
+    llm-planning-v1: ${NOTEWEAVE_RESEARCH_LLM_PLANNING_V1:true}
+    # 规划完成后等待用户确认表格的秒数，0 表示不等待直接开始研究
+    plan-review-seconds: ${NOTEWEAVE_RESEARCH_PLAN_REVIEW_SECONDS:0}
     runnable-work-v2: ${NOTEWEAVE_RESEARCH_RUNNABLE_WORK_V2:false}
     checkpoint-hydration-v2: ${NOTEWEAVE_RESEARCH_CHECKPOINT_HYDRATION_V2:false}
-    evidence-audit-v1: ${NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1:false}
+    evidence-audit-v1: ${NOTEWEAVE_RESEARCH_EVIDENCE_AUDIT_V1:true}
     worker-synthesis-v1: ${NOTEWEAVE_RESEARCH_WORKER_SYNTHESIS_V1:false}
-    wide-discovery-v1: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1:false}
+    wide-discovery-v1: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_V1:true}
     wide-discovery-auto-accept: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_AUTO_ACCEPT:false}
     wide-discovery-accepted-precision: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_ACCEPTED_PRECISION:0.0}
     wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}
@@ -90,6 +94,10 @@ noteweave:
     enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
     workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
+    query-rewrite:
+      enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
+    evidence-sufficiency:
+      enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
     qa:
       mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
     note:
@@ -102,6 +110,8 @@ noteweave:
     events:
       channel-retention-seconds: ${NOTEWEAVE_CONVERSATION_EVENTS_CHANNEL_RETENTION_SECONDS:900}
       max-retained-channels: ${NOTEWEAVE_CONVERSATION_EVENTS_MAX_RETAINED_CHANNELS:10000}
+    boundary-review-enabled: ${NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_ENABLED:true}
+    boundary-review-delay-ms: ${NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_DELAY_MS:30000}
   upload:
     cleanup-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_DELAY_MS:60000}
     cleanup-stale-after-seconds: ${NOTEWEAVE_UPLOAD_CLEANUP_STALE_AFTER_SECONDS:86400}
@@ -179,8 +189,30 @@ noteweave:
   document:
     chunk-max-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_MAX_TOKENS:600}
     chunk-overlap-tokens: ${NOTEWEAVE_DOCUMENT_CHUNK_OVERLAP_TOKENS:80}
+  source-parser:
+    enabled: ${NOTEWEAVE_PARSE_ENABLED:true}
+    base-url: ${NOTEWEAVE_PARSE_BASE_URL:http://localhost:18103}
+    timeout-seconds: ${NOTEWEAVE_PARSE_TIMEOUT_SECONDS:180}
+    connect-timeout-seconds: ${NOTEWEAVE_PARSE_CONNECT_TIMEOUT_SECONDS:3}
+    max-chars: ${NOTEWEAVE_PARSE_MAX_CHARS:20000000}
+    internal-auth-token: ${NOTEWEAVE_PARSE_INTERNAL_AUTH_TOKEN:}
+  source-context:
+    enabled: ${NOTEWEAVE_SOURCE_CONTEXT_ENABLED:true}
+    prompt-version: ${NOTEWEAVE_SOURCE_CONTEXT_PROMPT_VERSION:source-context-v1}
+    chunk-excerpt-chars: ${NOTEWEAVE_SOURCE_CONTEXT_CHUNK_EXCERPT_CHARS:1000}
+    max-input-chars: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_INPUT_CHARS:48000}
+    max-context-chars: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_CONTEXT_CHARS:600}
+    max-output-tokens: ${NOTEWEAVE_SOURCE_CONTEXT_MAX_OUTPUT_TOKENS:12000}
+  pipeline:
+    embedding-lease-seconds: ${NOTEWEAVE_EMBEDDING_LEASE_SECONDS:7200}
+  source:
+    transcription-submission-delay-ms: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_DELAY_MS:5000}
+    transcription-submission-batch-size: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_BATCH_SIZE:4}
+    transcription-submission-lease-seconds: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_LEASE_SECONDS:300}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
+    instance-id: ${NOTEWEAVE_KAFKA_INSTANCE_ID:${HOSTNAME:noteweave-backend-local}}
+    max-poll-interval-ms: ${NOTEWEAVE_KAFKA_MAX_POLL_INTERVAL_MS:1800000}
     topics:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
       source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
@@ -193,6 +225,25 @@ noteweave:
       memory-extraction: ${NOTEWEAVE_KAFKA_TOPIC_MEMORY_EXTRACTION:noteweave.memory.extraction}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
     artifact-dlq-topic: ${NOTEWEAVE_KAFKA_ARTIFACT_DLQ_TOPIC:noteweave.artifact.job.dlq}
+  memory:
+    index-name: ${NOTEWEAVE_MEMORY_INDEX_NAME:noteweave-memory}
+    index-dispatch-delay-ms: ${NOTEWEAVE_MEMORY_INDEX_DISPATCH_DELAY_MS:30000}
+    slot-backfill-enabled: ${NOTEWEAVE_MEMORY_SLOT_BACKFILL_ENABLED:false}
+    consolidation-enabled: ${NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED:true}
+    consolidation-delay-ms: ${NOTEWEAVE_MEMORY_CONSOLIDATION_DELAY_MS:3600000}
+    consolidation-stale-days: ${NOTEWEAVE_MEMORY_CONSOLIDATION_STALE_DAYS:90}
+    query-injection-enabled: ${NOTEWEAVE_MEMORY_QUERY_INJECTION_ENABLED:true}
+    outcome-feedback-enabled: ${NOTEWEAVE_MEMORY_OUTCOME_FEEDBACK_ENABLED:true}
+    compiler:
+      recency-half-life-days: ${NOTEWEAVE_MEMORY_RECENCY_HALF_LIFE_DAYS:30}
+    policy:
+      minimum-evidence-confidence: ${NOTEWEAVE_MEMORY_MIN_EVIDENCE_CONFIDENCE:0.70}
+      minimum-auto-promotion-utility: ${NOTEWEAVE_MEMORY_MIN_PROMOTION_UTILITY:0.60}
+      review-required-risk: ${NOTEWEAVE_MEMORY_REVIEW_RISK:0.70}
+      maximum-posterior-variance: ${NOTEWEAVE_MEMORY_MAX_POSTERIOR_VARIANCE:0.04}
+  knowledge:
+    wiki-index-name: ${NOTEWEAVE_WIKI_INDEX_NAME:noteweave-wiki}
+    wiki-index-dispatch-delay-ms: ${NOTEWEAVE_WIKI_INDEX_DISPATCH_DELAY_MS:30000}
   elasticsearch:
     enabled: ${NOTEWEAVE_ES_ENABLED:true}
     host: ${NOTEWEAVE_ES_HOST:localhost}

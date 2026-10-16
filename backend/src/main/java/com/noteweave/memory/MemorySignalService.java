@@ -64,11 +64,20 @@ public class MemorySignalService {
         String sourceId = "memory-signal:" + signalId;
         String taskNeighborhood = normalizeToken(request.taskNeighborhood());
         double confidenceScore = candidatePolicy.confidenceForSource(sourceType);
+        String evidenceBand = MemoryEvidence.bandOf(sourceType, false).name();
+        MemorySlots.Assignment assignment = MemorySlots.complete(
+                MemorySlots.categoryOf(request.signalText()),
+                request.signalText(),
+                signalType,
+                request.slotKey(),
+                request.slotValue(),
+                request.polarity());
         jdbcTemplate.update("""
                 insert into memory_signal(
                     id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                    task_neighborhood, compile_hints_json, confidence_score, policy_version
-                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    task_neighborhood, compile_hints_json, confidence_score, policy_version,
+                    slot_key, slot_value, polarity, evidence_band
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 signalId,
                 workspaceId,
@@ -80,7 +89,11 @@ public class MemorySignalService {
                 taskNeighborhood,
                 Json.write(objectMapper, hints),
                 confidenceScore,
-                candidatePolicy.version()
+                candidatePolicy.version(),
+                assignment.slot(),
+                assignment.value(),
+                assignment.polarity(),
+                evidenceBand
         );
         return new MemorySignalResponse(
                 signalId,
@@ -103,7 +116,8 @@ public class MemorySignalService {
         for (String signalId : signalIds) {
             SignalRow row = jdbcTemplate.query("""
                     select id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                           task_neighborhood, compile_hints_json, confidence_score, policy_version
+                           task_neighborhood, compile_hints_json, confidence_score, policy_version,
+                           slot_key, slot_value, polarity
                     from memory_signal
                     where workspace_id = ? and id = ?
                     """, rs -> {
@@ -121,7 +135,10 @@ public class MemorySignalService {
                         rs.getString("task_neighborhood"),
                         readCompileHints(rs.getString("compile_hints_json")),
                         rs.getDouble("confidence_score"),
-                        rs.getString("policy_version")
+                        rs.getString("policy_version"),
+                        rs.getString("slot_key"),
+                        rs.getString("slot_value"),
+                        rs.getString("polarity")
                 );
             }, workspaceId, signalId);
             if (row == null) {
@@ -190,7 +207,10 @@ public class MemorySignalService {
             String taskNeighborhood,
             MemoryCompileHints compileHints,
             double confidenceScore,
-            String policyVersion
+            String policyVersion,
+            String slotKey,
+            String slotValue,
+            String polarity
     ) {
     }
 }

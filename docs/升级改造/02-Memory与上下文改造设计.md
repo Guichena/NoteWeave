@@ -1,0 +1,182 @@
+# 模块二：Memory 与上下文改造设计
+
+## 1. 现状结论
+
+记忆链路的骨架是完整的：抽取（LLM，失败退回规则）→ 信号 → 候选门控 → 人工复核或自动生效 → 编译成控制包注入提示词，另外有版本、撤销、效果反馈和编译缓存。上下文窗口规划在 token 预算、摘要滞后补齐、约束生效区间上的设计也讲得通。
+
+问题集中在判断逻辑上：冲突怎么识别、门控分数从哪来、注入哪些记忆、效果反馈有没有真正回流。
+
+## 2. 缺陷清单
+
+| 编号 | 缺陷 | 位置 |
+|---|---|---|
+| M1 | 冲突检测只看正负极性：两条记忆相似度不低于 0.85 且一条正向一条负向时才算冲突。用中文回答和用英文回答这类同为正向、措辞差别大的矛盾识别不出来，会同时生效 | `MemoryCandidateService.java:146` |
+| M2 | 置信度、效用、风险都按来源类型查固定表（用户反馈 0.98、模型推断 0.35 等），同一偏好被反复提起也不会提高分数 | `MemoryCandidatePolicy.java` |
+| M3 | 注入上下文的记忆与当前问题无关，只按作用域、任务类型、效用、更新时间排序，在 token 预算内依次放入 | `MemoryCompilerService.java:174`、`MemoryCompilerPolicy.java:53` |
+| M4 | 每条候选都全表加载工作区所有生效记忆，逐条计算 Jaccard 相似度 | `MemoryCandidateService.java:166` |
+| M5 | 抽取前有正则初筛（以后、每次、记住、我喜欢等措辞），没有这些词的消息不会交给模型，例如太长了、别用英文术语这类隐式反馈全部漏掉 | `MemoryConversationExtractionService.java:47` |
+| M6 | 已有等价记忆时直接跳过新信号，重复出现不会强化已有记忆，也不会更新措辞 | `MemoryConversationExtractionService.java:192` |
+| M7 | 效果反馈没有闭环：`POST /memory/outcomes` 只有接口，前后端都没有调用方，效用分数实际上从不更新，过期判定也就不会触发 | `MemoryController.java:158`、`MemoryOutcomePolicy` |
+| C1 | 话题切分只用词项 TF-IDF，同义词、中英文混用时相似度为 0；延续判断靠正则匹配句首的这、那、补充等字，新话题以这开头时会被误判为延续 | `TopicSegmenterV2.java:29-45`、`:104` |
+
+## 3. 改造方案
+
+### S1 基于槽位的冲突检测（解决 M1）
+
+1. 抽取提示词增加三个输出字段：
+   - `slot`：偏好约束的对象，用受控词表加自由后缀，例如 `answer.language`、`answer.length`、`format.table`、`terminology.<术语>`；
+   - `value`：取值，例如 `zh`、`concise`；
+   - `polarity`：`REQUIRE` 或 `FORBID`。
+2. 记忆对象的 `normalized_value_json` 增加这三个字段，新增迁移脚本给 `memory_item` 加 `slot_key` 列并建索引。历史数据由一次性回填任务调用 LLM 补齐，补不出来的记为 `slot_key = 'unknown'`。
+3. 冲突判定分两层：
+   - **确定性判定**：slot 相同时，取值不同，或取值相同但极性相反，判为冲突；slot、取值、极性都相同，判为等价；
+   - **语义判定**：slot 不同或为 unknown 时，取向量相似度最高的 5 条生效记忆，调用 LLM 判断是否矛盾（`CONTRADICT / EQUIVALENT / UNRELATED`）。LLM 不可用时记为 `CONFLICT_CHECK_NOT_RUN`，候选进入人工复核，不自动生效。
+4. 冲突处理：
+   - 新信号来自用户明确表达，且时间更新：新记忆生效，旧记忆标为 `SUPERSEDED`，保留版本链；
+   - 其余情况：两条都进入复核队列，复核界面并排展示。
+
+### S2 证据累积的门控评分（解决 M2、M6）
+
+1. 每条记忆维护 Beta 分布参数 `(α, β)`：
+   - 先验取决于来源类型：明确表达 `(4, 1)`，推断 `(1.5, 1.5)`，模型推断 `(1, 2)`；
+   - 每出现一次等价信号 `α += w`，其中 `w` 按来源类型和间隔会话数加权，同一会话内的重复只计一次；
+   - 每出现一次反驳信号或负面效果反馈 `β += w`。
+2. 置信度取后验均值 `α / (α + β)`；不确定性取后验方差，方差大时即使均值过线也进入复核。
+3. 风险分改为由三项组合：类别基础风险（forbidden 类风险高于 style 类）、作用域（工作区级高于用户级）、与生效记忆的冲突情况。阈值全部移到 `noteweave.memory.policy.*` 配置项。
+4. M6：等价信号不再跳过，改为强化已有记忆（更新 α、`last_reinforced_at`、`reinforcement_count`）。新措辞更具体时（LLM 判断）生成新版本。
+
+### S3 与问题相关的记忆注入（解决 M3）
+
+1. 记忆分成两类：
+   - **常驻类**：style、forbidden、interaction，影响所有回答，始终参与选择；
+   - **按需类**：terminology、structure 中针对特定主题的条目，需要和当前问题相关才注入。
+2. `compileChatControlPack` 等方法增加 `query` 参数。按需类记忆的相关度 = 向量相似度与 BM25 分数做 RRF 融合；记忆文本的向量在生效时计算并缓存。
+3. 选择方式：价值 = 置信度 × 效用 × 相关度（常驻类相关度取 1），在 token 预算内按价值与 token 数之比贪心选取。编译 trace 记录每条记忆的入选或落选原因。
+4. 编译缓存的 key 加入查询的规范化指纹；按需类记忆为空时退化为当前的缓存行为。
+
+### S4 候选匹配改为索引查询（解决 M4）
+
+1. 先按 `slot_key` 和 `task_neighborhood` 在 SQL 里过滤；
+2. 语义候选用 ES 的向量检索（复用资料检索的 embedding 客户端，新建 `noteweave-memory` 索引），只取前 5 条；
+3. 记忆生效、撤销、改版时同步更新索引，走现有 outbox。
+
+### S5 去掉正则初筛，改为轻量分类（解决 M5）
+
+1. 删除 `DURABLE_CUE` 作为是否抽取的前置条件。
+2. 改为两段式：
+   - 先用小模型或同一模型的短提示做二分类（这条消息是否包含对回答方式的要求或反馈），输出不超过 10 个 token；
+   - 判定为是的消息再进入完整抽取。
+3. 新增对隐式反馈的抽取：用户对上一条回答的不满（太长了、看不懂、别用英文），抽成 `FORBID` 或 `REQUIRE` 信号，来源类型记为 `CONVERSATION_FEEDBACK`。
+4. LLM 不可用时退回现有的规则抽取，规则只作为降级方案。
+
+### S6 效果反馈闭环（解决 M7）
+
+自动采集以下几类反馈，写入 `memory_application_outcome`，作用对象是该次运行实际注入的记忆（控制包里已有 `memory_object_ids`）：
+
+| 信号 | 来源 | 映射 |
+|---|---|---|
+| 重新生成回答 | 前端重新生成按钮，后端 AnswerRun 记录 `regenerated_from` | `RETRIED` |
+| 用户对回答点赞、点踩 | 前端新增反馈按钮和接口 | `POSITIVE` / `NEGATIVE` |
+| 产物被用户编辑 | 产物保存时计算编辑距离比例 | `EDITED`，`editMagnitude` 取编辑比例 |
+| 下一轮用户消息被 S5 识别为对上一条回答的不满 | 抽取任务 | `NEGATIVE` |
+| 下一轮正常追问且无不满 | 抽取任务 | `ACCEPTED`（权重减半） |
+
+负面反馈只作用于与反馈内容相关的记忆：先由 LLM 判断反馈针对哪个方面（长度、语言、格式等），再映射到对应 slot。无法判断时平均分摊，并降低权重。
+
+### S7 话题切分加入语义相似度（解决 C1）
+
+1. 消息向量与话题向量（话题内用户消息向量的指数滑动平均）计算余弦相似度，和现有 TF-IDF 相似度做加权融合，权重和阈值用标注数据校准。
+2. 句首延续正则不再直接决定结果，改为一个加分特征，并且只有当前消息的语义相似度也不低于下限时才生效。
+3. 处于不确定区间的切分（现有 `UNCERTAIN` 状态）异步调用 LLM 复核，结果写回切分记录，下一轮上下文规划时生效。
+4. 向量服务不可用时退回纯 TF-IDF，并记录降级原因。
+
+## 4. 实施顺序
+
+| 阶段 | 内容 |
+|---|---|
+| 2A | S1 + S4：槽位、迁移脚本、冲突检测、索引查询 |
+| 2B | S2 + S5：证据累积评分、去掉正则初筛、隐式反馈抽取 |
+| 2C | S3：与问题相关的记忆注入 |
+| 2D | S6：效果反馈闭环（涉及前端按钮和接口） |
+| 2E | S7：话题切分语义化 |
+
+## 5. 评测
+
+- **冲突检测**：构造 100 对偏好（矛盾、等价、无关各约三分之一），统计 precision / recall；
+- **记忆注入**：构造多轮对话集，统计关键约束命中率（应注入的记忆是否注入）和误注入率；
+- **上下文**：与全量历史回放对比平均输入 token 和关键事实命中率，这是简历中 34% 和 92% 两个数字的出处，评测脚本和结果放进 `experiments/context-memory/`。
+
+## 6. 参考业界方案后的修订
+
+依据见 [00-业界方案调研](00-业界方案调研.md) 第二部分。
+
+| 修订 | 影响的方案 | 来源 |
+|---|---|---|
+| 冲突处理两段式：槽位精确匹配能判定的直接处理，其余检索最相似的 5 条生效记忆，由模型选择 `ADD / MERGE / SUPERSEDE / NOOP`；输出不合规重试一次，仍失败进入复核 | S1、S4 | Mem0 |
+| `memory_runtime_revision` 增加 `valid_from`、`invalid_at`；替代只设置失效时间，不删除；效果反馈按当时生效的版本归因 | S1、S6 | Zep / Graphiti |
+| 新增后台整理任务：合并近似重复、复查长期未强化的记忆、重算 Beta 后验，使用较强的模型 | S2 | Letta |
+| 注入价值 = 置信度 × 效用 × 相关度 × 新近度衰减，权重用评测集校准 | S3 | Generative Agents |
+| 话题切分以改写后的独立问题计算向量，相邻消息相似度加深度分数找边界，显式切换规则保留为强信号；用 Pk、WindowDiff 评测 | S7 | TextTiling 系列研究 |
+| 评测集覆盖知识更新和拒答 | 评测 | LongMemEval |
+
+## 7. 实施记录
+
+### 2A（2026-10-12 完成）
+
+- 抽取输出增加 `slot`、`value`、`polarity`。规则降级先按语句归类，顺序是 forbidden、terminology、structure、interaction，其余为 style。槽位优先采用已经合法的 `slot`；没有时再按语言、长度、表格等特征推断，然后按类别落到 `answer.constraint`、`terminology.term`、`format.structure`、`interaction.style` 或 `answer.style`。显式 `REQUIRE` 或 `FORBID` 优先；信号类型为 `NEGATIVE` 或类别为 forbidden 时记 `FORBID`，其余记 `REQUIRE`。接口上看不到合法槽位、或存的是 `legacy:`、`candidate:` 身份键时，`slot_key` 返回 `unknown`，这个值不写回身份列。
+- 冲突分两段。同槽同值且极性相反判 `POLARITY`，同槽取值不同判 `SLOT_VALUE`，同槽同值同极性判等价。其余在同一工作区和任务邻域内，用索引 `noteweave-memory` 取最相似 5 条生效记忆，由模型选择 `ADD`、`MERGE`、`SUPERSEDE`、`NOOP`。输出不合规时把错误附上并重试一次。
+- 与第 6 节原文有两处差异，判断已写在进度看板协调区。槽位冲突以及模型给出的 `MERGE`、`SUPERSEDE` 都不在晋升时自动替换，复核必须 `REPLACE_EXISTING` 或 `REJECT`。确认后旧记忆改为 `SUPERSEDED`，对应 revision 写入 `valid_until`，不删除、不脱敏。用户主动 `REVOKE` 仍是 `DELETED`。`valid_from` 沿用现有列，失效时间继续用 `valid_until`，没有新增 `invalid_at`。
+- 索引或向量不可用，并且没有同槽判定时，对外 `conflict.type` 为 `NONE`，降级原因 `MEMORY_CONFLICT_INDEX_UNAVAILABLE`。向量已经命中，但模型不可用、调用失败或两次输出都不合规时，对外为 `CHECK_NOT_RUN`，对内状态 `CONFLICT_CHECK_NOT_RUN`，不能自动生效。空索引按 `ADD` 处理。
+- `GET /memory/review` 和 `GET /memory/items` 每一项返回 `slot_key` 与 `conflict`。列表不返回 `SUPERSEDED`。编译器仍只读 `ACTIVE` 且已批准的记忆。冲突未决时，被指向的旧记忆改为 `REVIEW_REQUIRED`，暂时离开控制包。
+- 索引写入放在 `memory` 包的 `MemoryIndexOutbox`，文档字段包含工作区、记忆、槽位、展示文本、任务邻域和向量。不改 retrieval 的投影写入器。调度发现客户端不可用时直接返回，不累计失败次数。历史回填由 `MemorySlotBackfillService` 在开关打开时执行，默认关闭；模型给不出合法槽位时 `semantic_slot_key` 保持 null。
+- 迁移脚本是 `V160__memory_slot_and_conflict_index.sql`。配置 `noteweave.memory.index-name` 默认 `noteweave-memory`，`index-dispatch-delay-ms` 默认 30000，`slot-backfill-enabled` 默认 false。
+- 置信度、按问题注入记忆、反馈接口、去掉正则初筛，以及把等价跳过改成强化，都留到后续阶段。实现提交 `a9525db`。测试环境没有真实模型和真实 Elasticsearch，发件箱保持 `PENDING`。
+
+### 2B（2026-10-12 完成）
+
+- 证据改为 Beta 后验。`USER_FEEDBACK`、`PROJECT_DECISION`，以及 explicit 为 true 的 `CONVERSATION_FEEDBACK`，先验是 (4, 1)，均值 0.8。隐式对话反馈和 `ARTIFACT_FEEDBACK` 先验是 (1.5, 1.5)，均值 0.5。`MODEL_INFERENCE` 先验是 (1, 2)，均值约 0.3333。信号上的 `confidence_score` 写入这个先验均值。效用分仍按原来源表计算。列表按 `evidence_alpha`、`evidence_beta` 现算 `mean = α/(α+β)` 和 `variance = αβ/[(α+β)^2(α+β+1)]`。历史行迁移默认 1.5 与 1.5。
+- 风险分由类别、作用域、冲突相加。forbidden 0.28、terminology 0.18、structure 0.14、interaction 0.12、style 0.10。`WORKSPACE` 加 0.16，其他作用域加 0.06。`CONFLICTING_ACTIVE_MEMORY` 或 `CONFLICT_CHECK_NOT_RUN` 加 0.55，上限 0.99。阈值在 `noteweave.memory.policy`：证据 0.70、效用 0.60、风险 0.70、后验方差 0.04。方差超过 0.04 时，均值过线也进入复核，所以模型先验即使分数写成 0.98 仍是 `NEEDS_REVIEW`。策略版本改为 `memory-candidate-policy-v2`。候选晋升按 `WORKSPACE` 计风险。
+- 新会话权重是来源权重除以 1 加已记录会话数。来源权重明确为 1、推断为 0.5、模型为 0.25。创建时记下当前会话，权重为 0，`reinforcement_count` 不加。同一 `session_key` 和方向再次出现不累计。`SUPPORT` 增加 α 并加一次强化次数，`CONTRADICT` 只增加 β。会话键优先用 `conversation:{id}`，查不到对话时用 `message:{messageId}`。
+- 等价信号保留原记忆并增加 α。措辞不同且模型确认更具体时，`ACTIVE` 写新版本，`PROPOSED` 只改 `display_text`。模型不可用或两次输出不合规时只更新 α。反驳信号增加 β，新候选仍按 2A 进入复核，确认前不替换旧记忆。负面效果反馈写入 β 留到 2D。`revision.confidence` 仍是晋升时写入的风险分，运行时效用分继续读这一列。
+- 抽取去掉 `DURABLE_CUE` 入队条件。非空且长度在上限内的消息都进入 `MEMORY_EXTRACTION`。模型可用时先用最多 10 个 token 做 yes/no 分类，不合规重试一次。回答 NO 时记 `CLASSIFIED_NO` 并且不抽取。回答 YES 时带上一条助手回答做完整抽取。模型不可用、分类失败或完整抽取不合规时退回规则。规则仍要同时命中长期措辞和指示语才算明确偏好，另外识别太长、太短、太啰嗦、看不懂、听不懂、说人话、简单点、详细点、别用英文、不要用英文、少用英文。这类隐式反馈的 explicit 为 false，来源是 `CONVERSATION_FEEDBACK`，极性是 `FORBID`，先验按推断，因此进入复核。
+- 后台整理 `MemoryConsolidationService` 默认打开。首次等待和间隔都是 `consolidation-delay-ms`，默认 3600000。测试环境关闭；关闭时 `consolidate()` 直接返回，不访问数据库。模型不可用时不合并，原因记 `MEMORY_CONSOLIDATION_JUDGE_UNAVAILABLE`，仍会把 `candidate-v3`、已批准、`ACTIVE`、强化次数为 0、且 `last_reinforced_at` 早于 90 天的条目改为 `REVIEW_REQUIRED`。`observation-v1` 等历史记忆不自动移出控制包。合并要求同工作区、同合法槽、语句等价，并且模型返回 `merge` 为 true；输出不合规重试一次。保留强化次数更高的一条，另一条改为 `SUPERSEDED` 并写 `valid_until`，事件是 `MERGED_DUPLICATE`，索引操作是 `DELETE`。不删除正文，也不脱敏。
+- `GET /memory/items` 增加 `confidence`、`reinforcement_count`、`last_reinforced_at`。`GET /memory/review` 本阶段不加这些字段。迁移是 `V161__memory_evidence_beta.sql`。`docker-compose.yml` 同步了 `NOTEWEAVE_MEMORY_CONSOLIDATION_ENABLED`，默认 true。
+- 与第 6 节原文的差异已写在进度看板协调区。按问题注入记忆留到 2C，反馈接口留到 2D。实现提交 `b5252d0`。测试环境关闭了 LLM 和整理任务，短分类成功、措辞改写和近似合并没有用真实模型验证。
+
+### 2C（2026-10-12 完成）
+
+- 记忆分成常驻和按需。`semantic_slot_key` 以 `terminology.` 开头，或编译提示里只有术语、其余列表都空，记为 `ON_DEMAND`。style、forbidden、interaction、structure、format 记为 `ALWAYS_ON`。先给结论再展开这类全局结构仍然常驻。
+- 价值等于置信度、效用、相关度、新近度的乘积。没有记忆注入评测集，四项指数都取 1。新近度是 `0.5` 的年龄除以半衰期次方，半衰期默认 30 天，配置 `noteweave.memory.compiler.recency-half-life-days`。时间优先 `last_reinforced_at`，没有则用 `updated_at`。选择按价值除以 token 数从高到低放入预算，同密度按记忆 id 稳定排序。作用域和任务邻域只做过滤：用户级记忆只允许 owner，邻域优先级大于等于 3 的排除。同 token 成本下，效用更高的工作区记忆可以排在用户精确记忆前面。策略版本改为 `memory-compiler-policy-v2`。
+- 按需相关度用向量余弦和 BM25 做 RRF，k 为 60，两路权重都是 1，再除以参与通道第一名的理论上限。未命中为 0。常驻类计算时按 1，响应里的 `relevance` 留空。查询为空白时按需记忆相关度为 0，原因 `MEMORY_RELEVANCE_QUERY_ABSENT`。向量不可用或失败时只用 BM25，原因 `MEMORY_RELEVANCE_VECTOR_UNAVAILABLE`。合格集合里没有按需记忆时不记这条降级。与当前问题无关的按需记忆不进入预算。`truncated` 只表示有记忆因为预算落下。
+- 入选说明里，常驻是适用于全部回答的常驻约束，按需是与问题相关度较高，按价值和篇幅选入。落选说明是与当前问题无关，或超出 token 预算。编译 trace 增加 `decisions`，按记忆 id 排序。`selection_reason` 直接返回这些中文。
+- 展示文本的向量缓存在 `memory_item.text_embedding`，哈希对应去掉首尾空白后的展示文本。生效和措辞更新时计算。编译发现哈希不一致且模型可用时补算。模型关闭或失败只记日志，不回滚晋升。模型关闭且哈希不匹配时返回已存向量，不写库。迁移是 `V162__memory_text_embedding.sql`。
+- 缓存键只在查询注入开关打开、并且合格集合里至少有一条按需记忆时，追加规范化查询。规范化是去掉首尾空白、按 `Locale.ROOT` 转小写、连续空白折成一个空格。空白查询也写入空字符串。开关 `noteweave.memory.query-injection-enabled` 默认打开，环境变量 `NOTEWEAVE_MEMORY_QUERY_INJECTION_ENABLED`。关闭后按需记忆按相关度 1 参加选择。`docker-compose.yml` 同步了这个开关和半衰期。
+- `GET /memory/control-pack/chat` 增加可选 `query`。对话回答先改写，再用独立问题编译。产物和研究的编译方法增加了 `query`，B 线现有调用仍传空，那些目录没有修改，按需记忆在产物和研究里先不注入。
+- `GET /answer-runs/{runId}/evidence` 从 `run_input_snapshot` 的 `memory_revision_refs` 读出这次实际编入的记忆。回放状态为 `METADATA_ONLY` 或其他非 `FULL` 状态时省略 `display_text`。用户 `REVOKE` 时，写回快照前去掉匹配 `memory_version_id` 的 `display_text`，并把仍为 `FULL` 的快照标成 `METADATA_ONLY`。
+- 与第 6 节原文的差异已写在进度看板协调区。反馈接口留到 2D。实现提交 `dc65e40`。测试环境关闭了 LLM 和嵌入模型，向量相关度没有用真实模型验证。
+
+### 2D（2026-10-12 完成）
+
+- 新增 `POST /workspaces/{workspaceId}/answer-runs/{runId}/feedback`，请求体为 `rating`（`POSITIVE` 或 `NEGATIVE`）和可选 `reason`。权限沿用 `ANSWER_RUN`。找不到 run 返回 404，错误码 `ANSWER_RUN_NOT_FOUND`。run 存在但没有 `answer_message_id` 时返回 200，受影响记忆数为 0，原因 `MEMORY_FEEDBACK_NO_APPLICATION`。同一回答可以重复提交，以最后一次为准。
+- 提交回答的请求体增加可选 `regenerated_from`，取值是原 answer run id。回合结束时给原回答实际注入的记忆记 `RETRIED`。run 不存在、工作区不一致或没有注入行时不让这次发送失败。`source_ref` 为 `retry:` 加 run id，只记一次。请求哈希和冻结 JSON 带上该字段，旧 JSON 缺键视为没有。
+- 产物编辑由 `MemoryApplicationFeedbackService.recordArtifactEdit` 计算比例。折叠空白并截到 800 字后，编辑距离除以较长文本长度。空白对空白为 0，一边为空为 1，比例为 0 不记。同一目标的 `EDIT` 以最后一次为准。目标由调用方传入，应对 `ARTIFACT_JOB_RUN` 的 task id。不挂 HTTP，不改 `ArtifactJobService`。
+- 下一轮消息在抽取落库的同一事务里处理。任一 `preference.feedback`，或用户原文命中不满说法，记 `NEGATIVE`。`CLASSIFIED_NO`，以及没有 feedback 且不满说法未命中，记 `ACCEPTED`，更新权重 0.5。只作用于上一条助手回答里还没有 `RATING`、`RETRY`、`FOLLOW_UP` 的注入记忆。没有上一条助手，或没有注入行，直接返回。`source_ref` 为 `follow-up:` 加消息 id。
+- 方面先走规则。太长、太短、简短、啰嗦、长度对应 `LENGTH`；英文、中文、语言对应 `LANGUAGE`；格式、结构、表格、分点、结论对应 `FORMAT`；语气、风格对应 `STYLE`。四个固定原因是内容不准确、没有回答问题、引用不支持结论、资料里有但没找到，都记为 `CONTENT`。都未命中才调用模型，不合规重试一次。空白是 `UNKNOWN`。模型不可用或两次失败记 `MEMORY_FEEDBACK_ASPECT_NOT_RUN`，aspect 为 `UNKNOWN`。
+- `LENGTH` 映射 `answer.length`，`LANGUAGE` 映射 `answer.language`，`FORMAT` 映射 `format.` 前缀，`STYLE` 映射 `answer.style`、`interaction.` 前缀和 `answer.constraint`。`CONTENT` 只记回答级事件，不改效用，不加 β。`UNKNOWN` 对当次全部注入记忆记 `NEGATIVE`，更新权重 0.5。没有命中槽位时不摊派，原因 `MEMORY_FEEDBACK_SLOT_UNMATCHED`。
+- 点赞和重新生成作用于该次注入的全部记忆。点踩只替换同一目标上 `signal_kind` 为 `RATING` 的记录，不覆盖 `RETRY`、`EDIT`、`FOLLOW_UP`。该条若是这条记忆最新的效用更新，用替换前快照恢复再套新结果；后面已有别的反馈时按记下的差值调整，原因 `MEMORY_FEEDBACK_UTILITY_ADJUSTED`。同一评分、原因和方面再次提交视为已生效。
+- 效用混合系数改为 `0.25 * updateWeight`。权重为 1 时与原来的公式一致。`ACCEPTED` 和 `UNKNOWN` 负面传 0.5。策略版本仍是 `memory-outcome-policy-v1`。原 `POST /memory/outcomes` 继续只在 outcome 为空时写一次，不受新开关影响。
+- 命中槽位的负面增加 β。增量取推断档 0.5，除以 1 加已有证据会话数，再加未作废且 `beta_weight` 大于 0 的反馈目标数。`UNKNOWN` 再把这个增量乘 0.5。不写入 `memory_evidence_session`。替换时按行上的 `beta_weight` 减回，下限 0。正面不加 α。效果按当时生效的 `memory_revision_id` 归因。
+- 迁移是 `V163__memory_application_outcome.sql`。开关 `noteweave.memory.outcome-feedback-enabled` 默认打开，环境变量 `NOTEWEAVE_MEMORY_OUTCOME_FEEDBACK_ENABLED`，`docker-compose.yml` 已同步。关闭时反馈接口仍返回 200，受影响记忆数为 0，原因 `MEMORY_OUTCOME_FEEDBACK_DISABLED`，自动信号同样不写。
+- 与第 6 节原文的差异已写在进度看板协调区。前端按钮留在 A 线。实现提交 `296734a`。测试环境关闭了 LLM，方面判断的模型路径只验证了不可用和重试，没有用真实模型。
+
+### 2E（2026-10-12 完成）
+
+- 向量可用时，嵌入输入优先用该用户消息最新 `answer_run` 里带 `rewrite_method` 的 `standalone_query`。没有改写、空白或解析失败时用消息原文。词项覆盖度仍用原文。助手消息和空白用户消息不更新话题向量，也不计入相邻间隙。
+- 话题向量是话题内用户消息向量的指数滑动平均，系数 0.5，比较时用更新前的向量。融合分等于 0.5 乘词项覆盖度，加 0.5 乘不小于 0 的余弦。归入已有话题的下限是 0.40，回到旧话题的下限是 0.30。当前话题达到最高分的 0.85 时留下。
+- 句首延续正则，以及什么时候、为什么，只在与当前话题的余弦不低于 0.55 时加分，理由 `CONTINUATION_WITH_SEMANTICS`。余弦不足时忽略该正则。显式改聊仍直接开新话题。显式回到取融合分最高的已有话题。
+- 深度分数取前一间隙余弦减去当前间隙余弦。当前相邻余弦低于 0.35，或者已经有前一间隙且落差不低于 0.15、当前相邻余弦低于 0.55，开启新边界，理由 `DEPTH_BOUNDARY`。相邻余弦落在 0.35 到 0.55 且落差不足、融合也未命中时，新段保持 `UNCERTAIN`。已经落库的切分继续当固定前缀，不重切。
+- `UNCERTAIN` 且复核开关和模型都可用时，`boundary_review` 记 `PENDING`，否则记 `NOT_RUN`。`TopicBoundaryReviewService` 每 30 秒最多处理 20 条。模型只输出 JSON，`decision` 取 `SAME`、`NEW`、`RETURN`，`RETURN` 还要 `topic_index`。不合规重试一次。模型不可用或两次都不合规时保持 `UNCERTAIN`，原因 `TOPIC_BOUNDARY_REVIEW_NOT_RUN`，不允许改成 `CONFIDENT`。成功后 `boundary_review` 为 `REVIEWED`。不删除段，不缩短 `end_seq`。同一话题且两端都是 `CONFIDENT` 时，较早段摘要可以进入下一轮规划。
+- 向量服务关闭、调用失败或返回条数不一致时退回纯词项切分，降级原因 `TOPIC_SEGMENT_VECTOR_UNAVAILABLE`。没有非空用户消息时不记降级。词项路径规则版本仍是 `topic-segmenter-v2-a2`。语义路径新段用 `topic-segmenter-v2-a3`。
+- Pk 与 WindowDiff 放在 `TopicSegmentationMetrics`。没有标注集，权重和阈值写在进度看板协调区，指标用构造样例验证。
+- 迁移是 `V164__conversation_topic_boundary_review.sql`，只追加可空列 `degradation_reason`、`boundary_review`。开关 `noteweave.conversation.boundary-review-enabled` 默认打开，环境变量 `NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_ENABLED`。延迟默认 30000 毫秒，环境变量 `NOTEWEAVE_TOPIC_BOUNDARY_REVIEW_DELAY_MS`，`docker-compose.yml` 已同步。
+- 与第 6 节原文的差异已写在进度看板协调区。实现提交 `bf7b2be`。测试环境关闭了嵌入模型和 LLM，没有用真实模型验证切分和复核。

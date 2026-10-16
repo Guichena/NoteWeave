@@ -13,10 +13,19 @@ import urllib.request
 from typing import Protocol
 
 from app.http_security import credential_safe_urlopen
+from app.mcp_search_client import (
+    SERPER_SEARCH_TOOL,
+    TAVILY_SEARCH_TOOL,
+    McpSearchClient,
+    McpToolError,
+    default_mcp_search_client,
+)
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput
+from app.query_specs import find_query_spec
 from app.search import run_seed_source_search
 from app.source_profile import infer_search_lane, infer_source_domain, infer_source_quality
 from app.text_terms import terms as text_terms
+from app.query_execution import record_query
 
 
 @dataclass(frozen=True)
@@ -52,6 +61,8 @@ class SeedSourceSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         query_plan = build_search_query_plan(plan, remaining_budget)
+        for item in query_plan:
+            record_query(item.query)
         hits = run_seed_source_search(
             task_input,
             plan,
@@ -70,8 +81,8 @@ class SeedSourceSearchAdapter:
                     "provider_fallback_reason": "",
                     "url": hit.url or "",
                     "source_domain": infer_source_domain(hit.url or ""),
-                    "source_quality": "WORKSPACE_SOURCE",
-                    "source_quality_score": 0.98,
+                    "source_quality": hit.source_quality,
+                    "source_quality_score": hit.source_quality_score,
                     "search_lane": infer_search_lane(plan, hit.query),
                 }
             )
@@ -101,8 +112,10 @@ class HttpJsonSearchTransport:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max(1, max_retries)
         self.last_attempt_count = 0
+        self.last_fatal_failure = ""
 
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        self.last_fatal_failure = ""
         if not self.api_key.strip() or limit <= 0:
             return []
         payload = json.dumps(self._payload(query, limit, page)).encode("utf-8")
@@ -122,7 +135,8 @@ class HttpJsonSearchTransport:
                 return _extract_raw_results(data, limit)
             except urllib.error.HTTPError as error:
                 last_error = error
-                if not _is_retryable_search_http_status(error.code):
+                self.last_fatal_failure = _fatal_provider_failure(error.code, _http_error_text(error))
+                if self.last_fatal_failure or not _is_retryable_search_http_status(error.code):
                     break
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
@@ -154,6 +168,54 @@ class HttpJsonSearchTransport:
         if self.provider_name.lower() == "serper":
             payload["page"] = max(1, page)
         return payload
+
+
+class McpSearchTransport:
+    """经搜索代理 MCP 服务调用 Serper 或 Tavily。
+
+    Serper 支持翻页；Tavily 没有翻页参数，只返回第一页。
+    """
+
+    TOOLS = {"serper_mcp": SERPER_SEARCH_TOOL, "tavily_mcp": TAVILY_SEARCH_TOOL}
+
+    def __init__(self, provider_name: str, client: McpSearchClient, max_retries: int = 3) -> None:
+        self.provider_name = provider_name.strip().lower()
+        if self.provider_name not in self.TOOLS:
+            raise ValueError(f"unsupported MCP search provider: {provider_name}")
+        self.client = client
+        self.max_retries = max(1, max_retries)
+        self.last_attempt_count = 0
+        self.last_fatal_failure = ""
+
+    def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        self.last_fatal_failure = ""
+        if limit <= 0:
+            return []
+        if self.provider_name == "tavily_mcp":
+            if page > 1:
+                return []
+            arguments: dict[str, object] = {"query": query, "max_results": min(limit, 20)}
+        else:
+            arguments = {"q": query, "num": limit, "page": max(1, page), "autocorrect": False}
+        self.last_attempt_count = 0
+        for attempt in range(1, self.max_retries + 1):
+            self.last_attempt_count = attempt
+            try:
+                data = self.client.call_tool(self.TOOLS[self.provider_name], arguments)
+                return _extract_raw_results(data, limit)
+            except McpToolError as error:
+                self.last_fatal_failure = _fatal_provider_failure(None, str(error))
+                if self.last_fatal_failure or not error.retryable:
+                    break
+            except urllib.error.HTTPError as error:
+                self.last_fatal_failure = _fatal_provider_failure(error.code, _http_error_text(error))
+                if self.last_fatal_failure or not _is_retryable_search_http_status(error.code):
+                    break
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
+                pass
+            if attempt < self.max_retries:
+                time.sleep(min(2 ** (attempt - 1), 4))
+        return []
 
 
 class HttpGetSearchTransport:
@@ -299,6 +361,8 @@ class ExternalSearchAdapter:
         self.max_provider_pages = max(1, max_provider_pages)
         self.requires_api_key = requires_api_key
         self.last_attempt_count = 0
+        # 最近一次搜索因额度用尽或鉴权失败而完全没有结果时记录原因，否则为空
+        self.last_fatal_failure = ""
 
     def search(
         self,
@@ -307,6 +371,7 @@ class ExternalSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         del task_input
+        self.last_fatal_failure = ""
         if self.requires_api_key and not self.api_key:
             return []
         budget = _resolve_budget(plan, remaining_budget)
@@ -328,6 +393,7 @@ class ExternalSearchAdapter:
             for page in range(1, page_budget + 1):
                 if len(hits) >= budget:
                     break
+                record_query(query_item.query)
                 raw_results = _transport_search_page(
                     self.transport,
                     query=query_item.query,
@@ -337,6 +403,15 @@ class ExternalSearchAdapter:
                 self.last_attempt_count += max(
                     1, int(getattr(self.transport, "last_attempt_count", 1) or 1)
                 )
+                fatal_failure = str(getattr(self.transport, "last_fatal_failure", "") or "")
+                if fatal_failure and not raw_results:
+                    # 额度和鉴权问题与查询内容无关，继续发后续查询只会重复失败
+                    if not hits:
+                        self.last_fatal_failure = fatal_failure
+                    return [
+                        hit.model_copy(update={"provider_attempt_count": max(1, self.last_attempt_count)})
+                        for hit in _prioritize_hits_for_recovery(plan, hits)
+                    ]
                 for raw_result in raw_results:
                     if len(hits) >= budget:
                         break
@@ -373,7 +448,8 @@ class ExternalSearchAdapter:
         if not title:
             title = url or f"{self.provider_name} result"
         confidence_score = _normalize_score(raw_result.get("score"), default=0.74)
-        search_angle = _search_angle(query)
+        spec = find_query_spec(plan, query)
+        search_angle = spec.search_angle if spec is not None else _search_angle(query)
         matched_fields = _matched_fields(query, title, snippet, url)
         coverage_score = _coverage_score(query, title, snippet)
         stable_key = _stable_key(url or title or snippet)
@@ -413,8 +489,16 @@ class ExternalSearchAdapter:
 
 
 class CompositeSearchAdapter:
-    def __init__(self, adapters: list[SearchAdapter]) -> None:
+    """组合多个搜索渠道。
+
+    merge（默认）：每个外部渠道各分一部分名额，名额有剩余时再让所有渠道补一轮。
+    fallback：外部渠道按顺序尝试，某个渠道返回结果后不再调用后面的渠道，也不补第二轮；
+    按调用计费的搜索服务用这种方式，避免每条检索词被多个渠道重复计费。
+    """
+
+    def __init__(self, adapters: list[SearchAdapter], mode: str = "merge") -> None:
         self.adapters = adapters
+        self.mode = mode if mode in {"merge", "fallback"} else "merge"
 
     def search(
         self,
@@ -427,13 +511,16 @@ class CompositeSearchAdapter:
         attempted_external_providers: list[str] = []
         provider_quota = max(1, global_limit // max(1, len(self.adapters)))
         overflow: list[ResearchSearchHit] = []
+        fallback = self.mode == "fallback"
         for adapter_index, adapter in enumerate(self.adapters):
             if len(merged) >= global_limit:
                 break
+            is_external = isinstance(adapter, ExternalSearchAdapter)
             adapter_hits = adapter.search(
                 task_input,
                 plan,
-                remaining_budget=min(provider_quota, global_limit - len(merged)),
+                remaining_budget=(global_limit - len(merged)) if fallback
+                else min(provider_quota, global_limit - len(merged)),
             )
             adapter_hits = _annotate_provider_orchestration(
                 adapter_hits,
@@ -443,10 +530,14 @@ class CompositeSearchAdapter:
             provider_name = _adapter_provider_name(adapter)
             if provider_name:
                 attempted_external_providers.append(provider_name)
+            if fallback and is_external and adapter_hits:
+                break
         # If provider quotas leave capacity unused, let adapters contribute
         # overflow in a second pass without sacrificing the first diverse slot.
-        if len(merged) < global_limit:
+        if len(merged) < global_limit and not fallback:
             for adapter in self.adapters:
+                if getattr(adapter, "last_fatal_failure", ""):
+                    continue
                 adapter_hits = adapter.search(
                     task_input,
                     plan,
@@ -454,6 +545,12 @@ class CompositeSearchAdapter:
                 )
                 overflow = _merge_hits(overflow, adapter_hits, global_limit)
             merged = _merge_hits(merged, overflow, global_limit)
+        external_adapters = [adapter for adapter in self.adapters if isinstance(adapter, ExternalSearchAdapter)]
+        if not merged and external_adapters and all(
+                getattr(adapter, "last_fatal_failure", "") for adapter in external_adapters):
+            # 所有外部搜索渠道都因额度用尽或鉴权失败不可用，继续研究只会得到空结论。
+            # 抛出后 Worker 上报投递失败，后端按该原因码让整次研究立即失败。
+            raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
         return _finalize_ranking(merged[:global_limit])
 
 
@@ -462,7 +559,7 @@ def build_default_search_adapter() -> SearchAdapter:
     if not external_adapters:
         return SeedSourceSearchAdapter()
 
-    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters], mode=_search_chain_mode())
 
 
 def build_web_search_adapter() -> SearchAdapter:
@@ -470,7 +567,7 @@ def build_web_search_adapter() -> SearchAdapter:
     external_adapters = _build_external_search_adapters()
     if not external_adapters:
         raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
-    return CompositeSearchAdapter(external_adapters)
+    return CompositeSearchAdapter(external_adapters, mode=_search_chain_mode())
 
 
 def build_web_plus_seed_search_adapter() -> SearchAdapter:
@@ -478,7 +575,12 @@ def build_web_plus_seed_search_adapter() -> SearchAdapter:
     external_adapters = _build_external_search_adapters()
     if not external_adapters:
         raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
-    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters])
+    return CompositeSearchAdapter([SeedSourceSearchAdapter(), *external_adapters], mode=_search_chain_mode())
+
+
+def _search_chain_mode() -> str:
+    """NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE：merge（默认）或 fallback。"""
+    return os.getenv("NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE", "merge").strip().lower() or "merge"
 
 
 def run_research_search(
@@ -506,6 +608,12 @@ def build_search_query_plan(
     plan: ResearchPlan,
     remaining_budget: int | None = None,
 ) -> list[SearchQueryPlanItem]:
+    if remaining_budget is not None and remaining_budget <= 0:
+        return []
+    if not plan.query_set and plan.stop_contract.get("query_planning_method"):
+        return []
+    if plan.query_specs:
+        return _query_plan_from_specs(plan, remaining_budget)
     queries = _queries_for_recovery(plan)
     unique_queries = list(dict.fromkeys(query.strip() for query in queries if query.strip()))
     if not unique_queries:
@@ -576,6 +684,29 @@ def build_search_query_plan(
         )
         for index, query in enumerate(selected_queries, start=1)
     ]
+
+
+def _query_plan_from_specs(
+    plan: ResearchPlan,
+    remaining_budget: int | None,
+) -> list[SearchQueryPlanItem]:
+    """结构化检索词已经按先宽后窄排好序，这里只按预算截断。"""
+    query_budget = max(1, int(_execution_profile(plan).get("search_query_budget", len(plan.query_specs))))
+    if remaining_budget is not None:
+        query_budget = min(query_budget, max(1, remaining_budget))
+    items: list[SearchQueryPlanItem] = []
+    seen: set[str] = set()
+    for spec in plan.query_specs:
+        query = spec.query.strip()
+        if not query or query in seen:
+            continue
+        seen.add(query)
+        items.append(SearchQueryPlanItem(
+            query=query, family=spec.family, lane=spec.search_lane, priority=len(items) + 1,
+        ))
+        if len(items) >= query_budget:
+            break
+    return items
 
 
 def _queries_for_recovery(plan: ResearchPlan) -> list[str]:
@@ -861,6 +992,27 @@ def _default_base_url(provider_name: str) -> str:
     return provider_name
 
 
+_QUOTA_MARKERS = ("insufficient quota", "not enough credits", "quota exceeded", "out of credits",
+                  "insufficient balance", "insufficient credits")
+
+
+def _fatal_provider_failure(status: int | None, text: str) -> str:
+    """识别与查询无关、重试也不会恢复的搜索失败：额度用尽或鉴权失败。"""
+    lowered = text.lower()
+    if status == 402 or "http 402" in lowered or any(marker in lowered for marker in _QUOTA_MARKERS):
+        return "QUOTA_EXHAUSTED"
+    if status in {401, 403} or "http 401" in lowered or "http 403" in lowered:
+        return "AUTH_FAILED"
+    return ""
+
+
+def _http_error_text(error: urllib.error.HTTPError) -> str:
+    try:
+        return error.read().decode("utf-8", "replace")[:500]
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _is_retryable_search_http_status(status: int) -> bool:
     return status in {408, 429} or status >= 500
 
@@ -901,6 +1053,17 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
     adapters: list[ExternalSearchAdapter] = []
     authenticated_provider_index = 0
     for provider_name in provider_chain:
+        if provider_name.lower() in McpSearchTransport.TOOLS:
+            client = default_mcp_search_client()
+            if client is None:
+                continue
+            adapters.append(ExternalSearchAdapter(
+                provider_name=provider_name.lower(),
+                transport=McpSearchTransport(provider_name, client),
+                max_provider_pages=_max_provider_pages(),
+                requires_api_key=False,
+            ))
+            continue
         if provider_name.lower() in {"wikipedia", "mediawiki"}:
             if os.getenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "").strip().lower() not in {
                 "1", "true", "yes", "on"

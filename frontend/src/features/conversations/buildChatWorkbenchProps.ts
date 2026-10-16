@@ -60,7 +60,9 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     uploadBusy,
     onOpenWikiPage,
     loadAnswerEvidence: workspace
-      ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId).then((manifest) => manifest.evidence)
-      : undefined
+      ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId)
+      : undefined,
+    onAnswerFeedback: workspace ? chat.sendAnswerFeedback : undefined,
+    onRegenerateAnswer: chatBusy ? undefined : (answerRunId) => void chat.regenerateAnswer(answerRunId)
   };
 }

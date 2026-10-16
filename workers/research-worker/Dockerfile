@@ -8,7 +8,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
     "kafka-python>=2.0.2" \
     "openai>=2.0,<3" \
-    "pydantic-settings>=2.6.0"
+    "pydantic-settings>=2.6.0" \
+    "tldextract>=5.1,<6"
 
 COPY app ./app
 

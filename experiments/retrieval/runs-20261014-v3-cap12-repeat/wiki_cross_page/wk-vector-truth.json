@@ -1,0 +1,359 @@
+{
+  "schema_version": "retrieval-eval-run.v1",
+  "set": "wiki_cross_page",
+  "case_key": "wk-vector-truth",
+  "captured_at": "2026-10-14T11:52:09.101033+00:00",
+  "final_status": "COMPLETED",
+  "latency_ms": 15088,
+  "evidence": {
+    "run_id": "0dc61a62-0b07-4711-a4aa-4f76dc921a4c",
+    "evidence": [
+      {
+        "rank": 1,
+        "evidence_id": "knowledge-version:b4c2990f-f202-4a7c-950d-5173c959f964",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "d0171f51-b63c-4b95-baaf-552974628746",
+        "knowledge_version_id": "b4c2990f-f202-4a7c-950d-5173c959f964",
+        "title": "混合检索",
+        "excerpt": "# 混合检索  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `混合检索` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+        "content_hash": "b4146f2ccbaa899f8eb48a256b08f4b0b949cac5ca058f93e3ffbe63dc19b37c",
+        "location": "knowledge-version:b4c2990f-f202-4a7c-950d-5173c959f964",
+        "fresh_at": "2026-10-14T11:51:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 2,
+        "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "33e07770-d822-4aab-be60-6a94b58c874b",
+        "knowledge_version_id": "be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "title": "qa-rag.md",
+        "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+        "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+        "location": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+        "fresh_at": "2026-10-14T11:51:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 3,
+        "evidence_id": "knowledge-version:d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "6dcf630c-1b1e-4756-b160-2f118ea608f0",
+        "knowledge_version_id": "d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+        "title": "证据选择",
+        "excerpt": "# 证据选择  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `证据选择` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+        "content_hash": "08c2a7de8af4eeee27ba4e4d18198dafaa3d3887ecdda6b2a907cff86e77d7b1",
+        "location": "knowledge-version:d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+        "fresh_at": "2026-10-14T11:51:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 4,
+        "evidence_id": "knowledge-version:ea3455db-5c1b-4134-bf99-2a63879917f4",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "49508cfb-4f7a-4ab7-bf5e-3b783d980687",
+        "knowledge_version_id": "ea3455db-5c1b-4134-bf99-2a63879917f4",
+        "title": "引用校验",
+        "excerpt": "# 引用校验  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `引用校验` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+        "content_hash": "20be33a13adc853f3a07853bd28bdd153879484d72b5350a98de1ae3f1a116ae",
+        "location": "knowledge-version:ea3455db-5c1b-4134-bf99-2a63879917f4",
+        "fresh_at": "2026-10-14T11:51:59Z",
+        "character_cost": 222
+      },
+      {
+        "rank": 5,
+        "evidence_id": "knowledge-version:98108858-9662-4788-a7a1-1b28d75231ef",
+        "kind": "KNOWLEDGE_VERSION",
+        "source_id": null,
+        "source_snapshot_id": null,
+        "passage_id": null,
+        "knowledge_item_id": "b978c3b0-f854-4da3-a126-8896e7c7ce07",
+        "knowledge_version_id": "98108858-9662-4788-a7a1-1b28d75231ef",
+        "title": "带引用回答",
+        "excerpt": "# 带引用回答  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `带引用回答` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag...",
+        "content_hash": "98f663e4acfb46551e4cab8f834881a910ea241489294bb9886f11b7cfa331ea",
+        "location": "knowledge-version:98108858-9662-4788-a7a1-1b28d75231ef",
+        "fresh_at": "2026-10-14T11:51:59Z",
+        "character_cost": 222
+      }
+    ],
+    "retrieval_rewrite": {
+      "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+      "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+      "method": "RULE",
+      "degradation_reasons": [],
+      "is_standalone": true
+    },
+    "memory_references": [],
+    "evidence_sufficiency": "PARTIAL"
+  },
+  "ranked_candidates": [],
+  "selection_policy": "",
+  "retrieval_rewrite": {
+    "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+    "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+    "method": "RULE",
+    "degradation_reasons": [],
+    "is_standalone": true
+  },
+  "evidence_sufficiency": "PARTIAL",
+  "retrieval_degraded": false,
+  "retrieval_degradation_reasons": [],
+  "turns": [
+    {
+      "run_id": "0dc61a62-0b07-4711-a4aa-4f76dc921a4c",
+      "receipt": {
+        "submission_id": "cfe105ad-e58d-4895-b78c-adae40a5e903",
+        "execution_kind": "ANSWER",
+        "message_id": "b5c92bd5-a746-4964-8a9d-6f34bdca3463",
+        "assistant_message_id": "a6195cd5-c65c-4615-b9c6-78c00be397e1",
+        "assistant_request_id": "ca65beec-2aab-435c-9561-be3cfd5d6442",
+        "stream_url": "/api/v2/chat/requests/ca65beec-2aab-435c-9561-be3cfd5d6442/stream",
+        "answer_run_id": "0dc61a62-0b07-4711-a4aa-4f76dc921a4c",
+        "research_run_id": null,
+        "answer_stream_url": "/api/v2/workspaces/4eb8737e-bd0a-4e91-8a32-b09e2deb834b/answer-runs/0dc61a62-0b07-4711-a4aa-4f76dc921a4c/events",
+        "retrieval_degraded": false,
+        "retrieval_degradation_reasons": [],
+        "reused": false
+      },
+      "run": {
+        "id": "0dc61a62-0b07-4711-a4aa-4f76dc921a4c",
+        "workspace_id": "4eb8737e-bd0a-4e91-8a32-b09e2deb834b",
+        "conversation_id": "b3be9850-1a83-439a-8bbd-a16f7a7e700d",
+        "mode": "WIKI",
+        "status": "COMPLETED",
+        "query_message_id": "b5c92bd5-a746-4964-8a9d-6f34bdca3463",
+        "answer_message_id": "a6195cd5-c65c-4615-b9c6-78c00be397e1",
+        "assistant_request_id": "ca65beec-2aab-435c-9561-be3cfd5d6442",
+        "retrieval_plan_version": "wiki-page-graph-v1",
+        "model": "configured-llm",
+        "maximum_output_tokens": 1800,
+        "retrieval_degraded": true,
+        "retrieval_degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "revision_no": 1,
+        "revision_status": "FINAL",
+        "content": "## 基于全量 Wiki 的回答\n我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n## 相关 Wiki 页面\n- 《混合检索》v1：该概念页由工作台级 Wiki ingest 自动汇聚，与 `混合检索` 相关的资料页和片段会持续回流到这里。相关资料包括 [[Wiki Index]] 和 [[qa-rag.md]]——QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足更多约束。\n- 《qa-rag.md》v1：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 R……（此处被截断）\n- 《证据选择》v1：该概念页由工作台级 Wiki ingest 自动汇聚，与 `证据选择` 相关的资料页和片段会持续回流到这里。相关资料包括 [[Wiki Index]] 和 [[qa-rag.md]]——QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足更多约束。\n- 《引用校验》v1：该概念页由工作台级 Wiki ingest 自动汇聚，与 `引用校验` 相关的资料页和片段会持续回流到这里。相关资料包括 [[Wiki Index]] 和 [[qa-rag.md]]——QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足更多约束。\n- 《带引用回答》v1：该概念页由工作台级 Wiki ingest 自动汇聚，与 `带引用回答` 相关的资料页和片段会持续回流到这里。相关资料包括 [[Wiki Index]] 和 [[qa-rag.md]]——QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足更多约束。\n\n## 综合结论\n《混合检索》《证据选择》《引用校验》《带引用回答》这几张概念页的定位一致：它们都由工作台级 Wiki ingest 自动汇聚，与各自主题相关的资料页和片段会持续回流，并共同指向 [[Wiki Index]] 与 [[qa-rag.md]]。\n\n《qa-rag.md》给出了更实质的内容：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 R……（此处被截断，未能看到完整承接内容）。\n\n## 关键页面关系\n- 带引用回答：被提及 3 次\n- Wiki Index：被提及 1 次\n- 引用校验：被提及 1 次\n- 证据选择：被提及 1 次\n- qa-rag.md：被提及 1 次\n- 查询改写：被提及 1 次\n\n## 反向引用关系\n- 引用校验：被反向引用 1 次\n- 证据选择：被反向引用 1 次\n- 带引用回答：被反向引用 1 次\n- qa-rag.md：被反向引用 1 次\n- 查询改写：被反向引用 1 次\n- Wiki Index：被反向引用 2 次\n\n## 来源回链\n- QA：带引用回答与场景化 RAG（chunk:0 · QA：带引用回答与场景化 RAG）\n- 业务问题与非目标（chunk:1 · 业务问题与非目标）：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。QA 不负责开放式网页研究，不在证据不足……（此处被截断）\n- 用户操作与产物（chunk:2 · 用户操作与产物）：用户在 Conversation 中提交问题，得到流式回答、引用列表、来源片段、运行状态和可恢复事件。运行结束后，AnswerRun 保存 Evidence Manifest 与输入快照，资料更新后仍能解释旧回答使用的版……（此处被截断）\n- Query Understanding 与检索查询合同（chunk:3 · Query Understanding 与检索查询合同）：[当前实现] QA 已把用户原问题与检索表达分开。qa-conversation-rewrite-v1 保存多轮 Query Rewrite 版本，QaQueryExp……（此处被截断）\n\n## 页面关系\n相关页面关系、图谱、待处理任务、问题分层和治理动作都可以在默认 Wiki 工作台中继续查看。\n\n## 默认 Wiki 工作台\n/workspaces/4eb8737e-bd0a-4e91-8a32-b09e2deb834b/wiki\n\n资料只覆盖了问题的一部分。已覆盖的部分是：这些概念页的汇聚定位、qa-rag.md 对 QA 职责与证据候选约束的说明、以及页面间的关系与来源回链。没有覆盖的部分包括：各概念页的具体机制细节、《混合检索》《证据选择》《引用校验》《带引用回答》除摘要外的正文内容、以及 qa-rag.md 被截断处涉及的“跨来源冲突、复杂多跳和长报告交给 R……”后续承接对象，这些在现有资料中缺失，无法回答。",
+        "started_at": "2026-10-14T11:51:54Z",
+        "first_token_at": "2026-10-14T11:52:01Z",
+        "finished_at": "2026-10-14T11:52:06Z",
+        "error_code": "",
+        "error_message": "",
+        "retrieval_rewrite": {
+          "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "evidence": {
+        "run_id": "0dc61a62-0b07-4711-a4aa-4f76dc921a4c",
+        "evidence": [
+          {
+            "rank": 1,
+            "evidence_id": "knowledge-version:b4c2990f-f202-4a7c-950d-5173c959f964",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "d0171f51-b63c-4b95-baaf-552974628746",
+            "knowledge_version_id": "b4c2990f-f202-4a7c-950d-5173c959f964",
+            "title": "混合检索",
+            "excerpt": "# 混合检索  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `混合检索` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+            "content_hash": "b4146f2ccbaa899f8eb48a256b08f4b0b949cac5ca058f93e3ffbe63dc19b37c",
+            "location": "knowledge-version:b4c2990f-f202-4a7c-950d-5173c959f964",
+            "fresh_at": "2026-10-14T11:51:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 2,
+            "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "33e07770-d822-4aab-be60-6a94b58c874b",
+            "knowledge_version_id": "be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "title": "qa-rag.md",
+            "excerpt": "# qa-rag.md  ## 资料摘要  QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样性和上下文预算。 QA 不负责开放式网页研究，不在证据不足时继续搜索到无限步骤，也不把 Memory 偏好当作事实引用。跨来源冲突、复杂多跳和长报告交给 Research；连续阅读和草稿写回交给 Note；页面关系与治理交给 Wiki。...",
+            "content_hash": "301ec3d3d8148de862c94acf3543ceba2bfc869afe77c57e56416415d52e3879",
+            "location": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+            "fresh_at": "2026-10-14T11:51:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 3,
+            "evidence_id": "knowledge-version:d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "6dcf630c-1b1e-4756-b160-2f118ea608f0",
+            "knowledge_version_id": "d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+            "title": "证据选择",
+            "excerpt": "# 证据选择  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `证据选择` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+            "content_hash": "08c2a7de8af4eeee27ba4e4d18198dafaa3d3887ecdda6b2a907cff86e77d7b1",
+            "location": "knowledge-version:d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+            "fresh_at": "2026-10-14T11:51:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 4,
+            "evidence_id": "knowledge-version:ea3455db-5c1b-4134-bf99-2a63879917f4",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "49508cfb-4f7a-4ab7-bf5e-3b783d980687",
+            "knowledge_version_id": "ea3455db-5c1b-4134-bf99-2a63879917f4",
+            "title": "引用校验",
+            "excerpt": "# 引用校验  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `引用校验` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag.m...",
+            "content_hash": "20be33a13adc853f3a07853bd28bdd153879484d72b5350a98de1ae3f1a116ae",
+            "location": "knowledge-version:ea3455db-5c1b-4134-bf99-2a63879917f4",
+            "fresh_at": "2026-10-14T11:51:59Z",
+            "character_cost": 222
+          },
+          {
+            "rank": 5,
+            "evidence_id": "knowledge-version:98108858-9662-4788-a7a1-1b28d75231ef",
+            "kind": "KNOWLEDGE_VERSION",
+            "source_id": null,
+            "source_snapshot_id": null,
+            "passage_id": null,
+            "knowledge_item_id": "b978c3b0-f854-4da3-a126-8896e7c7ce07",
+            "knowledge_version_id": "98108858-9662-4788-a7a1-1b28d75231ef",
+            "title": "带引用回答",
+            "excerpt": "# 带引用回答  ## 概念摘要  该概念页由工作台级 Wiki ingest 自动汇聚，与 `带引用回答` 相关的资料页和片段会持续回流到这里。  ## 相关资料  - [[Wiki Index]] - [[qa-rag.md]]：QA 要在当前 Workspace 允许的资料中回答问题，并让用户能打开原文核对每个关键结论。高分文本不等于有效证据，候选还要满足版本、权限、相关性、来源多样...  ## 关键依据  - 《qa-rag...",
+            "content_hash": "98f663e4acfb46551e4cab8f834881a910ea241489294bb9886f11b7cfa331ea",
+            "location": "knowledge-version:98108858-9662-4788-a7a1-1b28d75231ef",
+            "fresh_at": "2026-10-14T11:51:59Z",
+            "character_cost": 222
+          }
+        ],
+        "retrieval_rewrite": {
+          "standalone_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "keyword_query": "为什么 QA 不只用向量检索，Memory 也不用向量库做真源？",
+          "method": "RULE",
+          "degradation_reasons": [],
+          "is_standalone": true
+        },
+        "memory_references": [],
+        "evidence_sufficiency": "PARTIAL"
+      },
+      "retrieval_summary": {
+        "selection_policy": "",
+        "plan_version": "wiki-page-graph-v1",
+        "retrieval_latency_micros": 2143481,
+        "degradation_reasons": [
+          "WIKI_RERANK_UNAVAILABLE"
+        ],
+        "strategy_profile": "",
+        "selected_evidence_count": 5,
+        "execution_trace": {
+          "schema_version": "retrieval-execution-trace-v1",
+          "plan_version": "wiki-page-graph-v1",
+          "total_latency_micros": 2143481,
+          "raw_candidate_count": 19,
+          "admitted_candidate_count": 5,
+          "selected_evidence_count": 5,
+          "selected_evidence_characters": 1110,
+          "steps": [
+            {
+              "step_index": 0,
+              "channel": "WIKI_PAGE_GRAPH",
+              "candidate_limit": 5,
+              "raw_candidate_count": 19,
+              "admitted_candidate_count": 5,
+              "latency_micros": 2143366,
+              "degraded": true,
+              "degradation_reasons": [
+                "WIKI_RERANK_UNAVAILABLE"
+              ],
+              "measurements": {
+                "graph_node_limit": 30,
+                "graph_hops_used": 2,
+                "graph_characters_used": 3108,
+                "graph_hop_limit": 3,
+                "graph_character_limit": 4000,
+                "graph_edges_used": 26,
+                "graph_edge_limit": 60,
+                "graph_nodes_used": 14
+              },
+              "ranked_candidates": []
+            }
+          ],
+          "selected_evidence": [
+            {
+              "rank": 1,
+              "evidence_id": "knowledge-version:b4c2990f-f202-4a7c-950d-5173c959f964",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 2,
+              "evidence_id": "knowledge-version:be9da690-c5c7-4b6e-8b67-7b6397682d1b",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 3,
+              "evidence_id": "knowledge-version:d27dd2dc-84d2-45c1-9c2a-1378ac11e032",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 4,
+              "evidence_id": "knowledge-version:ea3455db-5c1b-4134-bf99-2a63879917f4",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            },
+            {
+              "rank": 5,
+              "evidence_id": "knowledge-version:98108858-9662-4788-a7a1-1b28d75231ef",
+              "kind": "KNOWLEDGE_VERSION",
+              "raw_score": 4.0,
+              "fused_score": 4.0,
+              "rerank_score": 4.0,
+              "character_cost": 222
+            }
+          ]
+        },
+        "admitted_candidate_count": 5,
+        "degraded": true,
+        "relevance_policy": "",
+        "trace_schema_version": "retrieval-execution-trace-v1",
+        "maximum_output_tokens": 1800,
+        "selected_evidence_characters": 1110,
+        "candidate_count": 19
+      },
+      "latency_ms": 15088
+    }
+  ]
+}

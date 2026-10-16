@@ -1,6 +1,8 @@
 package com.noteweave.conversation;
 
 import com.noteweave.common.BusinessException;
+import com.noteweave.retrieval.QueryRewrite;
+import com.noteweave.retrieval.provider.EmbeddingClient;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -8,23 +10,33 @@ import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Shadow C1 projection. Published v1 context selection remains unchanged. */
 @Service
 public class ConversationTopicProjectionV2Service {
+    private static final Logger log = LoggerFactory.getLogger(ConversationTopicProjectionV2Service.class);
     private final JdbcTemplate jdbc;
     private final ConversationTopicSummaryV2Service summaries;
+    private final EmbeddingClient embeddings;
+    private final TopicBoundaryReviewService reviews;
     private final TopicSegmenterV2 segmenter = new TopicSegmenterV2();
     private final ConversationConstraintProjectorV2 constraintProjector = new ConversationConstraintProjectorV2();
 
     public ConversationTopicProjectionV2Service(JdbcTemplate jdbc,
-                                                 ConversationTopicSummaryV2Service summaries) {
+                                                 ConversationTopicSummaryV2Service summaries,
+                                                 EmbeddingClient embeddings,
+                                                 TopicBoundaryReviewService reviews) {
         this.jdbc = jdbc;
         this.summaries = summaries;
+        this.embeddings = embeddings;
+        this.reviews = reviews;
     }
 
     @Transactional
@@ -72,17 +84,28 @@ public class ConversationTopicProjectionV2Service {
                 """, (rs, index) -> new TopicSegmenterV2.Segment(rs.getString("id"), rs.getString("topic_id"),
                 rs.getInt("start_seq"), rs.getInt("end_seq"), rs.getString("decision_status"),
                 rs.getString("decision_reason"), rs.getString("rule_version")), conversationId);
-        TopicSegmenterV2.Projection projection = segmenter.segment(rows.stream()
+        List<TopicSegmenterV2.Message> messages = rows.stream()
                 .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(), row.text()))
-                .toList(), persisted);
+                .toList();
+        boolean embed = embeddings != null && embeddings.isEnabled();
+        if (embed) {
+            messages = TopicSegmentationVectors.attach(messages, standaloneQueries(workspaceId, conversationId),
+                    embeddings);
+        }
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, persisted);
+        if (embed && projection.degradationReasons().contains(TopicSegmenterV2.VECTOR_UNAVAILABLE)) {
+            log.warn("话题切分退回词项: {}", TopicSegmenterV2.VECTOR_UNAVAILABLE);
+        }
+        String degradation = projection.degradationReasons().isEmpty()
+                ? null : projection.degradationReasons().get(0);
         Map<Integer, MessageRow> bySeq = new HashMap<>();
         for (MessageRow row : rows) bySeq.put(row.seq(), row);
         List<StoredSegment> existing = jdbc.query("""
-                select id, topic_id, start_seq, end_seq, decision_status, source_digest
+                select id, topic_id, start_seq, end_seq, decision_status, source_digest, degradation_reason
                 from conversation_topic_segment_v2 where conversation_id = ? order by start_seq
                 """, (rs, index) -> new StoredSegment(rs.getString("id"), rs.getString("topic_id"),
                 rs.getInt("start_seq"), rs.getInt("end_seq"), rs.getString("decision_status"),
-                rs.getString("source_digest")), conversationId);
+                rs.getString("source_digest"), rs.getString("degradation_reason")), conversationId);
         if (existing.size() > projection.segments().size()) {
             throw drift();
         }
@@ -116,24 +139,27 @@ public class ConversationTopicProjectionV2Service {
                 }
                 if (segment.endSeq() != stored.endSeq()
                         || !segment.status().equals(stored.status())
-                        || !sourceDigest.equals(stored.sourceDigest())) {
+                        || !sourceDigest.equals(stored.sourceDigest())
+                        || !java.util.Objects.equals(degradation, stored.degradationReason())) {
                     jdbc.update("""
                             update conversation_topic_segment_v2
                             set end_seq = ?, decision_status = ?, decision_reason = ?,
-                                source_digest = ?, lock_version = lock_version + 1,
+                                source_digest = ?, degradation_reason = ?,
+                                lock_version = lock_version + 1,
                                 updated_at = current_timestamp where id = ?
                             """, segment.endSeq(), segment.status(), segment.reason(),
-                            sourceDigest, segment.segmentId());
+                            sourceDigest, degradation, segment.segmentId());
                 }
             } else {
                 jdbc.update("""
                         insert into conversation_topic_segment_v2(id, workspace_id, conversation_id,
                             topic_id, start_seq, end_seq, decision_status, decision_reason,
-                            rule_version, source_digest)
-                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            rule_version, source_digest, degradation_reason, boundary_review)
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, segment.segmentId(), workspaceId, conversationId, segment.topicId(),
                         segment.startSeq(), segment.endSeq(), segment.status(), segment.reason(),
-                        segment.ruleVersion(), sourceDigest);
+                        segment.ruleVersion(), sourceDigest, degradation,
+                        reviews.initialState(segment.status()));
             }
         }
         for (ConversationConstraintProjectorV2.Constraint constraint : constraintProjector.project(rows.stream()
@@ -164,6 +190,25 @@ public class ConversationTopicProjectionV2Service {
         return projection;
     }
 
+    Map<String, String> standaloneQueries(String workspaceId, String conversationId) {
+        Map<String, String> queries = new HashMap<>();
+        jdbc.query("""
+                select query_message_id, retrieval_plan_json
+                from answer_run
+                where workspace_id = ? and conversation_id = ?
+                order by created_at asc, id asc
+                """, (RowCallbackHandler) rs -> {
+                    String messageId = rs.getString("query_message_id");
+                    QueryRewrite.View view = QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json"));
+                    if (view == null || view.standaloneQuery().isBlank()) {
+                        queries.remove(messageId);
+                        return;
+                    }
+                    queries.put(messageId, view.standaloneQuery());
+                }, workspaceId, conversationId);
+        return queries;
+    }
+
     private String sourceDigest(List<MessageRow> rows, int start, int end) {
         List<String> refs = new ArrayList<>();
         for (MessageRow row : rows) {
@@ -192,5 +237,5 @@ public class ConversationTopicProjectionV2Service {
     private record MessageRow(String id, int seq, String role, String text,
                               String contentHash, String contextStatus) {}
     private record StoredSegment(String id, String topicId, int startSeq, int endSeq,
-                                 String status, String sourceDigest) {}
+                                 String status, String sourceDigest, String degradationReason) {}
 }

@@ -1,6 +1,7 @@
 package com.noteweave.research;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.List;
 import java.util.Map;
 
@@ -98,16 +99,27 @@ public record ResearchAgentCompletionEnvelope(
             @JsonProperty("base_cell_version") int baseCellVersion,
             @JsonProperty("candidate_value") String candidateValue,
             @JsonProperty("evidence_keys") List<String> evidenceKeys,
-            @JsonProperty("confidence_ppm") int confidencePpm
+            @JsonProperty("confidence_ppm") int confidencePpm,
+            @JsonProperty("equivalent_claims") @JsonInclude(JsonInclude.Include.NON_NULL) List<EquivalentClaim> equivalentClaims
     ) {
         public Candidate {
             evidenceKeys = evidenceKeys == null ? null : List.copyOf(evidenceKeys);
+            equivalentClaims = equivalentClaims == null ? null : List.copyOf(equivalentClaims);
+        }
+
+        public Candidate(String candidateKey, String cellKey, int baseCellVersion, String candidateValue,
+                         List<String> evidenceKeys, int confidencePpm) {
+            this(candidateKey, cellKey, baseCellVersion, candidateValue, evidenceKeys, confidencePpm, null);
         }
 
         public Candidate withEvidenceKeys(List<String> keys) {
-            return new Candidate(candidateKey, cellKey, baseCellVersion, candidateValue, keys, confidencePpm);
+            return new Candidate(candidateKey, cellKey, baseCellVersion, candidateValue, keys, confidencePpm, equivalentClaims);
         }
     }
+
+    public record EquivalentClaim(@JsonProperty("evidence_key") String evidenceKey,
+                                  @JsonProperty("claim_text") String claimText,
+                                  @JsonProperty("source_domain") String sourceDomain) { }
 
     private static Map<String, Long> immutableMap(Map<String, Long> source) {
         return source == null ? null : Map.copyOf(new java.util.TreeMap<>(source));

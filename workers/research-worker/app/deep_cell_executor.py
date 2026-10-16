@@ -10,12 +10,17 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import os
 import re
 from typing import Protocol
 from urllib.parse import urlsplit
+from types import SimpleNamespace
+from app.repair_queries import plan_repair_queries
+from app.counter_checks import atomic_queries, judge_fact, MAX_FACTS
+from app.query_execution import capture_queries
+from app.claim_clustering import build_claim_clusters
 
 from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
@@ -35,6 +40,7 @@ from app.models import (
     ResearchColumn,
     ResearchIntent,
     ResearchPlan,
+    ResearchQuerySpec,
     ResearchSchema,
     ResearchSearchHit,
     ResearchReadWindow,
@@ -42,7 +48,17 @@ from app.models import (
     ResearchTaskInputPayload,
     SourceScopeItem,
 )
+from app.cell_query_planner import (
+    DEFAULT_MAX_QUERIES,
+    MAX_QUERY_CHARS,
+    MAX_QUESTION_CHARS,
+    CellColumn,
+    CellQueryContext,
+    CellQueryPlan,
+    plan_cell_queries,
+)
 from app.planner import build_research_plan
+from app.query_specs import with_query_specs
 from app.read_adapters import CompositeReadAdapter, WorkspaceReadAdapter, build_default_read_adapter, run_research_read
 from app.role_executor import RoleExecutorFactory, RoleProfile
 from app.research_agent_completion_contract import (
@@ -65,36 +81,6 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 # Extraction may return more cards, but the agent boundary deliberately admits
 # only the six strongest deterministic cards for a single target cell.
 MAX_EVIDENCE_CARDS_PER_CELL = 6
-
-_OFFICIAL_PRODUCT_DOMAINS: dict[str, tuple[str, ...]] = {
-    "postgresql": ("postgresql.org",),
-    "mysql": ("dev.mysql.com", "docs.oracle.com"),
-    "openai": ("platform.openai.com",),
-    "anthropic": ("docs.anthropic.com",),
-    "mongodb": ("mongodb.com",),
-    "redis": ("redis.io",),
-}
-
-_OFFICIAL_PRODUCT_QUERY_HINTS = {
-    "postgresql": "JSONB GIN jsonb_ops jsonb_path_ops operators indexing",
-    "mysql": "JSON generated column multi-valued index JSON_TABLE indexing",
-}
-_OFFICIAL_PRODUCT_SEED_URLS = {
-    "postgresql": (
-        "https://www.postgresql.org/docs/17/datatype-json.html#JSON-INDEXING",
-        "https://www.postgresql.org/docs/17/gin.html",
-    ),
-    "mysql": (
-        "https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/json.html",
-        "https://docs.oracle.com/cd/E17952_01/mysql-8.4-en/create-index.html",
-    ),
-}
-
-_OFFICIAL_SOURCE_MARKERS = (
-    "official", "documentation", "docs", "primary source",
-    "官方", "官方文档", "一手资料", "原始文档",
-)
-
 
 class PermitClient(Protocol):
     def require_permit(self, snapshot: ResearchAgentTaskSnapshot, tool_identity: str) -> None:
@@ -133,7 +119,10 @@ class ExistingResearchToolchain:
             adapter = build_web_plus_seed_search_adapter()
         else:
             adapter = SeedSourceSearchAdapter()
-        return list(run_research_search(task_input, plan, adapter=adapter))
+        with capture_queries() as queries:
+            hits = list(run_research_search(task_input, plan, adapter=adapter))
+        self.executed_queries = list(queries)
+        return hits
 
     def fetch(self, task_input: ResearchTaskInput, plan: ResearchPlan, hits: list[object], *, allow_external: bool) -> list[object]:
         adapter = build_default_fetch_adapter() if allow_external else CompositeFetchAdapter([WorkspaceFetchAdapter()], max_concurrency=1)
@@ -180,7 +169,7 @@ class DeepCellExecutor:
         authoritative_repair_exclusions = (
             isinstance(excluded_source_ids, list)
             and all(isinstance(source_id, str) and bool(source_id.strip()) for source_id in excluded_source_ids)
-            and (bool(excluded_source_ids) or web_only_repair)
+            and (bool(excluded_source_ids) or web_only_repair or snapshot.query_policy.get("equivalence_repair") is True)
         )
         counterfactual_repair = (
             snapshot.role == "COUNTERFACTUAL"
@@ -201,13 +190,14 @@ class DeepCellExecutor:
                 "atomic DeepCellExecutor requires DEEP_CELL or an authoritative counterfactual quorum/repair task"
             )
         task_input, plan, allow_external = _build_task_scope(snapshot)
-        plan = _scope_search_plan_to_domains(snapshot, plan)
         context = self.role_factory.create(snapshot.role, _execution_key(claim))
         def require_active() -> None:
             context.cancel_token.require_active()
             require_execution_active()
 
-        llm_client = _build_execution_llm(require_active, context.profile) if self.enable_llm else None
+        # 普通单元格仍按快照的 4 次预算执行，角色上限仅供需要反证的任务使用。
+        llm_limit = min(context.profile.max_llm_calls, int(snapshot.budget.get("llm_calls", context.profile.max_llm_calls)))
+        llm_client = _build_execution_llm(require_active, replace(context.profile, max_llm_calls=llm_limit)) if self.enable_llm else None
 
         # Recovery inventory must be consulted before any provider permit. A prior lease may
         # already have spent the single search/fetch/read rounds reserved for this task.
@@ -215,15 +205,23 @@ class DeepCellExecutor:
         reuse_focus = _reuse_read_focus(snapshot)
         require_active()
 
+        query_planning: dict[str, object] = {"method": "SKIPPED_ARCHIVE_REPLAY"}
+        workspace_queries = []
         if not reused:
+            plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
+            plan = _scope_search_plan_to_domains(snapshot, plan)
+            query_planning = dict(plan.stop_contract.get("query_planning", {}))
+            require_active()
             context.toolbox.require("search")
             self.permit_client.require_permit(snapshot, "search")
             require_active()
-            hits = self.toolchain.search(task_input, plan, allow_external=allow_external)
+            hits = self.toolchain.search(task_input, plan, allow_external=allow_external) if plan.query_specs else []
             hits = _prepend_explicit_allowed_urls(snapshot, plan, hits)
             hits = _filter_external_hits_by_domain(snapshot, hits, plan)
             hits = _interleave_hits_by_domain(hits)
-            workspace_hits = _search_workspace_windows(snapshot, task_input, plan, self.permit_client)
+            hits = _prioritize_authoritative_hits(snapshot, hits)
+            workspace_hits = (_search_workspace_windows(snapshot, task_input, plan, self.permit_client, workspace_queries)
+                              if plan.query_specs else [])
             if workspace_hits:
                 hits = workspace_hits + [hit for hit in hits if getattr(hit, "adapter", "") != "workspace"]
                 hits = [
@@ -280,7 +278,23 @@ class DeepCellExecutor:
         require_active()
 
         trusted_evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
-        candidates = _candidate_payload(snapshot, cards, trusted_evidence)
+        claim_clusters = []
+        candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
+                                        llm=llm_client, clusters_out=claim_clusters)
+        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
+                            if not reused and plan.query_specs else [])
+        report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
+                  "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
+        repair_target = snapshot.query_policy.get("repair_target", {})
+        needs_counter = (snapshot.high_risk or snapshot.query_policy.get("counter_required") is True
+                         or repair_target.get("repair_cause") == "EVIDENCE_CONFLICT")
+        if needs_counter:
+            originals = [(c["cell_key"], c["candidate_value"]) for c in candidates]
+            originals += [(str(repair_target.get("cell_key", "")), c["claim_text"])
+                          for c in repair_target.get("claims", []) if isinstance(c, dict) and c.get("claim_text")]
+            originals = list(dict.fromkeys(originals))
+            self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
+                                 llm_client, context, trusted_evidence, report, require_active)
         termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if trusted_evidence else "NO_SUPPORTED_CANDIDATE"
         # DR-102: keep the reproducibility-safe extraction outcome in the trace
         # digest (reason codes and counts only, never the model response text).
@@ -305,6 +319,8 @@ class DeepCellExecutor:
                 "termination_reason": extraction.termination_reason.value,
                 "rejection_counts": extraction.rejection_counts(),
             },
+            # 只记录方法、条数和降级原因，不记录检索词原文
+            "query_planning": query_planning,
             "termination": termination,
         }
         budget_usage: dict[str, int] = {
@@ -330,8 +346,81 @@ class DeepCellExecutor:
             "trace_digest": canonical_json_digest(trace),
             "evidence": trusted_evidence,
             "candidates": candidates,
-            "extraction_diagnostics": extraction.diagnostics(),
+            "extraction_diagnostics": {**extraction.diagnostics(), "execution_report": report,
+                                       "claim_clusters": claim_clusters},
         })
+
+    def _counter_checks(self, snapshot, task_input, plan, allow_external, originals, original_windows,
+                        llm, context, evidence, report, require_active):
+        remaining = MAX_FACTS
+        original_quotes = [e["quote_text"] for e in evidence]
+        original_ids = {(w.source_id, w.window_id) for w in original_windows}
+        excluded_sources = set(snapshot.source_policy.get("excluded_source_ids", []))
+        for cell_key, original in originals:
+            require_active()
+            tried = list(snapshot.query_policy.get("tried_queries", [])) + report["queries"]
+            facts = atomic_queries(original, llm, tried) if remaining else None
+            if not facts or len(facts) > remaining:
+                report["counter_checks"].append({"cell_key": cell_key, "original_claim": original,
+                    "claim_text": original[:2000], "verdict": "NOT_RUN", "queries": [], "refuting_evidence_keys": []})
+                continue
+            remaining -= len(facts)
+            for fact in facts:
+                query = fact["query"]
+                # 隔离检索：不复用原查询，不提供原证据、其他事实或研究草稿。
+                scoped_plan = with_query_specs(plan, [ResearchQuerySpec(query=query, family="counterfactual",
+                    search_angle="counterfactual", search_lane="COUNTERFACTUAL")]).model_copy(update={
+                    "normalized_question": fact["claim_text"],
+                    "stop_contract": {**plan.stop_contract, "execution_profile": {
+                        **plan.stop_contract.get("execution_profile", {}), "search_query_budget": 1}}})
+                scoped_input = task_input.model_copy(update={"input_payload": task_input.input_payload.model_copy(
+                    update={"question": fact["claim_text"]})})
+                for tool in ("search", "fetch", "read"):
+                    require_active()
+                    self.permit_client.require_permit(snapshot, tool)
+                    if tool == "search":
+                        hits = self.toolchain.search(scoped_input, scoped_plan, allow_external=allow_external)
+                        workspace_hits = _search_workspace_windows(snapshot, scoped_input, scoped_plan, self.permit_client)
+                        if workspace_hits:
+                            hits = workspace_hits + [h for h in hits if getattr(h, "adapter", "") != "workspace"]
+                        hits = _filter_external_hits_by_domain(snapshot, hits, scoped_plan)
+                        hits = [h for h in hits if getattr(h, "source_id", "") not in excluded_sources]
+                        actual = getattr(self.toolchain, "executed_queries", [query])
+                        report["queries"].extend(q for q in [*actual, *([query] if workspace_hits else [])]
+                                                 if q not in report["queries"])
+                    elif tool == "fetch":
+                        documents = self.toolchain.fetch(scoped_input, scoped_plan, hits, allow_external=allow_external)
+                    else:
+                        fresh = self.toolchain.read(scoped_input, scoped_plan, documents, allow_external=allow_external)
+                    context.usage.add(tool + "_calls")
+                fresh = [w for w in fresh if (w.source_id, w.window_id) not in original_ids
+                         and w.source_id not in excluded_sources
+                         and not any(q in w.window_text for q in original_quotes)]
+                fresh, _ = _archive_external_windows(snapshot, fresh, self.permit_client)
+                fresh = [w for w in fresh if w.snapshot_status in {"WORKSPACE", "EXTERNAL_ARCHIVED"}]
+                judged = judge_fact(fact["claim_text"], fresh, llm)
+                verdict = judged["verdict"] if judged else "NOT_RUN"
+                refs = []
+                if verdict == "REFUTED":
+                    by_id = {w.window_id: w for w in fresh}
+                    for citation in judged["citations"]:
+                        if len(evidence) >= 12:
+                            verdict = "NOT_RUN"
+                            break
+                        w = by_id[citation["window_id"]]
+                        card = SimpleNamespace(evidence_id="counter:" + _stable_hex(query, citation["quote_text"])[:32],
+                            window_id=w.window_id, source_id=w.source_id, source_title=w.source_title,
+                            entity_id=cell_key.split(":")[0], column_key=cell_key.split(":", 1)[1],
+                            quote_text=citation["quote_text"], claim_text=fact["claim_text"],
+                            relation_type="CONFLICTS", support_score=0, conflict_score=1)
+                        payload = _trusted_evidence_payload(snapshot, [card], [w])
+                        evidence.extend(payload)
+                        refs.extend(e["evidence_key"] for e in payload)
+                    if not refs:
+                        verdict = "NOT_RUN"
+                report["counter_checks"].append({"cell_key": cell_key, "original_claim": original,
+                    "claim_text": fact["claim_text"], "verdict": verdict, "queries": [query],
+                    "refuting_evidence_keys": refs if verdict == "REFUTED" else []})
 def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTaskInput, ResearchPlan, bool]:
     raw_query = snapshot.query_policy.get("query")
     raw_scope = snapshot.source_policy.get("source_scope")
@@ -429,6 +518,34 @@ def _filter_external_hits_by_domain(
     return filtered
 
 
+_HIGH_TRUST_QUALITIES = frozenset({"OFFICIAL_DOC", "GOVERNMENT_SOURCE", "ACADEMIC_SOURCE"})
+
+
+def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: list[object]) -> list[object]:
+    """抓取和阅读只处理前几条结果，把规划给出的官方域名和高可信来源排到前面，其余保持原顺序。"""
+    domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
+               if isinstance(item, str) and item.strip()] if isinstance(
+        snapshot.query_policy.get("authoritative_domains"), list) else []
+
+    def tier(hit: object) -> int:
+        if str(getattr(hit, "adapter", "")) == "workspace":
+            return 0
+        host = str(getattr(hit, "source_domain", "") or "").strip().lower().rstrip(".")
+        if not host:
+            host = (urlsplit(str(getattr(hit, "url", "") or "")).hostname or "").lower().rstrip(".")
+        if host and any(host == domain or host.endswith("." + domain) for domain in domains):
+            return 1
+        if str(getattr(hit, "source_quality", "")) in _HIGH_TRUST_QUALITIES:
+            return 2
+        return 3
+
+    ordered = sorted(hits, key=tier)
+    return [
+        hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
+        for index, hit in enumerate(ordered, start=1)
+    ]
+
+
 def _interleave_hits_by_domain(hits: list[object]) -> list[object]:
     """Keep one publisher from monopolizing the bounded fetch/read context."""
     workspace_hits = [hit for hit in hits if str(getattr(hit, "adapter", "")) == "workspace"]
@@ -466,10 +583,6 @@ def _prepend_explicit_allowed_urls(
     explicit: list[ResearchSearchHit] = []
     seen = {str(getattr(hit, "url", "")) for hit in hits}
     raw_urls = list(re.findall(r"https?://[^\s)'\"]+", plan.normalized_question))
-    entity_label = str(snapshot.query_policy.get("entity_label") or "").casefold()
-    for product, urls in _OFFICIAL_PRODUCT_SEED_URLS.items():
-        if product in entity_label:
-            raw_urls.extend(urls)
     for raw_url in raw_urls:
         url = raw_url.rstrip(".,;:]")
         host = (urlsplit(url).hostname or "").lower().rstrip(".")
@@ -481,7 +594,7 @@ def _prepend_explicit_allowed_urls(
             hit_id=f"explicit-url-{digest}", source_id=f"web-{digest}",
             source_title=host, query=plan.normalized_question, rank=len(explicit) + 1,
             snippet="Authoritative primary-source URL", confidence_score=1.0,
-            retrieval_reason="explicit or entity-scoped official URL", search_angle="source_scoped",
+            retrieval_reason="URL named in the research request", search_angle="source_scoped",
             matched_fields=["url"], coverage_score=1.0, url=url,
             provider="user_supplied", adapter="external_url", source_domain=host,
             source_quality="PRIMARY", source_quality_score=1.0,
@@ -496,99 +609,123 @@ def _prepend_explicit_allowed_urls(
 def _scope_search_plan_to_domains(
     snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
 ) -> ResearchPlan:
+    """用户限定了外部域名时，每条检索词对每个域名各生成一条 site: 查询，用途沿用原检索词。"""
     domains = sorted(_effective_allowed_external_domains(snapshot, plan))
-    if not domains:
+    if not domains or not plan.query_specs:
         return plan
-    base_queries = list(plan.query_set) or [plan.normalized_question]
-    scoped = [
-        f"{_domain_focused_query(query, domain)} site:{domain}"
-        for query in base_queries
-        for domain in domains
+    base_specs = list(plan.query_specs) or [
+        ResearchQuerySpec(query=query) for query in (plan.query_set or [plan.normalized_question])
     ]
+    scoped: list[ResearchQuerySpec] = []
+    for spec in base_specs:
+        for domain in domains:
+            suffix = f" site:{domain}"
+            query = spec.query[: max(1, MAX_QUERY_CHARS - len(suffix))].rstrip() + suffix
+            scoped.append(spec.model_copy(update={"query": query}))
     stop_contract = dict(plan.stop_contract)
     execution_profile = dict(stop_contract.get("execution_profile", {}))
     execution_profile["search_query_budget"] = max(
         len(domains), int(execution_profile.get("search_query_budget", 4))
     )
-    family_budgets = dict(execution_profile.get("query_family_budgets", {}))
-    for family in (
-        "direct", "intent", "deliverable", "time_range", "constraints",
-        "deep_focus", "triangulation", "source_scoped",
-    ):
-        family_budgets[family] = max(len(domains), int(family_budgets.get(family, 0)))
-    execution_profile["query_family_budgets"] = family_budgets
     stop_contract["execution_profile"] = execution_profile
-    return plan.model_copy(update={"query_set": scoped, "stop_contract": stop_contract})
+    return with_query_specs(plan, scoped).model_copy(update={"stop_contract": stop_contract})
 
 
 def _effective_allowed_external_domains(
     snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan | None = None
 ) -> set[str]:
+    """只使用来源策略里明确允许的域名，不再根据问题里的产品名推断。"""
+    del plan
     raw = snapshot.source_policy.get("allowed_external_domains")
-    explicit = {
+    return {
         str(value).strip().lower().rstrip(".")
         for value in raw
         if isinstance(value, str) and value.strip()
     } if isinstance(raw, list) else set()
-    if explicit:
-        return explicit
-
-    query = str(snapshot.query_policy.get("query") or "")
-    entity_label = str(snapshot.query_policy.get("entity_label") or "").casefold()
-    intent = snapshot.research_intent if isinstance(snapshot.research_intent, dict) else {}
-    intent_text = " ".join([
-        str(intent.get("research_goal") or ""),
-        " ".join(str(item) for item in intent.get("constraints", []) if str(item).strip()),
-    ])
-    haystack = f"{query} {intent_text}".casefold()
-    if not any(marker.casefold() in haystack for marker in _OFFICIAL_SOURCE_MARKERS):
-        return set()
-    inferred: set[str] = set()
-    if entity_label:
-        for product, domains in _OFFICIAL_PRODUCT_DOMAINS.items():
-            if product in entity_label:
-                inferred.update(domains)
-        if inferred:
-            return inferred
-    for product, domains in _OFFICIAL_PRODUCT_DOMAINS.items():
-        if product in haystack:
-            inferred.update(domains)
-    return inferred
 
 
-def _domain_focused_query(query: str, domain: str) -> str:
-    """Prefer the comparison clause naming the allowlisted publisher."""
-    labels = {
-        part for part in domain.casefold().split(".")
-        if part and part not in {"com", "org", "net", "www", "docs", "platform"}
+def _plan_queries_for_cell(
+    snapshot: ResearchAgentTaskSnapshot,
+    plan: ResearchPlan,
+    llm_client: object | None,
+) -> tuple[ResearchPlan, CellQueryPlan]:
+    """为本任务的目标单元格生成检索词，并把检索预算对齐到生成的条数。"""
+    target = snapshot.query_policy.get("repair_target")
+    strategy = "DIRECT"
+    if isinstance(target, dict):
+        query_plan, strategy = plan_repair_queries(_cell_query_context(snapshot, plan), target, llm_client)
+    else:
+        query_plan = plan_cell_queries(_cell_query_context(snapshot, plan), llm_client)
+    stop_contract = dict(plan.stop_contract)
+    execution_profile = dict(stop_contract.get("execution_profile", {}))
+    execution_profile["search_query_budget"] = len(query_plan.specs)
+    stop_contract["execution_profile"] = execution_profile
+    stop_contract["query_planning"] = {
+        "method": query_plan.method,
+        "strategy": strategy,
+        "query_count": len(query_plan.specs),
+        "rejected_count": len(query_plan.rejected),
+        "degradation_reasons": list(query_plan.degradation_reasons),
     }
-    clauses = [
-        clause.strip(" ,")
-        for clause in re.split(r"\s+(?:and|versus|vs\.?)\s+|[;；]", query, flags=re.IGNORECASE)
-        if clause.strip(" ,")
-    ]
-    matches = [clause for clause in clauses if any(label in clause.casefold() for label in labels)]
-    if matches:
-        focused = max(matches, key=len)
-        return focused if "official documentation" in focused.casefold() else f"{focused} official documentation"
-    product = next((name for name, domains in _OFFICIAL_PRODUCT_DOMAINS.items() if domain in domains), "")
-    if not product or product not in query.casefold():
-        return query
-    version_match = re.search(rf"\b{re.escape(product)}\s+([0-9]+(?:\.[0-9]+)*)", query, re.IGNORECASE)
-    technical_terms = list(dict.fromkeys(re.findall(
-        r"\b(?:JSON_TABLE|JSONB?|GIN|GiST|BTREE|multi-valued|generated columns?)\b",
-        query,
-        re.IGNORECASE,
-    )))
-    version = version_match.group(1) if version_match else ""
-    focus = " ".join([
-        product,
-        version,
-        *technical_terms,
-        _OFFICIAL_PRODUCT_QUERY_HINTS.get(product, "index query"),
-        "official documentation",
-    ])
-    return " ".join(focus.split())
+    planned = with_query_specs(plan, query_plan.specs).model_copy(update={"stop_contract": stop_contract})
+    return planned, query_plan
+
+
+def _cell_query_context(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan) -> CellQueryContext:
+    policy = snapshot.query_policy
+    brief = policy.get("research_brief") if isinstance(policy.get("research_brief"), dict) else {}
+    # 检索词从用户原问题出发；query 字段可能是拼接了对话上下文的长文本，只在缺少原问题时截断使用
+    question = str(brief.get("current_question") or "").strip() or str(policy.get("query") or "").strip()
+    labels = _column_labels(policy)
+    columns = tuple(
+        CellColumn(key=column.key, label=labels.get(column.key, {}).get("label") or column.label,
+                   description=labels.get(column.key, {}).get("description", ""),
+                   search_intents=tuple(labels.get(column.key, {}).get("search_intents", ())))
+        for column in plan.research_schema.columns
+    )
+    intent = snapshot.research_intent if isinstance(snapshot.research_intent, dict) else {}
+    tried = policy.get("tried_queries")
+    return CellQueryContext(
+        question=question[:MAX_QUESTION_CHARS],
+        entity_label=str(policy.get("entity_label") or "").strip(),
+        columns=columns,
+        research_goal=str(intent.get("research_goal") or "").strip(),
+        time_range=str(intent.get("time_range") or "").strip(),
+        constraints=tuple(str(item).strip() for item in intent.get("constraints", []) if str(item).strip())
+        if isinstance(intent.get("constraints"), list) else (),
+        tried_queries=tuple(str(item) for item in tried if isinstance(item, str))
+        if isinstance(tried, list) else (),
+        role=snapshot.role,
+        max_queries=_EFFORT_QUERY_COUNTS.get(str(policy.get("effort_tier") or "").upper(), DEFAULT_MAX_QUERIES),
+        objective=str(policy.get("objective") or "").strip(),
+        boundaries=_string_tuple(policy.get("boundaries")),
+        authoritative_domains=_string_tuple(policy.get("authoritative_domains")),
+    )
+
+
+# 投入等级决定每个深挖任务生成几条检索词
+_EFFORT_QUERY_COUNTS = {"SIMPLE": 2, "STANDARD": 3, "COMPLEX": 4}
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item).strip() for item in value if isinstance(item, str) and item.strip())
+
+
+def _column_labels(policy: dict[str, object]) -> dict[str, dict[str, object]]:
+    raw = policy.get("column_specs")
+    if not isinstance(raw, list):
+        return {}
+    labels: dict[str, dict[str, object]] = {}
+    for item in raw:
+        if isinstance(item, dict) and isinstance(item.get("key"), str):
+            labels[item["key"]] = {
+                "label": str(item.get("label") or "").strip(),
+                "description": str(item.get("description") or "").strip(),
+                "search_intents": _string_tuple(item.get("search_intents")),
+            }
+    return labels
 
 
 def _search_workspace_windows(
@@ -596,6 +733,7 @@ def _search_workspace_windows(
     task_input: ResearchTaskInput,
     plan: ResearchPlan,
     permit_client: PermitClient,
+    recorded_queries: list[str] | None = None,
 ) -> list[ResearchSearchHit]:
     if not task_input.source_scope:
         return []
@@ -606,6 +744,8 @@ def _search_workspace_windows(
     query_plan = build_search_query_plan(plan, remaining_budget=8)
     queries = [item.query for item in query_plan[:8]] or [plan.normalized_question]
     raw_hits = search(snapshot, queries=queries, limit=limit)
+    if recorded_queries is not None:
+        recorded_queries.extend(queries)
     scope = {(source.source_id, source.source_snapshot_id) for source in task_input.source_scope}
     result: list[ResearchSearchHit] = []
     for raw in raw_hits:
@@ -839,37 +979,35 @@ def _trusted_evidence_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[o
     return payload
 
 
-def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object], evidence: list[dict[str, object]]) -> list[dict[str, object]]:
-    evidence_keys = {str(item["evidence_key"]) for item in evidence}
+def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object], evidence: list[dict[str, object]],
+                       *, windows=None, llm=None, clusters_out=None) -> list[dict[str, object]]:
+    evidence_by_key = {str(item["evidence_key"]): item for item in evidence}
+    by_window = {w.window_id: w for w in windows or [] if getattr(w, "window_id", "")}
     targets = {item.cell_id: item.expected_version for item in snapshot.target_cells}
-    grouped: dict[tuple[str, str], dict[str, object]] = {}
+    rows = []
     for card in cards:
         cell_id = f"{getattr(card, 'entity_id', '')}:{getattr(card, 'column_key', '')}"
         evidence_key = _scoped_evidence_key(snapshot, card)
         value = unicodedata.normalize("NFC", str(getattr(card, "claim_text", "")))
-        if (cell_id not in targets or evidence_key not in evidence_keys or not value
+        if (cell_id not in targets or evidence_key not in evidence_by_key or not value
                 or str(getattr(card, "relation_type", "")).upper() != "SUPPORTS"):
             continue
-        key = (cell_id, value)
-        group = grouped.setdefault(key, {"evidence_keys": set(), "confidence_ppm": 0})
-        group["evidence_keys"].add(evidence_key)  # type: ignore[union-attr]
-        group["confidence_ppm"] = max(int(group["confidence_ppm"]), _score_ppm(getattr(card, "support_score", 0.0)))
-
-    by_cell: dict[str, list[tuple[str, dict[str, object]]]] = {}
-    for (cell_id, value), group in grouped.items():
-        by_cell.setdefault(cell_id, []).append((value, group))
+        item = evidence_by_key[evidence_key]
+        window = by_window.get(item["window_id"])
+        domain = (getattr(window, "source_domain", "") or (urlsplit(getattr(window, "url", "")).hostname or "")
+                  or "workspace-source:" + str(item["source_id"]))
+        rows.append({**item, "cell_key": cell_id, "source_domain": domain,
+                     "lineage_digest": getattr(window, "lineage_digest", "")})
+    clusters = build_claim_clusters(rows, llm)
+    if clusters_out is not None:
+        clusters_out.extend(clusters)
+    by_cell = {}
+    for cluster in clusters:
+        by_cell.setdefault(cluster["cell_key"], []).append(cluster)
     proposals: list[dict[str, object]] = []
     for cell_id in sorted(by_cell):
-        value, group = sorted(
-            by_cell[cell_id], key=lambda item: (-int(item[1]["confidence_ppm"]), item[0])
-        )[0]
-        # A canonical candidate may only bind evidence whose claim_text is exactly
-        # the selected candidate value. Other Evidence from the same Cell remains
-        # available to conflict detection, but binding it here makes Java's
-        # qualification gate correctly reject the candidate as a claim mismatch.
-        candidate_evidence = sorted(
-            {str(item) for item in group["evidence_keys"]}  # type: ignore[union-attr]
-        )
+        group = by_cell[cell_id][0]
+        value, candidate_evidence = group["claim_text"], group["evidence_keys"]
         stable = _stable_hex(snapshot.task_id, str(snapshot.lease_epoch), str(snapshot.fencing_token),
                              cell_id, str(targets[cell_id]), value, *candidate_evidence)
         proposals.append({
@@ -879,6 +1017,7 @@ def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
             "candidate_value": value,
             "evidence_keys": candidate_evidence,
             "confidence_ppm": int(group["confidence_ppm"]),
+            "equivalent_claims": group["equivalent_claims"],
         })
     return proposals
 

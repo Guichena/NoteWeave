@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import Counter
+import math
+import re
 
 from app.models import ResearchPlan, ResearchSearchHit, ResearchTaskInput, SourceScopeItem
+from app.query_specs import find_query_spec
 from app.text_terms import terms as text_terms
+from app.source_profile import infer_source_quality
 
 
 @dataclass
@@ -15,6 +20,8 @@ class _SearchCandidate:
     matched_fields: list[str]
     coverage_score: float
     confidence_score: float
+    source_quality: str
+    source_quality_score: float
     source_index: int
 
 
@@ -29,9 +36,12 @@ def run_seed_source_search(
     are never discovered or searched here.
     """
     global_limit = int(plan.stop_contract.get("global_search_limit", 8))
-    if global_limit <= 0 or not task_input.source_scope:
+    if (global_limit <= 0 or not task_input.source_scope
+            or selected_queries == []
+            or (not plan.query_set and plan.stop_contract.get("query_planning_method"))):
         return []
 
+    corpus = _Bm25f(task_input.source_scope)
     candidates: list[_SearchCandidate] = []
     for source_index, source in enumerate(task_input.source_scope, start=1):
         query, search_angle, matched_fields, coverage_score = _select_best_query(
@@ -39,9 +49,12 @@ def run_seed_source_search(
             source,
             source_index,
             selected_queries=selected_queries,
+            corpus=corpus,
         )
         snippet = _build_snippet(source, plan)
-        confidence_score = _score_source_match(source, snippet, coverage_score)
+        source_quality, quality = infer_source_quality(url="", provider="workspace", adapter="workspace",
+                                          title=source.title, content_text=source.sample_text or source.summary)
+        confidence_score = round(coverage_score * quality, 4)
         candidates.append(
             _SearchCandidate(
                 source=source,
@@ -51,6 +64,7 @@ def run_seed_source_search(
                 matched_fields=matched_fields,
                 coverage_score=coverage_score,
                 confidence_score=confidence_score,
+                source_quality=source_quality, source_quality_score=quality,
                 source_index=source_index,
             )
         )
@@ -79,6 +93,8 @@ def run_seed_source_search(
                 search_angle=candidate.search_angle,
                 matched_fields=candidate.matched_fields,
                 coverage_score=candidate.coverage_score,
+                source_quality=candidate.source_quality,
+                source_quality_score=candidate.source_quality_score,
             )
         )
     return hits
@@ -94,22 +110,24 @@ def _select_best_query(
     source: SourceScopeItem,
     source_index: int,
     selected_queries: list[str] | None = None,
+    corpus=None,
 ) -> tuple[str, str, list[str], float]:
-    query_candidates = list(selected_queries or plan.query_set)
+    corpus = corpus or _Bm25f([source])
+    query_candidates = list(selected_queries if selected_queries is not None else plan.query_set)
     if not query_candidates:
         return plan.normalized_question, "direct", [], 0.0
     best_query = query_candidates[0]
     best_score = -1.0
     best_fields: list[str] = []
-    best_index = source_index
-    for query_index, query in enumerate(query_candidates):
-        matched_fields, coverage_score = _score_query_coverage(query, source)
+    for query in query_candidates:
+        matched_fields, coverage_score = corpus.score(query, source)
         if coverage_score > best_score:
             best_query = query
             best_score = coverage_score
             best_fields = matched_fields
-            best_index = query_index
-    return best_query, _search_angle(best_query, best_index), best_fields, max(best_score, 0.0)
+    spec = find_query_spec(plan, best_query)
+    angle = spec.search_angle if spec is not None else "direct"
+    return best_query, angle, best_fields, max(best_score, 0.0)
 
 
 def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:
@@ -125,55 +143,48 @@ def _build_snippet(source: SourceScopeItem, plan: ResearchPlan) -> str:
     )
 
 
-def _score_source_match(source: SourceScopeItem, snippet: str, coverage_score: float) -> float:
-    if source.summary.strip():
-        base_score = 0.82
-    elif source.sample_text.strip():
-        base_score = 0.68
-    elif snippet.strip():
-        base_score = 0.42
-    else:
-        base_score = 0.2
-    return min(0.98, round(base_score + coverage_score * 0.16, 4))
+_FIELD_WEIGHTS = {"title": 2.0, "summary": 1.5, "sample_text": 1.0}
 
 
-def _score_query_coverage(query: str, source: SourceScopeItem) -> tuple[list[str], float]:
-    query_terms = _terms(query)
-    if not query_terms:
-        return [], 0.0
+def _frequencies(text):
+    # 保留重复词项供 BM25F 计算词频；中文与现有词项切分保持一致。
+    counts = Counter()
+    for run in re.findall(r"[a-z0-9]+|[一-鿿]+", str(text or "").lower()):
+        if re.fullmatch(r"[一-鿿]+", run):
+            counts.update([run] if len(run) == 1 else [run[i:i + 2] for i in range(len(run) - 1)])
+        elif len(run) >= 3:
+            counts[run] += 1
+    return counts
 
-    field_hits: list[str] = []
-    matched_terms: set[str] = set()
-    for field_name, field_text in [
-        ("title", source.title),
-        ("summary", source.summary),
-        ("sample_text", source.sample_text),
-    ]:
-        overlap = query_terms.intersection(_terms(field_text))
-        if overlap:
-            field_hits.append(field_name)
-            matched_terms.update(overlap)
-    score = len(matched_terms) / len(query_terms)
-    if source.title.strip() and source.title.lower() in query.lower():
-        score += 0.2
-    return field_hits, min(1.0, round(score, 4))
+
+class _Bm25f:
+    def __init__(self, sources):
+        self.fields = {id(source): {key: _frequencies(getattr(source, key)) for key in _FIELD_WEIGHTS}
+                       for source in sources}
+        self.size = max(1, len(sources))
+        self.averages = {key: max(1.0, sum(sum(fields[key].values()) for fields in self.fields.values()) / self.size)
+                         for key in _FIELD_WEIGHTS}
+        self.df = Counter()
+        for fields in self.fields.values():
+            self.df.update(set().union(*(set(values) for values in fields.values())))
+
+    def score(self, query, source):
+        query_terms = _terms(query)
+        fields = self.fields[id(source)]
+        matched = [key for key, counts in fields.items() if query_terms.intersection(counts)]
+        score = 0.0
+        for term in query_terms:
+            weighted_tf = sum(weight * counts.get(term, 0) /
+                              (0.25 + 0.75 * sum(counts.values()) / self.averages[key])
+                              for key, weight in _FIELD_WEIGHTS.items() for counts in [fields[key]])
+            idf = math.log1p((self.size - self.df[term] + 0.5) / (self.df[term] + 0.5))
+            score += idf * weighted_tf * 2.2 / (weighted_tf + 1.2)
+        # 有界归一化，无词项匹配时相关度必须为零。
+        return matched, round(score / (score + 1.0), 4)
 
 
 def _terms(text: str) -> set[str]:
     return text_terms(text)
-
-
-def _search_angle(query: str, query_index: int) -> str:
-    query_lower = query.lower()
-    if "counterfactual" in query_lower:
-        return "counterfactual"
-    if "coverage gap" in query_lower:
-        return "coverage_gap"
-    if "::" in query:
-        return "source_scoped"
-    if query_index == 0:
-        return "direct"
-    return "source_scoped"
 
 
 def _build_retrieval_reason(candidate: _SearchCandidate) -> str:

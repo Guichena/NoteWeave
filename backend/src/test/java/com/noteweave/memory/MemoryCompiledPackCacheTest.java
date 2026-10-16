@@ -47,7 +47,7 @@ class MemoryCompiledPackCacheTest {
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
         verify(valueOperations).set(
-                eq("noteweave:v1:cache:memory_compiled_pack:workspace:actor:chat:request:memory-compiler-policy-v1:state-a"),
+                eq("noteweave:v1:cache:memory_compiled_pack:workspace:actor:chat:request:memory-compiler-policy-v2:state-a"),
                 json.capture(),
                 eq(Duration.ofSeconds(180)));
         when(valueOperations.get(anyString())).thenReturn(json.getValue());

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "noteweave.pipeline-results.v1",
+  "title": "真实解析评测结果与未执行原因",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "suite_id", "status", "created_at", "manifest_sha256", "expected_sample_count", "registered_sample_count", "ready_sample_count", "reason_codes", "samples"],
+  "properties": {
+    "schema_version": {"const": 1}, "suite_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"},
+    "status": {"enum": ["NOT_RUN", "COMPLETED", "PARTIAL"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "expected_sample_count": {"const": 30},
+    "registered_sample_count": {"type": "integer", "minimum": 0, "maximum": 30},
+    "ready_sample_count": {"type": "integer", "minimum": 0, "maximum": 30},
+    "reason_codes": {"$ref": "#/$defs/reasons"},
+    "samples": {
+      "type": "array", "maxItems": 30,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["sample_id", "input_sha256", "readiness_reasons", "parsers"],
+        "properties": {
+          "sample_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+          "input_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+          "readiness_reasons": {"$ref": "#/$defs/reasons"},
+          "parsers": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/parserResult"}}
+        }
+      }
+    }
+  },
+  "$defs": {
+    "reasons": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z0-9_]+$"}},
+    "ratio": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "nullableReason": {"type": ["string", "null"], "pattern": "^[A-Z0-9_]+$"},
+    "metrics": {
+      "type": ["object", "null"], "additionalProperties": false,
+      "required": ["normalization", "cer", "headings", "tables", "reading_order"],
+      "properties": {
+        "normalization": {"const": "NFC_NO_WHITESPACE"},
+        "cer": {
+          "type": "object", "additionalProperties": false,
+          "required": ["value", "reason", "reference_characters", "edit_distance"],
+          "properties": {"value": {"type": ["number", "null"], "minimum": 0}, "reason": {"$ref": "#/$defs/nullableReason"},
+            "reference_characters": {"type": "integer", "minimum": 0}, "edit_distance": {"type": ["integer", "null"], "minimum": 0}}
+        },
+        "headings": {
+          "type": "object", "additionalProperties": false,
+          "required": ["expected", "predicted", "matched", "precision", "recall", "hierarchy_accuracy", "hierarchy_compared", "reason", "hierarchy_reason"],
+          "properties": {
+            "expected": {"type": "integer", "minimum": 0}, "predicted": {"type": "integer", "minimum": 0}, "matched": {"type": "integer", "minimum": 0},
+            "precision": {"$ref": "#/$defs/ratio"}, "recall": {"$ref": "#/$defs/ratio"}, "hierarchy_accuracy": {"$ref": "#/$defs/ratio"},
+            "hierarchy_compared": {"type": "integer", "minimum": 0}, "reason": {"$ref": "#/$defs/nullableReason"}, "hierarchy_reason": {"$ref": "#/$defs/nullableReason"}}
+        },
+        "tables": {
+          "type": "object", "additionalProperties": false,
+          "required": ["expected", "predicted", "comparable", "structure_accuracy", "cell_exact_accuracy", "compared_cells", "gold_structure_known", "predicted_structure_known", "reason"],
+          "properties": {
+            "expected": {"type": "integer", "minimum": 0}, "predicted": {"type": "integer", "minimum": 0}, "comparable": {"type": "integer", "minimum": 0},
+            "structure_accuracy": {"$ref": "#/$defs/ratio"}, "cell_exact_accuracy": {"$ref": "#/$defs/ratio"}, "compared_cells": {"type": "integer", "minimum": 0},
+            "gold_structure_known": {"type": "integer", "minimum": 0}, "predicted_structure_known": {"type": "integer", "minimum": 0}, "reason": {"$ref": "#/$defs/nullableReason"}}
+        },
+        "reading_order": {
+          "type": "object", "additionalProperties": false,
+          "required": ["gold_blocks", "matched_blocks", "coverage", "compared_pairs", "inversions", "inversion_rate", "reason"],
+          "properties": {
+            "gold_blocks": {"type": "integer", "minimum": 0}, "matched_blocks": {"type": "integer", "minimum": 0}, "coverage": {"$ref": "#/$defs/ratio"},
+            "compared_pairs": {"type": "integer", "minimum": 0}, "inversions": {"type": ["integer", "null"], "minimum": 0},
+            "inversion_rate": {"$ref": "#/$defs/ratio"}, "reason": {"$ref": "#/$defs/nullableReason"}}
+        }
+      }
+    },
+    "parserResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["parser", "status", "reason_codes", "parser_version", "version_reason", "raw_output_path", "raw_output_sha256", "normalized_output_path", "elapsed_seconds", "peak_rss_bytes", "resource_measurement_reason", "complete_document", "metrics"],
+      "properties": {
+        "parser": {"enum": ["DOCLING", "MINERU"]}, "status": {"enum": ["NOT_RUN", "COMPLETED", "FAILED"]},
+        "reason_codes": {"$ref": "#/$defs/reasons"}, "parser_version": {"type": ["string", "null"], "maxLength": 300},
+        "version_reason": {"$ref": "#/$defs/nullableReason"},
+        "raw_output_path": {"type": ["string", "null"]}, "raw_output_sha256": {"type": ["string", "null"], "pattern": "^[a-f0-9]{64}$"},
+        "normalized_output_path": {"type": ["string", "null"]}, "elapsed_seconds": {"type": ["number", "null"], "minimum": 0},
+        "peak_rss_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "resource_measurement_reason": {"$ref": "#/$defs/nullableReason"}, "complete_document": {"type": ["boolean", "null"]},
+        "metrics": {"$ref": "#/$defs/metrics"}
+      },
+      "allOf": [
+        {"if": {"properties": {"status": {"const": "NOT_RUN"}}},
+          "then": {"properties": {"metrics": {"type": "null"}, "elapsed_seconds": {"type": "null"}, "raw_output_sha256": {"type": "null"},
+            "raw_output_path": {"type": "null"}, "normalized_output_path": {"type": "null"}, "parser_version": {"type": "null"},
+            "complete_document": {"type": "null"}, "reason_codes": {"minItems": 1}}}},
+        {"if": {"properties": {"status": {"const": "FAILED"}}}, "then": {"properties": {"metrics": {"type": "null"}, "reason_codes": {"minItems": 1}}}},
+        {"if": {"properties": {"status": {"const": "COMPLETED"}}}, "then": {"properties": {
+          "metrics": {"type": "object"}, "elapsed_seconds": {"type": "number"}, "raw_output_sha256": {"type": "string"},
+          "raw_output_path": {"type": "string"}, "normalized_output_path": {"type": "string"}, "complete_document": {"type": "boolean"}}}}
+      ]
+    }
+  }
+}

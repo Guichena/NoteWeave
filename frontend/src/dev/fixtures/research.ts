@@ -1,4 +1,13 @@
-import type { ResearchRunDetail, ResearchRunSummary } from "../../features/research/model";
+import type {
+  ResearchCell,
+  ResearchCounterCheck,
+  ResearchDiscoveryProposal,
+  ResearchReplan,
+  ResearchPlan,
+  ResearchPlanRevision,
+  ResearchRunDetail,
+  ResearchRunSummary
+} from "../../features/research/model";
 
 // 结构与研究运行接口响应完全一致的设计数据。
 // 包含一个已完成的运行（研究表已探索完毕，其中一处冲突由反证分支消解）和一个仍在进行中的运行。
@@ -389,5 +398,147 @@ export const researchTasks: Record<string, Record<string, unknown>> = {
     task_id: runningRun.task_id, task_type: "RESEARCH", task_status: "RUNNING",
     progress_phase: "VERIFYING", progress_message: "第 2 轮：核验 Evidence 并补齐缺失字段", result_ref: runningRun.research_run_id,
     error_message: "", target_type: "RESEARCH_RUN", target_id: runningRun.research_run_id, wait_context: null
+  }
+};
+
+// 研究表格：进行中的 Run 停在确认阶段，便于预览修改和开始研究；其余 Run 已开始研究。
+const planStates: Record<string, ResearchPlan> = {};
+
+function initialPlan(runId: string): ResearchPlan {
+  return {
+    plan_status: runId === runningRun.research_run_id ? "REVIEW" : "READY",
+    review_deadline: null,
+    planner: "llm-matrix.v1",
+    rows: [
+      { entity_key: "entity-postgresql", label: "PostgreSQL 17" },
+      { entity_key: "entity-mysql", label: "MySQL 8.4" }
+    ],
+    columns: [
+      { column_key: "dim-index-types", label: "JSON 索引类型", description: "支持哪些可加速 JSON 查询的索引", answer_format: "LIST", high_risk: false },
+      { column_key: "dim-operators", label: "可加速的查询运算符", description: "索引能覆盖哪些 JSON 运算符和函数", answer_format: "LIST", high_risk: false },
+      { column_key: "dim-limits", label: "限制与代价", description: "索引体积、写入开销和不支持的场景", answer_format: "LONG_TEXT", high_risk: false }
+    ],
+    brief: { objective: "比较两者 JSON 索引能力的覆盖范围与代价", exclusions: ["其他数据库"] },
+    effort_tier: "STANDARD",
+    authoritative_domains: ["postgresql.org", "dev.mysql.com"],
+    perspectives: [{ name: "应用开发者", questions: ["哪些查询能用上索引"] }]
+  };
+}
+
+export const researchPlan = {
+  read(runId: string): ResearchPlan {
+    planStates[runId] ??= initialPlan(runId);
+    return planStates[runId];
+  },
+  approve(runId: string): ResearchPlan {
+    planStates[runId] = { ...researchPlan.read(runId), plan_status: "READY" };
+    return planStates[runId];
+  },
+  revise(runId: string, revision: ResearchPlanRevision): ResearchPlan {
+    planStates[runId] = {
+      ...researchPlan.read(runId),
+      planner: "user-revision.1",
+      rows: revision.entities.map((entity, index) => ({ entity_key: `entity-${index}`, label: entity.label })),
+      columns: revision.dimensions.map((dimension, index) => ({
+        column_key: `dim-${index}`, label: dimension.label, description: dimension.description ?? "",
+        answer_format: "SHORT_TEXT", high_risk: false
+      }))
+    };
+    return planStates[runId];
+  }
+};
+
+// 1C、1D、1E 的附属数据：完成的 Run 有完整记录，进行中的 Run 只有部分单元格。
+const cellFixtures: ResearchCell[] = [
+  {
+    cell_key: "entity-postgresql:dim-index-types", entity_label: "PostgreSQL 17", column_label: "JSON 索引类型",
+    cell_status: "VERIFIED", candidate_value: "GIN（jsonb_ops、jsonb_path_ops）、表达式 B-tree",
+    equivalent_claims: [
+      { evidence_key: "ev-pg-1", claim_text: "jsonb 支持 GIN 索引，提供 jsonb_ops 与 jsonb_path_ops 两种操作符类", source_domain: "postgresql.org" },
+      { evidence_key: "ev-pg-2", claim_text: "可以对 jsonb 字段建 GIN 索引，或对提取出的值建表达式索引", source_domain: "crunchydata.com" }
+    ],
+    independent_source_count: 2, confidence_ppm: 910000, conflicts: []
+  },
+  {
+    cell_key: "entity-postgresql:dim-operators", entity_label: "PostgreSQL 17", column_label: "可加速的查询运算符",
+    cell_status: "CANDIDATE_READY", candidate_value: "@>、?、?|、?&、@?、@@",
+    equivalent_claims: [
+      { evidence_key: "ev-pg-3", claim_text: "jsonb_ops 支持 @>、?、?|、?&、@?、@@ 运算符", source_domain: "postgresql.org" }
+    ],
+    independent_source_count: 1, confidence_ppm: 720000, conflicts: []
+  },
+  {
+    cell_key: "entity-mysql:dim-index-types", entity_label: "MySQL 8.4", column_label: "JSON 索引类型",
+    cell_status: "CONFLICTED", candidate_value: "多值索引、生成列上的 B-tree 索引",
+    equivalent_claims: [
+      { evidence_key: "ev-my-1", claim_text: "可以在 JSON 数组上建多值索引", source_domain: "dev.mysql.com" }
+    ],
+    independent_source_count: 1, confidence_ppm: 640000,
+    conflicts: [{ kind: "SEMANTIC_CONTRADICTION", other_value: "JSON 列不能建任何索引，只能借助生成列", status: "OPEN" }]
+  },
+  {
+    cell_key: "entity-mysql:dim-operators", entity_label: "MySQL 8.4", column_label: "可加速的查询运算符",
+    cell_status: "GAP", candidate_value: null, equivalent_claims: [], independent_source_count: 0, confidence_ppm: null, conflicts: []
+  }
+];
+
+const replanFixtures: ResearchReplan[] = [
+  {
+    plan_revision_from: 1, plan_revision_to: 2, deviation_type: "EVIDENCE_CONFLICT", repair_cause: "EVIDENCE_CONFLICT",
+    observed_facts: "两个来源对 MySQL JSON 列能否直接建索引的说法相反",
+    affected_cells: ["MySQL 8.4 · JSON 索引类型"], strategy: "COUNTER_EVIDENCE", query_count: 3, created_at: "2026-10-10T08:12:00Z"
+  },
+  {
+    plan_revision_from: 2, plan_revision_to: 3, deviation_type: "MARGINAL_GAIN_EXHAUSTED", repair_cause: "MARGINAL_GAIN_EXHAUSTED",
+    observed_facts: "连续两轮检索没有找到 MySQL 运算符相关的新证据",
+    affected_cells: ["MySQL 8.4 · 可加速的查询运算符"], strategy: "SWITCH_LANGUAGE", query_count: 2, created_at: "2026-10-10T08:15:00Z"
+  }
+];
+
+const counterCheckFixtures: ResearchCounterCheck[] = [
+  {
+    cell_key: "entity-mysql:dim-index-types", entity_label: "MySQL 8.4", column_label: "JSON 索引类型",
+    claim_text: "JSON 列不能直接建索引", verdict: "NOT_REFUTED", counter_query_count: 2, refuting_evidence_keys: [],
+    checked_at: "2026-10-10T08:13:00Z"
+  },
+  {
+    cell_key: "entity-mysql:dim-index-types", entity_label: "MySQL 8.4", column_label: "JSON 索引类型",
+    claim_text: "JSON 列不能建任何索引", verdict: "REFUTED", counter_query_count: 2, refuting_evidence_keys: ["ev-my-1"],
+    checked_at: "2026-10-10T08:13:30Z"
+  },
+  {
+    cell_key: "entity-postgresql:dim-index-types", entity_label: "PostgreSQL 17", column_label: "JSON 索引类型",
+    claim_text: "jsonb_path_ops 只支持 @>、@?、@@", verdict: "NO_COUNTER_EVIDENCE_FOUND", counter_query_count: 1,
+    refuting_evidence_keys: [], checked_at: "2026-10-10T08:14:00Z"
+  }
+];
+
+const discoveryFixtures: ResearchDiscoveryProposal[] = [
+  {
+    proposal_type: "DIMENSION", label: "部分更新是否重写整行", rationale: "多篇对比文章把 JSON 部分更新的写放大作为选型因素",
+    confidence_ppm: 780000, supporting_domain_count: 3, status: "ACCEPTED"
+  },
+  {
+    proposal_type: "ENTITY", label: "MariaDB 11", rationale: "检索结果中频繁与 MySQL 一同出现",
+    confidence_ppm: 410000, supporting_domain_count: 2, status: "SHADOW"
+  },
+  {
+    proposal_type: "SEARCH_QUERY", label: "mysql multi-valued index json_contains explain", rationale: "补充运算符是否走索引的证据",
+    confidence_ppm: 650000, supporting_domain_count: 1, status: "REJECTED"
+  }
+];
+
+export const researchInsights = {
+  cells(runId: string): ResearchCell[] {
+    return runId === runningRun.research_run_id ? cellFixtures.filter((cell) => cell.cell_status !== "VERIFIED") : cellFixtures;
+  },
+  replans(runId: string): ResearchReplan[] {
+    return runId === runningRun.research_run_id ? replanFixtures.slice(0, 1) : replanFixtures;
+  },
+  counterChecks(runId: string): ResearchCounterCheck[] {
+    return runId === runningRun.research_run_id ? [] : counterCheckFixtures;
+  },
+  discoveryProposals(_runId: string): ResearchDiscoveryProposal[] {
+    return discoveryFixtures;
   }
 };

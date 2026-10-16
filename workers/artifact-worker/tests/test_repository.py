@@ -71,7 +71,7 @@ def test_artifact_commit_should_persist_version_and_retrieval_entry() -> None:
     assert version_detail["runtime_trace"]["verification"]["status"] == "PASS"
     assert len(version_detail["runtime_trace"]["node_traces"]) == 4
     assert version_detail["runtime_trace"]["node_traces"][0]["skill_key"] == "workspace_material_digest"
-    assert "source trace captured for digested materials" in version_detail["runtime_trace"]["node_traces"][0]["verification_checks"]
+    assert version_detail["runtime_trace"]["node_traces"][0]["node_kind"] == "RETRIEVE"
     assert version_detail["runtime_trace"]["node_traces"] == result.result_payload["node_traces"]
     assert version_detail["runtime_trace"]["verification"] == result.result_payload["verification"]
     assert (

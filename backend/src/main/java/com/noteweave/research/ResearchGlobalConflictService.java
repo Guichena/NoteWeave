@@ -122,6 +122,9 @@ class ResearchGlobalConflictService {
             boolean resolved = finding == null || resolutionPolicy.isResolved(facts, finding);
             String traceStatus = currentTraceStatus(runId, cell.cellKey());
             if (resolved) {
+                Integer semantic = jdbcTemplate.queryForObject("select count(*) from research_verifier_decision where research_run_id = ? and target_id = ? and decision_type = 'GLOBAL_CONFLICT' and reason_code = 'SEMANTIC_CONTRADICTION' and decision_status in ('OPEN','EXHAUSTED')",
+                        Integer.class, runId, cell.cellKey());
+                if (semantic != null && semantic > 0) { conflicts++; continue; }
                 resolveConflict(runId, cell, traceStatus);
             } else {
                 conflicts++;
@@ -186,7 +189,7 @@ class ResearchGlobalConflictService {
         List<String> statuses = jdbcTemplate.queryForList("""
                 select decision_status from research_verifier_decision
                 where research_run_id = ? and decision_scope = 'CELL' and decision_type = ?
-                  and target_id = ?
+                  and target_id = ? and reason_code <> 'SEMANTIC_CONTRADICTION'
                 """, String.class, runId, CONFLICT_DECISION_TYPE, cellKey);
         if (statuses.isEmpty()) return null;
         if (statuses.contains(TRACE_EXHAUSTED)) return TRACE_EXHAUSTED;
@@ -228,7 +231,7 @@ class ResearchGlobalConflictService {
             jdbcTemplate.update("""
                     update research_verifier_decision set decision_status = 'OPEN'
                     where research_run_id = ? and decision_scope = 'CELL' and decision_type = ?
-                      and target_id = ? and decision_status = 'RESOLVED'
+                      and target_id = ? and decision_status = 'RESOLVED' and reason_code <> 'SEMANTIC_CONTRADICTION'
                     """, runId, CONFLICT_DECISION_TYPE, cell.cellKey());
         }
         // Make the conflict explicit at the cell layer. The previous candidate_value is deliberately
@@ -250,7 +253,7 @@ class ResearchGlobalConflictService {
             jdbcTemplate.update("""
                     update research_verifier_decision set decision_status = 'RESOLVED'
                     where research_run_id = ? and decision_scope = 'CELL' and decision_type = ?
-                      and target_id = ? and decision_status in ('OPEN', 'EXHAUSTED')
+                      and target_id = ? and decision_status in ('OPEN', 'EXHAUSTED') and reason_code <> 'SEMANTIC_CONTRADICTION'
                     """, runId, CONFLICT_DECISION_TYPE, cell.cellKey());
         }
         if (CONFLICTED_CELL_STATUS.equals(cell.status())

@@ -5,8 +5,12 @@ import com.noteweave.answer.strategy.EvidenceBundleSnapshot;
 import com.noteweave.answer.strategy.RetrievalExecutionTrace;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.common.BusinessException;
+import com.noteweave.memory.MemoryReferenceResponse;
+import com.noteweave.retrieval.QueryRewrite;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.security.AuditActorProvider;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -123,7 +127,8 @@ public class AnswerRunService {
             String model,
             EvidenceBundle evidenceBundle,
             String promptVersion,
-            int maximumOutputTokens
+            int maximumOutputTokens,
+            String evidenceSufficiency
     ) {
         String actor = actor();
         EvidenceBundleSnapshot bundleSnapshot = EvidenceBundleSnapshot.from(evidenceBundle);
@@ -131,11 +136,13 @@ public class AnswerRunService {
         int updated = jdbcTemplate.update("""
                 update answer_run
                 set answer_message_id = ?, assistant_request_id = ?, model = ?,
-                    maximum_output_tokens = ?, evidence_bundle_json = ?, status = 'GENERATING',
+                    maximum_output_tokens = ?, evidence_bundle_json = ?, evidence_sufficiency = ?,
+                    status = 'GENERATING',
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'RETRIEVING'
                 """, answerMessageId, assistantRequestId, model,
                 maximumOutputTokens, Json.write(objectMapper, bundleSnapshot),
+                EvidenceSufficiency.canonical(evidenceSufficiency),
                 actor, workspaceId, runId);
         requireTransition(updated, runId, "GENERATING");
         jdbcTemplate.update("""
@@ -408,8 +415,8 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json,
+                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
+                       r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status, mr.content
@@ -429,7 +436,7 @@ public class AnswerRunService {
         List<AnswerEvidenceManifestResponse.Evidence> evidence = jdbcTemplate.query("""
                 select rank_no, evidence_id, evidence_kind, source_id, source_snapshot_id, passage_id,
                        knowledge_item_id, knowledge_version_id, title, excerpt, content_hash,
-                       location_info, fresh_at, character_cost
+                       location_info, fresh_at, character_cost, graph_path_json, text_origin, ocr_confidence
                 from answer_run_evidence_manifest
                 where workspace_id = ? and answer_run_id = ?
                 order by rank_no asc
@@ -439,9 +446,69 @@ public class AnswerRunService {
                 rs.getString("knowledge_item_id"), rs.getString("knowledge_version_id"), rs.getString("title"),
                 rs.getString("excerpt"), rs.getString("content_hash"), rs.getString("location_info"),
                 rs.getTimestamp("fresh_at") == null ? null : rs.getTimestamp("fresh_at").toInstant(),
-                rs.getInt("character_cost")
+                rs.getInt("character_cost"),
+                graphPath(rs.getString("graph_path_json")), rs.getString("text_origin"),
+                rs.getObject("ocr_confidence", Double.class)
         ), workspaceId, runId);
-        return new AnswerEvidenceManifestResponse(runId, evidence);
+        record StoredPlan(String planJson, String evidenceSufficiency) {
+        }
+        StoredPlan storedPlan = jdbcTemplate.query("""
+                select retrieval_plan_json, evidence_sufficiency from answer_run
+                where workspace_id = ? and id = ?
+                """, rs -> rs.next()
+                ? new StoredPlan(rs.getString("retrieval_plan_json"), rs.getString("evidence_sufficiency"))
+                : new StoredPlan(null, null), workspaceId, runId);
+        return new AnswerEvidenceManifestResponse(
+                runId,
+                evidence,
+                QueryRewrite.viewFromPlanJson(storedPlan.planJson()),
+                compiledMemoryReferences(workspaceId, runId),
+                storedPlan.evidenceSufficiency());
+    }
+
+    /** 从这次回答的输入快照读出实际编入的记忆。回放被降级时不带出展示文本。 */
+    private List<MemoryReferenceResponse> compiledMemoryReferences(String workspaceId, String runId) {
+        record SnapshotMemory(String json, String availability) {
+        }
+        SnapshotMemory row = jdbcTemplate.query("""
+                select snapshot_json, replay_availability
+                from run_input_snapshot
+                where workspace_id = ? and answer_run_id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                return null;
+            }
+            return new SnapshotMemory(rs.getString("snapshot_json"), rs.getString("replay_availability"));
+        }, workspaceId, runId);
+        if (row == null || row.json() == null || row.json().isBlank()) {
+            return List.of();
+        }
+        try {
+            JsonNode refs = objectMapper.readTree(row.json()).path("memory_revision_refs");
+            if (!refs.isArray()) {
+                return List.of();
+            }
+            List<MemoryReferenceResponse> parsed = objectMapper.convertValue(
+                    refs, new TypeReference<List<MemoryReferenceResponse>>() {
+                    });
+            if ("FULL".equals(row.availability())) {
+                return parsed;
+            }
+            return parsed.stream()
+                    .map(reference -> new MemoryReferenceResponse(
+                            reference.memoryObjectId(),
+                            reference.memoryVersionId(),
+                            reference.utilityScore(),
+                            reference.scopePriority(),
+                            reference.neighborhoodPriority(),
+                            reference.selectionReason(),
+                            reference.memoryClass(),
+                            reference.relevance(),
+                            null))
+                    .toList();
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new IllegalStateException("回答快照中的记忆引用无法读取", ex);
+        }
     }
 
     public List<AnswerRunResponse> listConversationRuns(
@@ -452,8 +519,8 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json,
+                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
+                       r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status, mr.content
@@ -543,19 +610,48 @@ public class AnswerRunService {
         for (int index = 0; index < bundle.evidence().size(); index++) {
             EvidenceBundle.Evidence item = bundle.evidence().get(index);
             String excerpt = item.excerpt() == null ? "" : item.excerpt();
+            PassageTextSource source = passageTextSource(workspaceId, item);
             jdbcTemplate.update("""
                     insert into answer_run_evidence_manifest(
                         id, workspace_id, answer_run_id, rank_no, evidence_id, evidence_kind,
                         source_id, source_snapshot_id, passage_id, knowledge_item_id, knowledge_version_id,
-                        title, excerpt, content_hash, location_info, fresh_at, character_cost
-                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        title, excerpt, content_hash, location_info, fresh_at, character_cost, graph_path_json,
+                        text_origin, ocr_confidence
+                    ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, Ids.newId(), workspaceId, runId, index + 1, item.evidenceId(), item.kind(),
                     blank(item.sourceId()), blank(item.sourceSnapshotId()), blank(item.passageId()),
                     blank(item.knowledgeItemId()), blank(item.knowledgeVersionId()), blank(item.title()), excerpt,
                     sha256(excerpt), blank(item.location()),
-                    item.freshAt() == null ? null : Timestamp.from(item.freshAt()), item.characterCost());
+                    item.freshAt() == null ? null : Timestamp.from(item.freshAt()), item.characterCost(),
+                    blank(item.metadata().get("graph_path")), source.origin(), source.confidence());
         }
     }
+
+    private PassageTextSource passageTextSource(String workspaceId, EvidenceBundle.Evidence evidence) {
+        if (!"PASSAGE".equals(evidence.kind()) || blank(evidence.passageId()) == null
+                || blank(evidence.sourceId()) == null || blank(evidence.sourceSnapshotId()) == null) {
+            return new PassageTextSource(null, null);
+        }
+        // 不信任检索附带的同名 metadata；按完整冻结身份读取实际片段，并复制到回答自己的清单。
+        List<PassageTextSource> rows = jdbcTemplate.query("""
+                select text_origin, ocr_confidence from source_chunk
+                where workspace_id = ? and source_id = ? and source_snapshot_id = ? and id = ?
+                """, (rs, row) -> new PassageTextSource(rs.getString("text_origin"),
+                        rs.getObject("ocr_confidence", Double.class)), workspaceId, evidence.sourceId(),
+                evidence.sourceSnapshotId(), evidence.passageId());
+        if (rows.size() != 1 || !("TEXT_LAYER".equals(rows.get(0).origin()) || "OCR".equals(rows.get(0).origin()))) {
+            return new PassageTextSource(null, null);
+        }
+        PassageTextSource source = rows.get(0);
+        Double confidence = source.confidence();
+        if (!"OCR".equals(source.origin()) || confidence == null || !Double.isFinite(confidence)
+                || confidence < 0 || confidence > 1) {
+            confidence = null;
+        }
+        return new PassageTextSource(source.origin(), confidence);
+    }
+
+    private record PassageTextSource(String origin, Double confidence) {}
 
     private String sha256(String value) {
         try {
@@ -563,6 +659,19 @@ public class AnswerRunService {
                     .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
+    private List<String> graphPath(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            List<String> path = objectMapper.readValue(json, new TypeReference<List<String>>() {
+            });
+            return path == null || path.isEmpty() ? null : List.copyOf(path);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            return null;
         }
     }
 
@@ -642,7 +751,9 @@ public class AnswerRunService {
                 (Integer) rs.getObject("revision_no"), text(rs.getString("revision_status")),
                 text(rs.getString("content")), instant(rs.getTimestamp("started_at")),
                 instant(rs.getTimestamp("first_token_at")), instant(rs.getTimestamp("finished_at")),
-                text(rs.getString("error_code")), text(rs.getString("error_message"))
+                text(rs.getString("error_code")), text(rs.getString("error_message")),
+                QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json")),
+                rs.getString("evidence_sufficiency")
         );
     }
 

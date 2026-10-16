@@ -29,7 +29,7 @@ class QaAnswerPipelineContractTest {
         QaPassageRetriever passageRetriever = mock(QaPassageRetriever.class);
         when(passageRetriever.retrieveWithDiagnostics(
                 "workspace", "query", Set.of("source"),
-                QaRetrievalStrategyProfile.V2))
+                QaRetrievalStrategyProfile.CURRENT))
                 .thenReturn(new RetrievalResult(
                         List.of(chunk("selected", 9), chunk("excluded", 7)),
                         false,
@@ -66,9 +66,9 @@ class QaAnswerPipelineContractTest {
         assertThat(bundle.evidence()).extracting(evidence -> evidence.evidenceId())
                 .containsExactly("passage:selected", "passage:excluded");
         assertThat(bundle.metadata())
-                .containsEntry("strategy_profile", "qa-weknora-hybrid-v1")
+                .containsEntry("strategy_profile", "qa-hybrid-mmr-token-v3")
                 .containsEntry("relevance_policy", "qa-lexical-sufficiency-v2")
-                .containsEntry("selection_policy", "qa-source-diverse-budget-v2");
+                .containsEntry("selection_policy", "qa-mmr-token-budget-v3");
         assertThat(prompt.referencedEvidenceIds())
                 .containsExactlyElementsOf(bundle.evidence().stream()
                         .map(evidence -> evidence.evidenceId())

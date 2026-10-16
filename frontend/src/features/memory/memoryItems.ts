@@ -130,7 +130,7 @@ export function memoryActions(item: MemoryItem): MemoryAction[] {
       { decision: "REVOKE", label: "停用", tone: "danger" }
     ];
   }
-  if (item.conflict_status === "CONFLICTING_ACTIVE_MEMORY") {
+  if (item.conflict_status === "CONFLICTING_ACTIVE_MEMORY" || describeConflict(item)?.blocking) {
     return [
       { decision: "REPLACE_EXISTING", label: "替换原有记忆", tone: "primary" },
       { decision: "REJECT", label: "保留原有记忆", tone: "secondary" }
@@ -144,4 +144,43 @@ export function memoryActions(item: MemoryItem): MemoryAction[] {
 
 export function formatScore(value: number) {
   return Number.isFinite(value) ? value.toFixed(2) : "0.00";
+}
+
+const CONFLICT_LABELS: Record<string, string> = {
+  SLOT_VALUE: "同一设置项取值不同",
+  POLARITY: "要求相反",
+  SEMANTIC: "意思矛盾"
+};
+
+export type MemoryConflictView = {
+  /** 确实存在冲突，需要在替换和保留之间选择。 */
+  blocking: boolean;
+  label: string;
+  conflictingText: string;
+};
+
+/** 待确认项的冲突说明；没有冲突时返回 null。冲突检查未执行时提示人工确认。 */
+export function describeConflict(item: Pick<MemoryItem, "conflict">): MemoryConflictView | null {
+  const conflict = item.conflict;
+  if (!conflict || conflict.type === "NONE") return null;
+  if (conflict.type === "CHECK_NOT_RUN") {
+    return { blocking: false, label: "冲突检查未执行", conflictingText: "" };
+  }
+  return {
+    blocking: true,
+    label: CONFLICT_LABELS[conflict.type] ?? "与现有记忆冲突",
+    conflictingText: conflict.conflicting_text ?? ""
+  };
+}
+
+/** 生效记忆的可信程度：置信度和被等价信号强化的次数。 */
+export function describeConfidence(item: Pick<MemoryItem, "confidence" | "reinforcement_count">) {
+  const parts: string[] = [];
+  if (item.confidence && Number.isFinite(item.confidence.mean)) {
+    parts.push(`置信度 ${Math.round(item.confidence.mean * 100)}%`);
+  }
+  if (item.reinforcement_count && item.reinforcement_count > 0) {
+    parts.push(`强化 ${item.reinforcement_count} 次`);
+  }
+  return parts.join(" · ");
 }

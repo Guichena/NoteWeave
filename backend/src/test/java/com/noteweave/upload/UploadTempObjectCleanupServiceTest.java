@@ -1,7 +1,5 @@
 package com.noteweave.upload;
 
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -19,8 +17,10 @@ class UploadTempObjectCleanupServiceTest {
     void successfulObjectCleanupRemovesChunkRows() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObjectStorage storage = mock(ObjectStorage.class);
-        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("upload-1")))
+        when(jdbcTemplate.queryForList("select object_key from upload_chunk where upload_id = ?", String.class, "upload-1"))
                 .thenReturn(List.of("workspace/ws/upload_tmp/upload-1/0"));
+        when(jdbcTemplate.queryForList("select workspace_id from document_upload where id = ?", String.class, "upload-1"))
+                .thenReturn(List.of("ws"));
 
         UploadTempObjectCleanupService service = new UploadTempObjectCleanupService(
                 jdbcTemplate, storage, 86400);
@@ -28,6 +28,7 @@ class UploadTempObjectCleanupServiceTest {
         service.cleanupAfterCommit("upload-1");
 
         verify(storage).delete("noteweave-source", "workspace/ws/upload_tmp/upload-1/0");
+        verify(storage).delete("noteweave-source", "workspace/ws/upload_tmp/upload-1/merged");
         verify(jdbcTemplate).update("delete from upload_chunk where upload_id = ?", "upload-1");
     }
 
@@ -35,7 +36,7 @@ class UploadTempObjectCleanupServiceTest {
     void failedObjectCleanupKeepsChunkRowsForRetry() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         ObjectStorage storage = mock(ObjectStorage.class);
-        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("upload-1")))
+        when(jdbcTemplate.queryForList("select object_key from upload_chunk where upload_id = ?", String.class, "upload-1"))
                 .thenReturn(List.of("workspace/ws/upload_tmp/upload-1/0"));
         doThrow(new IllegalStateException("storage unavailable"))
                 .when(storage).delete("noteweave-source", "workspace/ws/upload_tmp/upload-1/0");
@@ -45,6 +46,21 @@ class UploadTempObjectCleanupServiceTest {
 
         service.cleanupAfterCommit("upload-1");
 
+        verify(jdbcTemplate, never()).update("delete from upload_chunk where upload_id = ?", "upload-1");
+    }
+
+    @Test
+    void failedMergedObjectCleanupKeepsChunkRowsForRetry() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(jdbcTemplate.queryForList("select object_key from upload_chunk where upload_id = ?", String.class, "upload-1"))
+                .thenReturn(List.of("workspace/ws/upload_tmp/upload-1/0"));
+        when(jdbcTemplate.queryForList("select workspace_id from document_upload where id = ?", String.class, "upload-1"))
+                .thenReturn(List.of("ws"));
+        doThrow(new IllegalStateException("合成对象清理失败"))
+                .when(storage).delete("noteweave-source", "workspace/ws/upload_tmp/upload-1/merged");
+        new UploadTempObjectCleanupService(jdbcTemplate, storage, 86400).cleanupAfterCommit("upload-1");
+        verify(storage).delete("noteweave-source", "workspace/ws/upload_tmp/upload-1/0");
         verify(jdbcTemplate, never()).update("delete from upload_chunk where upload_id = ?", "upload-1");
     }
 }

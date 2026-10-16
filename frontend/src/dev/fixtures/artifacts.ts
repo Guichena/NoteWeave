@@ -230,6 +230,20 @@ function file(id: string, format: string, name: string, mediaType: string, size:
   };
 }
 
+// 4D 校验结果示例：报告第 3 版经过一轮修复，一个章节只有部分依据。
+const reportVerification: ArtifactVersionDetail["verification"] = {
+  contract_status: "PASS",
+  repair_rounds: [{ round: 1, failed_checks: ["表格列不完整", "小结缺少引用"], repaired_sections: ["对比表", "小结"] }],
+  citation_recall: 0.92,
+  citation_precision: 0.88,
+  sections: [
+    { heading: "结论", support: "SUPPORTED" },
+    { heading: "检索链路", support: "SUPPORTED" },
+    { heading: "对比表", support: "SUPPORTED" },
+    { heading: "小结", support: "PARTIAL" }
+  ]
+};
+
 export const versionDetails: Record<string, ArtifactVersionDetail> = Object.fromEntries([
   version("job-report", "report_draft", 3, "RAG 检索链路综合报告", reportV3, trace({
     verification: "PASS", passed: 12, repaired: ["补齐表格列", "统一术语写法"], sections: 4, covered: 4, missing: [],
@@ -260,7 +274,8 @@ export const versionDetails: Record<string, ArtifactVersionDetail> = Object.from
     file("file-bili-pdf", "PDF", "es-chinese-analyzer.pdf", "application/pdf", 1_842_331),
     file("file-bili-md", "MARKDOWN", "es-chinese-analyzer.md", "text/markdown", 4_812)
   ])
-].map((detail) => [`${detail.artifact_job_id}:${detail.version_no}`, detail]));
+].map((detail) => (detail.version_id === "job-report-v3" ? { ...detail, verification: reportVerification } : detail))
+  .map((detail) => [`${detail.artifact_job_id}:${detail.version_no}`, detail]));
 
 export function versionList(jobId: string): ArtifactVersionSummary[] {
   return Object.values(versionDetails)

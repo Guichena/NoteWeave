@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 
 import pytest
@@ -282,9 +283,10 @@ def test_injection_budget_exhausted_stops_growing_external_calls() -> None:
 
     # 预算恰好被耗尽，之后外部调用计数不再增长
     assert result.external_recovery_call_count == budget.remaining_llm
-    assert rounds_with_calls == [1, 2]
-    assert per_round[1] == len(result.artifacts.ledger.cells)
-    assert per_round[2] == 1
+    cell_count = len(result.artifacts.ledger.cells)
+    assert rounds_with_calls == list(range(1, math.ceil(budget.remaining_llm / cell_count) + 1))
+    assert per_round[1] == cell_count
+    assert per_round[rounds_with_calls[-1]] == (budget.remaining_llm - 1) % cell_count + 1
     assert per_round.get(last_round, 0) == 0
     assert last_round > rounds_with_calls[-1]
     # 有界且不超过明确上界

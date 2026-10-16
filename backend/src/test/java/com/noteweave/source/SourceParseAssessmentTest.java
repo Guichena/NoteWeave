@@ -40,6 +40,7 @@ class SourceParseAssessmentTest {
                 create table source_snapshot (
                     id varchar(64) primary key,
                     source_id varchar(64) not null,
+                    version_no int default 1 not null,
                     parse_status varchar(32) not null,
                     index_status varchar(32),
                     processing_stage varchar(32), index_attempt_count int default 0 not null,
@@ -88,6 +89,16 @@ class SourceParseAssessmentTest {
 
         assertThat(assessment().disposition())
                 .isEqualTo(SourceParseService.SourceParseDisposition.ALREADY_HANDLED);
+    }
+
+    @Test
+    void oldPendingSnapshotShouldNotReprocessTheCurrentSource() {
+        insertSource("PROCESSING", "PENDING");
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, version_no, parse_status)
+                values ('snapshot-2', 'source-1', 2, 'PENDING')
+                """);
+        assertThat(assessment().disposition()).isEqualTo(SourceParseService.SourceParseDisposition.ALREADY_HANDLED);
     }
 
     @Test

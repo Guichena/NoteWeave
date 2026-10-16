@@ -27,10 +27,26 @@ public interface QaHybridSearchPort {
             String query,
             Set<String> sourceScope,
             int topK,
-            double threshold
+            double threshold,
+            List<String> mustTerms,
+            List<String> titleTerms,
+            List<String> bodyTerms
     ) {
+        public QaKeywordQuery(
+                String workspaceId,
+                String query,
+                Set<String> sourceScope,
+                int topK,
+                double threshold
+        ) {
+            this(workspaceId, query, sourceScope, topK, threshold, List.of(), List.of(), List.of());
+        }
+
         public QaKeywordQuery {
             sourceScope = sourceScope == null ? Set.of() : Set.copyOf(sourceScope);
+            mustTerms = mustTerms == null ? List.of() : List.copyOf(mustTerms);
+            titleTerms = titleTerms == null ? List.of() : List.copyOf(titleTerms);
+            bodyTerms = bodyTerms == null ? List.of() : List.copyOf(bodyTerms);
         }
     }
 

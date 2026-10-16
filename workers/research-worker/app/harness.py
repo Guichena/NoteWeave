@@ -54,12 +54,13 @@ class ResearchHarness:
     def plan(
         self,
         task_input: ResearchTaskInput,
+        llm_client=None,
     ) -> tuple[ResearchPlan, list[ResearchStepTrace]]:
-        plan = build_research_plan(task_input)
+        plan = build_research_plan(task_input, llm_client=llm_client)
         return plan, [
             build_step_trace(
                 phase="PLANNING",
-                message="research plan compiled by rule-mode harness",
+                message="研究计划已生成，查询用途和降级原因已记录",
                 inputs={
                     "source_count": len(task_input.source_scope),
                     "profile_key": task_input.input_payload.profile_key,
@@ -77,6 +78,8 @@ class ResearchHarness:
                     "query_count": len(plan.query_set),
                     "report_sections": len(plan.report_sections),
                     "stop_contract_keys": sorted(plan.stop_contract.keys()),
+                    "query_planning_method": plan.stop_contract.get("query_planning_method"),
+                    "degradation_reasons": plan.stop_contract.get("degradation_reasons", []),
                 },
             )
         ]

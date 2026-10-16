@@ -57,21 +57,24 @@ class ResearchAgentConflictRepairService {
     /** Trace {@code decision_type} of the explicit exhaustion marker row. */
     static final String EXHAUSTED_DECISION_TYPE = "GLOBAL_CONFLICT_REPAIR_EXHAUSTED";
     /** External call dimensions reserved per conflict task by {@code deepCellBudget(1)}. */
-    static final long EXTERNAL_CALLS_PER_CONFLICT_TASK = 9L;
+    static final long EXTERNAL_CALLS_PER_CONFLICT_TASK = 63L;
     private static final Set<String> EXTERNAL_CALL_KEYS = Set.of("search_calls", "fetch_calls", "read_calls");
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ResearchAgentTaskCoordinatorService coordinator;
+    private final ResearchAgentLocalReplanRecorder localReplans;
 
     ResearchAgentConflictRepairService(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ResearchAgentTaskCoordinatorService coordinator
+            ResearchAgentTaskCoordinatorService coordinator,
+            ResearchAgentLocalReplanRecorder localReplans
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.coordinator = coordinator;
+        this.localReplans = localReplans;
     }
 
     /**
@@ -117,6 +120,10 @@ class ResearchAgentConflictRepairService {
         List<String> excluded = sourceIds(runId, evidenceKeys);
         int wave = integer("select coalesce(max(wave_no), 1) from research_agent_task where research_run_id = ?", runId);
         int checkpoint = integer("select coalesce(max(checkpoint_seq), 0) from research_agent_checkpoint where research_run_id = ?", runId);
+        int revision = jdbcTemplate.queryForObject("select plan_revision from research_cell where research_run_id = ? and cell_key = ?", Integer.class, runId, cell.cellKey());
+        String digest = reasonDigest(cell.cellKey(), trace.id(), evidenceKeys);
+        localReplans.record(runId, revision, digest, "EVIDENCE_CONFLICT",
+                List.of(new ResearchAgentRepairStopPolicy.RepairTarget(cell.cellKey(), digest, excluded)));
         coordinator.planCounterfactualRepairs(new ResearchAgentTaskCoordinatorService.CounterfactualRepairCommand(
                 runId, checkpoint, Math.max(1, wave + 1),
                 List.of(new ResearchAgentTaskCoordinatorService.CounterfactualTarget(

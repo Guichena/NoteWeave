@@ -20,13 +20,13 @@ public class ResearchAgentCoordinatorSnapshotService {
                 rs -> rs.next() ? rs.getString(1) : null, runId);
         if (!"INCREMENTAL_V1".equals(mode)) throw new BusinessException("RESEARCH_AGENT_COORDINATOR_SNAPSHOT_INVALID", "Snapshot requires an incremental run");
         Integer checkpoint = jdbcTemplate.queryForObject("select coalesce(max(checkpoint_seq), 0) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId);
-        Integer wave = jdbcTemplate.queryForObject("select coalesce(max(wave_no), 1) from research_agent_task where research_run_id = ?", Integer.class, runId);
-        Long taskCount = jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Long.class, runId);
-        Long active = jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and status in ('PENDING','CLAIMED','RUNNING','RETRY_WAIT','EXPIRED')", Long.class, runId);
+        Integer wave = jdbcTemplate.queryForObject("select coalesce(max(wave_no), 1) from research_agent_task where research_run_id = ? and role <> 'PLANNING'", Integer.class, runId);
+        Long taskCount = jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role <> 'PLANNING'", Long.class, runId);
+        Long active = jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role <> 'PLANNING' and status in ('PENDING','CLAIMED','RUNNING','RETRY_WAIT','EXPIRED')", Long.class, runId);
         int currentWave = wave == null ? 1 : wave;
         Long failed = jdbcTemplate.queryForObject("""
                 select count(*) from research_agent_task
-                where research_run_id = ? and wave_no = ? and status = 'FAILED'
+                where research_run_id = ? and wave_no = ? and status = 'FAILED' and role <> 'PLANNING'
                 """, Long.class, runId, currentWave);
         Long verifierRepairs = jdbcTemplate.queryForObject("""
                 select count(*)
@@ -44,11 +44,13 @@ public class ResearchAgentCoordinatorSnapshotService {
                 select count(*) from research_cell
                 where research_run_id = ? and cell_status = 'VERIFIED'
                   and evidence_refs_json is not null and evidence_refs_json <> '[]'
+                  and semantic_audit_status in ('NOT_REQUIRED','PASS')
                 """, Long.class, runId);
         Long nonFinalizableCells = jdbcTemplate.queryForObject("""
                 select count(*) from research_cell
                 where research_run_id = ?
-                  and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]')
+                  and (cell_status <> 'VERIFIED' or evidence_refs_json is null or evidence_refs_json = '[]'
+                       or semantic_audit_status not in ('NOT_REQUIRED','PASS'))
                 """, Long.class, runId);
         return new Snapshot(runId, checkpoint == null ? 0 : checkpoint, wave == null ? 1 : wave,
                 taskCount == null ? 0 : taskCount, active == null ? 0 : active, failed == null ? 0 : failed,

@@ -38,6 +38,7 @@ def _build_task_input() -> ResearchTaskInput:
             },
             "input_payload": {
                 "question": "How should synthesis use evidence?",
+                "research_intent": {"research_type": "PRODUCT_COMPARISON"},
                 "profile_key": "DEFAULT",
             },
         }
@@ -463,7 +464,7 @@ def test_local_verifier_should_warn_when_extract_again_has_no_gain() -> None:
     )
 
 
-def test_local_verifier_should_acknowledge_counterfactual_recheck_signal() -> None:
+def test_local_verifier_should_reject_counterfactual_angle_without_execution() -> None:
     task_input, plan, search_hits, read_windows = _read_windows()
     plan.stop_contract["recovery_mode"] = "COUNTERFACTUAL_RECHECK"
     read_windows[0] = read_windows[0].model_copy(
@@ -478,7 +479,8 @@ def test_local_verifier_should_acknowledge_counterfactual_recheck_signal() -> No
 
     result = run_local_verifier(task_input, plan, ledger, search_hits, read_windows, cards)
 
-    assert "counterfactual recovery produced verifier-visible conflict evidence" in result.passed_checks
+    assert "反证未完成，结论不能通过正式成文校验" in result.warnings
+    assert any(d.reason_code == "COUNTERFACTUAL_NOT_RUN" for d in result.decision_records)
 
 
 def test_state_ledger_should_materialize_cells_and_dual_verifier_decisions() -> None:

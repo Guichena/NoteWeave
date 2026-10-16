@@ -15,6 +15,11 @@ export type SourceUploadItem = {
   totalChunks: number;
   state: "uploading" | "failed";
   error: string;
+  /** 先在后台计算文件指纹（用于秒传与续传），再上传分片。 */
+  phase: "hashing" | "uploading";
+  hashedBytes: number;
+  /** 续传时服务端已收到、本次跳过的分片数。 */
+  resumedChunks: number;
 };
 
 const UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
@@ -110,14 +115,21 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
       uploadedChunks: 0,
       totalChunks: Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_BYTES)),
       state: "uploading",
-      error: ""
+      error: "",
+      phase: "hashing",
+      hashedBytes: 0,
+      resumedChunks: 0
     }]);
     await run(`上传资料《${file.name}》`, async () => {
       try {
         const completed = await sourcesApi.uploadFile(workspace.workspace_id, file, (progress) => updateUpload(id, progress));
         dismissUpload(id);
         await refreshUploadedSource(completed.task_id);
-        setStatus(`《${file.name}》已加入当前工作台，解析与索引状态将持续更新`);
+        setStatus(completed.instant
+          ? `《${file.name}》与已有文件相同，已直接加入当前工作台`
+          : completed.resumed_chunks > 0
+            ? `《${file.name}》已从中断处续传完成，解析与索引状态将持续更新`
+            : `《${file.name}》已加入当前工作台，解析与索引状态将持续更新`);
       } catch (error) {
         updateUpload(id, { state: "failed", error: error instanceof Error ? error.message : "上传失败" });
         throw error;
@@ -127,9 +139,12 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
 
   async function refreshUploadedSource(taskId: string) {
     if (!workspace) return;
-    await loadExecution(taskId);
+    // 秒传命中的资料可能已经处理完成，没有新的处理任务
+    if (taskId) {
+      await loadExecution(taskId);
+      setLatestTaskId(taskId);
+    }
     const nextSources = await sourcesApi.list(workspace.workspace_id);
-    setLatestTaskId(taskId);
     await refreshWikiHome();
     setSources(nextSources);
   }

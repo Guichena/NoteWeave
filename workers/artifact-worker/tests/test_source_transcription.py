@@ -14,8 +14,11 @@ from app.source_transcription import (
 
 @pytest.fixture()
 def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    source_transcription.shutdown_source_transcriptions()
     monkeypatch.setattr(source_transcription, "_sandbox_root", lambda: tmp_path)
-    return tmp_path
+    source_transcription.start_source_transcription_pool()
+    yield tmp_path
+    source_transcription.shutdown_source_transcriptions()
 
 
 def _job(sandbox: Path) -> TranscriptionJob:
@@ -89,7 +92,7 @@ def test_failed_transcription_still_calls_back_so_the_source_does_not_hang(sandb
 
 
 def test_submission_rejects_unsupported_media_and_bad_identifiers(sandbox: Path) -> None:
-    with pytest.raises(ValueError, match="unsupported media type"):
+    with pytest.raises(ValueError, match="不支持的媒体类型"):
         accept_source_transcription(workspace_id="workspace-00000001", source_id="source-00000001",
                                     snapshot_id="snapshot-00000001", file_name="a.pdf",
                                     mime_type="application/pdf", content=b"%PDF")
@@ -122,12 +125,15 @@ def test_unfinished_transcriptions_are_resumed_after_a_worker_restart(
                                 mime_type="audio/wav", content=b"RIFF....WAVE", run_async=False)
     started.clear()
     # 模拟重启：线程记录清空，但沙箱里的原件和任务信息还在
-    source_transcription._running.clear()
+    source_transcription.shutdown_source_transcriptions()
+    checkpoint = sandbox / "inputs" / "source-transcriptions" / "snapshot-00000003" / "job.json"
+    meta = json.loads(checkpoint.read_text(encoding="utf-8"))
+    meta["next_attempt_at"] = 0
+    checkpoint.write_text(json.dumps(meta), encoding="utf-8")
     (sandbox / "inputs" / "source-transcriptions" / "broken").mkdir(parents=True)
 
     recovered = source_transcription.recover_source_transcriptions()
-    for thread in list(source_transcription._running.values()):
-        thread.join(timeout=5)
+    assert source_transcription.wait_for_source_transcriptions(timeout=5)
 
     assert recovered == ["snapshot-00000003"]
     assert [job.snapshot_id for job in started] == ["snapshot-00000003"]

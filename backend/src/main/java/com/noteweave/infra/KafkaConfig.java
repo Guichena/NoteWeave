@@ -2,6 +2,7 @@ package com.noteweave.infra;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Properties;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -19,6 +20,8 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.noteweave.config.NoteWeaveProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -55,6 +58,15 @@ public class KafkaConfig {
 
     @Value("${spring.kafka.consumer.group-id:noteweave-backend}")
     private String groupId;
+
+    @Value("${noteweave.kafka.instance-id:${HOSTNAME:noteweave-backend-local}}")
+    private String instanceId = "noteweave-backend-local";
+
+    @Value("${noteweave.kafka.max-poll-interval-ms:1800000}")
+    private int maxPollIntervalMs = 1_800_000;
+
+    @Autowired(required = false)
+    private NoteWeaveProperties pipelineProperties;
 
     @Value("${spring.kafka.properties.security.protocol:PLAINTEXT}")
     private String securityProtocol;
@@ -157,6 +169,8 @@ public class KafkaConfig {
         configs.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         configs.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         configs.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
+        configs.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1);
+        configs.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, effectiveMaxPollIntervalMs());
         applySecurity(configs);
         return new DefaultKafkaConsumerFactory<>(configs);
     }
@@ -188,6 +202,13 @@ public class KafkaConfig {
         ConcurrentKafkaListenerContainerFactory<String, String> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
+        factory.setContainerCustomizer(container -> {
+            Properties consumerProperties = new Properties();
+            consumerProperties.putAll(container.getContainerProperties().getKafkaConsumerProperties());
+            consumerProperties.setProperty(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG,
+                    staticMemberId(container.getListenerId()));
+            container.getContainerProperties().setKafkaConsumerProperties(consumerProperties);
+        });
         DeadLetterPublishingRecoverer publishingRecoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate,
                 (record, exception) -> new TopicPartition(record.topic() + ".DLT", -1)
@@ -216,6 +237,20 @@ public class KafkaConfig {
         });
         factory.setCommonErrorHandler(errorHandler);
         return factory;
+    }
+
+    /** 未执行真实 P99 评测前，至少覆盖两次上下文调用及批次向量请求的有限配置上界。 */
+    int effectiveMaxPollIntervalMs() {
+        return com.noteweave.source.SourcePipelineProcessingBudget.maxPollIntervalMs(
+                pipelineProperties, maxPollIntervalMs);
+    }
+    /** 每个稳定部署实例的 listener 独占成员 ID，避免同一消费组内相互替换。 */
+    String staticMemberId(String listenerId) {
+        if (instanceId == null || !instanceId.matches("[A-Za-z0-9._-]{1,160}")
+                || listenerId == null || !listenerId.matches("[A-Za-z0-9._-]{1,64}")) {
+            throw new IllegalArgumentException("Kafka 静态成员的实例与监听器 ID 必须稳定且格式有效");
+        }
+        return instanceId + "-" + listenerId;
     }
 
     private BackOff exponentialJitterBackOff() {

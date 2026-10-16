@@ -7,15 +7,15 @@ import org.junit.jupiter.api.Test;
 class MemoryConversationExtractionRulesTest {
 
     @Test
-    void onlyMessagesWithDurableCuesAreQueued() {
+    void messagesWithinLengthAreQueued() {
         assertThat(MemoryConversationExtractionService.shouldExtract("以后回答都用中文")).isTrue();
         assertThat(MemoryConversationExtractionService.shouldExtract("记住：引用放在段落末尾")).isTrue();
         assertThat(MemoryConversationExtractionService.shouldExtract("From now on, keep answers short")).isTrue();
-        // 真实对话里常见的偏好说法
         assertThat(MemoryConversationExtractionService.shouldExtract("我比较喜欢用表格对比不同方案的优缺点")).isTrue();
         assertThat(MemoryConversationExtractionService.shouldExtract("我一般习惯先看结论")).isTrue();
         assertThat(MemoryConversationExtractionService.shouldExtract("我倾向于简短的回答")).isTrue();
-        assertThat(MemoryConversationExtractionService.shouldExtract("解释一下缓存一致性")).isFalse();
+        assertThat(MemoryConversationExtractionService.shouldExtract("解释一下缓存一致性")).isTrue();
+        assertThat(MemoryConversationExtractionService.shouldExtract("太长了")).isTrue();
         assertThat(MemoryConversationExtractionService.shouldExtract("  ")).isFalse();
     }
 
@@ -29,6 +29,19 @@ class MemoryConversationExtractionRulesTest {
         assertThat(preferences).extracting(MemoryConversationExtractionService.Preference::category)
                 .containsExactly("structure", "forbidden");
         assertThat(preferences).allMatch(MemoryConversationExtractionService.Preference::explicit);
+    }
+
+    @Test
+    void ruleFallbackExtractsImplicitFeedbackWithoutADurableCue() {
+        var preferences = MemoryConversationExtractionService.ruleBased("太长了。别用英文。");
+
+        assertThat(preferences).extracting(MemoryConversationExtractionService.Preference::statement)
+                .containsExactly("太长了", "别用英文");
+        assertThat(preferences).allMatch(MemoryConversationExtractionService.Preference::feedback);
+        assertThat(preferences).noneMatch(MemoryConversationExtractionService.Preference::explicit);
+        assertThat(preferences).extracting(item -> item.assignment().polarity())
+                .containsExactly("FORBID", "FORBID");
+        assertThat(preferences.get(0).assignment().slot()).isEqualTo("answer.length");
     }
 
     @Test

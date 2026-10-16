@@ -6,6 +6,8 @@ import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
+import com.noteweave.retrieval.QueryRewrite;
+import com.noteweave.retrieval.RetrievalChannels;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,8 +36,12 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan.Step step
     ) {
         QaRetrievalStrategyProfile profile = QaRetrievalStrategyProfile.fromPlan(plan, step);
-        QaPassageRetriever.RetrievalResult retrieval = passageRetriever.retrieveWithDiagnostics(
-                context.workspaceId(), context.query(), context.sourceScope(), profile);
+        RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
+        QaPassageRetriever.RetrievalResult retrieval = channels.legacySingleQuery()
+                ? passageRetriever.retrieveWithDiagnostics(
+                        context.workspaceId(), channels.vectorQuery(), context.sourceScope(), profile)
+                : passageRetriever.retrieveWithDiagnostics(
+                        context.workspaceId(), channels, context.sourceScope(), profile);
         List<EvidenceBundle.Evidence> evidence = retrieval.chunks().stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .map(chunk -> toEvidence(chunk, step.weight()))
@@ -48,7 +54,8 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
                         "selection_policy", profile.selectionPolicyVersion()),
                 retrieval.degraded(),
                 retrieval.degradationReasons(),
-                retrieval.measurements()
+                retrieval.measurements(),
+                retrieval.rankedCandidates()
         );
     }
 

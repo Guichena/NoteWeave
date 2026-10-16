@@ -11,6 +11,7 @@ import {
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
+import { ArtifactVerificationPanel } from "./ArtifactVerificationPanel";
 import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
 import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
 import { buildArtifactRuntimeDetailSections } from "./artifactRuntimeTraceDetails";
@@ -234,6 +235,7 @@ export function ArtifactReader(props: ArtifactReaderProps) {
           </div>
         ) : (
           <>
+            <ArtifactVerificationPanel verification={version.verification} />
             <ArtifactProcessPanel version={version} />
             <article className="artifact-reader-content">
               {isMindMapArtifact(version.skill_key) ? (

@@ -14,6 +14,15 @@ class ElasticsearchRetrievalProjectionWriterTest {
             new ElasticsearchRetrievalProjectionWriter(null);
 
     @Test
+    void keepsContextSeparateFromTheOriginalCitationContent() {
+        QaChunkDocument document = new QaChunkDocument("w", "s", "v", "c", 0,
+                "章节", "资料", "PDF", "真实引用原文", "hash", "model", 2, "model:2", "qa-v3",
+                false, List.of(0.1f, 0.2f), "检索上下文说明");
+        assertThat(writer.qaDocument(document)).containsEntry("content", "真实引用原文")
+                .containsEntry("context_text", "检索上下文说明");
+    }
+
+    @Test
     void buildsCompleteQaChunkProjectionDocument() {
         QaChunkDocument document = new QaChunkDocument(
                 "workspace-1", "source-1", "snapshot-1", "chunk-1", 2,

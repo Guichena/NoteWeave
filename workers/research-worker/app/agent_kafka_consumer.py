@@ -424,6 +424,7 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
         from app.evidence_audit_executor import EvidenceAuditExecutor
         from app.synthesis_executor import SynthesisExecutor
         from app.discovery_executor import DiscoveryExecutor
+        from app.planning_executor import PlanningExecutor
         if settings.research_agent_fake_provider_enabled:
             from app.deterministic_fake_toolchain import DeterministicFakeToolchain
             deep_executor = DeepCellExecutor(client, worker_instance_id, toolchain=DeterministicFakeToolchain(), enable_llm=False)
@@ -438,8 +439,13 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
             executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id)
             enabled_roles.add("SYNTHESIS")
         if settings.research_agent_wide_discovery_enabled:
-            executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id)
+            executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id, client,
+                enable_llm=not settings.research_agent_fake_provider_enabled)
             enabled_roles.add("WIDE_DISCOVERY")
+        if settings.research_agent_planning_enabled:
+            executors["PLANNING"] = PlanningExecutor(
+                client, worker_instance_id, enable_llm=not settings.research_agent_fake_provider_enabled)
+            enabled_roles.add("PLANNING")
         executor = AuthoritativeRoleRouter(executors, enabled_roles=enabled_roles)
     coordinator = DrainCoordinator()
     consumer = create_research_agent_kafka_consumer()

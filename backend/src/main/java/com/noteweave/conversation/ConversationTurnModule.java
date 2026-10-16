@@ -48,6 +48,7 @@ public class ConversationTurnModule {
     private final TransactionTemplate transactionTemplate;
     private final TransactionTemplate nestedContextTransaction;
     private com.noteweave.memory.MemoryConversationExtractionService memoryExtractionService;
+    private com.noteweave.memory.MemoryApplicationFeedbackService applicationFeedbackService;
 
     public ConversationTurnModule(
             JdbcTemplate jdbcTemplate,
@@ -102,6 +103,11 @@ public class ConversationTurnModule {
     @Autowired(required = false)
     void setMemoryExtractionService(com.noteweave.memory.MemoryConversationExtractionService service) {
         this.memoryExtractionService = service;
+    }
+
+    @Autowired(required = false)
+    void setApplicationFeedbackService(com.noteweave.memory.MemoryApplicationFeedbackService service) {
+        this.applicationFeedbackService = service;
     }
 
     private String submissionActor(String submissionId) {
@@ -352,6 +358,7 @@ public class ConversationTurnModule {
                 command.requestedTurnMode(),
                 material
         );
+        recordRegeneratedFrom(prepared.workspaceId(), command);
         jdbcTemplate.update("""
                 update conversation_message
                 set content_hash = ?, context_status = 'CURRENT'
@@ -377,6 +384,17 @@ public class ConversationTurnModule {
                         updated_at = current_timestamp
                     where id = ? and status = 'PREPARING' and recovery_lease_owner = ?
                     """, prepared.receipt().submissionId(), recoveryLeaseOwner);
+        }
+    }
+
+    private void recordRegeneratedFrom(String workspaceId, SubmitTurnCommand command) {
+        if (applicationFeedbackService == null || command.regeneratedFrom() == null) {
+            return;
+        }
+        try {
+            applicationFeedbackService.recordRegeneratedFrom(workspaceId, command.regeneratedFrom());
+        } catch (RuntimeException ex) {
+            log.warn("记录重新生成的效果反馈失败: {}", ex.getMessage());
         }
     }
 

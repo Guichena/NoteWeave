@@ -10,7 +10,9 @@ import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.knowledge.KnowledgeCitationResponse;
 import com.noteweave.knowledge.KnowledgePageHit;
 import com.noteweave.knowledge.WikiPageContext;
+import com.noteweave.knowledge.WikiPersonalizedPageRank;
 import com.noteweave.knowledge.WikiLinkResponse;
+import com.noteweave.retrieval.QueryRewrite;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +45,10 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
 
     @Override
     public RetrievalPlan plan(AnswerContext context) {
+        Map<String, String> filters = new LinkedHashMap<>();
+        filters.put("workspace_id", context.workspaceId());
+        filters.put("item_status", "ACTIVE");
+        QueryRewrite.copyInto(filters, context.attributes());
         return new RetrievalPlan(
                 PLAN_VERSION,
                 AnswerMode.WIKI,
@@ -50,9 +56,10 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                         WikiEvidenceRetriever.CHANNEL,
                         5,
                         1.0,
-                        Map.of("workspace_id", context.workspaceId(), "item_status", "ACTIVE")
+                        filters
                 )),
-                new RetrievalPlan.Budget(5, 20_000, 1, 30, 60, 4_000)
+                // 检索候选 5 条，图扩展最多 30 个节点。证据上限取两者之和，扩展页才不会被种子占满后丢掉。
+                new RetrievalPlan.Budget(5 + 30, 20_000, WikiPersonalizedPageRank.MAX_HOPS, 30, 60, 4_000)
         );
     }
 
@@ -78,9 +85,17 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                     true
             );
         }
+        Map<String, List<String>> paths = new LinkedHashMap<>();
+        for (EvidenceBundle.Evidence evidence : bundle.evidence()) {
+            List<String> path = snapshotCodec.decodeGraphPath(
+                    evidence.metadata().get(WikiEvidenceRetriever.GRAPH_PATH_METADATA));
+            if (!path.isEmpty() && evidence.knowledgeVersionId() != null) {
+                paths.put(evidence.knowledgeVersionId(), path);
+            }
+        }
         return new PromptSpec(
                 "Answer from the selected Knowledge Versions and preserve their source provenance.",
-                renderAnswer(context, selectedContexts),
+                renderAnswer(context, selectedContexts, paths),
                 bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId).toList(),
                 PLAN_VERSION
         );
@@ -105,7 +120,11 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
         return fallback.toString();
     }
 
-    private String renderAnswer(AnswerContext context, List<WikiPageContext> contexts) {
+    private String renderAnswer(
+            AnswerContext context,
+            List<WikiPageContext> contexts,
+            Map<String, List<String>> paths
+    ) {
         StringBuilder builder = new StringBuilder();
         builder.append("## 基于全量 Wiki 的回答\n");
         builder.append("我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n");
@@ -127,8 +146,12 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                     .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180))
                     .append("，出链 ").append(pageContext.outgoingLinks().size())
                     .append("，反链 ").append(pageContext.backlinks().size())
-                    .append("，来源 ").append(pageContext.citations().size())
-                    .append("\n");
+                    .append("，来源 ").append(pageContext.citations().size());
+            List<String> path = paths.get(page.versionId());
+            if (path != null && !path.isEmpty()) {
+                builder.append("，到达路径 ").append(String.join(" → ", path));
+            }
+            builder.append("\n");
         }
         builder.append("\n## 综合结论\n");
         builder.append(buildWikiSynthesis(contexts)).append("\n\n");
@@ -163,6 +186,7 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 builder.append("- 前序主题摘要：").append(topicSummary).append("\n");
             }
             builder.append("\n");
+            ConversationWindow.append(builder, context);
         }
         builder.append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
         builder.append("## 默认 Wiki 工作台\n");

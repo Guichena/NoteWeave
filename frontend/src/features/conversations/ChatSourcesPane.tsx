@@ -19,7 +19,8 @@ import {
   isSourceSearchable,
   type SourceAsset
 } from "../sources/model";
-import { SOURCE_FILE_ACCEPT, sourceKind, validateSourceFile } from "../sources/sourceFiles";
+import { sourceKind } from "../sources/sourceFiles";
+import { useSourceFormats } from "../sources/useSourceFormats";
 import type { Workspace } from "../workspace/model";
 
 export type ChatSourcesPaneProps = {
@@ -60,6 +61,7 @@ export function ChatSourcesPane({
 }: ChatSourcesPaneProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const sourceFormats = useSourceFormats(workspace?.workspace_id);
   const [uploadError, setUploadError] = useState("");
   const searchableSources = sources.filter(isSourceSearchable);
   const searchableIds = searchableSources.map((source) => source.source_id);
@@ -88,7 +90,7 @@ export function ChatSourcesPane({
   async function uploadFiles(files: FileList | File[]) {
     if (!uploadSourceFile) return;
     const selectedFiles = Array.from(files);
-    const validationError = selectedFiles.map(validateSourceFile).find(Boolean) ?? "";
+    const validationError = selectedFiles.map(sourceFormats.validate).find(Boolean) ?? "";
     if (validationError) {
       setUploadError(validationError);
       return;
@@ -156,7 +158,7 @@ export function ChatSourcesPane({
           ref={fileInputRef}
           className="source-file-input"
           type="file"
-          accept={SOURCE_FILE_ACCEPT}
+          accept={sourceFormats.accept}
           multiple
           hidden
           onChange={handleFileChange}

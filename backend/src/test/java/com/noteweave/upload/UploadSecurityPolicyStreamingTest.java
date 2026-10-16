@@ -55,6 +55,12 @@ class UploadSecurityPolicyStreamingTest {
     }
 
     @Test
+    void gb18030FallbackStillChecksNulAfterTheFirstReadBlock() throws Exception {
+        byte[] content = ("中文" + "a".repeat(65_536) + "\u0000b").getBytes(java.nio.charset.Charset.forName("GBK"));
+        assertCode(write("gbk-later-nul.txt", content), "text/plain", content.length, "UPLOAD_BINARY_CONTENT_REJECTED");
+    }
+
+    @Test
     void pdfOnlyNeedsItsSignature() throws Exception {
         byte[] pdf = "%PDF-1.7 binary \u0000 content".getBytes(StandardCharsets.ISO_8859_1);
         Path file = write("doc.pdf", pdf);

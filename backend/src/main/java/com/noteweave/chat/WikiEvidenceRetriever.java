@@ -6,8 +6,13 @@ import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.knowledge.KnowledgePageHit;
+import com.noteweave.knowledge.WikiLexicalBoost;
+import com.noteweave.knowledge.WikiResolvedLink;
 import com.noteweave.knowledge.WikiPageContext;
+import com.noteweave.knowledge.WikiPersonalizedPageRank;
 import com.noteweave.knowledge.WikiRetrievalQueryPort;
+import com.noteweave.retrieval.QueryRewrite;
+import com.noteweave.retrieval.RetrievalChannels;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +33,7 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
     public static final String GRAPH_CHARACTERS_USED_METADATA = "wiki_graph_characters_used";
     public static final String GRAPH_EDGE_LIMIT_METADATA = "wiki_graph_edge_limit";
     public static final String GRAPH_CHARACTER_LIMIT_METADATA = "wiki_graph_character_limit";
+    public static final String GRAPH_PATH_METADATA = "graph_path";
 
     private final WikiRetrievalQueryPort wikiRetrievalQueryPort;
     private final WikiRetrievalSnapshotCodec snapshotCodec;
@@ -62,17 +68,51 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan plan,
             RetrievalPlan.Step step
     ) {
-        List<WikiPageContext> candidateContexts = wikiRetrievalQueryPort.findRelevantWikiPageContexts(
-                        context.workspaceId(), context.query()).stream()
+        RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
+        WikiLexicalBoost boost = new WikiLexicalBoost(
+                channels.mustTerms(), channels.titleTerms(), channels.bodyTerms());
+        String query = channels.legacySingleQuery() ? context.query() : wikiQuery(channels);
+        List<WikiPageContext> candidateContexts = (channels.legacySingleQuery() || boost.empty()
+                ? wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query)
+                : wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query, boost))
+                .stream()
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
-        WikiGraphBudgeter.Result graph = graphBudgeter.apply(candidateContexts, plan.budget());
+        List<String> degradationReasons = wikiRetrievalQueryPort.consumeWikiDegradationReasons();
+        if (degradationReasons == null) {
+            degradationReasons = List.of();
+        }
+        String workspaceId = context.workspaceId();
+        WikiGraphBudgeter.Result graph = graphBudgeter.apply(
+                candidateContexts,
+                plan.budget(),
+                new WikiPersonalizedPageRank.AdjacencySource() {
+                    @Override
+                    public List<WikiResolvedLink> linksTouching(List<String> itemIds) {
+                        List<WikiResolvedLink> loaded = wikiRetrievalQueryPort.loadResolvedWikiLinks(
+                                workspaceId, itemIds);
+                        return loaded == null ? List.of() : loaded;
+                    }
+
+                    @Override
+                    public java.util.Map<String, Integer> inDegrees(List<String> itemIds) {
+                        java.util.Map<String, Integer> loaded = wikiRetrievalQueryPort.loadWikiInDegrees(
+                                workspaceId, itemIds);
+                        return loaded == null ? java.util.Map.of() : loaded;
+                    }
+                },
+                itemIds -> {
+                    List<WikiPageContext> loaded = wikiRetrievalQueryPort.loadWikiPagesByIds(
+                            workspaceId, itemIds);
+                    return loaded == null ? List.of() : loaded;
+                });
         List<WikiPageContext> contexts = graph.contexts();
         List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(context.workspaceId(),
                 contexts.stream().map(WikiPageContext::page).toList());
         WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(contexts, citationIds);
         List<EvidenceBundle.Evidence> evidence = java.util.stream.IntStream.range(0, contexts.size())
-                .mapToObj(index -> toEvidence(contexts.get(index), index, contexts.size(), step.weight()))
+                .mapToObj(index -> toEvidence(
+                        contexts.get(index), index, contexts.size(), step.weight(), graph.graphPaths()))
                 .toList();
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put(WikiRetrievalSnapshotCodec.METADATA_KEY, snapshotCodec.encode(snapshot));
@@ -91,8 +131,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         return new EvidenceRetrievalResult(
                 evidence,
                 metadata,
-                false,
-                List.of(),
+                !degradationReasons.isEmpty(),
+                degradationReasons,
                 Map.of(
                         "graph_hops_used", (long) graph.graphHopsUsed(),
                         "graph_nodes_used", (long) graph.expandedNodeCount(),
@@ -106,11 +146,30 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         );
     }
 
+    /**
+     * Wiki 的覆盖判定按组取或。关键词查询是「当前问题 + 话题锚点」拼在一起时，
+     * 追问里的虚词会把锚点稀释到阈值以下。这里拆回两行，解析器会分成两组。
+     * must_terms 仍然只做加权，不进入覆盖判定。
+     */
+    private static String wikiQuery(RetrievalChannels channels) {
+        String lexical = channels.lexicalQuery();
+        String current = channels.vectorQuery();
+        if (current.isBlank() || !lexical.startsWith(current)) {
+            return lexical;
+        }
+        String anchor = lexical.substring(current.length()).strip();
+        if (anchor.isBlank()) {
+            return lexical;
+        }
+        return "当前问题：" + current + "\n主题锚点：" + anchor;
+    }
+
     private EvidenceBundle.Evidence toEvidence(
             WikiPageContext context,
             int index,
             int total,
-            double weight
+            double weight,
+            java.util.Map<String, List<String>> graphPaths
     ) {
         KnowledgePageHit page = context.page();
         String excerpt = page.summary().isBlank() ? page.content() : page.summary();
@@ -122,6 +181,13 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         metadata.put("citation_ids", context.citations().stream()
                 .map(citation -> citation.citationId()).collect(java.util.stream.Collectors.joining(",")));
         metadata.put("freshness_status", "CURRENT_AT_RETRIEVAL");
+        List<String> path = graphPaths == null ? List.of() : graphPaths.get(page.itemId());
+        if (path != null && path.size() >= 2) {
+            String encoded = snapshotCodec.encodeGraphPath(path);
+            if (encoded != null) {
+                metadata.put(GRAPH_PATH_METADATA, encoded);
+            }
+        }
         // The shared evidence budgeter ranks by fusedScore. Preserve the query
         // adapter's relevance score instead of replacing it with list position.
         double orderingScore = page.score() * weight;

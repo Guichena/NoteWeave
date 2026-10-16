@@ -11,6 +11,8 @@ public record ArtifactRuntimeTraceResponse(
         ArtifactWritebackPreviewTraceResponse writebackPreview,
         ArtifactOutputContractTraceResponse outputContractTrace,
         ArtifactLifecycleTraceResponse lifecycleTrace,
-        ArtifactAcquisitionCallbackTraceResponse acquisitionCallbackTrace
+        ArtifactAcquisitionCallbackTraceResponse acquisitionCallbackTrace,
+        java.util.Map<String, Object> intentCompilationTrace,
+        java.util.Map<String, Object> llmUsage
 ) {
 }
