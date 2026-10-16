@@ -161,6 +161,9 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "
             "'empirical studies'.",
             "Keep version numbers written in the question in the entity labels, for example 'MySQL 8.4'.",
+            "A version, release or date that the question asks for is an answer, not an entity: for 'which JDK "
+            "version made X final' the entity is X and the version is a dimension. Never add dimensions the "
+            "question does not ask about, such as support status or history.",
             "Every dimension must make sense for every entity, because the table asks each entity every "
             "dimension. When different parts of the question ask about different subjects (for example what "
             "changed in A and what B adds), use one entity for the overall topic and make each part a dimension.",

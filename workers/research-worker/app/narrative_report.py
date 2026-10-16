@@ -260,13 +260,15 @@ def _normalize_comparison_table(
         raise ValueError("NARRATIVE_COMPARISON_TABLE_INVALID")
     rows: list[dict[str, object]] = []
     for raw_row in raw_rows:
+        # 列数不对或没有绑定单元格的行只是格式问题，去掉这一行即可，不必让整篇退回模板；
+        # 引用了未知单元格、证据或数字的行仍然整篇拒绝
         if not isinstance(raw_row, dict):
-            raise ValueError("NARRATIVE_COMPARISON_ROW_INVALID")
+            continue
         row_cells = _string_items(raw_row.get("cells"))
         cell_keys = _clean_strings(raw_row.get("cell_keys"))
         evidence_keys = _clean_strings(raw_row.get("evidence_keys"))
         if len(row_cells) != len(columns) or not cell_keys or not evidence_keys:
-            raise ValueError("NARRATIVE_COMPARISON_ROW_INVALID")
+            continue
         if any(key not in cells_by_key for key in cell_keys):
             raise ValueError("NARRATIVE_UNKNOWN_CELL")
         bound_cells = [cells_by_key[key] for key in cell_keys]
@@ -288,6 +290,8 @@ def _normalize_comparison_table(
             "cell_keys": cell_keys,
             "evidence_keys": evidence_keys,
         })
+    if not rows:
+        return {}
     return {"columns": columns, "rows": rows}
 
 

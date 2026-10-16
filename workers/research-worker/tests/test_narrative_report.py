@@ -282,3 +282,30 @@ def test_fallback_headings_use_entity_and_column_labels() -> None:
     })
 
     assert "## MySQL 8.4 · 索引类型" in result.markdown
+
+
+def test_malformed_comparison_row_is_dropped_instead_of_failing_the_article() -> None:
+    cells = {
+        "question": "比较 A 与 B",
+        "cells": [
+            {"cell_key": "a:x", "candidate_value": "A uses GIN.", "evidence_keys": ["ea"]},
+            {"cell_key": "b:x", "candidate_value": "B uses multi-valued indexes.", "evidence_keys": ["eb"]},
+        ],
+    }
+    client = FakeLlmClient({"research.synthesis": json.dumps({
+        "title": "A 与 B 的索引",
+        "executive_summary": "两者的索引方式不同。",
+        "sections": [{"heading": "索引", "paragraphs": [
+            {"text": "A 使用 GIN。", "cell_keys": ["a:x"], "evidence_keys": ["ea"]},
+            {"text": "B 使用多值索引。", "cell_keys": ["b:x"], "evidence_keys": ["eb"]}]}],
+        "comparison_table": {"columns": ["对象", "索引"], "rows": [
+            {"cells": ["A", "GIN"], "cell_keys": ["a:x"], "evidence_keys": ["ea"]},
+            {"cells": ["B", "多值索引"], "cell_keys": ["b:x"], "evidence_keys": ["eb"]},
+            {"cells": ["C"], "cell_keys": ["a:x"], "evidence_keys": ["ea"]},
+        ]},
+    })})
+
+    result = NarrativeReportPolisher(client).polish(cells)
+
+    assert result.mode == "LLM"
+    assert len(result.narrative["comparison_table"]["rows"]) == 2
