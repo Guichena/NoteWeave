@@ -54,12 +54,21 @@ public class ResearchExternalSnapshotArchiveService {
                 rs.getString("snapshot_key"), rs.getString("content_text"), rs.getString("content_sha256"),
                 rs.getString("archive_status")) : null,
                 command.taskId(), command.windowId(), command.sourceId());
+        String windowScopedKey = snapshotKey + "/" + sha256Hex(command.windowId() + "|" + command.sourceId()).substring(0, 16);
         if (existing != null) {
-            if (!sameArchive(existing, command, contentSha256, snapshotKey)) throw conflict();
+            if (!sameArchive(existing, command, contentSha256, snapshotKey)
+                    && !sameArchive(existing, command, contentSha256, windowScopedKey)) throw conflict();
             return new ArchiveReceipt(existing.id(), command.taskId(), command.windowId(), command.sourceId(),
                     "EXTERNAL_ARCHIVED", existing.snapshotKey(), existing.contentSha256(), true);
         }
 
+        // 同一任务里不同网址可能抓到完全相同的正文（镜像页、跳转后的同一页），快照键按内容哈希生成会冲突；
+        // 内容哈希已被其他窗口占用时，在键后附上窗口标识，每个窗口仍有自己的归档记录
+        Integer sameContent = jdbcTemplate.queryForObject("""
+                select count(*) from research_external_snapshot
+                where research_agent_task_id = ? and snapshot_key = ?
+                """, Integer.class, command.taskId(), snapshotKey);
+        if (sameContent != null && sameContent > 0) snapshotKey = windowScopedKey;
         String archiveId = Ids.newId();
         jdbcTemplate.update("""
                 insert into research_external_snapshot(

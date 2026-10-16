@@ -161,13 +161,20 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "
             "'empirical studies'.",
             "Keep version numbers written in the question in the entity labels, for example 'MySQL 8.4'.",
+            "Every dimension must make sense for every entity, because the table asks each entity every "
+            "dimension. When different parts of the question ask about different subjects (for example what "
+            "changed in A and what B adds), use one entity for the overall topic and make each part a dimension.",
+            "Requests about the report itself, such as citing the original text or giving sources, are output "
+            "requirements, never dimensions.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
             "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "
             "COMPLEX at most 24 cells.",
             "Each dimension needs a short label, a one-sentence description of what evidence answers it, an "
             "answer_format, and 1 to 3 search_intents phrased as search topics.",
-            "Mark high_risk when a wrong value could cause legal, safety, medical, financial or security harm.",
+            "Mark high_risk only when acting on a wrong value could directly harm a person, such as a medical "
+            "dose, a legal obligation or a financial decision. Describing what a specification, standard, product "
+            "or security feature says is not high_risk.",
             "authoritative_domains lists primary-source domains (official docs, standards bodies, original "
             "papers) likely to hold the answers; leave it empty when unsure.",
             "effort_tier: SIMPLE for a single fact, STANDARD for a few-entity comparison, COMPLEX for broad research.",

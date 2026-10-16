@@ -278,6 +278,43 @@ class ResearchAgentTaskRecoveryEvidenceTest {
         assertThat(count("research_external_snapshot", "research_agent_task_id", fixture.taskId())).isEqualTo(1);
     }
 
+    @Test
+    void shouldArchiveTwoWindowsWithIdenticalContentUnderDistinctKeys() {
+        Fixture fixture = fixture("worker-a");
+        var first = archiveService.archive(archiveCommand("worker-a", fixture, "https://example.com/mirror/a"));
+        // 另一个网址抓到完全相同的正文，过去会因快照键重复返回 500
+        var second = archiveService.archive(new ResearchExternalSnapshotArchiveService.ArchiveCommand(
+                fixture.taskId(), "worker-a", fixture.leaseEpoch(), fixture.fencingToken(), "window-1", "source-10",
+                "External Source", "https://example.com/mirror/b", "search-provider", "external_url",
+                "external archived text for recovery"));
+        var secondReplay = archiveService.archive(new ResearchExternalSnapshotArchiveService.ArchiveCommand(
+                fixture.taskId(), "worker-a", fixture.leaseEpoch(), fixture.fencingToken(), "window-1", "source-10",
+                "External Source", "https://example.com/mirror/b", "search-provider", "external_url",
+                "external archived text for recovery"));
+
+        assertThat(second.snapshotKey()).startsWith(first.snapshotKey() + "/").isNotEqualTo(first.snapshotKey());
+        assertThat(secondReplay.idempotentReplay()).isTrue();
+        assertThat(secondReplay.snapshotKey()).isEqualTo(second.snapshotKey());
+        assertThat(count("research_external_snapshot", "research_agent_task_id", fixture.taskId())).isEqualTo(2);
+    }
+
+    @Test
+    void shouldReplayTheRecoveredCompletionWhoseUsageIncludesEarlierAuthorizedRounds() {
+        Fixture fixture = fixture("worker-a");
+        for (String tool : List.of("search", "fetch", "read", "extract")) {
+            permit("worker-a", fixture, tool);
+        }
+        Fixture reclaimed = expireAndReclaim(fixture, "worker-b");
+        var envelope = envelope(reclaimed, attemptUsage());
+        completionService.complete(reclaimed.taskId(), envelope);
+
+        // 重新提交同一份完成结果：消耗量含之前租约的轮次，不能因此判为账本损坏
+        var replay = completionService.complete(reclaimed.taskId(), envelope);
+
+        assertThat(replay.idempotentReplay()).isTrue();
+        conserved(fixture.taskId());
+    }
+
     // ------------------------------------------------------------------ //
     // helpers                                                             //
     // ------------------------------------------------------------------ //

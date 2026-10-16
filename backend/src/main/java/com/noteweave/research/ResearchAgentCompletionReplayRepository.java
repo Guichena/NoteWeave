@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 /** Reads immutable completion anchors and performs full-content replay checks. */
 @Component
 class ResearchAgentCompletionReplayRepository {
+    private static final Set<String> PRIOR_ROUND_KEYS = Set.of("search_calls", "fetch_calls", "read_calls", "extract_calls");
     private static final String RECEIPT_DIGEST_DOMAIN = "research-agent-completion-receipt.v1";
     private static final Set<String> RECEIPT_FIELDS = Set.of(
             "schema_version", "completion_id", "execution_id", "task_id", "completion_digest", "receipt_digest",
@@ -169,7 +170,11 @@ class ResearchAgentCompletionReplayRepository {
             throw corrupt("Committed research-agent receipt budget counters disagree with its outcomes");
         }
         for (String key : ResearchAgentCompletionCanonicalizer.WORKER_USAGE_KEYS) {
-            if (!consumed.get(key).equals(envelope.budgetUsage().get(key))) {
+            long reported = envelope.budgetUsage().get(key);
+            // 提交时工具调用的消耗量 = 本次上报 + 之前租约已授权的轮次，任务换过租约后两者不相等；
+            // 这四项只要求不少于上报值，其余计数仍须完全一致
+            boolean matches = PRIOR_ROUND_KEYS.contains(key) ? consumed.get(key) >= reported : consumed.get(key) == reported;
+            if (!matches) {
                 throw corrupt("Committed research-agent receipt usage disagrees with its completion envelope");
             }
         }
