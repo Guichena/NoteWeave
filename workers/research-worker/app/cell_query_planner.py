@@ -297,7 +297,9 @@ def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQuer
     if not domains or any("site:" in spec.query.lower() for spec in specs):
         return specs
     subject = context.entity_label or question_keywords(context.question, limit=6)
-    columns = [column.label.strip() for column in context.columns
+    # 官方文档多为英文，中文列名放进 site: 查询基本搜不到对应页面；有检索意图时优先用第一条
+    columns = [(column.search_intents[0].strip() if column.search_intents and column.search_intents[0].strip()
+                else column.label.strip()) for column in context.columns
                if column.label.strip() and column.label.strip().casefold() not in _GENERIC_COLUMN_LABELS]
     topic = columns[0] if columns else question_keywords(context.question, limit=3)
     domain = best_matching_domain(domains, subject)

@@ -1,0 +1,283 @@
+{
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-10-16T15:56:13.301654+00:00",
+  "cases_total": 20,
+  "runs_found": 4,
+  "judge_scored": 4,
+  "judge_not_run": 0,
+  "pass_rate": 0.0,
+  "dimension_means": {
+    "factual_accuracy": 0.4375,
+    "citation_accuracy": 0.4,
+    "completeness": 0.3675,
+    "source_quality": 0.35,
+    "tool_efficiency": 0.4
+  },
+  "effective_cell_rate": 0.5484,
+  "runs_without_cells": 0,
+  "by_question_type": {
+    "COMPARISON": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.75,
+      "citation_accuracy": 0.6,
+      "completeness": 0.75,
+      "source_quality": 0.5,
+      "tool_efficiency": 0.85
+    },
+    "SURVEY": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.1,
+      "citation_accuracy": 0.2,
+      "completeness": 0.05,
+      "source_quality": 0.15,
+      "tool_efficiency": 0.15
+    },
+    "FACT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.75,
+      "citation_accuracy": 0.6,
+      "completeness": 0.67,
+      "source_quality": 0.55,
+      "tool_efficiency": 0.45
+    },
+    "CONFLICT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.15,
+      "citation_accuracy": 0.2,
+      "completeness": 0.0,
+      "source_quality": 0.2,
+      "tool_efficiency": 0.15
+    }
+  },
+  "results": [
+    {
+      "case_key": "cmp-postgres-mysql-json",
+      "question_type": "COMPARISON",
+      "run_id": "f721cfa9-6913-40d7-8534-db501ba80bcd",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 186.6,
+        "search_query_count": 8,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 6,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 6
+        },
+        "queries_per_effective_cell": 1.33
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.75,
+          "citation_accuracy": 0.6,
+          "completeness": 0.75,
+          "source_quality": 0.5,
+          "tool_efficiency": 0.85
+        },
+        "rationales": {
+          "factual_accuracy": "核心事实基本正确：PG 的 jsonb_ops/jsonb_path_ops 索引、支持的运算符、jsonb_path_ops 更小、MySQL 生成列索引与多值索引、多值索引不能覆盖等均属实。但报告存在若干不准确/不完整之处：文中称 jsonb_path_ops 的访问符限制出自 datatype-json 文档，实际该说明位于 index 类型文档；MySQL 8.4 对 JSON 的使用远不止生成列与多值索引；且未指出多值索引还需配合 CAST(... AS ... ARRAY) 且并非所有版本均支持这些运算符。整体方向正确，故扣去部分分数。",
+          "citation_accuracy": "所引证据基本能支撑对应结论，但存在明显问题：MySQL 多值索引不能作为覆盖索引的引用 URL 指向 MySQL 9.3 create-index 文档，而非 8.4 官方文档；MySQL 生成列与多值索引两条结论主要依赖 jamsql.com 博客而非官方文档；PG 运算符表的引用来自 gin.html 但表格来源不明确。结论与原文大体一致，但引用版本与权威性存在偏差。",
+          "completeness": "三个 must_cover 要点基本均被回答：索引形式（PG 操作符类/MySQL 生成列与多值索引）、可加速运算符（PG jsonb_ops 六种、MySQL MEMBER OF 与 JSON_CONTAINS）、索引代价（PG 索引大小与特异性、MySQL 不能覆盖索引）。但写入开销/限制方面较薄弱：除多值索引不能覆盖外，未讨论生成列索引与多值索引的插入维护成本、jsonb_ops 与 jsonb_path_ops 在索引大小与更新代价上的权衡等，完整性不足。",
+          "source_quality": "PG 方面使用官方文档，质量较好；MySQL 方面两条关键结论来自第三方博客 jamsql.com，索引代价一条虽指向 mysql.com 但版本为 9.3 而非要求的 8.4，未能优先使用 8.4 官方文档，故得分偏低。",
+          "tool_efficiency": "8 次检索得到 6 个有效结论，完成状态为 COMPLETED_VERIFIED，检索次数与产出比例合理，未发现明显浪费；但引用了非官方来源和错误版本文档，说明可能在验证来源权威性上略有不足，故略扣分。"
+        },
+        "must_cover": [
+          {
+            "item": "两者各自支持的 JSON 索引形式",
+            "covered": true
+          },
+          {
+            "item": "哪些运算符或函数能用上索引",
+            "covered": true
+          },
+          {
+            "item": "索引的写入开销或限制",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告核心对比方向正确且要点覆盖较好，但 MySQL 引用依赖第三方博客并引用 9.3 而非 8.4 官方文档，且未充分讨论索引写入开销，因此未通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "survey-oauth-oidc",
+      "question_type": "SURVEY",
+      "run_id": "46bc7996-650e-4f65-a760-10e6dc791301",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 1850.7,
+        "search_query_count": 25,
+        "counter_check_not_run": 1,
+        "counter_check_refuted": 1,
+        "cells_available": true,
+        "planned_cells": 8,
+        "effective_cells": 3,
+        "effective_cell_rate": 0.375,
+        "status_counts": {
+          "GAP": 5,
+          "VERIFIED": 3
+        },
+        "queries_per_effective_cell": 8.33
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.1,
+          "citation_accuracy": 0.2,
+          "completeness": 0.05,
+          "source_quality": 0.15,
+          "tool_efficiency": 0.15
+        },
+        "rationales": {
+          "factual_accuracy": "报告唯一可核验的事实性内容（PKCE 强制要求、access token 不得放查询串）大体正确，但整个报告几乎未回答 OAuth 2.1 与 OIDC 的核心问题，且存在明显的把 OAuth 2.1 结论错误归入 OIDC 行的结构性问题，整体事实覆盖几近失败。",
+          "citation_accuracy": "仅有的 PKCE 引用与 oauth.net 原文一致，但其他引用（aembit.io 博客）无法支撑报告所要求的 OAuth 2.1/OIDC 规范结论，且同一 claim 被重复挂在两个不同单元格下，引用与结论对应关系混乱。",
+          "completeness": "must_cover 三项几乎全部未实质回答：PKCE 要求仅有一句无上下文引用，OAuth 2.1 移除/强制的授权方式未展开，OIDC 的 ID Token 与身份信息完全缺失，报告自认 INSUFFICIENT_EVIDENCE。",
+          "source_quality": "只使用了一个规范类来源（oauth.net）和博客来源 aembit.io，缺少 OAuth 2.1 draft、OIDC Core 等一手规范原文，远未达到题目要求引用规范原文的标准。",
+          "tool_efficiency": "25 次检索仅产生 3 个有效单元格，且最终判定 INSUFFICIENT_EVIDENCE，检索投入与产出严重不成比例，存在大量无效检索。"
+        },
+        "must_cover": [
+          {
+            "item": "OAuth 2.1 移除或强制的授权方式",
+            "covered": false
+          },
+          {
+            "item": "PKCE 的要求",
+            "covered": false
+          },
+          {
+            "item": "OIDC 增加的 ID Token 与身份信息",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告证据严重不足，未能回答 OAuth 2.1 调整与 OIDC 增加内容，引用以博客为主且与结论对应混乱，未达到基本评审标准。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "fact-java-virtual-threads",
+      "question_type": "FACT",
+      "run_id": "d1161830-9eb7-4941-b951-61ed704a009e",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 1156.6,
+        "search_query_count": 16,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 8,
+        "effective_cells": 7,
+        "effective_cell_rate": 0.875,
+        "status_counts": {
+          "VERIFIED": 7,
+          "CONFLICT_EXHAUSTED": 1
+        },
+        "queries_per_effective_cell": 2.29
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.75,
+          "citation_accuracy": 0.6,
+          "completeness": 0.67,
+          "source_quality": 0.55,
+          "tool_efficiency": 0.45
+        },
+        "rationales": {
+          "factual_accuracy": "核心事实正确：虚拟线程在 JDK 21 通过 JEP 444 正式发布；synchronized 固定问题由 JDK 24 的 JEP 491 改善（JEP 491 标题为 'Synchronize Virtual Threads without Pinning'）。但报告未清晰陈述固定问题原因（在 synchronized 中阻塞时虚拟线程无法卸载、会固定载体平台线程），且引用中存在一条来源称 '所谓 Security Manager 永久禁用、虚拟线程同步 pinning 问题修复' 的混杂说法造成冲突未解决。",
+          "citation_accuracy": "关键引用（openjdk.org JEP 491 页面、oracle 博客）能支撑 JDK 21/JEP 444 与 synchronized unmount 的说法。但 JEP 491 改善版本主要依赖第三方站点（javaguide.cn），未直接引用 JEP 491 自身的 'Release: 24' 字段；'JEP Status 与 Release 字段' 单元格被标为证据冲突、未解决，报告未保留双方证据。",
+          "completeness": "三项 must_cover 中，正式版本+JEP 编号（JDK 21、JEP 444）已答；改善的 JEP 与版本（JEP 491、JDK 24）已答；但线程固定问题的原因仅以 JEP 491 的一句目标引用带过，未实质解释（虚拟线程在 synchronized/monitor 阻塞时无法卸载导致载体线程被固定），且一个必需单元格处于未解决状态。",
+          "source_quality": "使用了 openjdk.org 与 oracle.com 等一手来源，但也大量依赖 javaguide.cn、homeurax.com、javapro.io 等二手博客；对 JDK 24/JEP 491 的关键论断未直接引用 openjdk.org/jeps/491 的 Release 字段。",
+          "tool_efficiency": "16 次检索、8 个计划单元格仅 7 个有效，仍有 1 个必需单元格因证据冲突未解决（CONFLICT_REPAIR_EXHAUSTED），检索投入相对产出的有效结论偏高，存在明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "正式发布的 JDK 版本与 JEP 编号",
+            "covered": true
+          },
+          {
+            "item": "线程固定问题的原因",
+            "covered": false
+          },
+          {
+            "item": "改善该问题的 JEP 与版本",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "核心结论（JDK 21/JEP 444 正式发布，JDK 24/JEP 491 改善 synchronized 固定）正确，但固定问题原因未实质解释、存在未解决的证据冲突单元格且依赖较多二手来源，故不通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-coverage-threshold",
+      "question_type": "CONFLICT",
+      "run_id": "2d908ef9-e4f5-4d86-b283-81bf8c69e6fd",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 286.6,
+        "search_query_count": 29,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 9,
+        "effective_cells": 1,
+        "effective_cell_rate": 0.1111,
+        "status_counts": {
+          "GAP": 8,
+          "VERIFIED": 1
+        },
+        "queries_per_effective_cell": 29.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.15,
+          "citation_accuracy": 0.2,
+          "completeness": 0.0,
+          "source_quality": 0.2,
+          "tool_efficiency": 0.15
+        },
+        "rationales": {
+          "factual_accuracy": "报告给出 INSUFFICIENT_EVIDENCE，未编造结论，这点谨慎合理；但唯一呈现的“事实”只是 Atlassian 博文中的一句行业共识（80% 覆盖率是个好目标），并非实证研究结论，也未触及问题核心（门槛是否降低缺陷逃逸率），因此对研究问题的回答几乎没有提供准确事实支撑。",
+          "citation_accuracy": "引用原文与引文一致（Atlassian 原文确有此说法），但该引用被放在“已发表覆盖率-缺陷实证研究 / 覆盖率门槛”格中，明显无法支撑“门槛降低缺陷逃逸率”或“不同组织实证结果”的结论，属于引用与结论不匹配。",
+          "completeness": "must_cover 三项——支持的实证、不支持的实证、覆盖率之外的混杂因素——均未实质回答；报告整体以 GAP 占位，未比较任何组织的实证结果。",
+          "source_quality": "唯一来源是 Atlassian 的博客/指南类二手内容，既非官方规范、也非同行评审论文或企业工程博客的一手实证，来源质量低；且计划中的 Google/Microsoft 等一手实践证据完全缺失。",
+          "tool_efficiency": "检索 29 次、计划 9 格，仅 1 格得到有效证据，且该证据与问题核心不相关；大量检索未转化为有效结论，效率很低。同时冲突类问题未按要求保留双方证据。"
+        },
+        "must_cover": [
+          {
+            "item": "支持的实证",
+            "covered": false
+          },
+          {
+            "item": "不支持的实证",
+            "covered": false
+          },
+          {
+            "item": "覆盖率之外的混杂因素",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告仅引用了 Atlassian 一句关于 80% 覆盖率的行业共识，未提供任何支持的、不支持的组织实证或混杂因素分析，证据严重不足且检索效率低，无法回答“覆盖率门槛是否降低缺陷逃逸率”。"
+      },
+      "passed": false
+    }
+  ]
+}

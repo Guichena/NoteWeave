@@ -115,3 +115,31 @@ def test_doc_url_with_another_version_moves_behind_the_matching_version() -> Non
 
     assert [hit.url.split("/doc/")[1] for hit in ordered] == [
         "refman/8.4/en/json.html", "relnotes/", "refman/9.3/en/json.html"]
+
+
+def test_site_query_uses_the_english_search_intent_instead_of_a_chinese_label() -> None:
+    llm = _Llm({"queries": [{"query": "MySQL 8.4 JSON index", "intent": "direct"}]})
+    column = CellColumn("operators", "可加速的查询运算符", search_intents=("JSON operators that use indexes",))
+
+    plan = plan_cell_queries(_context(columns=(column,)), llm)
+
+    assert plan.specs[-1].query == "MySQL 8.4 JSON operators that use indexes site:dev.mysql.com"
+
+
+def test_cell_keeps_only_primary_source_evidence_when_both_kinds_exist() -> None:
+    from app.deep_cell_executor import _prefer_primary_cards
+
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["dev.mysql.com"], "entity_label": "MySQL 8.4"})
+    windows = [
+        SimpleNamespace(window_id="w-blog", adapter="external_url", source_domain="jamsql.com",
+                        source_quality="GENERAL_WEB", url="https://jamsql.com/blog/mysql-json"),
+        SimpleNamespace(window_id="w-old", adapter="external_url", source_domain="dev.mysql.com",
+                        source_quality="OFFICIAL_DOC", url="https://dev.mysql.com/doc/refman/9.3/en/create-index.html"),
+        SimpleNamespace(window_id="w-doc", adapter="external_url", source_domain="dev.mysql.com",
+                        source_quality="OFFICIAL_DOC", url="https://dev.mysql.com/doc/refman/8.4/en/json.html"),
+    ]
+    cards = [SimpleNamespace(window_id=window.window_id) for window in windows]
+
+    assert [card.window_id for card in _prefer_primary_cards(snapshot, cards, windows)] == ["w-doc"]
+    # 只有二手来源时照常保留，不因此丢掉单元格
+    assert [card.window_id for card in _prefer_primary_cards(snapshot, cards[:1], windows)] == ["w-blog"]

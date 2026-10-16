@@ -436,7 +436,7 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
     columns = list(plan.research_schema.columns)
     if len(columns) <= 1:
         extraction = toolchain.extract(task_input, plan, windows, llm_client=llm_client)
-        cards = list(extraction.accepted_cards)
+        cards = _prefer_primary_cards(snapshot, list(extraction.accepted_cards), windows)
         return extraction, cards, _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
     results: list[ExtractionResult] = []
     cards: list[object] = []
@@ -450,7 +450,8 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
         })
         result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
         results.append(result)
-        column_cards = [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key]
+        column_cards = _prefer_primary_cards(
+            snapshot, [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key], windows)
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -459,6 +460,34 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
                 seen.add(str(item["evidence_key"]))
                 evidence.append(item)
     return _merge_extractions(results, cards), cards, evidence
+
+
+def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[object], windows: list[object]) -> list[object]:
+    """同一单元格既有一手来源又有博客等二手来源的证据时，只保留来源档次最高的那一批。
+
+    一手来源指工作台资料、规划给出的官方域名和官方文档、政府、学术来源；网址里的版本号与研究对象不一致时降一档。
+    评审主要按来源权威性和版本是否对应打分，二手来源的引用即使内容正确也会拉低结论的可信度。
+    """
+    if len(cards) <= 1:
+        return cards
+    by_window = {getattr(window, "window_id", ""): window for window in windows}
+    domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
+               if isinstance(item, str) and item.strip()] if isinstance(
+        snapshot.query_policy.get("authoritative_domains"), list) else []
+    versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
+
+    def tier(card: object) -> int:
+        window = by_window.get(getattr(card, "window_id", ""))
+        if window is None or str(getattr(window, "adapter", "")) == "workspace":
+            return 0
+        host = str(getattr(window, "source_domain", "") or "").strip().lower().rstrip(".") or (
+            urlsplit(str(getattr(window, "url", "") or "")).hostname or "").lower().rstrip(".")
+        primary = (str(getattr(window, "source_quality", "")) in _HIGH_TRUST_QUALITIES
+                   or any(host == domain or host.endswith("." + domain) for domain in domains))
+        return (0 if primary else 2) + _version_mismatch(versions, window)
+
+    best = min(tier(card) for card in cards)
+    return [card for card in cards if tier(card) == best]
 
 
 def _merge_extractions(results: list[ExtractionResult], cards: list[object]) -> ExtractionResult:

@@ -1,0 +1,2242 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-java-virtual-threads",
+  "run_id": "d1161830-9eb7-4941-b951-61ed704a009e",
+  "workspace_id": "fa629c2f-ed7f-43fd-977d-ab2f082df9a7",
+  "started_at": "2026-10-16T15:31:39.538925+00:00",
+  "finished_at": "2026-10-16T15:50:56.179579+00:00",
+  "wall_seconds": 1156.6,
+  "run_detail": {
+    "research_run_id": "d1161830-9eb7-4941-b951-61ed704a009e",
+    "workspace_id": "fa629c2f-ed7f-43fd-977d-ab2f082df9a7",
+    "task_id": "1c452ed2-3aef-4da8-bae6-08ab25cf7b40",
+    "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+    "final_report_markdown": "# 研究报告\n\nJava 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\n**结果：** `COMPLETED_WITH_LIMITATIONS`\n\n## 结论汇总\n\n| 研究对象 | 正式发布 JDK 版本 | JEP 编号与正式名称 | JEP Status 与 Release 字段 | 预览版本历史 |\n|---|---|---|---|---|\n| Java 虚拟线程 | Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects… | The JVM's implementation of the `synchronized` keyword should allow a virtual th… | 证据冲突 | Virtual threads were previously introduced in preview JEPs in both Java 19 and J… |\n| synchronized pinning 改善 | 在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 … | JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻… | JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻… | * **JDK 19 (*JEP 425*):** First preview, experimental APIs. |\n\n## 已验证结论\n\n### Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.\n\n- 研究项：`Java 虚拟线程 · 预览版本历史`\n- 候选：`e67c1cc1-6645-4f47-bba3-e9e2711b0abf`\n- Evidence: `evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02`\n  - Exact quote: “Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.”\n  - Snapshot: `research/external/034cf884-02df-4db6-9550-eee55afd9517/f2a0c5fb1fb89aaadfd9d6b83b820ce6f9a5d15f52b5d904328c69a41686bb6f`\n  - URL: https://blogs.oracle.com/javamagazine/java-21-sneak-peek/\n\n### The JVM's implementation of the \\`synchronized\\` keyword should allow a virtual thread to unmount when inside a \\`synchronized\\` method or statement, or when blocked on a monitor.\n\n- 研究项：`Java 虚拟线程 · JEP 编号与正式名称`\n- 候选：`9aefb34c-b276-474d-b49b-fba7f9044a7e`\n- Evidence: `evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852`\n  - Exact quote: “The JVM's implementation of the \\`synchronized\\` keyword should allow a virtual thread to unmount when inside a \\`synchronized\\` method or statement, or when blocked on a monitor.”\n  - Snapshot: `research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9`\n  - URL: https://openjdk.org/jeps/491\n\n### Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).\n\n- 研究项：`Java 虚拟线程 · 正式发布 JDK 版本`\n- 候选：`69bb03a5-a3f6-496c-9572-6dc771f06007`\n- Evidence: `evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23`\n  - Exact quote: “Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).”\n  - Snapshot: `research/external/9e3bd945-2349-460b-b249-35912726a9fd/a302c118cb333328b2bdede55362e5c0d8cb9f632d3056bf3b35ad5ba1a9c8e3`\n  - URL: https://openjdk.org/jeps/491\n\n### * **JDK 19 (*JEP 425*):** First preview, experimental APIs.\n\n- 研究项：`synchronized pinning 改善 · 预览版本历史`\n- 候选：`9ce53aa5-5772-4f26-a6a2-33e840fce7ed`\n- Evidence: `evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718`\n  - Exact quote: “* **JDK 19 (*JEP 425*):** First preview, experimental APIs.”\n  - Snapshot: `research/external/2a1d3511-cea0-434c-b053-f0a38a0cdd3b/4a0d98804ae6a71d49e90685163ef144350f74b08bf29f84a85b4304379d01bf`\n  - URL: https://javapro.io/2026/03/05/java-25-and-the-new-age-of-performance-virtual-threads-and-beyond/\n\n### JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 \\`synchronized\\` 中阻塞时也能释放底层平台线程，消除了绝大多数由 \\`synchronized\\` 带来的 Pinning 场景。\n\n- 研究项：`synchronized pinning 改善 · JEP Status 与 Release 字段`\n- 候选：`286b84a8-f564-43a7-8186-66288d9955b4`\n- Evidence: `evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029`\n  - Exact quote: “JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 \\`synchronized\\` 中阻塞时也能释放底层平台线程，消除了绝大多数由 \\`synchronized\\` 带来的 Pinning 场景。”\n  - Snapshot: `research/external/bc1bd8e0-2d61-4e40-9d95-b688b6281351/a53bb22aecff20ec519ee68102dec7eae7997163da313ba1abe5a3834269f189`\n  - URL: https://javaguide.cn/java/concurrent/virtual-thread.html\n\n### JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 \\`synchronized\\` 中阻塞时也能释放底层平台线程，消除了绝大多数由 \\`synchronized\\` 带来的 Pinning 场景。\n\n- 研究项：`synchronized pinning 改善 · JEP 编号与正式名称`\n- 候选：`22cfc1ea-12bf-4298-af2d-52cbd42f3fc2`\n- Evidence: `evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39`\n  - Exact quote: “JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 \\`synchronized\\` 中阻塞时也能释放底层平台线程，消除了绝大多数由 \\`synchronized\\` 带来的 Pinning 场景。”\n  - Snapshot: `research/external/bc1bd8e0-2d61-4e40-9d95-b688b6281351/a53bb22aecff20ec519ee68102dec7eae7997163da313ba1abe5a3834269f189`\n  - URL: https://javaguide.cn/java/concurrent/virtual-thread.html\n\n### 在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。\n\n- 研究项：`synchronized pinning 改善 · 正式发布 JDK 版本`\n- 候选：`ddb8eff6-3401-4ad3-bb34-c3bc34892c46`\n- Evidence: `evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178`\n  - Exact quote: “在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。”\n  - Snapshot: `research/external/22ca9546-b03c-4a25-b47d-93a53fabbe1c/86481c021f02efb4779dd70eb03476c39d67673b2ee4b8f15f4663d900d5a210`\n  - URL: https://blog.homurax.com/2024/05/13/virtual-threads/\n\n## 局限与未解决项\n\n- **Java 虚拟线程 · JEP Status 与 Release 字段**：证据冲突且补充检索后仍未解决（`CONFLICT_REPAIR_EXHAUSTED`，`CONFLICT_EXHAUSTED`）\n- EVIDENCE_CONFLICT\n- CONFLICTED_CELL\n- CONFLICT_REPAIR_EXHAUSTED\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n- EVIDENCE_CONFLICT\n- CONFLICTED_CELL\n- CONFLICT_REPAIR_EXHAUSTED",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/fa629c2f-ed7f-43fd-977d-ab2f082df9a7/research/d1161830-9eb7-4941-b951-61ed704a009e/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 6957,
+      "sha256": "7e188847d49aea6dc97d58303e679bb9a0b05cced1d4879321a6906873e9b15b"
+    },
+    "research_artifact": {
+      "artifact_id": "d1161830-9eb7-4941-b951-61ed704a009e",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "d1161830-9eb7-4941-b951-61ed704a009e",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/fa629c2f-ed7f-43fd-977d-ab2f082df9a7/research/d1161830-9eb7-4941-b951-61ed704a009e/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 6957,
+        "sha256": "7e188847d49aea6dc97d58303e679bb9a0b05cced1d4879321a6906873e9b15b"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "synchronized pinning 改善 JDK 24 JEP 491",
+          "Java 虚拟线程 JEP 444 正式发布",
+          "synchronized pinning 改善 预览版本历史 site:openjdk.org",
+          "JEP 444 virtual threads status release JDK 21",
+          "虚拟线程 synchronized pinning JDK 版本",
+          "site:openjdk.org JEP 444 Virtual Threads",
+          "Java 虚拟线程 正式发布 JDK 版本 JEP",
+          "JEP 444 virtual threads release JDK 21 status final",
+          "Java 虚拟线程 JDK 版本",
+          "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "Project Loom virtual threads preview versions history",
+          "virtual threads preview JDK 19 20 21 first preview second preview",
+          "Java 虚拟线程 JEP Status 与 Release 字段 technical report",
+          "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+          "synchronized pinning virtual threads release notes JDK 21",
+          "Virtual threads synchronized pinning JEP preview JDK 19 20 21"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-2736877293ec0ee1",
+            "source_id": "",
+            "source_title": "Java 虚拟线程",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-2736877293ec0ee1",
+            "source_id": "",
+            "source_title": "Java 虚拟线程",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 5,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-2736877293ec0ee1",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Java 虚拟线程",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "read_focus": "确定 Java 虚拟线程正式发布（非预览）的 JDK 版本，以及 synchronized 导致的线程固定（pinning）问题得到改善的 JDK 版本，并给出对应的 JEP 编号与可引用证据。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-60892835647d8d74",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "synchronized pinning 改善",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "read_focus": "确定 Java 虚拟线程正式发布（非预览）的 JDK 版本，以及 synchronized 导致的线程固定（pinning）问题得到改善的 JDK 版本，并给出对应的 JEP 编号与可引用证据。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-60892835647d8d74:dim-4db09b01af512fea",
+            "row_id": "entity-60892835647d8d74",
+            "branch_id": "branch-main",
+            "column_key": "dim-4db09b01af512fea",
+            "column_label": "JEP 编号与正式名称",
+            "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+            "row_id": "entity-60892835647d8d74",
+            "branch_id": "branch-main",
+            "column_key": "dim-2b3dbd391a0fabd0",
+            "column_label": "预览版本历史",
+            "candidate_value": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-60892835647d8d74:dim-c314449f60c39a28",
+            "row_id": "entity-60892835647d8d74",
+            "branch_id": "branch-main",
+            "column_key": "dim-c314449f60c39a28",
+            "column_label": "正式发布 JDK 版本",
+            "candidate_value": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "row_id": "entity-2736877293ec0ee1",
+            "branch_id": "branch-main",
+            "column_key": "dim-382937a0c175cb51",
+            "column_label": "JEP Status 与 Release 字段",
+            "candidate_value": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+            "status": "CONFLICT_EXHAUSTED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b"
+            ],
+            "last_verifier_decision": "GLOBAL_CONFLICT:SEMANTIC_CONTRADICTION",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+            "row_id": "entity-2736877293ec0ee1",
+            "branch_id": "branch-main",
+            "column_key": "dim-2b3dbd391a0fabd0",
+            "column_label": "预览版本历史",
+            "candidate_value": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+            "row_id": "entity-2736877293ec0ee1",
+            "branch_id": "branch-main",
+            "column_key": "dim-4db09b01af512fea",
+            "column_label": "JEP 编号与正式名称",
+            "candidate_value": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+            "row_id": "entity-2736877293ec0ee1",
+            "branch_id": "branch-main",
+            "column_key": "dim-c314449f60c39a28",
+            "column_label": "正式发布 JDK 版本",
+            "candidate_value": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-60892835647d8d74:dim-382937a0c175cb51",
+            "row_id": "entity-60892835647d8d74",
+            "branch_id": "branch-main",
+            "column_key": "dim-382937a0c175cb51",
+            "column_label": "JEP Status 与 Release 字段",
+            "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [
+          {
+            "decision_id": "04339fd1-a68d-4b99-a745-0c1a7436b6fe",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "GLOBAL_CONFLICT",
+            "reason_code": "SEMANTIC_CONTRADICTION",
+            "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "evidence_ids": [
+              "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+            ],
+            "action": "语义冲突，需要定向反证",
+            "status": "EXHAUSTED",
+            "notes": {
+              "right_claim": "The changes fix pinning issues when using `LM\\_LIGHTWEIGHT`, i.e. the default locking mode, (and `LM\\_MONITOR` which comes for free), but not when using `LM\\_LEGACY` mode.",
+              "role_result_id": "0ea354a8-8c5d-4759-8bfc-d78a26ae8f1b",
+              "semantic_revision": 1,
+              "left_claim": "The changes fix pinning issues for all 4 ports that currently implement continuations: x64, aarch64, riscv and ppc.",
+              "cell_version": 1,
+              "conflict_kind": "SEMANTIC_CONTRADICTION"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+                "source_id": "web-b1db3da1b0e6fba5",
+                "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+                "source_id": "web-2bd0385a155d4f00",
+                "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "c7c90f4c-5b40-4aa6-b736-fad092080d76",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+            "reason_code": "SEMANTIC_CONTRADICTION",
+            "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "evidence_ids": [
+              "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "evidence:3d386c5c868f1026152c37d8a14df4f088ebb7fc9be3beec",
+              "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+            ],
+            "action": "COUNTERFACTUAL_REPAIR",
+            "status": "OPEN",
+            "notes": {
+              "role_result_id": "0ea354a8-8c5d-4759-8bfc-d78a26ae8f1b"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+                "source_id": "web-b1db3da1b0e6fba5",
+                "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+                "source_id": "web-2bd0385a155d4f00",
+                "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "edc52fff-cd51-4d5a-bd9d-a80e3680ef31",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "GLOBAL_CONFLICT_REPAIR_EXHAUSTED",
+            "reason_code": "CONFLICT_REPAIR_EXHAUSTED",
+            "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "evidence_ids": [
+              "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+            ],
+            "action": "conflict_repair_attempts=1:upper_bound=1",
+            "status": "EXHAUSTED",
+            "notes": {
+              "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+              "attempts": 1,
+              "attempt_upper_bound": 1,
+              "conflict_trace_id": "04339fd1-a68d-4b99-a745-0c1a7436b6fe"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+                "source_id": "web-b1db3da1b0e6fba5",
+                "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              },
+              {
+                "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+                "source_id": "web-2bd0385a155d4f00",
+                "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+                "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 2
+          },
+          {
+            "decision_id": "6add0b0b-8865-403d-b219-eac9665cc142",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "GLOBAL_CONFLICT",
+            "reason_code": "SEMANTIC_CONTRADICTION",
+            "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "evidence_ids": [
+              "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+              "evidence:56c054c354e413f04dd09e81058d0d55af3e6065683621cf"
+            ],
+            "action": "语义冲突，需要定向反证",
+            "status": "EXHAUSTED",
+            "notes": {
+              "right_claim": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+              "role_result_id": "04959bd2-b745-40ea-ab07-fd6fd0cc1804",
+              "semantic_revision": 2,
+              "left_claim": "LTS。虚拟线程、Record Patterns、switch 模式匹配转正，Sequenced Collections 加入，Generational ZGC 可用。",
+              "cell_version": 2,
+              "conflict_kind": "SEMANTIC_CONTRADICTION"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+                "source_id": "web-0e398800bbba00c9",
+                "source_title": "Java JEP 与版本变化",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+                "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 1
+          },
+          {
+            "decision_id": "ee69b8a1-4b95-44ab-9175-ef6a8e0d45a7",
+            "branch_id": "",
+            "decision_scope": "CELL",
+            "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+            "reason_code": "SEMANTIC_CONTRADICTION",
+            "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "evidence_ids": [
+              "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+              "evidence:56c054c354e413f04dd09e81058d0d55af3e6065683621cf"
+            ],
+            "action": "COUNTERFACTUAL_REPAIR",
+            "status": "OPEN",
+            "notes": {
+              "role_result_id": "04959bd2-b745-40ea-ab07-fd6fd0cc1804"
+            },
+            "source_samples": [
+              {
+                "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+                "source_id": "web-0e398800bbba00c9",
+                "source_title": "Java JEP 与版本变化",
+                "generated_by": "",
+                "generated_ref_id": "",
+                "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+                "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+                "relation_type": "SUPPORTS"
+              }
+            ],
+            "source_sample_count": 1
+          }
+        ],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-2736877293ec0ee1",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Java 虚拟线程",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "read_focus": "确定 Java 虚拟线程正式发布（非预览）的 JDK 版本，以及 synchronized 导致的线程固定（pinning）问题得到改善的 JDK 版本，并给出对应的 JEP 编号与可引用证据。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-60892835647d8d74",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "synchronized pinning 改善",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "read_focus": "确定 Java 虚拟线程正式发布（非预览）的 JDK 版本，以及 synchronized 导致的线程固定（pinning）问题得到改善的 JDK 版本，并给出对应的 JEP 编号与可引用证据。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-60892835647d8d74:dim-4db09b01af512fea",
+          "row_id": "entity-60892835647d8d74",
+          "branch_id": "branch-main",
+          "column_key": "dim-4db09b01af512fea",
+          "column_label": "JEP 编号与正式名称",
+          "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+          "row_id": "entity-60892835647d8d74",
+          "branch_id": "branch-main",
+          "column_key": "dim-2b3dbd391a0fabd0",
+          "column_label": "预览版本历史",
+          "candidate_value": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-c314449f60c39a28",
+          "row_id": "entity-60892835647d8d74",
+          "branch_id": "branch-main",
+          "column_key": "dim-c314449f60c39a28",
+          "column_label": "正式发布 JDK 版本",
+          "candidate_value": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "row_id": "entity-2736877293ec0ee1",
+          "branch_id": "branch-main",
+          "column_key": "dim-382937a0c175cb51",
+          "column_label": "JEP Status 与 Release 字段",
+          "candidate_value": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+          "status": "CONFLICT_EXHAUSTED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b"
+          ],
+          "last_verifier_decision": "GLOBAL_CONFLICT:SEMANTIC_CONTRADICTION",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+          "row_id": "entity-2736877293ec0ee1",
+          "branch_id": "branch-main",
+          "column_key": "dim-2b3dbd391a0fabd0",
+          "column_label": "预览版本历史",
+          "candidate_value": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+          "row_id": "entity-2736877293ec0ee1",
+          "branch_id": "branch-main",
+          "column_key": "dim-4db09b01af512fea",
+          "column_label": "JEP 编号与正式名称",
+          "candidate_value": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+          "row_id": "entity-2736877293ec0ee1",
+          "branch_id": "branch-main",
+          "column_key": "dim-c314449f60c39a28",
+          "column_label": "正式发布 JDK 版本",
+          "candidate_value": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-382937a0c175cb51",
+          "row_id": "entity-60892835647d8d74",
+          "branch_id": "branch-main",
+          "column_key": "dim-382937a0c175cb51",
+          "column_label": "JEP Status 与 Release 字段",
+          "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [
+        {
+          "decision_id": "04339fd1-a68d-4b99-a745-0c1a7436b6fe",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "GLOBAL_CONFLICT",
+          "reason_code": "SEMANTIC_CONTRADICTION",
+          "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "evidence_ids": [
+            "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+            "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+          ],
+          "action": "语义冲突，需要定向反证",
+          "status": "EXHAUSTED",
+          "notes": {
+            "right_claim": "The changes fix pinning issues when using `LM\\_LIGHTWEIGHT`, i.e. the default locking mode, (and `LM\\_MONITOR` which comes for free), but not when using `LM\\_LEGACY` mode.",
+            "role_result_id": "0ea354a8-8c5d-4759-8bfc-d78a26ae8f1b",
+            "semantic_revision": 1,
+            "left_claim": "The changes fix pinning issues for all 4 ports that currently implement continuations: x64, aarch64, riscv and ppc.",
+            "cell_version": 1,
+            "conflict_kind": "SEMANTIC_CONTRADICTION"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "source_id": "web-b1db3da1b0e6fba5",
+              "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+              "source_id": "web-2bd0385a155d4f00",
+              "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "c7c90f4c-5b40-4aa6-b736-fad092080d76",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+          "reason_code": "SEMANTIC_CONTRADICTION",
+          "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "evidence_ids": [
+            "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+            "evidence:3d386c5c868f1026152c37d8a14df4f088ebb7fc9be3beec",
+            "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+          ],
+          "action": "COUNTERFACTUAL_REPAIR",
+          "status": "OPEN",
+          "notes": {
+            "role_result_id": "0ea354a8-8c5d-4759-8bfc-d78a26ae8f1b"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "source_id": "web-b1db3da1b0e6fba5",
+              "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+              "source_id": "web-2bd0385a155d4f00",
+              "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "edc52fff-cd51-4d5a-bd9d-a80e3680ef31",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "GLOBAL_CONFLICT_REPAIR_EXHAUSTED",
+          "reason_code": "CONFLICT_REPAIR_EXHAUSTED",
+          "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "evidence_ids": [
+            "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+            "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936"
+          ],
+          "action": "conflict_repair_attempts=1:upper_bound=1",
+          "status": "EXHAUSTED",
+          "notes": {
+            "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "attempts": 1,
+            "attempt_upper_bound": 1,
+            "conflict_trace_id": "04339fd1-a68d-4b99-a745-0c1a7436b6fe"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+              "source_id": "web-b1db3da1b0e6fba5",
+              "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            },
+            {
+              "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+              "source_id": "web-2bd0385a155d4f00",
+              "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+              "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 2
+        },
+        {
+          "decision_id": "6add0b0b-8865-403d-b219-eac9665cc142",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "GLOBAL_CONFLICT",
+          "reason_code": "SEMANTIC_CONTRADICTION",
+          "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "evidence_ids": [
+            "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+            "evidence:56c054c354e413f04dd09e81058d0d55af3e6065683621cf"
+          ],
+          "action": "语义冲突，需要定向反证",
+          "status": "EXHAUSTED",
+          "notes": {
+            "right_claim": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+            "role_result_id": "04959bd2-b745-40ea-ab07-fd6fd0cc1804",
+            "semantic_revision": 2,
+            "left_claim": "LTS。虚拟线程、Record Patterns、switch 模式匹配转正，Sequenced Collections 加入，Generational ZGC 可用。",
+            "cell_version": 2,
+            "conflict_kind": "SEMANTIC_CONTRADICTION"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+              "source_id": "web-0e398800bbba00c9",
+              "source_title": "Java JEP 与版本变化",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+              "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 1
+        },
+        {
+          "decision_id": "ee69b8a1-4b95-44ab-9175-ef6a8e0d45a7",
+          "branch_id": "",
+          "decision_scope": "CELL",
+          "decision_type": "EVIDENCE_AUDIT_REPAIR_REQUIRED",
+          "reason_code": "SEMANTIC_CONTRADICTION",
+          "target_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "evidence_ids": [
+            "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+            "evidence:56c054c354e413f04dd09e81058d0d55af3e6065683621cf"
+          ],
+          "action": "COUNTERFACTUAL_REPAIR",
+          "status": "OPEN",
+          "notes": {
+            "role_result_id": "04959bd2-b745-40ea-ab07-fd6fd0cc1804"
+          },
+          "source_samples": [
+            {
+              "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+              "source_id": "web-0e398800bbba00c9",
+              "source_title": "Java JEP 与版本变化",
+              "generated_by": "",
+              "generated_ref_id": "",
+              "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+              "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+              "relation_type": "SUPPORTS"
+            }
+          ],
+          "source_sample_count": 1
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-16T15:49:42Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178",
+          "window_id": "window-4",
+          "source_id": "web-80108c78b6e08312",
+          "source_title": "Java 21 虚拟线程（Virtual Threads） - Homurax's Blog",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blog.homurax.com/2024/05/13/virtual-threads/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 JEP 444 正式发布",
+          "read_focus": "Read external URL Java 21 虚拟线程（Virtual Threads） - Homurax's Blog for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+          "claim_text": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/22ca9546-b03c-4a25-b47d-93a53fabbe1c/86481c021f02efb4779dd70eb03476c39d67673b2ee4b8f15f4663d900d5a210"
+        },
+        {
+          "evidence_id": "evidence:3d3b8629691c15b512356d44356116f305ee1cb642aaa7d4",
+          "window_id": "window-5",
+          "source_id": "web-c3410c307c426801",
+          "source_title": "JDK 21 提供虚拟线程等新功能以及长期支持",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.azul.com/zh-hans/blog/jdk-21-delivers-virtual-threads-other-new-features-and-long-term-support/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 JEP 444 正式发布",
+          "read_focus": "Read external URL JDK 21 提供虚拟线程等新功能以及长期支持 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "JDK 21 还有很多吸引开发者的其他功能：",
+          "claim_text": "JDK 21 还有很多吸引开发者的其他功能：",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/22ca9546-b03c-4a25-b47d-93a53fabbe1c/4585b44427c4af55c8590b6361a570fb78356e94724cf2050da9df72cac7d2bf"
+        },
+        {
+          "evidence_id": "evidence:9ec847cde90c04ea0844aa730ea5dfb13b5b4f48dde981e3",
+          "window_id": "window-1",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "虚拟线程 synchronized pinning JDK 版本",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This JFR event will no longer be needed for that purpose once the `synchronized` keyword no longer pins virtual threads, but we will retain it for other pinning situations.",
+          "claim_text": "This JFR event will no longer be needed for that purpose once the `synchronized` keyword no longer pins virtual threads, but we will retain it for other pinning situations.",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.3,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc1bd8e0-2d61-4e40-9d95-b688b6281351/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        },
+        {
+          "evidence_id": "evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029",
+          "window_id": "window-4",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "虚拟线程 synchronized pinning JDK 版本",
+          "read_focus": "Read external URL 虚拟线程常见问题总结 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "claim_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc1bd8e0-2d61-4e40-9d95-b688b6281351/a53bb22aecff20ec519ee68102dec7eae7997163da313ba1abe5a3834269f189"
+        },
+        {
+          "evidence_id": "evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39",
+          "window_id": "window-4",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "虚拟线程 synchronized pinning JDK 版本",
+          "read_focus": "Read external URL 虚拟线程常见问题总结 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "claim_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc1bd8e0-2d61-4e40-9d95-b688b6281351/a53bb22aecff20ec519ee68102dec7eae7997163da313ba1abe5a3834269f189"
+        },
+        {
+          "evidence_id": "evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23",
+          "window_id": "window-3",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 444 Virtual Threads",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+          "claim_text": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9e3bd945-2349-460b-b249-35912726a9fd/a302c118cb333328b2bdede55362e5c0d8cb9f632d3056bf3b35ad5ba1a9c8e3"
+        },
+        {
+          "evidence_id": "evidence:afeabb11ebf83187106a100b1aa13c6d6d580cdfc1ab3112",
+          "window_id": "window-2",
+          "source_id": "web-86526b8d2c9859b6",
+          "source_title": "Virtual Threads - Java",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.oracle.com/en/java/javase/21/core/virtual-threads.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "JEP 444 virtual threads release JDK 21 status final",
+          "read_focus": "Read external URL Virtual Threads - Java for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A virtual thread cannot be unmounted during blocking operations when it is\npinned to its carrier.",
+          "claim_text": "A virtual thread cannot be unmounted during blocking operations when it is\npinned to its carrier.",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.2,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/e9a290b057612181fef53689f0bf97bfd032a49090d51c8b4cc65408be67cc62"
+        },
+        {
+          "evidence_id": "evidence:7437ae9dbd5f88814cb1f9e7938fa0c98fbe1aa7b809e936",
+          "window_id": "window-4",
+          "source_id": "web-2bd0385a155d4f00",
+          "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://mail.openjdk.org/pipermail/core-libs-dev/2024-October/132721.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The changes fix pinning issues for all 4 ports that currently implement continuations: x64, aarch64, riscv and ppc.",
+          "claim_text": "The changes fix pinning issues for all 4 ports that currently implement continuations: x64, aarch64, riscv and ppc.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/49880d96d68c0e898fd1c64df5a2429a31ef528afd032752658b733244aec923"
+        },
+        {
+          "evidence_id": "evidence:3d386c5c868f1026152c37d8a14df4f088ebb7fc9be3beec",
+          "window_id": "window-6",
+          "source_id": "web-b1db3da1b0e6fba5",
+          "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://mail.openjdk.org/archives/list/graal-dev@openjdk.org/message/HNG3CTZKIU4YZIBQMYJ4ND3RMOM2SOD4/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This is the implementation of JEP 491: Synchronize Virtual Threads without Pinning.",
+          "claim_text": "This is the implementation of JEP 491: Synchronize Virtual Threads without Pinning.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/f23f179ad22688ffac2a527a35aea36134e76ba1fa1179be289e7adaede976aa"
+        },
+        {
+          "evidence_id": "evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852",
+          "window_id": "window-5",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+          "claim_text": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        },
+        {
+          "evidence_id": "evidence:9eb1ebab2699443c250fce561b34a86374aaec33522de5df",
+          "window_id": "window-4",
+          "source_id": "web-2bd0385a155d4f00",
+          "source_title": "RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://mail.openjdk.org/pipermail/core-libs-dev/2024-October/132721.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL RFR: 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This is the implementation of JEP 491: Synchronize Virtual Threads without Pinning.",
+          "claim_text": "This is the implementation of JEP 491: Synchronize Virtual Threads without Pinning.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/49880d96d68c0e898fd1c64df5a2429a31ef528afd032752658b733244aec923"
+        },
+        {
+          "evidence_id": "evidence:97d094e8b1ea13de6396ceed7c08b52219855bce9e0afd2f",
+          "window_id": "window-5",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Virtual threads are mounted and unmounted frequently and transparently, without blocking any platform threads.",
+          "claim_text": "Virtual threads are mounted and unmounted frequently and transparently, without blocking any platform threads.",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.2,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        },
+        {
+          "evidence_id": "evidence:2a20bda93e48f3c6a963cd7749e8ddbdf34713e7daa2727d",
+          "window_id": "window-1",
+          "source_id": "web-98a6c2ed18426263",
+          "source_title": "JEP 444: Virtual Threads",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/444",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "JEP 444 virtual threads release JDK 21 status final",
+          "read_focus": "Read external URL JEP 444: Virtual Threads for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A *virtual thread* is an instance of `java.lang.Thread` that runs Java code on an underlying OS thread but does not capture the OS thread for the code's entire lifetime.",
+          "claim_text": "A *virtual thread* is an instance of `java.lang.Thread` that runs Java code on an underlying OS thread but does not capture the OS thread for the code's entire lifetime.",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.2,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/1f9871546bb10ef8145ee80d54052c99ad395d26e0d7d05499b30237b1231e0b"
+        },
+        {
+          "evidence_id": "evidence:7f9d6bad062ede997f0d41a78a239888e416d3425e4df23c",
+          "window_id": "window-7",
+          "source_id": "web-c3410c307c426801",
+          "source_title": "JDK 21 提供虚拟线程等新功能以及长期支持",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.azul.com/zh-hans/blog/jdk-21-delivers-virtual-threads-other-new-features-and-long-term-support/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 JDK 版本",
+          "read_focus": "Read external URL JDK 21 提供虚拟线程等新功能以及长期支持 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "JDK 21 还有很多吸引开发者的其他功能：",
+          "claim_text": "JDK 21 还有很多吸引开发者的其他功能：",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.2,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/4585b44427c4af55c8590b6361a570fb78356e94724cf2050da9df72cac7d2bf"
+        },
+        {
+          "evidence_id": "evidence:24a7f48f00cf3246257b20bd727daeb6afe37fc31493afad",
+          "window_id": "window-6",
+          "source_id": "web-b1db3da1b0e6fba5",
+          "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://mail.openjdk.org/archives/list/graal-dev@openjdk.org/message/HNG3CTZKIU4YZIBQMYJ4ND3RMOM2SOD4/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:openjdk.org JEP 491 synchronized virtual threads pinning",
+          "read_focus": "Read external URL 8338383: Implement JEP 491: Synchronize Virtual Threads ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The changes fix pinning issues when using `LM\\_LIGHTWEIGHT`, i.e. the default locking mode, (and `LM\\_MONITOR` which comes for free), but not when using `LM\\_LEGACY` mode.",
+          "claim_text": "The changes fix pinning issues when using `LM\\_LIGHTWEIGHT`, i.e. the default locking mode, (and `LM\\_MONITOR` which comes for free), but not when using `LM\\_LEGACY` mode.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/26ee9693-2e4b-435a-aef4-e69e59ef4457/f23f179ad22688ffac2a527a35aea36134e76ba1fa1179be289e7adaede976aa"
+        },
+        {
+          "evidence_id": "evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02",
+          "window_id": "window-2",
+          "source_id": "web-12f69f45d62def78",
+          "source_title": "Java 21 sneak peek | javamagazine",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blogs.oracle.com/javamagazine/java-21-sneak-peek/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "virtual threads preview JDK 19 20 21 first preview second preview",
+          "read_focus": "Read external URL Java 21 sneak peek | javamagazine for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+          "claim_text": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/034cf884-02df-4db6-9550-eee55afd9517/f2a0c5fb1fb89aaadfd9d6b83b820ce6f9a5d15f52b5d904328c69a41686bb6f"
+        },
+        {
+          "evidence_id": "evidence:3fde71518435d4cab7628758a997f84bb56458a9a00a3f61",
+          "window_id": "window-4",
+          "source_id": "web-c4ff2fdc3028e72f",
+          "source_title": "Project Loom Virtual Threads in Spring (JDK 19/20 Preview)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.danvega.dev/blog/virtual-threads-spring",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "virtual threads preview JDK 19 20 21 first preview second preview",
+          "read_focus": "Read external URL Project Loom Virtual Threads in Spring (JDK 19/20 Preview) for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Virtual threads, available as a preview release in JDK 19 and 20, are lightweight, inexpensive, and easy to create.",
+          "claim_text": "Virtual threads, available as a preview release in JDK 19 and 20, are lightweight, inexpensive, and easy to create.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/034cf884-02df-4db6-9550-eee55afd9517/10a2f1bdc55c5a94855f74f21c1fbe6716007b46980df922f01286e1899615df"
+        },
+        {
+          "evidence_id": "evidence:56c054c354e413f04dd09e81058d0d55af3e6065683621cf",
+          "window_id": "window-4",
+          "source_id": "web-0e398800bbba00c9",
+          "source_title": "Java JEP 与版本变化",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://wener.me/notes/java/version/java-jep",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+          "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "LTS。虚拟线程、Record Patterns、switch 模式匹配转正，Sequenced Collections 加入，Generational ZGC 可用。",
+          "claim_text": "LTS。虚拟线程、Record Patterns、switch 模式匹配转正，Sequenced Collections 加入，Generational ZGC 可用。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f817e267-921c-4817-b5db-d7e7f9e8e5ca/80269a58272e4ef449b80fb93d1e7b6e38154227f479acbb515e37a9d7453249"
+        },
+        {
+          "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+          "window_id": "window-4",
+          "source_id": "web-0e398800bbba00c9",
+          "source_title": "Java JEP 与版本变化",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://wener.me/notes/java/version/java-jep",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 JEP Status 与 Release 字段 official documentation",
+          "read_focus": "Read external URL Java JEP 与版本变化 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: Java 虚拟线程. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+          "claim_text": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f817e267-921c-4817-b5db-d7e7f9e8e5ca/80269a58272e4ef449b80fb93d1e7b6e38154227f479acbb515e37a9d7453249"
+        },
+        {
+          "evidence_id": "evidence:91723856b10a77cd24f80b88e3c88605e460302c97b4141f",
+          "window_id": "window-3",
+          "source_id": "web-6e90b4986bdb4fe3",
+          "source_title": "Java Virtual Threads in JDK 25",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javapro.io/2026/03/05/java-25-and-the-new-age-of-performance-virtual-threads-and-beyond/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Virtual threads synchronized pinning JEP preview JDK 19 20 21",
+          "read_focus": "Read external URL Java Virtual Threads in JDK 25 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* **JDK 20 (*JEP 436*):** Second preview, refinement based on feedback.",
+          "claim_text": "* **JDK 20 (*JEP 436*):** Second preview, refinement based on feedback.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1d3511-cea0-434c-b053-f0a38a0cdd3b/4a0d98804ae6a71d49e90685163ef144350f74b08bf29f84a85b4304379d01bf"
+        },
+        {
+          "evidence_id": "evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718",
+          "window_id": "window-3",
+          "source_id": "web-6e90b4986bdb4fe3",
+          "source_title": "Java Virtual Threads in JDK 25",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javapro.io/2026/03/05/java-25-and-the-new-age-of-performance-virtual-threads-and-beyond/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Virtual threads synchronized pinning JEP preview JDK 19 20 21",
+          "read_focus": "Read external URL Java Virtual Threads in JDK 25 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\nCurrent Table-as-State entity: synchronized pinning 改善. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+          "claim_text": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1d3511-cea0-434c-b053-f0a38a0cdd3b/4a0d98804ae6a71d49e90685163ef144350f74b08bf29f84a85b4304379d01bf"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-60892835647d8d74:dim-c314449f60c39a28",
+          "row_id": "entity-60892835647d8d74",
+          "evidence_id": "evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178",
+          "source_id": "web-80108c78b6e08312",
+          "source_title": "Java 21 虚拟线程（Virtual Threads） - Homurax's Blog",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blog.homurax.com/2024/05/13/virtual-threads/"
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-382937a0c175cb51",
+          "row_id": "entity-60892835647d8d74",
+          "evidence_id": "evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html"
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-4db09b01af512fea",
+          "row_id": "entity-60892835647d8d74",
+          "evidence_id": "evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html"
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+          "row_id": "entity-2736877293ec0ee1",
+          "evidence_id": "evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491"
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "row_id": "entity-2736877293ec0ee1",
+          "evidence_id": "evidence:3d386c5c868f1026152c37d8a14df4f088ebb7fc9be3beec",
+          "source_id": "web-b1db3da1b0e6fba5",
+          "source_title": "8338383: Implement JEP 491: Synchronize Virtual Threads ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://mail.openjdk.org/archives/list/graal-dev@openjdk.org/message/HNG3CTZKIU4YZIBQMYJ4ND3RMOM2SOD4/"
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+          "row_id": "entity-2736877293ec0ee1",
+          "evidence_id": "evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491"
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+          "row_id": "entity-2736877293ec0ee1",
+          "evidence_id": "evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02",
+          "source_id": "web-12f69f45d62def78",
+          "source_title": "Java 21 sneak peek | javamagazine",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blogs.oracle.com/javamagazine/java-21-sneak-peek/"
+        },
+        {
+          "cell_id": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "row_id": "entity-2736877293ec0ee1",
+          "evidence_id": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b",
+          "source_id": "web-0e398800bbba00c9",
+          "source_title": "Java JEP 与版本变化",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://wener.me/notes/java/version/java-jep"
+        },
+        {
+          "cell_id": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+          "row_id": "entity-60892835647d8d74",
+          "evidence_id": "evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718",
+          "source_id": "web-6e90b4986bdb4fe3",
+          "source_title": "Java Virtual Threads in JDK 25",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javapro.io/2026/03/05/java-25-and-the-new-age-of-performance-virtual-threads-and-beyond/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "dd57fae2-349a-4210-9eb0-6eb8ec562f8f",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "profile_key": "DEFAULT",
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          }
+        },
+        "created_at": "2026-10-16T15:31:39Z"
+      },
+      {
+        "trace_id": "906fa481-859a-473c-b746-7add863a445d",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4,
+          "rows": 2
+        },
+        "created_at": "2026-10-16T15:31:54Z"
+      },
+      {
+        "trace_id": "34e82a7d-b557-4d3e-b2fd-1382d83d2749",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-16T15:50:56Z"
+      }
+    ],
+    "created_at": "2026-10-16T15:31:39Z",
+    "updated_at": "2026-10-16T15:50:56Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidate_count": 9,
+      "task_count": 11,
+      "merge_count": 9,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-60892835647d8d74:dim-c314449f60c39a28",
+          "merge_id": "merge:599e9524ffe5fb5afd1cd4c6f2c877391232838e89b67a56c379b25adad1845d",
+          "candidate_id": "ddb8eff6-3401-4ad3-bb34-c3bc34892c46"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-60892835647d8d74:dim-382937a0c175cb51",
+          "merge_id": "merge:7c15e378d61fb06176eaefb3d873fd856d134b0126856004907b3305444071d5",
+          "candidate_id": "286b84a8-f564-43a7-8186-66288d9955b4"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-60892835647d8d74:dim-4db09b01af512fea",
+          "merge_id": "merge:b7ad49d7e7b729ce16287a53d4440001a9bb025055a8cbf1e162afbe6a8ed44c",
+          "candidate_id": "22cfc1ea-12bf-4298-af2d-52cbd42f3fc2"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+          "merge_id": "merge:34e383c14b48889967f9c398e8d72fa0d3e8420a1bc0bc2693e2c3e1b15919b6",
+          "candidate_id": "69bb03a5-a3f6-496c-9572-6dc771f06007"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "merge_id": "merge:0607885a421a164ce874c3da75877583853a6c7362189f57783bec0c1f1c3345",
+          "candidate_id": "46a8be31-19ea-4b60-8285-84a28dd33b02"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+          "merge_id": "merge:78292a7cd8153ce560d62c60ba92be7e4ab7910233161758b89b4378a804d99d",
+          "candidate_id": "9aefb34c-b276-474d-b49b-fba7f9044a7e"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+          "merge_id": "merge:6d823b0c062e7ec9058fb6f33211a2b97539da3e9ee2e23669317cf745e1a3b4",
+          "candidate_id": "e67c1cc1-6645-4f47-bba3-e9e2711b0abf"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 1,
+          "result_cell_version": 2,
+          "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "merge_id": "merge:781d0ee97f2bbce60d3338fb5a2a87de255631ccab8f64b1d4b7e904f20fb874",
+          "candidate_id": "dfc1fb03-e396-41b0-9a0f-f34c1c952955"
+        },
+        {
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+          "merge_id": "merge:ce30be426656d4640d225cbf593168c56b69dfd67309bf658634a9867fb082a5",
+          "candidate_id": "9ce53aa5-5772-4f26-a6a2-33e840fce7ed"
+        }
+      ],
+      "checkpoints": [
+        {
+          "merge_high_water_mark": 6,
+          "candidate_high_water_mark": 6,
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 7
+        }
+      ],
+      "tasks": [
+        {
+          "lease_expires_at": "2026-10-16T15:32:41Z",
+          "lease_epoch": 1,
+          "task_id": "c73ca8b5-08cf-4e19-ac31-2086ad5d8bcd",
+          "task_key": "planning:d1161830-9eb7-4941-b951-61ed704a009e",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:33:25Z",
+          "lease_epoch": 1,
+          "task_id": "22ca9546-b03c-4a25-b47d-93a53fabbe1c",
+          "task_key": "deep-cell:4a1064c6894e31a1fff77e4b62901801",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:34:12Z",
+          "lease_epoch": 1,
+          "task_id": "26ee9693-2e4b-435a-aef4-e69e59ef4457",
+          "task_key": "deep-cell:404f2a58f28e242c46c6305a3ef7dfcd",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:34:11Z",
+          "lease_epoch": 1,
+          "task_id": "9e3bd945-2349-460b-b249-35912726a9fd",
+          "task_key": "deep-cell:18d88a93c5bbe8a2b3edb645852c3c2b",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:33:40Z",
+          "lease_epoch": 1,
+          "task_id": "bc1bd8e0-2d61-4e40-9d95-b688b6281351",
+          "task_key": "deep-cell:a21f7271b56272079e782f60a04f0d0e",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:34:29Z",
+          "lease_epoch": 1,
+          "task_id": "2cf4e588-457d-4293-b95f-f682c37408ae",
+          "task_key": "evidence-audit:3b6da31e3e8b2f3242988637e738ea48",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "",
+          "lease_epoch": 3,
+          "task_id": "3b3808ef-f276-4d3f-970b-44ebfbd10fa9",
+          "task_key": "conflict-counterfactual:b9a61747737b892fe834766050a5727d",
+          "worker_instance_id": "",
+          "fencing_token": 3,
+          "attempt_count": 3,
+          "status": "FAILED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:50:58Z",
+          "lease_epoch": 1,
+          "task_id": "034cf884-02df-4db6-9550-eee55afd9517",
+          "task_key": "counterfactual:7f23ae9eeceb088aab90a86cbab9cad6",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:51:30Z",
+          "lease_epoch": 1,
+          "task_id": "2a1d3511-cea0-434c-b053-f0a38a0cdd3b",
+          "task_key": "counterfactual:8a220052842bdf3cf55dd7afe32ced7d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:51:13Z",
+          "lease_epoch": 1,
+          "task_id": "f817e267-921c-4817-b5db-d7e7f9e8e5ca",
+          "task_key": "counterfactual:1da1f22350b08f3546a2d679a5aec366",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        },
+        {
+          "lease_expires_at": "2026-10-16T15:51:46Z",
+          "lease_epoch": 1,
+          "task_id": "ede752a7-a4b0-474b-b65a-a4ba9e9a6ebd",
+          "task_key": "evidence-audit:9456dce472e1c9cb87306320f5d71eac",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED"
+        }
+      ],
+      "candidates": [
+        {
+          "candidate_id": "ddb8eff6-3401-4ad3-bb34-c3bc34892c46",
+          "cell_key": "entity-60892835647d8d74:dim-c314449f60c39a28",
+          "task_id": "22ca9546-b03c-4a25-b47d-93a53fabbe1c",
+          "base_cell_version": 0,
+          "confidence": 0.9
+        },
+        {
+          "candidate_id": "22cfc1ea-12bf-4298-af2d-52cbd42f3fc2",
+          "cell_key": "entity-60892835647d8d74:dim-4db09b01af512fea",
+          "task_id": "bc1bd8e0-2d61-4e40-9d95-b688b6281351",
+          "base_cell_version": 0,
+          "confidence": 0.95
+        },
+        {
+          "candidate_id": "286b84a8-f564-43a7-8186-66288d9955b4",
+          "cell_key": "entity-60892835647d8d74:dim-382937a0c175cb51",
+          "task_id": "bc1bd8e0-2d61-4e40-9d95-b688b6281351",
+          "base_cell_version": 0,
+          "confidence": 0.9
+        },
+        {
+          "candidate_id": "69bb03a5-a3f6-496c-9572-6dc771f06007",
+          "cell_key": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+          "task_id": "9e3bd945-2349-460b-b249-35912726a9fd",
+          "base_cell_version": 0,
+          "confidence": 0.95
+        },
+        {
+          "candidate_id": "46a8be31-19ea-4b60-8285-84a28dd33b02",
+          "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "task_id": "26ee9693-2e4b-435a-aef4-e69e59ef4457",
+          "base_cell_version": 0,
+          "confidence": 0.8
+        },
+        {
+          "candidate_id": "9aefb34c-b276-474d-b49b-fba7f9044a7e",
+          "cell_key": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+          "task_id": "26ee9693-2e4b-435a-aef4-e69e59ef4457",
+          "base_cell_version": 0,
+          "confidence": 0.9
+        },
+        {
+          "candidate_id": "e67c1cc1-6645-4f47-bba3-e9e2711b0abf",
+          "cell_key": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+          "task_id": "034cf884-02df-4db6-9550-eee55afd9517",
+          "base_cell_version": 0,
+          "confidence": 0.95
+        },
+        {
+          "candidate_id": "dfc1fb03-e396-41b0-9a0f-f34c1c952955",
+          "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "task_id": "f817e267-921c-4817-b5db-d7e7f9e8e5ca",
+          "base_cell_version": 1,
+          "confidence": 0.9
+        },
+        {
+          "candidate_id": "9ce53aa5-5772-4f26-a6a2-33e840fce7ed",
+          "cell_key": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+          "task_id": "2a1d3511-cea0-434c-b053-f0a38a0cdd3b",
+          "base_cell_version": 0,
+          "confidence": 0.95
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-2736877293ec0ee1",
+            "label": "Java 虚拟线程"
+          },
+          {
+            "entity_key": "entity-60892835647d8d74",
+            "label": "synchronized pinning 改善"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-2b3dbd391a0fabd0",
+            "label": "预览版本历史",
+            "description": "该特性以预览形式出现的 JDK 版本列表。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-382937a0c175cb51",
+            "label": "JEP Status 与 Release 字段",
+            "description": "JEP 页面中 Status 与 Release 字段标注的状态与目标版本。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-4db09b01af512fea",
+            "label": "JEP 编号与正式名称",
+            "description": "该特性对应的 JEP 编号及其正式标题。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-c314449f60c39a28",
+            "label": "正式发布 JDK 版本",
+            "description": "该特性结束预览、正式发布（非 preview）的 JDK 版本号。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅限 OpenJDK 官方 JEP 与 JDK 版本信息，覆盖虚拟线程从预览到正式发布的版本，以及 synchronized pinning 改善相关的 JEP。",
+          "objective": "确定 Java 虚拟线程正式发布（非预览）的 JDK 版本，以及 synchronized 导致的线程固定（pinning）问题得到改善的 JDK 版本，并给出对应的 JEP 编号与可引用证据。",
+          "exclusions": [
+            "性能基准对比数据",
+            "第三方框架（如 Spring Boot、Quarkus）对虚拟线程的适配情况",
+            "非官方博客对版本结论的推断"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown 研究表（实体 × 维度），每个单元格附 exact quote、snapshot 与 URL。"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "openjdk.org",
+          "docs.oracle.com",
+          "jcp.org"
+        ],
+        "perspectives": [
+          {
+            "name": "JDK 采纳者（开发/架构）",
+            "questions": [
+              "虚拟线程在哪个 JDK 版本正式发布，对应的 JEP 编号是什么？",
+              "虚拟线程在哪些版本处于预览状态？",
+              "synchronized 导致的线程固定问题在哪个 JDK 版本得到改善，对应的 JEP 编号是什么？"
+            ]
+          },
+          {
+            "name": "JEP 维护者/实现者",
+            "questions": [
+              "该 JEP 的 Status 与 Release 字段标注的版本是什么？",
+              "synchronized pinning 改善的实施版本及 JEP 正式名称是什么？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+          "entity_label": "Java 虚拟线程",
+          "column_label": "预览版本历史",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+          "equivalent_claims": [
+            {
+              "source_domain": "oracle.com",
+              "claim_text": "Virtual threads were previously introduced in preview JEPs in both Java 19 and Java 20, and they will reach their finalized state in Java 21.",
+              "evidence_key": "evidence:241b8f3e48e4b5fc137de8357e07aa492443e37dea6cff02"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+          "entity_label": "Java 虚拟线程",
+          "column_label": "JEP Status 与 Release 字段",
+          "cell_status": "CONFLICT_EXHAUSTED",
+          "candidate_value": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+          "equivalent_claims": [
+            {
+              "source_domain": "wener.me",
+              "claim_text": "Class-File API 和 Stream Gatherers 转正，Security Manager 永久禁用，虚拟线程同步 pinning 问题修复，AOT 启动链路开始落地。",
+              "evidence_key": "evidence:4852a8a145bb57beb5f602bdcc9c1a9ae1f53e3a0028d76b"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": [
+            {
+              "kind": "SEMANTIC_CONTRADICTION",
+              "other_value": "The changes fix pinning issues for all 4 ports that currently implement continuations: x64, aarch64, riscv and ppc.",
+              "status": "OPEN"
+            },
+            {
+              "kind": "SEMANTIC_CONTRADICTION",
+              "other_value": "LTS。虚拟线程、Record Patterns、switch 模式匹配转正，Sequenced Collections 加入，Generational ZGC 可用。",
+              "status": "OPEN"
+            }
+          ]
+        },
+        {
+          "cell_key": "entity-2736877293ec0ee1:dim-4db09b01af512fea",
+          "entity_label": "Java 虚拟线程",
+          "column_label": "JEP 编号与正式名称",
+          "cell_status": "VERIFIED",
+          "candidate_value": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+          "equivalent_claims": [
+            {
+              "source_domain": "openjdk.org",
+              "claim_text": "The JVM's implementation of the `synchronized` keyword should allow a virtual thread to unmount when inside a `synchronized` method or statement, or when blocked on a monitor.",
+              "evidence_key": "evidence:6901922ffe2e71e1ad302f7b48d7aa4cb6625af7accc3852"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2736877293ec0ee1:dim-c314449f60c39a28",
+          "entity_label": "Java 虚拟线程",
+          "column_label": "正式发布 JDK 版本",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+          "equivalent_claims": [
+            {
+              "source_domain": "openjdk.org",
+              "claim_text": "Virtual threads, which were introduced in [Java 21](https://openjdk.org/projects/jdk/21/) via [JEP 444](https://openjdk.org/jeps/444), are lightweight threads that are provided by the JDK rather than the operating system (OS).",
+              "evidence_key": "evidence:eb632162756108c885e6f470ceb54c8b2f04e5785a2d6c23"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-60892835647d8d74:dim-2b3dbd391a0fabd0",
+          "entity_label": "synchronized pinning 改善",
+          "column_label": "预览版本历史",
+          "cell_status": "VERIFIED",
+          "candidate_value": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+          "equivalent_claims": [
+            {
+              "source_domain": "javapro.io",
+              "claim_text": "* **JDK 19 (*JEP 425*):** First preview, experimental APIs.",
+              "evidence_key": "evidence:52da20e845db4a4239f527a0f2ade708c4fdfd7728890718"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-60892835647d8d74:dim-382937a0c175cb51",
+          "entity_label": "synchronized pinning 改善",
+          "column_label": "JEP Status 与 Release 字段",
+          "cell_status": "VERIFIED",
+          "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "equivalent_claims": [
+            {
+              "source_domain": "javaguide.cn",
+              "claim_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+              "evidence_key": "evidence:6b00a28ec071f9ef653907f58b4e069ae83497b59f4ed029"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-60892835647d8d74:dim-4db09b01af512fea",
+          "entity_label": "synchronized pinning 改善",
+          "column_label": "JEP 编号与正式名称",
+          "cell_status": "VERIFIED",
+          "candidate_value": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "equivalent_claims": [
+            {
+              "source_domain": "javaguide.cn",
+              "claim_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+              "evidence_key": "evidence:ef57bbb1fe7e2966805765254a145842aace04d3d882ce39"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-60892835647d8d74:dim-c314449f60c39a28",
+          "entity_label": "synchronized pinning 改善",
+          "column_label": "正式发布 JDK 版本",
+          "cell_status": "VERIFIED",
+          "candidate_value": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+          "equivalent_claims": [
+            {
+              "source_domain": "homurax.com",
+              "claim_text": "在 Java 21 中引入了虚拟线程（Virtual Threads），虚拟线程是 JDK 提供的轻量级线程（lightweight threads）实现，由 JVM 调度。",
+              "evidence_key": "evidence:0747b751e9e3d2c45654bd758ebe63f292a0642384980178"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "EVIDENCE_CONFLICT",
+          "repair_cause": "EVIDENCE_CONFLICT",
+          "observed_facts": "MA4 observed EVIDENCE_CONFLICT for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2736877293ec0ee1:dim-382937a0c175cb51"
+          ],
+          "strategy": "COUNTER_EVIDENCE",
+          "query_count": 0,
+          "created_at": "2026-10-16T15:33:36Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2736877293ec0ee1:dim-2b3dbd391a0fabd0",
+            "entity-2736877293ec0ee1:dim-382937a0c175cb51",
+            "entity-60892835647d8d74:dim-2b3dbd391a0fabd0"
+          ],
+          "strategy": "SWITCH_SOURCE_TYPE",
+          "query_count": 6,
+          "created_at": "2026-10-16T15:49:42Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
