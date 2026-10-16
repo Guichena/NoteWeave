@@ -115,8 +115,10 @@ class ResearchAgentRoleWorkflowService {
                 where research_run_id = ? and role = 'SYNTHESIS' and status in ('SUBMITTED', 'FAILED', 'CANCELLED')
                 """, Integer.class, runId);
         if (finished != null && finished > 0) return new WorkflowReceipt("FALLBACK_READY", null);
+        // 带局限时总会有单元格没通过审计（冲突、缺口），整体审计结论通常不是 PASS；
+        // 成文只用 research_formal_eligible_cell 里逐格审计通过的单元格，所以只要求审计已经执行过
         RoleResult audit = latestRoleResult(runId, "EVIDENCE_AUDIT");
-        if (audit == null || !"PASS".equals(audit.status()) || verifiedCells(runId).isEmpty()) {
+        if (audit == null || verifiedCells(runId).isEmpty()) {
             return new WorkflowReceipt("FALLBACK_READY", null);
         }
         if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
