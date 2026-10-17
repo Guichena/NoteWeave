@@ -2,15 +2,15 @@
   "schema_version": "research-quality-run.v1",
   "dataset_version": "1.0.0",
   "case_key": "conflict-coverage-threshold",
-  "run_id": "337b3249-5e78-4c77-83d2-0fe04f78d594",
-  "workspace_id": "9f982123-b678-4023-930a-82ccb55814f7",
-  "started_at": "2026-10-17T10:33:43.357586+00:00",
-  "finished_at": "2026-10-17T10:39:15.226918+00:00",
-  "wall_seconds": 331.9,
+  "run_id": "a5f01784-2eba-4c1a-89dc-65c646903a41",
+  "workspace_id": "b0e79113-dd42-4d7c-93cc-2a7ba1a0f6fc",
+  "started_at": "2026-10-17T10:51:33.812164+00:00",
+  "finished_at": "2026-10-17T10:56:35.468429+00:00",
+  "wall_seconds": 301.7,
   "run_detail": {
-    "research_run_id": "337b3249-5e78-4c77-83d2-0fe04f78d594",
-    "workspace_id": "9f982123-b678-4023-930a-82ccb55814f7",
-    "task_id": "fadab3b5-c3ed-49a5-8625-620086722790",
+    "research_run_id": "a5f01784-2eba-4c1a-89dc-65c646903a41",
+    "workspace_id": "b0e79113-dd42-4d7c-93cc-2a7ba1a0f6fc",
+    "task_id": "da5433bf-e637-482b-8364-c4f0778894eb",
     "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
     "profile_key": "DEFAULT",
     "research_intent": {
@@ -26,9 +26,9 @@
     "resumed_from_research_run_id": "",
     "resumed_from_checkpoint_no": null,
     "status": "COMPLETED",
-    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
     "final_report_title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-    "final_report_markdown": "# 提高测试覆盖率门槛与缺陷逃逸率：多来源证据的比较分析\n\n本次核验的资料未能就“提高测试覆盖率门槛是否降低缺陷逃逸率”给出直接的因果实证结论：关于门槛与逃逸率的关联，仅有间接机制与经验性说法可用。资料显示，80% 覆盖率被视为较合适的目标，高绩效团队的经验值低于百分之二，且缺陷逃逸率并无通用的 DORA 基准，精英团队低于 10% 的阈值属经验估计。\n\n## 直接回答\n\n关于覆盖率门槛与缺陷逃逸率之间的关系，本次核验的资料只提供了间接线索。有实践指出，若新功能引入后缺陷逃逸率飙升，就说明该领域的测试覆盖需要加强；这提示覆盖率不足可能与逃逸率上升相关，但并未直接证明提高门槛本身会降低逃逸率。 [evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4]\n\n在门槛设定方面，较普遍的看法是 80% 覆盖率是值得追求的目标。这一说法只反映目标设定的共识，并未给出门槛提高后逃逸率如何变化的实证数据。 [evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64]\n\n关于逃逸率的具体水平，有研究综述提到，高绩效团队通过全面的自动化测试和严格的代码评审，常能达到低于百分之二的逃逸率。该表述指向测试实践与低逃逸率的并存，但未说明覆盖率门槛本身的作用机制。 [evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86]\n\n## 不同组织的实践与经验值\n\n在缺陷逃逸率指标实践方面，有来源明确指出该指标不存在通用的 DORA 基准，精英团队低于 10% 的阈值属于经验估计，而非统一实证结论。因此，不同组织之间横向比较逃逸率时，所依据的目标值本身缺乏统一口径。 [evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14]\n\n在测试生成工具的实践中，有建议提出可在保持实现代码不变的前提下编写测试，以便让测试暴露已有缺陷，并将修复单独提交评审。此外，测试工具还可建议将测试集成进构建流水线，使覆盖率改进直接支撑质量门禁。这两点描述了测试与质量门禁的衔接方式，但没有给出门槛提高后逃逸率变化的量化结果。 [evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd] [evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744]\n\n需要注意的是，依赖自动生成测试时存在覆盖盲区：生成的测试可能并不涵盖所有方案，因此应当始终查看生成的代码，并补充可能需要的其他测试。这提示以自动化手段冲刺覆盖率门槛时，需人工复核以保障测试的有效性。 [evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307]\n\n## 对比表\n\n| 来源/实践 | 覆盖率门槛设定 | 缺陷逃逸率水平 | 因果机制与证据缺口 |\n| --- | --- | --- | --- |\n| 代码覆盖率与缺陷逃逸实证研究 | 普遍认为 80% 覆盖率是较合适的目标 | 高绩效团队常低于百分之二（依托全面自动化测试与严格代码评审） | 未提供覆盖率门槛与逃逸率的直接因果证据 [evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64] [evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86] |\n| OpenMARI 缺陷逃逸率指标实践 | 未说明具体门槛 | 无通用 DORA 基准，精英团队低于 10% 属经验估计 | 新功能引入后逃逸率飙升提示该领域测试覆盖需要加强，即覆盖率不足可能与逃逸率升高相关 [evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14] [evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4] |\n| GitHub Copilot 测试覆盖率实践 | 可建议将测试集成进构建流水线，使覆盖率改进支撑质量门禁 | 未提供逃逸率数据 | 保持实现代码不变可让测试暴露已有缺陷；生成的测试可能不涵盖所有方案，需人工复核 [evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744] [evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd] [evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307] |\n\n## 局限\n\n- 代码覆盖率与缺陷逃逸实证研究 · 因果机制：必需研究项未找到足够证据\n- 代码覆盖率与缺陷逃逸实证研究 · 证据缺口：必需研究项未找到足够证据\n- OpenMARI 缺陷逃逸率指标实践 · 缺陷逃逸率变化：必需研究项未找到足够证据\n- OpenMARI 缺陷逃逸率指标实践 · 覆盖率门槛设定：必需研究项未找到足够证据\n- GitHub Copilot 测试覆盖率实践 · 缺陷逃逸率变化：必需研究项未找到足够证据\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n**核验情况：** 已核验 7 项，未找到足够证据 5 项。\n\n## 结论汇总\n\n| 研究对象 | 覆盖率门槛设定 | 缺陷逃逸率变化 | 因果机制 | 证据缺口 |\n|---|---|---|---|---|\n| OpenMARI 缺陷逃逸率指标实践 | 未找到证据 | 未找到证据 | 缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高 | 缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。 |\n| 代码覆盖率与缺陷逃逸实证研究 | 普遍认为 80% 覆盖率是较合适的目标 | High-performing teams often achieve rates below two percent through comprehensiv… | 未找到证据 | 未找到证据 |\n| GitHub Copilot 测试覆盖率实践 | Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。 | 未找到证据 | 保持实现代码不变可让测试暴露已有缺陷 | 生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。 |\n\n## 引用核对\n\n### High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.\n\n- 研究项：`代码覆盖率与缺陷逃逸实证研究 · 缺陷逃逸率变化`\n- 候选：`852d7bd7-30d9-4c49-91da-5022aca0f43e`\n- Evidence: `evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86`\n  - Exact quote: “High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.”\n  - Snapshot: `research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/c904d6c8895e28c354204482a48950b077f4d0e1c38daa726b6c9b7ee5d84e67`\n  - URL: https://www.em-tools.io/engineering-metrics/escaped-defects\n\n### 普遍认为 80% 覆盖率是较合适的目标\n\n- 研究项：`代码覆盖率与缺陷逃逸实证研究 · 覆盖率门槛设定`\n- 候选：`be793963-efb2-4106-8494-ccc1b9279a42`\n- Evidence: `evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64`\n  - Exact quote: “it is generally accepted that 80% coverage is a good goal to aim for”\n  - Snapshot: `research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/24432185539c07a7ff4ef51f23ad2dc69ca94bc9b712cb7c65b58d92f1b549b0`\n  - URL: https://www.atlassian.com/continuous-delivery/software-testing/code-coverage\n\n### 缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高\n\n- 研究项：`OpenMARI 缺陷逃逸率指标实践 · 因果机制`\n- 候选：`edd6b963-1b1e-45eb-9ad7-c136bda51af6`\n- Evidence: `evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4`\n  - Exact quote: “If the escape rate spikes after a new feature is introduced, you immediately know the test coverage for that area needs work.”\n  - Snapshot: `research/external/5d6a3760-7e8d-4033-82e8-c1d70aec3844/3cf0ef6af3f3eb013b7402ed6b415e1479587495f9c755459f3b9b4012a2853e`\n  - URL: https://testdino.com/blog/cost-of-bugs\n\n### 缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。\n\n- 研究项：`OpenMARI 缺陷逃逸率指标实践 · 证据缺口`\n- 候选：`87978679-a69c-44e1-93ac-72c22fd94717`\n- Evidence: `evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14`\n  - Exact quote: “No universal DORA benchmark exists for this metric, but elite teams typically see escaped defect rates below 10%”\n  - Snapshot: `research/external/dec84b28-201f-4339-9a2f-058c8ef818db/8826f8d7dd3b8486f6788cc0c9016739e2f8282c632cdf1d9a1a57828f7fa339`\n  - URL: https://www.devstats.com/glossary/escaped-defects\n\n### 保持实现代码不变可让测试暴露已有缺陷\n\n- 研究项：`GitHub Copilot 测试覆盖率实践 · 因果机制`\n- 候选：`57a2c3a5-44cb-4577-ac1d-4ab4a75da354`\n- Evidence: `evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd`\n  - Exact quote: “Keeping implementation code unchanged lets the tests expose existing bugs and keeps any fixes separate for review.”\n  - Snapshot: `research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/15a8fe711aa145fa088c7036ceeda76a9749ff851b962f06b3263ad3d1659cbd`\n  - URL: https://code.visualstudio.com/docs/agents/guides/test-code-with-ai\n\n### Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。\n\n- 研究项：`GitHub Copilot 测试覆盖率实践 · 覆盖率门槛设定`\n- 候选：`a6d9df2e-e87f-42e6-b063-5411220eb7db`\n- Evidence: `evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744`\n  - Exact quote: “Copilot can suggest how to integrate tests into your build pipeline, ensuring that coverage improvements directly support quality gates.”\n  - Snapshot: `research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/3838e851a47fcacfa3555b0656168671041fb5fc3da740a223b1263d4948aa67`\n  - URL: https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage\n\n### 生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。\n\n- 研究项：`GitHub Copilot 测试覆盖率实践 · 证据缺口`\n- 候选：`d45ef370-7be3-4422-a160-be9c1f458983`\n- Evidence: `evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307`\n  - Exact quote: “生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。”\n  - Snapshot: `research/external/930447ba-2dc6-4376-8dec-c8f66e09b4dc/a994617b8b2057fbd9aaf56fad34981c7072581a00d833261092f10c73f20d84`\n  - URL: https://docs.github.com/zh/enterprise-cloud@latest/copilot/tutorials/write-tests\n\n## 局限与未解决项\n\n- **代码覆盖率与缺陷逃逸实证研究 · 因果机制**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **代码覆盖率与缺陷逃逸实证研究 · 证据缺口**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **OpenMARI 缺陷逃逸率指标实践 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **OpenMARI 缺陷逃逸率指标实践 · 覆盖率门槛设定**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **GitHub Copilot 测试覆盖率实践 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN",
+    "final_report_markdown": "# 提高测试覆盖率门槛与缺陷逃逸率：现有核验证据的范围\n\n本次核验的资料仅显示，Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制，但未提供其覆盖率门槛与缺陷逃逸率变化的数据。因此，对于「提高测试覆盖率门槛是否降低缺陷逃逸率」，以及 Google、Microsoft、CISQ/ITIC 各组织的实证结果与比较，现有证据均无法回答。\n\n## 直接回答\n\n关于提高测试覆盖率门槛是否降低缺陷逃逸率，本次核验的资料没有给出可直接回答该问题的结论。可用的资料仅涉及 Google 如何让覆盖率信息发挥作用：其做法之一是把覆盖率信息应用于变更集和代码评审层面。 [evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc]\n\n## 不同组织的实证结果\n\n就不同组织的比较而言，本次核验的资料只包含 Google 关于覆盖率信息可操作化的一项机制描述，没有提供可据以比较的缺陷逃逸率结果。针对 Google、Microsoft 与 CISQ/ITIC 的覆盖率门槛设定和缺陷逃逸率变化，现有证据均不足以支撑任何实证结论或组织间对比，相关问题被列为尚未回答的部分。 [evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc]\n\n## 对比表\n\n| 组织 | 已有证据覆盖的方面 |\n| --- | --- |\n| Google | 将覆盖率信息应用于变更集和代码评审层面 [evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc] |\n\n## 局限\n\n- Google 覆盖率门槛实证研究 · 缺陷逃逸率变化：必需研究项未找到足够证据\n- Google 覆盖率门槛实证研究 · 覆盖率门槛设定：必需研究项未找到足够证据\n- Microsoft 覆盖率门槛实证研究 · 因果机制与混杂因素：必需研究项未找到足够证据\n- Microsoft 覆盖率门槛实证研究 · 缺陷逃逸率变化：必需研究项未找到足够证据\n- Microsoft 覆盖率门槛实证研究 · 覆盖率门槛设定：必需研究项未找到足够证据\n- CISQ/ITIC 覆盖率与缺陷逃逸研究 · 因果机制与混杂因素：必需研究项未找到足够证据\n- CISQ/ITIC 覆盖率与缺陷逃逸研究 · 缺陷逃逸率变化：必需研究项未找到足够证据\n- CISQ/ITIC 覆盖率与缺陷逃逸研究 · 覆盖率门槛设定：必需研究项未找到足够证据\n\n**核验情况：** 已核验 1 项，未找到足够证据 8 项。\n\n## 结论汇总\n\n| 研究对象 | 覆盖率门槛设定 | 缺陷逃逸率变化 | 因果机制与混杂因素 |\n|---|---|---|---|\n| Google 覆盖率门槛实证研究 | 未找到证据 | 未找到证据 | Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制 |\n| Microsoft 覆盖率门槛实证研究 | 未找到证据 | 未找到证据 | 未找到证据 |\n| CISQ/ITIC 覆盖率与缺陷逃逸研究 | 未找到证据 | 未找到证据 | 未找到证据 |\n\n## 引用核对\n\n### Google 覆盖率门槛实证研究 · 因果机制与混杂因素\n\nGoogle 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制\n\n- Evidence: `evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc`\n  - Exact quote: “A key aspect of making coverage information actionable is to apply it at the level of changesets and code review.”\n  - Snapshot: `research/external/bcc41f12-7f40-4575-8910-170aa1e7398e/beb7d0bfb7d406982b1cc0851db741307d3fabe88cbd8b4ed23e5bcf30cbf227`\n  - URL: https://homes.cs.washington.edu/~rjust/publ/google_coverage_fse_2019.pdf\n\n## 局限与未解决项\n\n- **Google 覆盖率门槛实证研究 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Google 覆盖率门槛实证研究 · 覆盖率门槛设定**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Microsoft 覆盖率门槛实证研究 · 因果机制与混杂因素**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Microsoft 覆盖率门槛实证研究 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Microsoft 覆盖率门槛实证研究 · 覆盖率门槛设定**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **CISQ/ITIC 覆盖率与缺陷逃逸研究 · 因果机制与混杂因素**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **CISQ/ITIC 覆盖率与缺陷逃逸研究 · 缺陷逃逸率变化**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **CISQ/ITIC 覆盖率与缺陷逃逸研究 · 覆盖率门槛设定**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n\n## 完成判定原因\n\n- 完成状态：`INSUFFICIENT_EVIDENCE`\n- INSUFFICIENT_EVIDENCE",
     "report_structure": null,
     "counterfactual_summary": {
       "has_counterfactual_recheck": false,
@@ -47,27 +47,27 @@
     },
     "research_artifact_candidate": null,
     "report_file": {
-      "object_key": "workspace/9f982123-b678-4023-930a-82ccb55814f7/research/337b3249-5e78-4c77-83d2-0fe04f78d594/report/final.md",
+      "object_key": "workspace/b0e79113-dd42-4d7c-93cc-2a7ba1a0f6fc/research/a5f01784-2eba-4c1a-89dc-65c646903a41/report/final.md",
       "file_name": "final.md",
       "mime_type": "text/markdown",
-      "content_size": 11421,
-      "sha256": "846c0b907e6095d7b57e6446bd05c859e4172d58df054c441b8a4db8de351877"
+      "content_size": 4898,
+      "sha256": "31f640ae8ac728df9d981af5be40cf2556e635012ed5a573121512ffb5320dbf"
     },
     "research_artifact": {
-      "artifact_id": "337b3249-5e78-4c77-83d2-0fe04f78d594",
+      "artifact_id": "a5f01784-2eba-4c1a-89dc-65c646903a41",
       "artifact_type": "DEEP_RESEARCH_REPORT",
       "artifact_version": "v1",
       "title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
       "generated_by": "research_agent",
       "generated_ref_type": "RESEARCH_RUN",
-      "generated_ref_id": "337b3249-5e78-4c77-83d2-0fe04f78d594",
+      "generated_ref_id": "a5f01784-2eba-4c1a-89dc-65c646903a41",
       "citation_count": 0,
       "report_file": {
-        "object_key": "workspace/9f982123-b678-4023-930a-82ccb55814f7/research/337b3249-5e78-4c77-83d2-0fe04f78d594/report/final.md",
+        "object_key": "workspace/b0e79113-dd42-4d7c-93cc-2a7ba1a0f6fc/research/a5f01784-2eba-4c1a-89dc-65c646903a41/report/final.md",
         "file_name": "final.md",
         "mime_type": "text/markdown",
-        "content_size": 11421,
-        "sha256": "846c0b907e6095d7b57e6446bd05c859e4172d58df054c441b8a4db8de351877"
+        "content_size": 4898,
+        "sha256": "31f640ae8ac728df9d981af5be40cf2556e635012ed5a573121512ffb5320dbf"
       }
     },
     "research_process_summary": {
@@ -78,38 +78,35 @@
         "total_read_window_count": 0,
         "total_evidence_card_count": 0,
         "all_search_queries": [
-          "code coverage enforcement defect escape study limitations generalizability",
-          "test coverage threshold defect escape rate empirical study",
-          "OpenMARI test coverage defect escape rate",
-          "coverage threshold defect escape rate empirical study limitations",
-          "why test coverage reduces escaped defects mechanism",
-          "code coverage threshold defect escape rate empirical study",
-          "GitHub Copilot test coverage defect escape",
-          "test coverage threshold defect escape rate empirical study limitations",
-          "GitHub Copilot test coverage defect escape evidence",
-          "coverage threshold defect escape rate data before after",
-          "code coverage threshold target percentage definition",
-          "why increasing test coverage reduces escaped defects mechanism",
-          "code coverage threshold escaped defects empirical study",
-          "why does higher code coverage reduce escaped defects causal mechanism",
-          "empirical study code coverage threshold defect escape rate before after",
-          "OpenMARI defect escape rate coverage",
-          "覆盖率门禁 漏检缺陷 工业界 案例研究 效度威胁",
-          "代码覆盖率 缺陷逃逸 实证研究 外部有效性 局限",
-          "OpenMARI 缺陷逃逸率指标实践 缺陷逃逸率变化 官方说明 适用条件",
-          "OpenMARI 缺陷逃逸率指标实践 缺陷逃逸率变化 primary research limitations",
-          "GitHub Copilot 测试覆盖率实践 缺陷逃逸率变化 官方说明 适用条件",
-          "GitHub Copilot 测试覆盖率实践 缺陷逃逸率变化 primary research limitations",
-          "代码覆盖率与缺陷逃逸实证研究 因果机制 primary research limitations",
-          "代码覆盖率与缺陷逃逸实证研究 因果机制 官方说明 适用条件",
-          "OpenMARI 缺陷逃逸率指标实践 覆盖率门槛设定 primary research limitations",
-          "OpenMARI 缺陷逃逸率指标实践 覆盖率门槛设定 官方说明 适用条件",
-          "GitHub Copilot 代码生成 单元测试覆盖 局限性 实证 研究 缺口",
-          "AI 辅助编程 缺陷逃逸 覆盖率 有效性 边界 条件",
-          "defect escape rate quality gate coverage target industry benchmark",
-          "DORA change failure rate vs defect escape rate threshold",
-          "代码覆盖率与缺陷逃逸实证研究 证据缺口 primary research limitations",
-          "代码覆盖率与缺陷逃逸实证研究 证据缺口 官方说明 适用条件"
+          "Google testing coverage required percentage case study defect escape",
+          "code coverage threshold does not reduce defects empirical counterevidence",
+          "Google code coverage threshold empirical study",
+          "coverage threshold percentage case study line branch coverage empirical",
+          "CISQ ITIC coverage threshold defect escape study",
+          "defect escape rate before after coverage threshold empirical study",
+          "Microsoft test coverage threshold defect escape study",
+          "coverage threshold defect escape rate empirical results organizations",
+          "code coverage requirement percentage branch line policy case study",
+          "Microsoft 覆盖率门槛实证研究 覆盖率门槛设定 primary research limitations",
+          "Microsoft 覆盖率门槛实证研究 覆盖率门槛设定 官方说明 适用条件",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 覆盖率门槛设定 primary research limitations",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 覆盖率门槛设定 官方说明 适用条件",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 因果机制与混杂因素 primary research limitations",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 因果机制与混杂因素 官方说明 适用条件",
+          "Microsoft 覆盖率门槛实证研究 因果机制与混杂因素 官方说明 适用条件",
+          "Microsoft 覆盖率门槛实证研究 因果机制与混杂因素 primary research limitations",
+          "Microsoft DevOps case study coverage policy escape defects postmortem",
+          "Microsoft engineering blog code coverage gate defect leakage metrics",
+          "Google 覆盖率门槛实证研究 缺陷逃逸率变化 官方说明 适用条件",
+          "Google 覆盖率门槛实证研究 缺陷逃逸率变化 primary research limitations",
+          "谷歌 测试覆盖率 门槛 60% 75% 80% 工程实践",
+          "谷歌 代码覆盖率 要求 经验 分享",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 缺陷逃逸率变化 primary research limitations",
+          "CISQ/ITIC 覆盖率与缺陷逃逸研究 缺陷逃逸率变化 官方说明 适用条件",
+          "Google 覆盖率门槛实证研究 覆盖率门槛设定 官方说明 适用条件",
+          "Google 覆盖率门槛实证研究 覆盖率门槛设定 primary research limitations",
+          "Microsoft 覆盖率门槛实证研究 缺陷逃逸率变化 primary research limitations",
+          "Microsoft 覆盖率门槛实证研究 缺陷逃逸率变化 官方说明 适用条件"
         ],
         "final_loop_decision": "",
         "final_loop_reason": "",
@@ -175,9 +172,9 @@
         "requirement_partial_blocked_row_count": 0,
         "blocked_row_samples": [
           {
-            "row_id": "entity-b32615e906db0ec7",
+            "row_id": "entity-b1368ebf8d2e1cb4",
             "source_id": "",
-            "source_title": "OpenMARI 缺陷逃逸率指标实践",
+            "source_title": "Microsoft 覆盖率门槛实证研究",
             "evidence_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
             "claim_text": "",
@@ -192,9 +189,9 @@
             "missing_columns": []
           },
           {
-            "row_id": "entity-b8b2c6ec3d042523",
+            "row_id": "entity-e2b2b109010eea81",
             "source_id": "",
-            "source_title": "GitHub Copilot 测试覆盖率实践",
+            "source_title": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
             "evidence_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
             "claim_text": "",
@@ -211,9 +208,9 @@
         ],
         "guardrailed_row_samples": [
           {
-            "row_id": "entity-b32615e906db0ec7",
+            "row_id": "entity-b1368ebf8d2e1cb4",
             "source_id": "",
-            "source_title": "OpenMARI 缺陷逃逸率指标实践",
+            "source_title": "Microsoft 覆盖率门槛实证研究",
             "evidence_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
             "claim_text": "",
@@ -228,9 +225,9 @@
             "missing_columns": []
           },
           {
-            "row_id": "entity-b8b2c6ec3d042523",
+            "row_id": "entity-e2b2b109010eea81",
             "source_id": "",
-            "source_title": "GitHub Copilot 测试覆盖率实践",
+            "source_title": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
             "evidence_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
             "claim_text": "",
@@ -338,14 +335,14 @@
         ],
         "rows": [
           {
-            "row_id": "entity-b32615e906db0ec7",
+            "row_id": "entity-b1368ebf8d2e1cb4",
             "branch_id": "branch-main",
             "source_id": "",
-            "source_title": "OpenMARI 缺陷逃逸率指标实践",
+            "source_title": "Microsoft 覆盖率门槛实证研究",
             "generated_by": "",
             "generated_ref_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
             "evidence_id": "",
             "row_status": "DISCOVERED",
             "relation_type": "",
@@ -357,14 +354,14 @@
             "repair_hint": ""
           },
           {
-            "row_id": "entity-b8b2c6ec3d042523",
+            "row_id": "entity-e2b2b109010eea81",
             "branch_id": "branch-main",
             "source_id": "",
-            "source_title": "GitHub Copilot 测试覆盖率实践",
+            "source_title": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
             "generated_by": "",
             "generated_ref_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
             "evidence_id": "",
             "row_status": "DISCOVERED",
             "relation_type": "",
@@ -376,14 +373,14 @@
             "repair_hint": ""
           },
           {
-            "row_id": "entity-877b6e3c3771ee02",
+            "row_id": "entity-1b0c4be436f8ca8b",
             "branch_id": "branch-main",
             "source_id": "",
-            "source_title": "代码覆盖率与缺陷逃逸实证研究",
+            "source_title": "Google 覆盖率门槛实证研究",
             "generated_by": "",
             "generated_ref_id": "",
             "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+            "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
             "evidence_id": "",
             "row_status": "DISCOVERED",
             "relation_type": "",
@@ -397,23 +394,8 @@
         ],
         "cells": [
           {
-            "cell_id": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-            "row_id": "entity-877b6e3c3771ee02",
-            "branch_id": "branch-main",
-            "column_key": "dim-ca49d5f11de5bf0c",
-            "column_label": "覆盖率门槛设定",
-            "candidate_value": "普遍认为 80% 覆盖率是较合适的目标",
-            "status": "VERIFIED",
-            "confidence": 0.8,
-            "evidence_refs": [
-              "evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 0
-          },
-          {
-            "cell_id": "entity-b32615e906db0ec7:dim-ca49d5f11de5bf0c",
-            "row_id": "entity-b32615e906db0ec7",
+            "cell_id": "entity-1b0c4be436f8ca8b:dim-ca49d5f11de5bf0c",
+            "row_id": "entity-1b0c4be436f8ca8b",
             "branch_id": "branch-main",
             "column_key": "dim-ca49d5f11de5bf0c",
             "column_label": "覆盖率门槛设定",
@@ -425,36 +407,8 @@
             "repair_count": 2
           },
           {
-            "cell_id": "entity-877b6e3c3771ee02:dim-d2e662809cdd71d3",
-            "row_id": "entity-877b6e3c3771ee02",
-            "branch_id": "branch-main",
-            "column_key": "dim-d2e662809cdd71d3",
-            "column_label": "证据缺口",
-            "candidate_value": "",
-            "status": "GAP",
-            "confidence": null,
-            "evidence_refs": [],
-            "last_verifier_decision": "",
-            "repair_count": 2
-          },
-          {
-            "cell_id": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-            "row_id": "entity-b32615e906db0ec7",
-            "branch_id": "branch-main",
-            "column_key": "dim-38c8828a3f3c670d",
-            "column_label": "因果机制",
-            "candidate_value": "缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高",
-            "status": "VERIFIED",
-            "confidence": 0.7,
-            "evidence_refs": [
-              "evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 0
-          },
-          {
-            "cell_id": "entity-b8b2c6ec3d042523:dim-b537a72f65ff8240",
-            "row_id": "entity-b8b2c6ec3d042523",
+            "cell_id": "entity-b1368ebf8d2e1cb4:dim-b537a72f65ff8240",
+            "row_id": "entity-b1368ebf8d2e1cb4",
             "branch_id": "branch-main",
             "column_key": "dim-b537a72f65ff8240",
             "column_label": "缺陷逃逸率变化",
@@ -466,23 +420,8 @@
             "repair_count": 2
           },
           {
-            "cell_id": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-            "row_id": "entity-b32615e906db0ec7",
-            "branch_id": "branch-main",
-            "column_key": "dim-d2e662809cdd71d3",
-            "column_label": "证据缺口",
-            "candidate_value": "缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。",
-            "status": "VERIFIED",
-            "confidence": 0.75,
-            "evidence_refs": [
-              "evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 0
-          },
-          {
-            "cell_id": "entity-b32615e906db0ec7:dim-b537a72f65ff8240",
-            "row_id": "entity-b32615e906db0ec7",
+            "cell_id": "entity-1b0c4be436f8ca8b:dim-b537a72f65ff8240",
+            "row_id": "entity-1b0c4be436f8ca8b",
             "branch_id": "branch-main",
             "column_key": "dim-b537a72f65ff8240",
             "column_label": "缺陷逃逸率变化",
@@ -494,77 +433,84 @@
             "repair_count": 2
           },
           {
-            "cell_id": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-            "row_id": "entity-877b6e3c3771ee02",
-            "branch_id": "branch-main",
-            "column_key": "dim-b537a72f65ff8240",
-            "column_label": "缺陷逃逸率变化",
-            "candidate_value": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
-            "status": "VERIFIED",
-            "confidence": 0.65,
-            "evidence_refs": [
-              "evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 0
-          },
-          {
-            "cell_id": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-            "row_id": "entity-b8b2c6ec3d042523",
+            "cell_id": "entity-e2b2b109010eea81:dim-ca49d5f11de5bf0c",
+            "row_id": "entity-e2b2b109010eea81",
             "branch_id": "branch-main",
             "column_key": "dim-ca49d5f11de5bf0c",
             "column_label": "覆盖率门槛设定",
-            "candidate_value": "Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-e2b2b109010eea81:dim-b537a72f65ff8240",
+            "row_id": "entity-e2b2b109010eea81",
+            "branch_id": "branch-main",
+            "column_key": "dim-b537a72f65ff8240",
+            "column_label": "缺陷逃逸率变化",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-e2b2b109010eea81:dim-0f1d0bbefeb10dc9",
+            "row_id": "entity-e2b2b109010eea81",
+            "branch_id": "branch-main",
+            "column_key": "dim-0f1d0bbefeb10dc9",
+            "column_label": "因果机制与混杂因素",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-b1368ebf8d2e1cb4:dim-0f1d0bbefeb10dc9",
+            "row_id": "entity-b1368ebf8d2e1cb4",
+            "branch_id": "branch-main",
+            "column_key": "dim-0f1d0bbefeb10dc9",
+            "column_label": "因果机制与混杂因素",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-b1368ebf8d2e1cb4:dim-ca49d5f11de5bf0c",
+            "row_id": "entity-b1368ebf8d2e1cb4",
+            "branch_id": "branch-main",
+            "column_key": "dim-ca49d5f11de5bf0c",
+            "column_label": "覆盖率门槛设定",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+            "row_id": "entity-1b0c4be436f8ca8b",
+            "branch_id": "branch-main",
+            "column_key": "dim-0f1d0bbefeb10dc9",
+            "column_label": "因果机制与混杂因素",
+            "candidate_value": "Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制",
             "status": "VERIFIED",
             "confidence": 0.6,
             "evidence_refs": [
-              "evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744"
+              "evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc"
             ],
             "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
             "repair_count": 0
-          },
-          {
-            "cell_id": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-            "row_id": "entity-b8b2c6ec3d042523",
-            "branch_id": "branch-main",
-            "column_key": "dim-38c8828a3f3c670d",
-            "column_label": "因果机制",
-            "candidate_value": "保持实现代码不变可让测试暴露已有缺陷",
-            "status": "VERIFIED",
-            "confidence": 0.7,
-            "evidence_refs": [
-              "evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 0
-          },
-          {
-            "cell_id": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-            "row_id": "entity-877b6e3c3771ee02",
-            "branch_id": "branch-main",
-            "column_key": "dim-38c8828a3f3c670d",
-            "column_label": "因果机制",
-            "candidate_value": "",
-            "status": "GAP",
-            "confidence": null,
-            "evidence_refs": [],
-            "last_verifier_decision": "",
-            "repair_count": 1
-          },
-          {
-            "cell_id": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-            "row_id": "entity-b8b2c6ec3d042523",
-            "branch_id": "branch-main",
-            "column_key": "dim-d2e662809cdd71d3",
-            "column_label": "证据缺口",
-            "candidate_value": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-            "status": "VERIFIED",
-            "confidence": 0.8,
-            "evidence_refs": [
-              "evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 1
           }
         ],
         "verifier_decisions": [],
@@ -602,14 +548,14 @@
       ],
       "rows": [
         {
-          "row_id": "entity-b32615e906db0ec7",
+          "row_id": "entity-b1368ebf8d2e1cb4",
           "branch_id": "branch-main",
           "source_id": "",
-          "source_title": "OpenMARI 缺陷逃逸率指标实践",
+          "source_title": "Microsoft 覆盖率门槛实证研究",
           "generated_by": "",
           "generated_ref_id": "",
           "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
           "evidence_id": "",
           "row_status": "DISCOVERED",
           "relation_type": "",
@@ -621,14 +567,14 @@
           "repair_hint": ""
         },
         {
-          "row_id": "entity-b8b2c6ec3d042523",
+          "row_id": "entity-e2b2b109010eea81",
           "branch_id": "branch-main",
           "source_id": "",
-          "source_title": "GitHub Copilot 测试覆盖率实践",
+          "source_title": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
           "generated_by": "",
           "generated_ref_id": "",
           "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
           "evidence_id": "",
           "row_status": "DISCOVERED",
           "relation_type": "",
@@ -640,14 +586,14 @@
           "repair_hint": ""
         },
         {
-          "row_id": "entity-877b6e3c3771ee02",
+          "row_id": "entity-1b0c4be436f8ca8b",
           "branch_id": "branch-main",
           "source_id": "",
-          "source_title": "代码覆盖率与缺陷逃逸实证研究",
+          "source_title": "Google 覆盖率门槛实证研究",
           "generated_by": "",
           "generated_ref_id": "",
           "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
-          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+          "read_focus": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
           "evidence_id": "",
           "row_status": "DISCOVERED",
           "relation_type": "",
@@ -661,23 +607,8 @@
       ],
       "cells": [
         {
-          "cell_id": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-          "row_id": "entity-877b6e3c3771ee02",
-          "branch_id": "branch-main",
-          "column_key": "dim-ca49d5f11de5bf0c",
-          "column_label": "覆盖率门槛设定",
-          "candidate_value": "普遍认为 80% 覆盖率是较合适的目标",
-          "status": "VERIFIED",
-          "confidence": 0.8,
-          "evidence_refs": [
-            "evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 0
-        },
-        {
-          "cell_id": "entity-b32615e906db0ec7:dim-ca49d5f11de5bf0c",
-          "row_id": "entity-b32615e906db0ec7",
+          "cell_id": "entity-1b0c4be436f8ca8b:dim-ca49d5f11de5bf0c",
+          "row_id": "entity-1b0c4be436f8ca8b",
           "branch_id": "branch-main",
           "column_key": "dim-ca49d5f11de5bf0c",
           "column_label": "覆盖率门槛设定",
@@ -689,36 +620,8 @@
           "repair_count": 2
         },
         {
-          "cell_id": "entity-877b6e3c3771ee02:dim-d2e662809cdd71d3",
-          "row_id": "entity-877b6e3c3771ee02",
-          "branch_id": "branch-main",
-          "column_key": "dim-d2e662809cdd71d3",
-          "column_label": "证据缺口",
-          "candidate_value": "",
-          "status": "GAP",
-          "confidence": null,
-          "evidence_refs": [],
-          "last_verifier_decision": "",
-          "repair_count": 2
-        },
-        {
-          "cell_id": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-          "row_id": "entity-b32615e906db0ec7",
-          "branch_id": "branch-main",
-          "column_key": "dim-38c8828a3f3c670d",
-          "column_label": "因果机制",
-          "candidate_value": "缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高",
-          "status": "VERIFIED",
-          "confidence": 0.7,
-          "evidence_refs": [
-            "evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 0
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-b537a72f65ff8240",
-          "row_id": "entity-b8b2c6ec3d042523",
+          "cell_id": "entity-b1368ebf8d2e1cb4:dim-b537a72f65ff8240",
+          "row_id": "entity-b1368ebf8d2e1cb4",
           "branch_id": "branch-main",
           "column_key": "dim-b537a72f65ff8240",
           "column_label": "缺陷逃逸率变化",
@@ -730,23 +633,8 @@
           "repair_count": 2
         },
         {
-          "cell_id": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-          "row_id": "entity-b32615e906db0ec7",
-          "branch_id": "branch-main",
-          "column_key": "dim-d2e662809cdd71d3",
-          "column_label": "证据缺口",
-          "candidate_value": "缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。",
-          "status": "VERIFIED",
-          "confidence": 0.75,
-          "evidence_refs": [
-            "evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 0
-        },
-        {
-          "cell_id": "entity-b32615e906db0ec7:dim-b537a72f65ff8240",
-          "row_id": "entity-b32615e906db0ec7",
+          "cell_id": "entity-1b0c4be436f8ca8b:dim-b537a72f65ff8240",
+          "row_id": "entity-1b0c4be436f8ca8b",
           "branch_id": "branch-main",
           "column_key": "dim-b537a72f65ff8240",
           "column_label": "缺陷逃逸率变化",
@@ -758,77 +646,84 @@
           "repair_count": 2
         },
         {
-          "cell_id": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-          "row_id": "entity-877b6e3c3771ee02",
-          "branch_id": "branch-main",
-          "column_key": "dim-b537a72f65ff8240",
-          "column_label": "缺陷逃逸率变化",
-          "candidate_value": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
-          "status": "VERIFIED",
-          "confidence": 0.65,
-          "evidence_refs": [
-            "evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 0
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-          "row_id": "entity-b8b2c6ec3d042523",
+          "cell_id": "entity-e2b2b109010eea81:dim-ca49d5f11de5bf0c",
+          "row_id": "entity-e2b2b109010eea81",
           "branch_id": "branch-main",
           "column_key": "dim-ca49d5f11de5bf0c",
           "column_label": "覆盖率门槛设定",
-          "candidate_value": "Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-e2b2b109010eea81:dim-b537a72f65ff8240",
+          "row_id": "entity-e2b2b109010eea81",
+          "branch_id": "branch-main",
+          "column_key": "dim-b537a72f65ff8240",
+          "column_label": "缺陷逃逸率变化",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-e2b2b109010eea81:dim-0f1d0bbefeb10dc9",
+          "row_id": "entity-e2b2b109010eea81",
+          "branch_id": "branch-main",
+          "column_key": "dim-0f1d0bbefeb10dc9",
+          "column_label": "因果机制与混杂因素",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-b1368ebf8d2e1cb4:dim-0f1d0bbefeb10dc9",
+          "row_id": "entity-b1368ebf8d2e1cb4",
+          "branch_id": "branch-main",
+          "column_key": "dim-0f1d0bbefeb10dc9",
+          "column_label": "因果机制与混杂因素",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-b1368ebf8d2e1cb4:dim-ca49d5f11de5bf0c",
+          "row_id": "entity-b1368ebf8d2e1cb4",
+          "branch_id": "branch-main",
+          "column_key": "dim-ca49d5f11de5bf0c",
+          "column_label": "覆盖率门槛设定",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+          "row_id": "entity-1b0c4be436f8ca8b",
+          "branch_id": "branch-main",
+          "column_key": "dim-0f1d0bbefeb10dc9",
+          "column_label": "因果机制与混杂因素",
+          "candidate_value": "Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制",
           "status": "VERIFIED",
           "confidence": 0.6,
           "evidence_refs": [
-            "evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744"
+            "evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc"
           ],
           "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
           "repair_count": 0
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-          "row_id": "entity-b8b2c6ec3d042523",
-          "branch_id": "branch-main",
-          "column_key": "dim-38c8828a3f3c670d",
-          "column_label": "因果机制",
-          "candidate_value": "保持实现代码不变可让测试暴露已有缺陷",
-          "status": "VERIFIED",
-          "confidence": 0.7,
-          "evidence_refs": [
-            "evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 0
-        },
-        {
-          "cell_id": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "row_id": "entity-877b6e3c3771ee02",
-          "branch_id": "branch-main",
-          "column_key": "dim-38c8828a3f3c670d",
-          "column_label": "因果机制",
-          "candidate_value": "",
-          "status": "GAP",
-          "confidence": null,
-          "evidence_refs": [],
-          "last_verifier_decision": "",
-          "repair_count": 1
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-          "row_id": "entity-b8b2c6ec3d042523",
-          "branch_id": "branch-main",
-          "column_key": "dim-d2e662809cdd71d3",
-          "column_label": "证据缺口",
-          "candidate_value": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-          "status": "VERIFIED",
-          "confidence": 0.8,
-          "evidence_refs": [
-            "evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 1
         }
       ],
       "verifier_decisions": [],
@@ -918,7 +813,7 @@
             "source_count": 0,
             "column_count": 0
           },
-          "created_at": "2026-10-17T10:36:34Z"
+          "created_at": "2026-10-17T10:53:06Z"
         },
         {
           "checkpoint_no": 2,
@@ -1005,7 +900,7 @@
             "source_count": 0,
             "column_count": 0
           },
-          "created_at": "2026-10-17T10:38:21Z"
+          "created_at": "2026-10-17T10:55:49Z"
         },
         {
           "checkpoint_no": 3,
@@ -1092,581 +987,41 @@
             "source_count": 0,
             "column_count": 0
           },
-          "created_at": "2026-10-17T10:39:02Z"
+          "created_at": "2026-10-17T10:56:28Z"
         }
       ],
       "source_evidence": [
         {
-          "evidence_id": "evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14",
-          "window_id": "window-4",
-          "source_id": "web-24f833ffd052e924",
-          "source_title": "Escaped Defects, Explained: Benchmarks + How to Improve",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.devstats.com/glossary/escaped-defects",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "OpenMARI test coverage defect escape rate",
-          "read_focus": "Read external URL Escaped Defects, Explained: Benchmarks + How to Improve for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: OpenMARI 缺陷逃逸率指标实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "No universal DORA benchmark exists for this metric, but elite teams typically see escaped defect rates below 10%",
-          "claim_text": "缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.75,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/dec84b28-201f-4339-9a2f-058c8ef818db/8826f8d7dd3b8486f6788cc0c9016739e2f8282c632cdf1d9a1a57828f7fa339"
-        },
-        {
-          "evidence_id": "evidence:dd2ff66911d96fbe75133c6c645ca445211205d1a15ce8b9",
-          "window_id": "window-2",
-          "source_id": "web-9f05f02a99e90770",
-          "source_title": "Test existing code with AI",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://code.visualstudio.com/docs/agents/guides/test-code-with-ai",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Test existing code with AI for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "For this example, useful boundary cases include lengths of 2, 3, 20, and 21.",
-          "claim_text": "该方法建议在边界处测试以捕获差一错误，例如长度为 2、3、20 和 21。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.5,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/15a8fe711aa145fa088c7036ceeda76a9749ff851b962f06b3263ad3d1659cbd"
-        },
-        {
-          "evidence_id": "evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744",
+          "evidence_id": "evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc",
           "window_id": "window-1",
-          "source_id": "web-cbef493c248b3bab",
-          "source_title": "Increase test coverage - GitHub Copilot",
+          "source_id": "web-0af4b78b845ac052",
+          "source_title": "Code Coverage at Google",
           "generated_by": "",
           "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage",
+          "source_url": "https://homes.cs.washington.edu/~rjust/publ/google_coverage_fse_2019.pdf",
           "provider": "serper_mcp",
           "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Increase test coverage - GitHub Copilot for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Copilot can suggest how to integrate tests into your build pipeline, ensuring that coverage improvements directly support quality gates.",
-          "claim_text": "Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。",
+          "search_query": "Google code coverage threshold empirical study",
+          "read_focus": "Read external URL Code Coverage at Google for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: Google 覆盖率门槛实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A key aspect of making coverage information actionable is to apply it at the level of changesets and code review.",
+          "claim_text": "Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制",
           "relation_type": "SUPPORTS",
           "support_score": 0.6,
           "conflict_score": 0.0,
           "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/3838e851a47fcacfa3555b0656168671041fb5fc3da740a223b1263d4948aa67"
-        },
-        {
-          "evidence_id": "evidence:a63cec156f0bf6de641a3e38c855a99030f2580ec12f6a64",
-          "window_id": "window-1",
-          "source_id": "web-cbef493c248b3bab",
-          "source_title": "Increase test coverage - GitHub Copilot",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Increase test coverage - GitHub Copilot for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "By making unit testing easier, faster, and less manual, Copilot reduces the friction that can lead to gaps in test coverage, and helps teams adopt a quality-first mindset.",
-          "claim_text": "让单元测试更容易、更快速、更少人工，Copilot 降低导致测试覆盖缺口的阻力",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.1,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/3838e851a47fcacfa3555b0656168671041fb5fc3da740a223b1263d4948aa67"
-        },
-        {
-          "evidence_id": "evidence:8111bfad477f64452f03b1fcada223b028c853779f6ea4b1",
-          "window_id": "window-1",
-          "source_id": "web-cbef493c248b3bab",
-          "source_title": "Increase test coverage - GitHub Copilot",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Increase test coverage - GitHub Copilot for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "**Better edge case coverage**: By prompting Copilot for edge scenarios (such as null inputs, empty lists, or invalid states), developers can quickly cover more branches of logic.",
-          "claim_text": "通过提示 Copilot 生成边界场景，开发者可更快覆盖更多逻辑分支",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.65,
-          "conflict_score": 0.1,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/3838e851a47fcacfa3555b0656168671041fb5fc3da740a223b1263d4948aa67"
-        },
-        {
-          "evidence_id": "evidence:aafb1622c0048d6d77924abc38309f2984f373a1cb272681",
-          "window_id": "window-1",
-          "source_id": "web-cbef493c248b3bab",
-          "source_title": "Increase test coverage - GitHub Copilot",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Increase test coverage - GitHub Copilot for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "By making unit testing easier, faster, and less manual, Copilot reduces the friction that can lead to gaps in test coverage, and helps teams adopt a quality-first mindset.",
-          "claim_text": "该实践未设定具体覆盖率门槛数值，而是通过降低测试摩擦帮助团队采用质量优先理念，并以改进覆盖率支撑质量门禁。",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.4,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/3838e851a47fcacfa3555b0656168671041fb5fc3da740a223b1263d4948aa67"
-        },
-        {
-          "evidence_id": "evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd",
-          "window_id": "window-2",
-          "source_id": "web-9f05f02a99e90770",
-          "source_title": "Test existing code with AI",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://code.visualstudio.com/docs/agents/guides/test-code-with-ai",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape",
-          "read_focus": "Read external URL Test existing code with AI for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Keeping implementation code unchanged lets the tests expose existing bugs and keeps any fixes separate for review.",
-          "claim_text": "保持实现代码不变可让测试暴露已有缺陷",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.1,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/95e94a5c-bc00-45ea-833e-9355cbcbdad3/15a8fe711aa145fa088c7036ceeda76a9749ff851b962f06b3263ad3d1659cbd"
-        },
-        {
-          "evidence_id": "evidence:5a2ffc947b6f47bcf23acc300d23dcce10730ec8a9eb7f7e",
-          "window_id": "window-2",
-          "source_id": "web-2ce8b42406b48622",
-          "source_title": "Writing tests with GitHub Copilot",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/write-tests",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot test coverage defect escape evidence",
-          "read_focus": "Read external URL Writing tests with GitHub Copilot for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Prompting Copilot with this question can help you identify missing test cases that may have been overlooked. In this situation, while we tested valid and invalid deposits, we haven't yet covered the withdrawal functionality.",
-          "claim_text": "对于存款场景，现有测试虽可用但未覆盖取款功能，提示 Copilot 评估覆盖率仅能帮助识别遗漏用例，未给出降低缺陷逃逸率的实证结果。",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.4,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/32a78419-d959-4dcd-8b77-775fac1b9173/2913ef38972fe04804c0debffbaa9a04d0d36d5cb2ffdafd9194830cec5f38b3"
-        },
-        {
-          "evidence_id": "evidence:b69bfac7b587f3720a9e169750ee7a5e1e3bd35ffb3aad4a",
-          "window_id": "window-4",
-          "source_id": "web-138340ecfb7ef061",
-          "source_title": "Escaped Defects: Definition, Tracking & How to Reduce Them",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.em-tools.io/engineering-metrics/escaped-defects",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "why increasing test coverage reduces escaped defects mechanism",
-          "read_focus": "Read external URL Escaped Defects: Definition, Tracking & How to Reduce Them for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Common root causes include missing test coverage for edge cases",
-          "claim_text": "根因分析发现逃逸缺陷的常见根因包括边缘用例缺少测试覆盖，补齐这些覆盖可减少逃逸",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.75,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/c904d6c8895e28c354204482a48950b077f4d0e1c38daa726b6c9b7ee5d84e67"
-        },
-        {
-          "evidence_id": "evidence:f288ab75407ff16641dbfd8234c36861fc5d9d0cc1ed7125",
-          "window_id": "window-5",
-          "source_id": "web-ed4d25da79244064",
-          "source_title": "Reducing defect leakage in software testing",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.nashtechglobal.com/insights/reducing-defect-leakage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "why increasing test coverage reduces escaped defects mechanism",
-          "read_focus": "Read external URL Reducing defect leakage in software testing for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Better testing means a greater likelihood of catching defects before they escape into a live environment.",
-          "claim_text": "更好的测试能提高在缺陷逃逸前捕获它们的可能性。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.6,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/839f8be3be509c87c8533559ec3e9f660f9cb2fb9c873c3d19d010e7e6c16cde"
-        },
-        {
-          "evidence_id": "evidence:1548b9a92162f37cfbd7d9af248314204a9992535a95431c",
-          "window_id": "window-6",
-          "source_id": "web-9fea3d4b60deb0b1",
-          "source_title": "What is Code Coverage? | Atlassian",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.atlassian.com/continuous-delivery/software-testing/code-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "code coverage threshold target percentage definition",
-          "read_focus": "Read external URL What is Code Coverage? | Atlassian for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "a high percentage of coverage could still be problematic if critical parts of the application are not being tested, or if the existing tests are not robust enough to properly capture failures upfront",
-          "claim_text": "高覆盖率百分比仍可能有问题，如果关键部分未被测试或测试不够健壮，因此不能降低缺陷逃逸",
-          "relation_type": "CONFLICTS",
-          "support_score": 0.0,
-          "conflict_score": 0.7,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/24432185539c07a7ff4ef51f23ad2dc69ca94bc9b712cb7c65b58d92f1b549b0"
-        },
-        {
-          "evidence_id": "evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64",
-          "window_id": "window-6",
-          "source_id": "web-9fea3d4b60deb0b1",
-          "source_title": "What is Code Coverage? | Atlassian",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.atlassian.com/continuous-delivery/software-testing/code-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "code coverage threshold target percentage definition",
-          "read_focus": "Read external URL What is Code Coverage? | Atlassian for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "it is generally accepted that 80% coverage is a good goal to aim for",
-          "claim_text": "普遍认为 80% 覆盖率是较合适的目标",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.8,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/24432185539c07a7ff4ef51f23ad2dc69ca94bc9b712cb7c65b58d92f1b549b0"
-        },
-        {
-          "evidence_id": "evidence:9adfad472262e761a6fda6f48ae1b0a6e8deab4de1dd1b93",
-          "window_id": "window-6",
-          "source_id": "web-9fea3d4b60deb0b1",
-          "source_title": "What is Code Coverage? | Atlassian",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.atlassian.com/continuous-delivery/software-testing/code-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "code coverage threshold target percentage definition",
-          "read_focus": "Read external URL What is Code Coverage? | Atlassian for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Trying to reach a higher coverage might turn out to be costly, while not necessary producing enough benefit.",
-          "claim_text": "Trying to reach a higher coverage might turn out to be costly, while not necessary producing enough benefit.",
-          "relation_type": "CONFLICTS",
-          "support_score": 0.0,
-          "conflict_score": 0.7,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/24432185539c07a7ff4ef51f23ad2dc69ca94bc9b712cb7c65b58d92f1b549b0"
-        },
-        {
-          "evidence_id": "evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86",
-          "window_id": "window-4",
-          "source_id": "web-138340ecfb7ef061",
-          "source_title": "Escaped Defects: Definition, Tracking & How to Reduce Them",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.em-tools.io/engineering-metrics/escaped-defects",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "why increasing test coverage reduces escaped defects mechanism",
-          "read_focus": "Read external URL Escaped Defects: Definition, Tracking & How to Reduce Them for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
-          "claim_text": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.65,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/c904d6c8895e28c354204482a48950b077f4d0e1c38daa726b6c9b7ee5d84e67"
-        },
-        {
-          "evidence_id": "evidence:ea7d2a8efb95d54d9d70c72619d1a262cffb0e485c43eaf1",
-          "window_id": "window-6",
-          "source_id": "web-9fea3d4b60deb0b1",
-          "source_title": "What is Code Coverage? | Atlassian",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.atlassian.com/continuous-delivery/software-testing/code-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "code coverage threshold target percentage definition",
-          "read_focus": "Read external URL What is Code Coverage? | Atlassian for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "a high percentage of coverage could still be problematic if critical parts of the application are not being tested, or if the existing tests are not robust enough",
-          "claim_text": "高覆盖率百分比仍可能有问题，若关键部分未被测试或既有测试不够稳健。",
-          "relation_type": "CONFLICTS",
-          "support_score": 0.0,
-          "conflict_score": 0.55,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/24432185539c07a7ff4ef51f23ad2dc69ca94bc9b712cb7c65b58d92f1b549b0"
-        },
-        {
-          "evidence_id": "evidence:e9a406935b88a2a73e9c5a218bd0f2db99a0e03dae3217b5",
-          "window_id": "window-5",
-          "source_id": "web-ed4d25da79244064",
-          "source_title": "Reducing defect leakage in software testing",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.nashtechglobal.com/insights/reducing-defect-leakage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "why increasing test coverage reduces escaped defects mechanism",
-          "read_focus": "Read external URL Reducing defect leakage in software testing for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "Better testing means a greater likelihood of catching defects before they escape into a live environment. Increasing test coverage",
-          "claim_text": "更好的测试使缺陷更可能在进入生产前被捕获，而提高测试覆盖率是其中的手段",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/ffaf2046-fd5f-48ae-aabd-2908cddc4af1/839f8be3be509c87c8533559ec3e9f660f9cb2fb9c873c3d19d010e7e6c16cde"
-        },
-        {
-          "evidence_id": "evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4",
-          "window_id": "window-1",
-          "source_id": "web-b316571b708eec5d",
-          "source_title": "Bug Cost and Escape Rate Report",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://testdino.com/blog/cost-of-bugs",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "OpenMARI defect escape rate coverage",
-          "read_focus": "Read external URL Bug Cost and Escape Rate Report for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: OpenMARI 缺陷逃逸率指标实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "If the escape rate spikes after a new feature is introduced, you immediately know the test coverage for that area needs work.",
-          "claim_text": "缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/5d6a3760-7e8d-4033-82e8-c1d70aec3844/3cf0ef6af3f3eb013b7402ed6b415e1479587495f9c755459f3b9b4012a2853e"
-        },
-        {
-          "evidence_id": "evidence:b689c35163a1073f80ec1a83f4279d85e243e85d607c9264",
-          "window_id": "window-1",
-          "source_id": "web-caa3f5937b68b559",
-          "source_title": "四种常见的代码覆盖率类型| Articles",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://web.dev/articles/ta-code-coverage?hl=zh-cn",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "代码覆盖率 缺陷逃逸 实证研究 外部有效性 局限",
-          "read_focus": "Read external URL 四种常见的代码覆盖率类型| Articles for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "虽然在测试中实现较高的代码覆盖率无疑是可取的，但 100% 的代码覆盖率并不能保证代码中没有 bug 或缺陷。",
-          "claim_text": "该来源未提供任何组织关于提高覆盖率门槛与缺陷逃逸率的实证数据，仅指出100%的代码覆盖率并不能保证代码中没有bug或缺陷",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.3,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/e7231e81-34bd-4bb6-8830-533e7c5e6359/56dec839c96b065b9bd9f4d05bafbf5dc889664b6ab6a5625c316c48eef530ba"
-        },
-        {
-          "evidence_id": "evidence:099429e2f3a9e276476dcf1ad40cce15764938fbc602535c",
-          "window_id": "window-3",
-          "source_id": "web-f3e6f1b4fd0c242b",
-          "source_title": "06 | 你真的懂测试覆盖率吗？ - 捷后愚生",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.cnblogs.com/Uni-Hoang/p/13232345.html",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "代码覆盖率与缺陷逃逸实证研究 因果机制 官方说明 适用条件",
-          "read_focus": "Read external URL 06 | 你真的懂测试覆盖率吗？ - 捷后愚生 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "统计代码覆盖率的根本目的是找出潜在的遗漏测试用例，并有针对性的进行补充",
-          "claim_text": "统计代码覆盖率的根本目的是找出潜在的遗漏测试用例并有针对性地补充，从而可能减少缺陷逃逸。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.1,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/8c0352bc-d452-4c0b-81b3-9da1c4e3cfec/b680d5d32ea0ab3596414931de27cb0c34d2598d2ffdb10b150320aae73836e2"
-        },
-        {
-          "evidence_id": "evidence:3d1b5627ecbb3b3bf751944f45d803c7285c86412a6829f9",
-          "window_id": "window-4",
-          "source_id": "web-3eac02f5d7c32271",
-          "source_title": "代码覆盖率 - Parasoft中国官网",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.parasoftchina.cn/solutions/code-coverage/",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "代码覆盖率与缺陷逃逸实证研究 因果机制 官方说明 适用条件",
-          "read_focus": "Read external URL 代码覆盖率 - Parasoft中国官网 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "但是确定您是否需要增加覆盖率的最好方法是基于已识别的缺陷的数量。",
-          "claim_text": "确定是否需要增加覆盖率的最好方法是基于已识别的缺陷的数量。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.6,
-          "conflict_score": 0.1,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/8c0352bc-d452-4c0b-81b3-9da1c4e3cfec/78d5964dae3a7771849d21fe42f8b284ae009372469ae1d2487a64dc6332436d"
-        },
-        {
-          "evidence_id": "evidence:50901e310f17f8d795724e5861357319fd6e3f5c40220238",
-          "window_id": "window-3",
-          "source_id": "web-f3e6f1b4fd0c242b",
-          "source_title": "06 | 你真的懂测试覆盖率吗？ - 捷后愚生",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.cnblogs.com/Uni-Hoang/p/13232345.html",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "代码覆盖率与缺陷逃逸实证研究 因果机制 官方说明 适用条件",
-          "read_focus": "Read external URL 06 | 你真的懂测试覆盖率吗？ - 捷后愚生 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "其根本原因在于代码覆盖率的计算是基于现有代码的，并不能发现那些“未考虑某些输入”以及“未处理某些情况”形成的缺陷。",
-          "claim_text": "其根本原因在于代码覆盖率的计算是基于现有代码的，并不能发现那些“未考虑某些输入”以及“未处理某些情况”形成的缺陷。",
-          "relation_type": "CONFLICTS",
-          "support_score": 0.2,
-          "conflict_score": 0.9,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/8c0352bc-d452-4c0b-81b3-9da1c4e3cfec/b680d5d32ea0ab3596414931de27cb0c34d2598d2ffdb10b150320aae73836e2"
-        },
-        {
-          "evidence_id": "evidence:86d859540b30f306785d1e607f794ea1123c4a6417811f92",
-          "window_id": "window-1",
-          "source_id": "web-591eca0b0e32c949",
-          "source_title": "通过GitHub Copilot提高公司的测试覆盖率",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/zh/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot 代码生成 单元测试覆盖 局限性 实证 研究 缺口",
-          "read_focus": "Read external URL 通过GitHub Copilot提高公司的测试覆盖率 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "提高测试覆盖率是公认的最佳做法，但需要时间和专业知识，而许多团队无法满足这些要求。",
-          "claim_text": "提高测试覆盖率是公认的最佳做法，但需要时间和专业知识，而许多团队无法满足这些要求。",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.5,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/930447ba-2dc6-4376-8dec-c8f66e09b4dc/38596fc6ac7d370cc31b3b8b4456f5d8427a53419cfd0c967ad86a585f44b6a8"
-        },
-        {
-          "evidence_id": "evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307",
-          "window_id": "window-2",
-          "source_id": "web-34ea643c32c95d7f",
-          "source_title": "使用GitHub Copilot 编写测试",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/zh/enterprise-cloud@latest/copilot/tutorials/write-tests",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "GitHub Copilot 代码生成 单元测试覆盖 局限性 实证 研究 缺口",
-          "read_focus": "Read external URL 使用GitHub Copilot 编写测试 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: GitHub Copilot 测试覆盖率实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-          "claim_text": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.8,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/930447ba-2dc6-4376-8dec-c8f66e09b4dc/a994617b8b2057fbd9aaf56fad34981c7072581a00d833261092f10c73f20d84"
-        },
-        {
-          "evidence_id": "evidence:644fdc07164a209d23d47e3723cf781f60df7fe5328ec513",
-          "window_id": "window-5",
-          "source_id": "web-24f833ffd052e924",
-          "source_title": "Escaped Defects, Explained: Benchmarks + How to Improve",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.devstats.com/glossary/escaped-defects",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "defect escape rate quality gate coverage target industry benchmark",
-          "read_focus": "Read external URL Escaped Defects, Explained: Benchmarks + How to Improve for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: OpenMARI 缺陷逃逸率指标实践. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "No universal DORA benchmark exists for this metric, but elite teams typically see escaped defect rates below 10%, while rates above 25% indicate a quality process that needs structural attention.",
-          "claim_text": "该组织认为精英团队逃逸率通常低于10%，而高于25%说明质量流程需结构性整改。",
-          "relation_type": "CONFLICTS",
-          "support_score": 0.0,
-          "conflict_score": 0.6,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/3aee6227-a26e-435d-81fc-6b90735e1b5f/8826f8d7dd3b8486f6788cc0c9016739e2f8282c632cdf1d9a1a57828f7fa339"
-        },
-        {
-          "evidence_id": "evidence:2397e736713f4e987ec93d210f2891df11b8719522f43bb8",
-          "window_id": "window-1",
-          "source_id": "web-caa3f5937b68b559",
-          "source_title": "四种常见的代码覆盖率类型| Articles",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://web.dev/articles/ta-code-coverage?hl=zh-cn",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "代码覆盖率与缺陷逃逸实证研究 证据缺口 官方说明 适用条件",
-          "read_focus": "Read external URL 四种常见的代码覆盖率类型| Articles for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\nCurrent Table-as-State entity: 代码覆盖率与缺陷逃逸实证研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
-          "quote_text": "100% 的代码覆盖率并不能保证代码中没有 bug 或缺陷。",
-          "claim_text": "100% 代码覆盖率不能保证无缺陷，因此该来源不支持覆盖率门槛降低缺陷逃逸的结论。",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.4,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/83ff59c8-d5c1-4d48-9369-75f4bf276f25/56dec839c96b065b9bd9f4d05bafbf5dc889664b6ab6a5625c316c48eef530ba"
+          "snapshot_key": "research/external/bcc41f12-7f40-4575-8910-170aa1e7398e/beb7d0bfb7d406982b1cc0851db741307d3fabe88cbd8b4ed23e5bcf30cbf227"
         }
       ],
       "cell_evidence": [
         {
-          "cell_id": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-          "row_id": "entity-b32615e906db0ec7",
-          "evidence_id": "evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14",
-          "source_id": "web-24f833ffd052e924",
-          "source_title": "Escaped Defects, Explained: Benchmarks + How to Improve",
+          "cell_id": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+          "row_id": "entity-1b0c4be436f8ca8b",
+          "evidence_id": "evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc",
+          "source_id": "web-0af4b78b845ac052",
+          "source_title": "Code Coverage at Google",
           "generated_by": "",
           "generated_ref_id": "",
-          "source_url": "https://www.devstats.com/glossary/escaped-defects"
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-          "row_id": "entity-b8b2c6ec3d042523",
-          "evidence_id": "evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744",
-          "source_id": "web-cbef493c248b3bab",
-          "source_title": "Increase test coverage - GitHub Copilot",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/en/copilot/tutorials/roll-out-at-scale/drive-downstream-impact/increase-test-coverage"
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-          "row_id": "entity-b8b2c6ec3d042523",
-          "evidence_id": "evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd",
-          "source_id": "web-9f05f02a99e90770",
-          "source_title": "Test existing code with AI",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://code.visualstudio.com/docs/agents/guides/test-code-with-ai"
-        },
-        {
-          "cell_id": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-          "row_id": "entity-877b6e3c3771ee02",
-          "evidence_id": "evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64",
-          "source_id": "web-9fea3d4b60deb0b1",
-          "source_title": "What is Code Coverage? | Atlassian",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.atlassian.com/continuous-delivery/software-testing/code-coverage"
-        },
-        {
-          "cell_id": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-          "row_id": "entity-877b6e3c3771ee02",
-          "evidence_id": "evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86",
-          "source_id": "web-138340ecfb7ef061",
-          "source_title": "Escaped Defects: Definition, Tracking & How to Reduce Them",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.em-tools.io/engineering-metrics/escaped-defects"
-        },
-        {
-          "cell_id": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-          "row_id": "entity-b32615e906db0ec7",
-          "evidence_id": "evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4",
-          "source_id": "web-b316571b708eec5d",
-          "source_title": "Bug Cost and Escape Rate Report",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://testdino.com/blog/cost-of-bugs"
-        },
-        {
-          "cell_id": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-          "row_id": "entity-b8b2c6ec3d042523",
-          "evidence_id": "evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307",
-          "source_id": "web-34ea643c32c95d7f",
-          "source_title": "使用GitHub Copilot 编写测试",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://docs.github.com/zh/enterprise-cloud@latest/copilot/tutorials/write-tests"
+          "source_url": "https://homes.cs.washington.edu/~rjust/publ/google_coverage_fse_2019.pdf"
         }
       ],
       "branch_decisions": [],
@@ -1675,7 +1030,7 @@
     },
     "traces": [
       {
-        "trace_id": "41e024f1-738b-445f-9bd1-046d7a30a113",
+        "trace_id": "906f22ec-ceef-43d7-937b-06066a48a3d1",
         "trace_type": "RUN_CREATED",
         "trace_message": "Research run 已入队",
         "payload": {
@@ -1694,135 +1049,63 @@
           "retrieval_mode": "WEB_ONLY",
           "source_scope_count": 0
         },
-        "created_at": "2026-10-17T10:33:43Z"
+        "created_at": "2026-10-17T10:51:33Z"
       },
       {
-        "trace_id": "c7300293-f11e-4bb7-a7b9-792d9a8774fa",
+        "trace_id": "f29d95df-bfe3-4d22-9eb3-c8f8cf2cff84",
         "trace_type": "PLAN_COMPILED",
         "trace_message": "研究表格已由模型规划",
         "payload": {
           "reason_codes": [],
-          "columns": 4,
+          "columns": 3,
           "rows": 3,
           "planner_version": "llm-matrix.v1"
         },
-        "created_at": "2026-10-17T10:33:54Z"
+        "created_at": "2026-10-17T10:51:45Z"
       },
       {
-        "trace_id": "37373b79-370d-40ba-94b5-067f1b10fde8",
+        "trace_id": "919c66de-1360-4b7b-b663-4f7ac8ebfb08",
         "trace_type": "RUN_BUSINESS_COMPLETED",
-        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
         "payload": {},
-        "created_at": "2026-10-17T10:39:10Z"
+        "created_at": "2026-10-17T10:56:33Z"
       }
     ],
-    "created_at": "2026-10-17T10:33:43Z",
-    "updated_at": "2026-10-17T10:39:10Z",
+    "created_at": "2026-10-17T10:51:33Z",
+    "updated_at": "2026-10-17T10:56:33Z",
     "saved_report_source": null,
     "agent_execution_projection": {
-      "merge_count": 9,
+      "merge_count": 1,
       "execution_mode": "INCREMENTAL_V1",
       "merges": [
         {
           "expected_cell_version": 0,
           "result_cell_version": 1,
-          "cell_key": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-          "merge_id": "merge:0e4714a0e1d5b1da654555dfe1b116bc6bd64691c538ec938493c568adee72b4",
-          "candidate_id": "87978679-a69c-44e1-93ac-72c22fd94717",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-          "merge_id": "merge:6652a55927adaa016c8e0504435881d06b5c19a6e99c1c1bacef1eead513b400",
-          "candidate_id": "57a2c3a5-44cb-4577-ac1d-4ab4a75da354",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-          "merge_id": "merge:441f5e3e9ef530459ba4d1d4e8a4826a545f9298e1321f372a58f3701004a482",
-          "candidate_id": "a6d9df2e-e87f-42e6-b063-5411220eb7db",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-          "merge_id": "merge:7e67c81d7bcf6cb566431275a7808b9f2c25869e78ba4589590999ebba0a91db",
-          "candidate_id": "852d7bd7-30d9-4c49-91da-5022aca0f43e",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-          "merge_id": "merge:36e2ef1dd63ec888c8b59fa206eb000a82f8ce4cda19bc3ae1258232ccc801df",
-          "candidate_id": "be793963-efb2-4106-8494-ccc1b9279a42",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 0,
-          "cell_key": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "merge_id": "merge:9c623ac7923a326c36fb3b26f8d8de2689664ee3f9b491b63aadabdc8293d158",
-          "candidate_id": "2282def0-00bd-4cdd-8832-b563619f0229",
-          "decision": "REJECTED",
-          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-          "merge_id": "merge:243874233f3ba7cfa9ee892591873627620b34e16778d82950daaea30a1c4fb1",
-          "candidate_id": "edd6b963-1b1e-45eb-9ad7-c136bda51af6",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 0,
-          "cell_key": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "merge_id": "merge:3f8e3a4245a5871941f37c3c8e84be01ce9a5415d6dff79207721578c07e761c",
-          "candidate_id": "3b7df46f-9f84-4b8a-9059-3094d3860f78",
-          "decision": "REJECTED",
-          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED"
-        },
-        {
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-          "merge_id": "merge:754324620fa4fc9b37f086f175efaa8bf5a0ee69f58aae34fb008f0072c7ab55",
-          "candidate_id": "d45ef370-7be3-4422-a160-be9c1f458983",
+          "cell_key": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+          "merge_id": "merge:9049ef30e4839d360efab190d84479697dd1efcab742fb11951f5e3529d0d547",
+          "candidate_id": "4345a05a-48b9-476f-a53e-bd05e979ac54",
           "decision": "ACCEPTED",
           "reason_code": "VERIFIED_AND_VERSION_MATCHED"
         }
       ],
       "checkpoints": [
         {
-          "candidate_high_water_mark": 7,
+          "candidate_high_water_mark": 1,
           "checkpoint_seq": 1,
-          "task_high_water_mark": 7,
-          "merge_high_water_mark": 7
+          "task_high_water_mark": 4,
+          "merge_high_water_mark": 1
         },
         {
-          "candidate_high_water_mark": 9,
+          "candidate_high_water_mark": 1,
           "checkpoint_seq": 2,
-          "task_high_water_mark": 13,
-          "merge_high_water_mark": 9
+          "task_high_water_mark": 12,
+          "merge_high_water_mark": 1
         },
         {
-          "candidate_high_water_mark": 9,
+          "candidate_high_water_mark": 1,
           "checkpoint_seq": 3,
-          "task_high_water_mark": 17,
-          "merge_high_water_mark": 9
+          "task_high_water_mark": 20,
+          "merge_high_water_mark": 1
         }
       ],
       "tasks": [
@@ -1831,249 +1114,223 @@
           "fencing_token": 1,
           "attempt_count": 1,
           "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:34:44Z",
+          "lease_expires_at": "2026-10-17T10:52:34Z",
           "lease_epoch": 1,
-          "task_id": "6d0f0d2a-815b-4466-b518-5e05b024bbac",
-          "task_key": "planning:337b3249-5e78-4c77-83d2-0fe04f78d594"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:35:25Z",
-          "lease_epoch": 1,
-          "task_id": "2fda7ba5-e919-4491-b696-aa7713b3a042",
-          "task_key": "deep-cell:fa895491b84abe2e7ebffe1398a7b4dd"
+          "task_id": "831a9486-e523-4291-8b0c-e7b778b20127",
+          "task_key": "planning:a5f01784-2eba-4c1a-89dc-65c646903a41"
         },
         {
           "worker_instance_id": "research-agent-worker-1-1",
           "fencing_token": 1,
           "attempt_count": 1,
           "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:36:25Z",
+          "lease_expires_at": "2026-10-17T10:53:59Z",
           "lease_epoch": 1,
-          "task_id": "32a78419-d959-4dcd-8b77-775fac1b9173",
-          "task_key": "deep-cell:118a7758cba35686808abd824d638702"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:37:27Z",
-          "lease_epoch": 1,
-          "task_id": "5d6a3760-7e8d-4033-82e8-c1d70aec3844",
-          "task_key": "deep-cell:f68fd7682b8e8f2527e739d91472cdca"
+          "task_id": "955a244d-abe4-4083-931c-29c6b4c3caba",
+          "task_key": "deep-cell:c681fc1ccf2295311f0ce72a2b81edb5"
         },
         {
           "worker_instance_id": "research-agent-worker-1-1",
           "fencing_token": 1,
           "attempt_count": 1,
           "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:35:40Z",
+          "lease_expires_at": "2026-10-17T10:53:16Z",
           "lease_epoch": 1,
-          "task_id": "95e94a5c-bc00-45ea-833e-9355cbcbdad3",
-          "task_key": "deep-cell:3c12f2aecf84f030bcb28c3a6f31e3dd"
+          "task_id": "bcc41f12-7f40-4575-8910-170aa1e7398e",
+          "task_key": "deep-cell:fcb7bbfce2963a17ee634d7c802b4686"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:53:17Z",
+          "lease_epoch": 1,
+          "task_id": "f69e2087-b077-4f2a-b096-453f88d3b7c8",
+          "task_key": "deep-cell:d1dc403b2fc06b9b5f0feb881b4de04a"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:54:37Z",
+          "lease_epoch": 1,
+          "task_id": "0f74cf9b-5df4-4900-8a18-34b588b89bea",
+          "task_key": "counterfactual:c32274b0a08c38c406758e4c4343a6f1"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:55:08Z",
+          "lease_epoch": 1,
+          "task_id": "202bc115-22f6-4dfd-988f-fda984d40dea",
+          "task_key": "counterfactual:030b92481c729d4f3bd34b0eeb45505a"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:47Z",
+          "lease_epoch": 1,
+          "task_id": "22e12abb-8a68-43d3-9d87-2b41597e00a8",
+          "task_key": "counterfactual:0d704eff4caa30507f8f6fc3d7508fec"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:01Z",
+          "lease_epoch": 1,
+          "task_id": "755fa516-c956-4d5e-a93f-4d5f5020c3df",
+          "task_key": "counterfactual:403a7eb78565b397fe2b1d7c7d9f7459"
         },
         {
           "worker_instance_id": "research-agent-worker-1-3",
           "fencing_token": 1,
           "attempt_count": 1,
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:35:25Z",
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:55:50Z",
           "lease_epoch": 1,
-          "task_id": "dec84b28-201f-4339-9a2f-058c8ef818db",
-          "task_key": "deep-cell:4add36f63235be6aa5bfeb6a612e88b1"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:36:32Z",
-          "lease_epoch": 1,
-          "task_id": "ffaf2046-fd5f-48ae-aabd-2908cddc4af1",
-          "task_key": "deep-cell:a754ab05e5992d6dae20906a5d1b1657"
+          "task_id": "8124a077-3855-4ecc-8548-a995bcb0172e",
+          "task_key": "counterfactual:b78f03278d264135b3533ad57cb52fc7"
         },
         {
           "worker_instance_id": "research-agent-worker-1-3",
           "fencing_token": 1,
           "attempt_count": 1,
           "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:38:05Z",
+          "lease_expires_at": "2026-10-17T10:55:04Z",
           "lease_epoch": 1,
-          "task_id": "16d32c2d-cc50-4825-a025-284aad28d6b9",
-          "task_key": "counterfactual:f989ac398a3a8f2e7b647d246a492f90"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:38:05Z",
-          "lease_epoch": 1,
-          "task_id": "479e2ff9-4958-4e82-b93f-bfacd75c6553",
-          "task_key": "counterfactual:21940ce6b7f9cd378e83d8c244bbc827"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:38:45Z",
-          "lease_epoch": 1,
-          "task_id": "6fb2b3c0-3981-45b2-b06c-afb61d91c8e5",
-          "task_key": "counterfactual:d37f9e0d9f38a0dfb07384abe005a6e3"
+          "task_id": "9d2d3d9d-f80d-4c73-b396-c72fc84296be",
+          "task_key": "counterfactual:9f72d433c00a88eac86801bd12b597c0"
         },
         {
           "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:55:41Z",
+          "lease_epoch": 1,
+          "task_id": "c3ba15c4-0469-4ee6-89ab-d58601653525",
+          "task_key": "counterfactual:f4fc12180443069e386a592f90175d72"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:54:37Z",
+          "lease_epoch": 1,
+          "task_id": "c66a851b-03c9-4e31-b206-ae0d16f02bfc",
+          "task_key": "counterfactual:8b21997ce7b0cf8a51982e3e590ff7f1"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:56Z",
+          "lease_epoch": 1,
+          "task_id": "38aa384f-0c15-4345-85fb-892094df80d9",
+          "task_key": "counterfactual:fceb633be8827866e34ee4cfca68ff45"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:49Z",
+          "lease_epoch": 1,
+          "task_id": "55f4c892-ba01-45a7-99ba-a1959a0aff2c",
+          "task_key": "counterfactual:90a8619905b7242b23183404998d05a9"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:53Z",
+          "lease_epoch": 1,
+          "task_id": "66bd3514-7027-475d-b6d7-cb2648466ba8",
+          "task_key": "counterfactual:c8767bf0359d8926b696e2c032f29be7"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:49Z",
+          "lease_epoch": 1,
+          "task_id": "670cff23-33f4-471c-93b8-9bf8f79e686f",
+          "task_key": "counterfactual:dbce9409caa89febc10b3e3c779cd413"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:57:12Z",
+          "lease_epoch": 1,
+          "task_id": "67560826-6b15-4ad8-a1d2-b76cf5b67c84",
+          "task_key": "counterfactual:bdfcc6cd0d21d8d194c92c8de3e60128"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:57:15Z",
+          "lease_epoch": 1,
+          "task_id": "88cfed5c-37c9-4c12-891e-38724d5b2979",
+          "task_key": "counterfactual:55bf0559c5134ff21e1879b6afaa77ba"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:49Z",
+          "lease_epoch": 1,
+          "task_id": "c25fd988-16c6-436f-93fa-3116755f16e5",
+          "task_key": "counterfactual:0a0f1a7c9315b5129cb18edf7bd7e309"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T10:56:53Z",
+          "lease_epoch": 1,
+          "task_id": "f4f6ae3d-b30c-4edd-8e9f-153bf6bc99fc",
+          "task_key": "counterfactual:a1c7738a13690b28e24b7ef13dbab864"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
           "fencing_token": 1,
           "attempt_count": 1,
           "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:38:28Z",
+          "lease_expires_at": "2026-10-17T10:57:29Z",
           "lease_epoch": 1,
-          "task_id": "8c0352bc-d452-4c0b-81b3-9da1c4e3cfec",
-          "task_key": "counterfactual:632c2d45a18ead9ba4a2a89f9c7bbc1a"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:39:13Z",
-          "lease_epoch": 1,
-          "task_id": "930447ba-2dc6-4376-8dec-c8f66e09b4dc",
-          "task_key": "counterfactual:ec8518a5230659f6fdb96f633b2e0c16"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:38:05Z",
-          "lease_epoch": 1,
-          "task_id": "e7231e81-34bd-4bb6-8830-533e7c5e6359",
-          "task_key": "counterfactual:82ea46c73d4f831144b3ae6dd5bc2285"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:39:57Z",
-          "lease_epoch": 1,
-          "task_id": "23f95351-58ae-4e5c-9fdc-dfa2de9aa383",
-          "task_key": "counterfactual:2ad4297fe2a41702d4d7d074874380b7"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:39:52Z",
-          "lease_epoch": 1,
-          "task_id": "3aee6227-a26e-435d-81fc-6b90735e1b5f",
-          "task_key": "counterfactual:adeb218a59847392fac2b4ef1b1bcf43"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:39:53Z",
-          "lease_epoch": 1,
-          "task_id": "4ca0e7df-1318-44f2-9f6a-aa02da0db6aa",
-          "task_key": "counterfactual:1e96ca3c898c83075fa9c41a5b141cf6"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "FAILED",
-          "lease_expires_at": "2026-10-17T10:39:52Z",
-          "lease_epoch": 1,
-          "task_id": "83ff59c8-d5c1-4d48-9369-75f4bf276f25",
-          "task_key": "counterfactual:2649f2bdff842ca10fa98f0f9036658f"
-        },
-        {
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1,
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T10:40:03Z",
-          "lease_epoch": 1,
-          "task_id": "e595f31f-d95c-4e7e-a8a9-02792847af86",
-          "task_key": "synthesis:0f832e963c00bddf379322b47168ef09"
+          "task_id": "b149e989-a975-4f5a-97e4-3e0053c43c72",
+          "task_key": "synthesis:a9881cf14f6d0b15b60819b85548ff84"
         }
       ],
       "candidates": [
         {
-          "cell_key": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-          "task_id": "dec84b28-201f-4339-9a2f-058c8ef818db",
-          "base_cell_version": 0,
-          "confidence": 0.75,
-          "candidate_id": "87978679-a69c-44e1-93ac-72c22fd94717"
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-          "task_id": "95e94a5c-bc00-45ea-833e-9355cbcbdad3",
-          "base_cell_version": 0,
-          "confidence": 0.7,
-          "candidate_id": "57a2c3a5-44cb-4577-ac1d-4ab4a75da354"
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-          "task_id": "95e94a5c-bc00-45ea-833e-9355cbcbdad3",
+          "cell_key": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+          "task_id": "bcc41f12-7f40-4575-8910-170aa1e7398e",
           "base_cell_version": 0,
           "confidence": 0.6,
-          "candidate_id": "a6d9df2e-e87f-42e6-b063-5411220eb7db"
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "task_id": "ffaf2046-fd5f-48ae-aabd-2908cddc4af1",
-          "base_cell_version": 0,
-          "confidence": 0.75,
-          "candidate_id": "2282def0-00bd-4cdd-8832-b563619f0229"
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-          "task_id": "ffaf2046-fd5f-48ae-aabd-2908cddc4af1",
-          "base_cell_version": 0,
-          "confidence": 0.65,
-          "candidate_id": "852d7bd7-30d9-4c49-91da-5022aca0f43e"
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-          "task_id": "ffaf2046-fd5f-48ae-aabd-2908cddc4af1",
-          "base_cell_version": 0,
-          "confidence": 0.8,
-          "candidate_id": "be793963-efb2-4106-8494-ccc1b9279a42"
-        },
-        {
-          "cell_key": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-          "task_id": "5d6a3760-7e8d-4033-82e8-c1d70aec3844",
-          "base_cell_version": 0,
-          "confidence": 0.7,
-          "candidate_id": "edd6b963-1b1e-45eb-9ad7-c136bda51af6"
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "task_id": "8c0352bc-d452-4c0b-81b3-9da1c4e3cfec",
-          "base_cell_version": 0,
-          "confidence": 0.7,
-          "candidate_id": "3b7df46f-9f84-4b8a-9059-3094d3860f78"
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-          "task_id": "930447ba-2dc6-4376-8dec-c8f66e09b4dc",
-          "base_cell_version": 0,
-          "confidence": 0.8,
-          "candidate_id": "d45ef370-7be3-4422-a160-be9c1f458983"
+          "candidate_id": "4345a05a-48b9-476f-a53e-bd05e979ac54"
         }
       ],
-      "candidate_count": 9,
-      "task_count": 18
+      "candidate_count": 1,
+      "task_count": 21
     }
   },
   "resources": {
@@ -2085,77 +1342,72 @@
         "planner": "llm-matrix.v1",
         "rows": [
           {
-            "entity_key": "entity-877b6e3c3771ee02",
-            "label": "代码覆盖率与缺陷逃逸实证研究"
+            "entity_key": "entity-1b0c4be436f8ca8b",
+            "label": "Google 覆盖率门槛实证研究"
           },
           {
-            "entity_key": "entity-b32615e906db0ec7",
-            "label": "OpenMARI 缺陷逃逸率指标实践"
+            "entity_key": "entity-b1368ebf8d2e1cb4",
+            "label": "Microsoft 覆盖率门槛实证研究"
           },
           {
-            "entity_key": "entity-b8b2c6ec3d042523",
-            "label": "GitHub Copilot 测试覆盖率实践"
+            "entity_key": "entity-e2b2b109010eea81",
+            "label": "CISQ/ITIC 覆盖率与缺陷逃逸研究"
           }
         ],
         "columns": [
           {
-            "column_key": "dim-38c8828a3f3c670d",
-            "label": "因果机制",
-            "description": "解释覆盖率提高为何可能降低或不能降低缺陷逃逸率的原因。",
+            "column_key": "dim-0f1d0bbefeb10dc9",
+            "label": "因果机制与混杂因素",
+            "description": "该实证结果中解释覆盖率门槛为何影响（或不影响）缺陷逃逸率的机制，以及承认的混杂因素或局限性。",
             "answer_format": "LONG_TEXT",
             "high_risk": false
           },
           {
             "column_key": "dim-b537a72f65ff8240",
             "label": "缺陷逃逸率变化",
-            "description": "提高覆盖率门槛前后缺陷逃逸率是否下降的实证结果或数据。",
+            "description": "提高覆盖率门槛前后缺陷逃逸率（线上缺陷/总缺陷）的定量或定性变化结果。",
             "answer_format": "SHORT_TEXT",
             "high_risk": false
           },
           {
             "column_key": "dim-ca49d5f11de5bf0c",
             "label": "覆盖率门槛设定",
-            "description": "该组织采用的测试覆盖率门槛或目标水平及其定义方式。",
+            "description": "该组织采用的测试覆盖率门槛值或门槛策略（如行覆盖率80%、分支覆盖率70%或无硬性门槛）。",
             "answer_format": "SHORT_TEXT",
-            "high_risk": false
-          },
-          {
-            "column_key": "dim-d2e662809cdd71d3",
-            "label": "证据缺口",
-            "description": "该组织结论中证据不足或适用范围有限之处。",
-            "answer_format": "LONG_TEXT",
             "high_risk": false
           }
         ],
         "brief": {
-          "scope": "覆盖率门槛设定、缺陷逃逸率变化、因果机制与证据缺口。",
-          "objective": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果。",
+          "scope": "选取有公开实证数据的组织（Google、Microsoft、CISQ/ITIC），评估其覆盖率门槛设定、缺陷逃逸率变化及因果机制/混杂因素。",
+          "objective": "比较不同组织关于提高测试覆盖率门槛是否降低缺陷逃逸率的实证结果，形成可逐项引用的结论。",
           "exclusions": [
-            "非实证的观点性断言",
-            "无出处的传闻"
+            "不研究无实证数据的通用覆盖率理论",
+            "不涉及具体工具实现细节"
           ],
           "time_range": "current",
-          "deliverable": "Markdown 研究报告，含 exact quote、snapshot、URL 引用审计。"
+          "deliverable": "Markdown research report with citation audit（含 exact quote、snapshot、URL）"
         },
         "effort_tier": "STANDARD",
         "authoritative_domains": [
-          "openmari.dev",
-          "web.dev",
-          "docs.github.com"
+          "research.google",
+          "microsoft.com",
+          "cisq.org",
+          "itic.org",
+          "arxiv.org"
         ],
         "perspectives": [
           {
             "name": "实施者",
             "questions": [
-              "覆盖率门槛如何设定与测量？",
-              "缺陷逃逸率如何计算？"
+              "该组织具体设定了什么样的覆盖率门槛？",
+              "门槛提高后缺陷逃逸率如何测量和变化？"
             ]
           },
           {
             "name": "决策者",
             "questions": [
-              "提高门槛是否带来可证实的效果？",
-              "结论适用边界与证据缺口在哪？"
+              "实证结果是否支持覆盖率门槛作为降低缺陷逃逸的有效手段？",
+              "有哪些混杂因素影响结论可信度？"
             ]
           }
         ]
@@ -2165,156 +1417,16 @@
       "available": true,
       "data": [
         {
-          "cell_key": "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-          "entity_label": "代码覆盖率与缺陷逃逸实证研究",
-          "column_label": "因果机制",
-          "cell_status": "GAP",
-          "candidate_value": "",
-          "equivalent_claims": [],
-          "independent_source_count": 0,
-          "confidence_ppm": 0,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-b537a72f65ff8240",
-          "entity_label": "代码覆盖率与缺陷逃逸实证研究",
-          "column_label": "缺陷逃逸率变化",
+          "cell_key": "entity-1b0c4be436f8ca8b:dim-0f1d0bbefeb10dc9",
+          "entity_label": "Google 覆盖率门槛实证研究",
+          "column_label": "因果机制与混杂因素",
           "cell_status": "VERIFIED",
-          "candidate_value": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
+          "candidate_value": "Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制",
           "equivalent_claims": [
             {
-              "claim_text": "High-performing teams often achieve rates below two percent through comprehensive automated testing and rigorous code review processes.",
-              "evidence_key": "evidence:d94a4fa0e42ff08f615c00be65bce34ca71bc082158c1a86",
-              "source_domain": "em-tools.io"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 650000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-ca49d5f11de5bf0c",
-          "entity_label": "代码覆盖率与缺陷逃逸实证研究",
-          "column_label": "覆盖率门槛设定",
-          "cell_status": "VERIFIED",
-          "candidate_value": "普遍认为 80% 覆盖率是较合适的目标",
-          "equivalent_claims": [
-            {
-              "claim_text": "普遍认为 80% 覆盖率是较合适的目标",
-              "evidence_key": "evidence:2fad75fc1d4c16cf854c685471e501b3cbfc81368ab91e64",
-              "source_domain": "atlassian.com"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 800000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-877b6e3c3771ee02:dim-d2e662809cdd71d3",
-          "entity_label": "代码覆盖率与缺陷逃逸实证研究",
-          "column_label": "证据缺口",
-          "cell_status": "GAP",
-          "candidate_value": "",
-          "equivalent_claims": [],
-          "independent_source_count": 0,
-          "confidence_ppm": 0,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b32615e906db0ec7:dim-38c8828a3f3c670d",
-          "entity_label": "OpenMARI 缺陷逃逸率指标实践",
-          "column_label": "因果机制",
-          "cell_status": "VERIFIED",
-          "candidate_value": "缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高",
-          "equivalent_claims": [
-            {
-              "claim_text": "缺陷逃逸率在新功能引入后飙升，说明该领域测试覆盖率需要加强，即覆盖率不足可能导致逃逸率升高",
-              "evidence_key": "evidence:74a4507477946bce49fedaca4ff27873fa885f2d37866ae4",
-              "source_domain": "testdino.com"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 700000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b32615e906db0ec7:dim-b537a72f65ff8240",
-          "entity_label": "OpenMARI 缺陷逃逸率指标实践",
-          "column_label": "缺陷逃逸率变化",
-          "cell_status": "GAP",
-          "candidate_value": "",
-          "equivalent_claims": [],
-          "independent_source_count": 0,
-          "confidence_ppm": 0,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b32615e906db0ec7:dim-ca49d5f11de5bf0c",
-          "entity_label": "OpenMARI 缺陷逃逸率指标实践",
-          "column_label": "覆盖率门槛设定",
-          "cell_status": "GAP",
-          "candidate_value": "",
-          "equivalent_claims": [],
-          "independent_source_count": 0,
-          "confidence_ppm": 0,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b32615e906db0ec7:dim-d2e662809cdd71d3",
-          "entity_label": "OpenMARI 缺陷逃逸率指标实践",
-          "column_label": "证据缺口",
-          "cell_status": "VERIFIED",
-          "candidate_value": "缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。",
-          "equivalent_claims": [
-            {
-              "claim_text": "缺陷逃逸率没有通用的 DORA 基准，精英团队的阈值属于经验估计而非统一实证结论。",
-              "evidence_key": "evidence:0589e54c074153e1fbb2e8a56e58074fe03c9e4599652a14",
-              "source_domain": "devstats.com"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 750000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-38c8828a3f3c670d",
-          "entity_label": "GitHub Copilot 测试覆盖率实践",
-          "column_label": "因果机制",
-          "cell_status": "VERIFIED",
-          "candidate_value": "保持实现代码不变可让测试暴露已有缺陷",
-          "equivalent_claims": [
-            {
-              "claim_text": "保持实现代码不变可让测试暴露已有缺陷",
-              "evidence_key": "evidence:febbe4c10c9a069e557f1f91a0c9993d52a742c1978978fd",
-              "source_domain": "visualstudio.com"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 700000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-b537a72f65ff8240",
-          "entity_label": "GitHub Copilot 测试覆盖率实践",
-          "column_label": "缺陷逃逸率变化",
-          "cell_status": "GAP",
-          "candidate_value": "",
-          "equivalent_claims": [],
-          "independent_source_count": 0,
-          "confidence_ppm": 0,
-          "conflicts": []
-        },
-        {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-ca49d5f11de5bf0c",
-          "entity_label": "GitHub Copilot 测试覆盖率实践",
-          "column_label": "覆盖率门槛设定",
-          "cell_status": "VERIFIED",
-          "candidate_value": "Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。",
-          "equivalent_claims": [
-            {
-              "claim_text": "Copilot 可建议将测试集成进构建流水线，确保覆盖率改进直接支撑质量门禁。",
-              "evidence_key": "evidence:fb3422e0593ac734ee9142771b943bf2ed5ed2859daae744",
-              "source_domain": "github.com"
+              "claim_text": "Google 将覆盖率信息应用于变更集和代码评审层面，作为使覆盖率信息可操作的机制",
+              "evidence_key": "evidence:d332a37fba453d0313ac7c40f013e07370d4634a6b5b0edc",
+              "source_domain": "washington.edu"
             }
           ],
           "independent_source_count": 1,
@@ -2322,20 +1434,91 @@
           "conflicts": []
         },
         {
-          "cell_key": "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3",
-          "entity_label": "GitHub Copilot 测试覆盖率实践",
-          "column_label": "证据缺口",
-          "cell_status": "VERIFIED",
-          "candidate_value": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-          "equivalent_claims": [
-            {
-              "claim_text": "生成的测试 Copilot 可能并不涵盖所有方案，因此应始终查看生成的代码并添加可能需要的任何其他测试。",
-              "evidence_key": "evidence:88b78d2a48614d2299957b7918ef460122b268e26466b307",
-              "source_domain": "github.com"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 800000,
+          "cell_key": "entity-1b0c4be436f8ca8b:dim-b537a72f65ff8240",
+          "entity_label": "Google 覆盖率门槛实证研究",
+          "column_label": "缺陷逃逸率变化",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1b0c4be436f8ca8b:dim-ca49d5f11de5bf0c",
+          "entity_label": "Google 覆盖率门槛实证研究",
+          "column_label": "覆盖率门槛设定",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b1368ebf8d2e1cb4:dim-0f1d0bbefeb10dc9",
+          "entity_label": "Microsoft 覆盖率门槛实证研究",
+          "column_label": "因果机制与混杂因素",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b1368ebf8d2e1cb4:dim-b537a72f65ff8240",
+          "entity_label": "Microsoft 覆盖率门槛实证研究",
+          "column_label": "缺陷逃逸率变化",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b1368ebf8d2e1cb4:dim-ca49d5f11de5bf0c",
+          "entity_label": "Microsoft 覆盖率门槛实证研究",
+          "column_label": "覆盖率门槛设定",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e2b2b109010eea81:dim-0f1d0bbefeb10dc9",
+          "entity_label": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
+          "column_label": "因果机制与混杂因素",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e2b2b109010eea81:dim-b537a72f65ff8240",
+          "entity_label": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
+          "column_label": "缺陷逃逸率变化",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e2b2b109010eea81:dim-ca49d5f11de5bf0c",
+          "entity_label": "CISQ/ITIC 覆盖率与缺陷逃逸研究",
+          "column_label": "覆盖率门槛设定",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
           "conflicts": []
         }
       ]
@@ -2352,34 +1535,40 @@
           "plan_revision_to": 2,
           "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
           "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
-          "observed_facts": "MA4 observed NO_VALID_QUOTE for 6 unresolved cell(s); only those cells were replanned.",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 8 unresolved cell(s); only those cells were replanned.",
           "affected_cells": [
-            "entity-877b6e3c3771ee02:dim-38c8828a3f3c670d",
-            "entity-877b6e3c3771ee02:dim-d2e662809cdd71d3",
-            "entity-b32615e906db0ec7:dim-b537a72f65ff8240",
-            "entity-b32615e906db0ec7:dim-ca49d5f11de5bf0c",
-            "entity-b8b2c6ec3d042523:dim-b537a72f65ff8240",
-            "entity-b8b2c6ec3d042523:dim-d2e662809cdd71d3"
+            "entity-1b0c4be436f8ca8b:dim-b537a72f65ff8240",
+            "entity-1b0c4be436f8ca8b:dim-ca49d5f11de5bf0c",
+            "entity-b1368ebf8d2e1cb4:dim-0f1d0bbefeb10dc9",
+            "entity-b1368ebf8d2e1cb4:dim-b537a72f65ff8240",
+            "entity-b1368ebf8d2e1cb4:dim-ca49d5f11de5bf0c",
+            "entity-e2b2b109010eea81:dim-0f1d0bbefeb10dc9",
+            "entity-e2b2b109010eea81:dim-b537a72f65ff8240",
+            "entity-e2b2b109010eea81:dim-ca49d5f11de5bf0c"
           ],
           "strategy": "SWITCH_LANGUAGE",
-          "query_count": 12,
-          "created_at": "2026-10-17T10:36:34Z"
+          "query_count": 16,
+          "created_at": "2026-10-17T10:53:06Z"
         },
         {
           "plan_revision_from": 2,
           "plan_revision_to": 3,
           "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
           "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
-          "observed_facts": "MA4 observed NO_VALID_QUOTE for 4 unresolved cell(s); only those cells were replanned.",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 8 unresolved cell(s); only those cells were replanned.",
           "affected_cells": [
-            "entity-877b6e3c3771ee02:dim-d2e662809cdd71d3",
-            "entity-b32615e906db0ec7:dim-b537a72f65ff8240",
-            "entity-b32615e906db0ec7:dim-ca49d5f11de5bf0c",
-            "entity-b8b2c6ec3d042523:dim-b537a72f65ff8240"
+            "entity-1b0c4be436f8ca8b:dim-b537a72f65ff8240",
+            "entity-1b0c4be436f8ca8b:dim-ca49d5f11de5bf0c",
+            "entity-b1368ebf8d2e1cb4:dim-0f1d0bbefeb10dc9",
+            "entity-b1368ebf8d2e1cb4:dim-b537a72f65ff8240",
+            "entity-b1368ebf8d2e1cb4:dim-ca49d5f11de5bf0c",
+            "entity-e2b2b109010eea81:dim-0f1d0bbefeb10dc9",
+            "entity-e2b2b109010eea81:dim-b537a72f65ff8240",
+            "entity-e2b2b109010eea81:dim-ca49d5f11de5bf0c"
           ],
           "strategy": "SWITCH_LANGUAGE",
           "query_count": 4,
-          "created_at": "2026-10-17T10:38:21Z"
+          "created_at": "2026-10-17T10:55:49Z"
         }
       ]
     },

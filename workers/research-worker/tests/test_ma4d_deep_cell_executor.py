@@ -1059,3 +1059,23 @@ def test_bundled_extraction_sees_column_labels_and_reads_more_documents() -> Non
         ("dim-a", "JSON 数据类型", "JSON 列的存储格式", BASE_DOCUMENTS_PER_TASK + 2),
         ("dim-b", "索引方式", "可加速 JSON 查询的索引", BASE_DOCUMENTS_PER_TASK + 2),
     ]
+
+
+def test_answer_check_drops_claims_that_do_not_give_the_asked_value() -> None:
+    from types import SimpleNamespace
+
+    from app.deep_cell_executor import _keep_answering_cards
+
+    class CheckLlm:
+        def complete_json(self, purpose, payload):
+            assert purpose == "research.answer_check"
+            return '{"answering_indices": [1]}'
+
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Java 虚拟线程"})
+    column = SimpleNamespace(label="synchronized 固定问题的改善版本", description="哪个 JDK 版本、哪个 JEP")
+    cards = [SimpleNamespace(claim_text="Java 24 已集成这一改动", quote_text="integrated into Java 24"),
+             SimpleNamespace(claim_text="JDK 24 的 JEP 491 改善了固定问题", quote_text="JEP 491 ... JDK 24")]
+
+    assert _keep_answering_cards(snapshot, column, cards, CheckLlm()) == [cards[1]]
+    # 模型不可用时保留原结论
+    assert _keep_answering_cards(snapshot, column, cards, None) == cards
