@@ -65,6 +65,8 @@ class NarrativeReportPolisher:
                 "Every paragraph must cite at least one cell_key and evidence_key.",
                 "Do not add sources, numbers, dates, versions, names, or conclusions.",
                 "Write a cohesive professional research article, not an audit log.",
+                "Never mention frozen cells, ledgers, cell keys or other internal terms in the prose; refer to the "
+                "verified sources instead (for example '本次核验的资料显示').",
                 "executive_summary must directly answer research_question in one to three sentences using the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
                 "instead of answering.",
