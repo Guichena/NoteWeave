@@ -133,6 +133,7 @@ def _extract_evidence_cards_detailed_with_llm(
                 "keep quote_text at 160 characters or fewer; copy one short sentence or clause and never use ellipses",
                 "every number, date, unit, and comparison in claim_text must appear verbatim in quote_text; never copy version numbers from the question into a claim",
                 "claim_text is a short direct answer to the column for target_entity, written in the language of question and based only on quote_text, for example 'JDK 21 正式发布（JEP 444）'; do not add facts that quote_text does not state",
+                "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
                 "for each (entity, column) in the schema, produce at most one SUPPORTS card and one CONFLICTS card",

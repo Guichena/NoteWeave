@@ -156,6 +156,9 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "make each asked fact a dimension.",
             "Keep only dimensions needed to answer the question; perspectives help choose them but must not add "
             "dimensions the question does not need. Prefer the smallest table that fully answers the question.",
+            "Every part of the question must map to at least one dimension. When an asked value is hard to "
+            "understand without its cause or mechanism (for example why a problem happens, or what an index costs), "
+            "add that as a dimension; add at most two such dimensions.",
             "When the question compares organizations, studies, vendors or implementations without naming them, "
             "name 2 to 4 specific ones as entities (for example a published study with its organization and year), "
             "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "

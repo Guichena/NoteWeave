@@ -112,7 +112,11 @@ def _call_model(
             "Each query is plain natural language for a search engine: no field labels, no '::', no line breaks, "
             f"at most {MAX_QUERY_CHARS} characters.",
             "Use the language most likely to reach primary sources for this entity; add one query in the other "
-            "language only when the topic clearly has sources in both.",
+            "language only when the topic clearly has sources in both. For software, standards, security and "
+            "scientific topics the primary sources are usually English, so write the main queries in English even "
+            "when the question is Chinese.",
+            "When you know the identifier of the primary source (for example a JEP, RFC, CVE or standard number, "
+            "or an exact product version), put it in a query; this reaches the specification page directly.",
             "Never repeat or lightly reword a query listed in tried_queries.",
             "intent is one of: direct (find the answer), verify (find a primary or official confirmation), "
             "counter (find limitations, exceptions or contradicting evidence), coverage (find aspects not yet covered).",
