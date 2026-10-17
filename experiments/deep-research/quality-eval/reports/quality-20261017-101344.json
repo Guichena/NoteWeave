@@ -1,0 +1,280 @@
+{
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-10-17T10:13:44.126908+00:00",
+  "cases_total": 20,
+  "runs_found": 4,
+  "judge_scored": 4,
+  "judge_not_run": 0,
+  "pass_rate": 0.25,
+  "dimension_means": {
+    "factual_accuracy": 0.225,
+    "citation_accuracy": 0.1875,
+    "completeness": 0.2125,
+    "source_quality": 0.15,
+    "tool_efficiency": 0.2125
+  },
+  "effective_cell_rate": 0.2727,
+  "runs_without_cells": 0,
+  "by_question_type": {
+    "COMPARISON": {
+      "scored": 1,
+      "pass_rate": 1.0,
+      "factual_accuracy": 0.9,
+      "citation_accuracy": 0.75,
+      "completeness": 0.85,
+      "source_quality": 0.6,
+      "tool_efficiency": 0.85
+    },
+    "SURVEY": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.0,
+      "citation_accuracy": 0.0,
+      "completeness": 0.0,
+      "source_quality": 0.0,
+      "tool_efficiency": 0.0
+    },
+    "FACT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.0,
+      "citation_accuracy": 0.0,
+      "completeness": 0.0,
+      "source_quality": 0.0,
+      "tool_efficiency": 0.0
+    },
+    "CONFLICT": {
+      "scored": 1,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.0,
+      "citation_accuracy": 0.0,
+      "completeness": 0.0,
+      "source_quality": 0.0,
+      "tool_efficiency": 0.0
+    }
+  },
+  "results": [
+    {
+      "case_key": "cmp-postgres-mysql-json",
+      "question_type": "COMPARISON",
+      "run_id": "17a45709-9b90-4876-b766-9f4bdec22be4",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 211.6,
+        "search_query_count": 6,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 6,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 6
+        },
+        "queries_per_effective_cell": 1.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.9,
+          "citation_accuracy": 0.75,
+          "completeness": 0.85,
+          "source_quality": 0.6,
+          "tool_efficiency": 0.85
+        },
+        "rationales": {
+          "factual_accuracy": "对 PostgreSQL 17 的 jsonb GIN 操作符类、可加速运算符、jsonb_path_ops 更小且不支持键存在查询的描述与官方文档一致；MySQL 多值索引支持三种成员运算符、不索引空数组的描述也基本正确。小扣分点：未提及 PostgreSQL 还有表达式索引（btree 等）和 MySQL 也有函数索引/生成列索引等其它 JSON 索引路径，覆盖面略窄；此外 MySQL 部分引用来自非官方二手博客，但结论本身可信。",
+          "citation_accuracy": "PostgreSQL 相关引用均来自 postgresql.org 且引文与结论一致。MySQL 的'三种成员运算符均可利用多值索引'与'空数组不被索引'两条关键结论分别引用了 oneuptime.com 和 mydbops.com 二手博客，而非 MySQL 官方文档，引用来源不满足题目'引用官方文档'的要求；MySQL 官方 json 搜索函数页面仅支撑 JSON_CONTAINS 多值索引优化。",
+          "completeness": "三项 must_cover 均有实质回答：双方索引形式（PG jsonb_ops/jsonb_path_ops GIN；MySQL 多值索引）、可加速运算符/函数、索引代价（PG 体积权衡与键存在限制；MySQL 空数组限制）。但对 MySQL 索引写入开销（如多值索引对 DML 的影响、存储代价）和 PG GIN 的写入放大/慢更新等通用代价论述不足。",
+          "source_quality": "三分之二的 MySQL 证据来自第三方博客（oneuptime、mydbops），只有一条来自 dev.mysql.com；PostgreSQL 全部使用官方文档。题目明确要求引用官方文档，MySQL 侧来源质量不达标。",
+          "tool_efficiency": "6 次检索覆盖 6 个计划单元且全部产出有效结论，无明显重复浪费；但未补充检索 MySQL 官方多值索引页面导致关键结论落到二手来源，效率上有改进空间。"
+        },
+        "must_cover": [
+          {
+            "item": "两者各自支持的 JSON 索引形式",
+            "covered": true
+          },
+          {
+            "item": "哪些运算符或函数能用上索引",
+            "covered": true
+          },
+          {
+            "item": "索引的写入开销或限制",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "结论总体正确且三项要点均有覆盖，但 MySQL 侧关键结论依赖二手博客而非官方文档，来源质量与引用合规性不足。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "survey-oauth-oidc",
+      "question_type": "SURVEY",
+      "run_id": "81385e07-8ff0-442d-b631-1d3402ffd258",
+      "metrics": {
+        "terminal_status": "FAILED",
+        "completion_terminal_state": "",
+        "wall_seconds": 35.3,
+        "search_query_count": 0,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 5,
+        "effective_cells": 0,
+        "effective_cell_rate": 0.0,
+        "status_counts": {
+          "GAP": 5
+        },
+        "queries_per_effective_cell": null
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.0,
+          "citation_accuracy": 0.0,
+          "completeness": 0.0,
+          "source_quality": 0.0,
+          "tool_efficiency": 0.0
+        },
+        "rationales": {
+          "factual_accuracy": "报告内容为空，未给出任何可核实的事实结论，无法评分，按未提供实质内容处理。",
+          "citation_accuracy": "引用列表为空，报告也未引用任何规范原文，无法支撑任何结论。",
+          "completeness": "must_cover 三项（OAuth 2.1 授权方式调整、PKCE 要求、OIDC 的 ID Token 与身份信息）均未回答。",
+          "source_quality": "未使用任何官方规范（如 OAuth 2.1 draft、RFC 6749、OIDC Core）或其他一手来源。",
+          "tool_efficiency": "检索次数为 0，有效结论为 0，未产生任何有效检索或结论。"
+        },
+        "must_cover": [
+          {
+            "item": "OAuth 2.1 移除或强制的授权方式",
+            "covered": false
+          },
+          {
+            "item": "PKCE 的要求",
+            "covered": false
+          },
+          {
+            "item": "OIDC 增加的 ID Token 与身份信息",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告为空且无引用，未回答任何必答要点，无法通过评审。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "fact-java-virtual-threads",
+      "question_type": "FACT",
+      "run_id": "71e86f85-1892-41d7-9d5b-39516ffa4f50",
+      "metrics": {
+        "terminal_status": "FAILED",
+        "completion_terminal_state": "",
+        "wall_seconds": 30.2,
+        "search_query_count": 0,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 2,
+        "effective_cells": 0,
+        "effective_cell_rate": 0.0,
+        "status_counts": {
+          "GAP": 2
+        },
+        "queries_per_effective_cell": null
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.0,
+          "citation_accuracy": 0.0,
+          "completeness": 0.0,
+          "source_quality": 0.0,
+          "tool_efficiency": 0.0
+        },
+        "rationales": {
+          "factual_accuracy": "报告为空，未给出任何事实性结论，无法验证正确性。",
+          "citation_accuracy": "未附任何引用，结论与引用的一致性问题无从谈起。",
+          "completeness": "must_cover 的三项要点均未作答：未说明虚拟线程正式发布的 JDK 版本与 JEP（JEP 444，JDK 21），未解释 synchronized 导致线程固定的原因（持有监视器时阻塞会固定载体线程，synchronized 在早期不支持卸载），未给出改善该问题的 JEP 与版本（JEP 491，JDK 24）。",
+          "source_quality": "无任何来源，更谈不上使用官方 JEP 或规范等一手来源。",
+          "tool_efficiency": "检索次数为 0，有效结论数为 0，未开展任何有效检索。"
+        },
+        "must_cover": [
+          {
+            "item": "正式发布的 JDK 版本与 JEP 编号",
+            "covered": false
+          },
+          {
+            "item": "线程固定问题的原因",
+            "covered": false
+          },
+          {
+            "item": "改善该问题的 JEP 与版本",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告为空，三个必答要点均未覆盖，无法通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-coverage-threshold",
+      "question_type": "CONFLICT",
+      "run_id": "d9090f8f-9950-4bea-9d42-8845f3bbb471",
+      "metrics": {
+        "terminal_status": "FAILED",
+        "completion_terminal_state": "",
+        "wall_seconds": 30.2,
+        "search_query_count": 0,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 9,
+        "effective_cells": 0,
+        "effective_cell_rate": 0.0,
+        "status_counts": {
+          "GAP": 9
+        },
+        "queries_per_effective_cell": null
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.0,
+          "citation_accuracy": 0.0,
+          "completeness": 0.0,
+          "source_quality": 0.0,
+          "tool_efficiency": 0.0
+        },
+        "rationales": {
+          "factual_accuracy": "报告为空，未给出任何结论或事实陈述，无法验证正确性。",
+          "citation_accuracy": "引用列表为空，无任何引用可支撑结论。",
+          "completeness": "must_cover 三项（支持实证、不支持实证、混杂因素）均未回答。",
+          "source_quality": "无任何来源。",
+          "tool_efficiency": "检索次数为 0，有效结论数为 0，未产生任何检索工作或结论。"
+        },
+        "must_cover": [
+          {
+            "item": "支持的实证",
+            "covered": false
+          },
+          {
+            "item": "不支持的实证",
+            "covered": false
+          },
+          {
+            "item": "覆盖率之外的混杂因素",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告为空，无任何内容或引用，无法评审。"
+      },
+      "passed": false
+    }
+  ]
+}

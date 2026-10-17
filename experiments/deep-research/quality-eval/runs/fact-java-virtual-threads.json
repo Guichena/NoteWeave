@@ -2,15 +2,15 @@
   "schema_version": "research-quality-run.v1",
   "dataset_version": "1.0.0",
   "case_key": "fact-java-virtual-threads",
-  "run_id": "049cc7c5-e53e-465e-8943-3b998069e439",
-  "workspace_id": "2f79d9ce-6f45-404a-b860-92b0031e1997",
-  "started_at": "2026-10-17T09:33:42.596932+00:00",
-  "finished_at": "2026-10-17T09:35:28.189243+00:00",
-  "wall_seconds": 105.6,
+  "run_id": "71e86f85-1892-41d7-9d5b-39516ffa4f50",
+  "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+  "started_at": "2026-10-17T10:12:29.397105+00:00",
+  "finished_at": "2026-10-17T10:12:59.580166+00:00",
+  "wall_seconds": 30.2,
   "run_detail": {
-    "research_run_id": "049cc7c5-e53e-465e-8943-3b998069e439",
-    "workspace_id": "2f79d9ce-6f45-404a-b860-92b0031e1997",
-    "task_id": "0d58dedf-828a-43c6-96cf-1a0705cc4d46",
+    "research_run_id": "71e86f85-1892-41d7-9d5b-39516ffa4f50",
+    "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+    "task_id": "c0f577cb-cf2f-4573-848d-3594f9a50e80",
     "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
     "profile_key": "DEFAULT",
     "research_intent": {
@@ -25,10 +25,10 @@
     },
     "resumed_from_research_run_id": "",
     "resumed_from_checkpoint_no": null,
-    "status": "COMPLETED",
-    "completion_terminal_state": "COMPLETED_VERIFIED",
-    "final_report_title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-    "final_report_markdown": "# Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。\n\n以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。\n\n## 研究对象 · 正式结论必须有 exact quote、snapshot 和 URL\n\nJDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出 [evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356]\n\n## 研究对象 · synchronized 导致的线程固定问题在哪个版本改善\n\nThis change is already integrated into Java 24 and available in the latest JDK 24 EA builds. [evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1]\n\n## 研究对象 · Java 虚拟线程在哪个 JDK 版本正式发布\n\nJDK 21 预告虚拟线程正式发布 [evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc]\n\n## Citation audit\n\n### 研究对象 · 正式结论必须有 exact quote、snapshot 和 URL\n\n- Evidence: `evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356`\n- Exact quote: “JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出”\n- Snapshot: `research/external/25f47141-605b-4305-bcc9-76fbf863c87d/d9f21624559dc385c220779f68d2639681c49a637360a5e14f2b9e4e5be53826`\n- URL: https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E7%BA%BF%E7%A8%8B/69101820\n\n### 研究对象 · synchronized 导致的线程固定问题在哪个版本改善\n\n- Evidence: `evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1`\n- Exact quote: “This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.”\n- Snapshot: `research/external/2231d6b5-ac68-4353-979a-5d2c717fe0a7/91900e212db2abde3a86fe6484b91c222d13dec007b9feb4c0319d442df07116`\n- URL: https://inside.java/2024/11/21/newscast-80/\n\n### 研究对象 · Java 虚拟线程在哪个 JDK 版本正式发布\n\n- Evidence: `evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc`\n- Exact quote: “JDK 21预告：虚拟线程正式发布及十多项新特性”\n- Snapshot: `research/external/25f47141-605b-4305-bcc9-76fbf863c87d/5d523da68950a9906ee2ee7cd9139efd261979c178a61290f77b4c4094ec5a56`\n- URL: https://developer.aliyun.com/article/1346841\n\n",
+    "status": "FAILED",
+    "completion_terminal_state": "",
+    "final_report_title": "",
+    "final_report_markdown": "",
     "report_structure": null,
     "counterfactual_summary": {
       "has_counterfactual_recheck": false,
@@ -46,30 +46,8 @@
       "branches": []
     },
     "research_artifact_candidate": null,
-    "report_file": {
-      "object_key": "workspace/2f79d9ce-6f45-404a-b860-92b0031e1997/research/049cc7c5-e53e-465e-8943-3b998069e439/report/final.md",
-      "file_name": "final.md",
-      "mime_type": "text/markdown",
-      "content_size": 2237,
-      "sha256": "7511c0b8fd3e925f3578e50134f2e6c35bb9d9749586057fa5f648b30e901021"
-    },
-    "research_artifact": {
-      "artifact_id": "049cc7c5-e53e-465e-8943-3b998069e439",
-      "artifact_type": "DEEP_RESEARCH_REPORT",
-      "artifact_version": "v1",
-      "title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-      "generated_by": "research_agent",
-      "generated_ref_type": "RESEARCH_RUN",
-      "generated_ref_id": "049cc7c5-e53e-465e-8943-3b998069e439",
-      "citation_count": 0,
-      "report_file": {
-        "object_key": "workspace/2f79d9ce-6f45-404a-b860-92b0031e1997/research/049cc7c5-e53e-465e-8943-3b998069e439/report/final.md",
-        "file_name": "final.md",
-        "mime_type": "text/markdown",
-        "content_size": 2237,
-        "sha256": "7511c0b8fd3e925f3578e50134f2e6c35bb9d9749586057fa5f648b30e901021"
-      }
-    },
+    "report_file": null,
+    "research_artifact": null,
     "research_process_summary": {
       "source_scope_count": 0,
       "search_read_timeline": {
@@ -77,13 +55,7 @@
         "total_search_hit_count": 0,
         "total_read_window_count": 0,
         "total_evidence_card_count": 0,
-        "all_search_queries": [
-          "Java 虚拟线程 正式发布 JDK 版本",
-          "JEP 444 Virtual Threads final",
-          "synchronized 虚拟线程 固定 pinning 改善 JDK 版本",
-          "JDK 24 release notes virtual threads synchronized pinning removed",
-          "JEP 491 synchronized 虚拟线程 pinning JDK 24"
-        ],
+        "all_search_queries": [],
         "final_loop_decision": "",
         "final_loop_reason": "",
         "terminal_disposition": "",
@@ -107,10 +79,10 @@
         "final_loop_decision": "",
         "has_counterfactual_recheck": false,
         "counterfactual_branch_count": 0,
-        "checkpoint_count": 1,
-        "blocked_row_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 1,
         "conflicted_row_count": 0,
-        "guardrailed_row_count": 0,
+        "guardrailed_row_count": 1,
         "recovery_target_count": 0
       }
     },
@@ -141,13 +113,49 @@
         "column_count": 0
       },
       "verifier_gated_summary": {
-        "blocked_row_count": 0,
-        "guardrailed_row_count": 0,
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
         "recovery_targeted_blocked_row_count": 0,
-        "uncovered_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
         "requirement_partial_blocked_row_count": 0,
-        "blocked_row_samples": [],
-        "guardrailed_row_samples": [],
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-9e5e1ac20b99b2fb",
+            "source_id": "",
+            "source_title": "Java Virtual Threads",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-9e5e1ac20b99b2fb",
+            "source_id": "",
+            "source_title": "Java Virtual Threads",
+            "evidence_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
         "need_more_evidence_row_samples": []
       }
     },
@@ -241,16 +249,16 @@
         ],
         "rows": [
           {
-            "row_id": "subject",
+            "row_id": "entity-9e5e1ac20b99b2fb",
             "branch_id": "branch-main",
             "source_id": "",
-            "source_title": "Subject",
+            "source_title": "Java Virtual Threads",
             "generated_by": "",
             "generated_ref_id": "",
             "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-            "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "read_focus": "Determine which JDK version formally released Java virtual threads and which version improved the synchronized-caused thread pinning issue, citing the relevant JEPs.",
             "evidence_id": "",
-            "row_status": "VERIFIED",
+            "row_status": "DISCOVERED",
             "relation_type": "",
             "support_score": null,
             "conflict_score": null,
@@ -262,55 +270,36 @@
         ],
         "cells": [
           {
-            "cell_id": "subject:q-1ce8b71b0ee93c6e",
-            "row_id": "subject",
+            "cell_id": "entity-9e5e1ac20b99b2fb:dim-639518373d5aed9d",
+            "row_id": "entity-9e5e1ac20b99b2fb",
             "branch_id": "branch-main",
-            "column_key": "q-1ce8b71b0ee93c6e",
-            "column_label": "synchronized 导致的线程固定问题在哪个版本改善",
-            "candidate_value": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-            "status": "VERIFIED",
-            "confidence": 0.9,
-            "evidence_refs": [
-              "evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-            "repair_count": 1
-          },
-          {
-            "cell_id": "subject:finding-30a32032a48c8d1b",
-            "row_id": "subject",
-            "branch_id": "branch-main",
-            "column_key": "finding-30a32032a48c8d1b",
-            "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
-            "candidate_value": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-            "status": "VERIFIED",
-            "confidence": 0.95,
-            "evidence_refs": [
-              "evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "column_key": "dim-639518373d5aed9d",
+            "column_label": "Formal release JDK version",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
             "repair_count": 0
           },
           {
-            "cell_id": "subject:q-df7694f1e93d0ae0",
-            "row_id": "subject",
+            "cell_id": "entity-9e5e1ac20b99b2fb:dim-c4d16f0fc6289002",
+            "row_id": "entity-9e5e1ac20b99b2fb",
             "branch_id": "branch-main",
-            "column_key": "q-df7694f1e93d0ae0",
-            "column_label": "Java 虚拟线程在哪个 JDK 版本正式发布",
-            "candidate_value": "JDK 21 预告虚拟线程正式发布",
-            "status": "VERIFIED",
-            "confidence": 0.7,
-            "evidence_refs": [
-              "evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc"
-            ],
-            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "column_key": "dim-c4d16f0fc6289002",
+            "column_label": "Synchronized pinning improvement JEP and version",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
             "repair_count": 0
           }
         ],
         "verifier_decisions": [],
         "required_finding_contract": [],
         "required_finding_progress": [],
-        "verified_row_count": 1,
+        "verified_row_count": 0,
         "conflicted_row_count": 0,
         "requirement_ready_row_count": 0,
         "requirement_partial_row_count": 0,
@@ -342,16 +331,16 @@
       ],
       "rows": [
         {
-          "row_id": "subject",
+          "row_id": "entity-9e5e1ac20b99b2fb",
           "branch_id": "branch-main",
           "source_id": "",
-          "source_title": "Subject",
+          "source_title": "Java Virtual Threads",
           "generated_by": "",
           "generated_ref_id": "",
           "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+          "read_focus": "Determine which JDK version formally released Java virtual threads and which version improved the synchronized-caused thread pinning issue, citing the relevant JEPs.",
           "evidence_id": "",
-          "row_status": "VERIFIED",
+          "row_status": "DISCOVERED",
           "relation_type": "",
           "support_score": null,
           "conflict_score": null,
@@ -363,285 +352,48 @@
       ],
       "cells": [
         {
-          "cell_id": "subject:q-1ce8b71b0ee93c6e",
-          "row_id": "subject",
+          "cell_id": "entity-9e5e1ac20b99b2fb:dim-639518373d5aed9d",
+          "row_id": "entity-9e5e1ac20b99b2fb",
           "branch_id": "branch-main",
-          "column_key": "q-1ce8b71b0ee93c6e",
-          "column_label": "synchronized 导致的线程固定问题在哪个版本改善",
-          "candidate_value": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-          "status": "VERIFIED",
-          "confidence": 0.9,
-          "evidence_refs": [
-            "evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
-          "repair_count": 1
-        },
-        {
-          "cell_id": "subject:finding-30a32032a48c8d1b",
-          "row_id": "subject",
-          "branch_id": "branch-main",
-          "column_key": "finding-30a32032a48c8d1b",
-          "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
-          "candidate_value": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-          "status": "VERIFIED",
-          "confidence": 0.95,
-          "evidence_refs": [
-            "evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "column_key": "dim-639518373d5aed9d",
+          "column_label": "Formal release JDK version",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
           "repair_count": 0
         },
         {
-          "cell_id": "subject:q-df7694f1e93d0ae0",
-          "row_id": "subject",
+          "cell_id": "entity-9e5e1ac20b99b2fb:dim-c4d16f0fc6289002",
+          "row_id": "entity-9e5e1ac20b99b2fb",
           "branch_id": "branch-main",
-          "column_key": "q-df7694f1e93d0ae0",
-          "column_label": "Java 虚拟线程在哪个 JDK 版本正式发布",
-          "candidate_value": "JDK 21 预告虚拟线程正式发布",
-          "status": "VERIFIED",
-          "confidence": 0.7,
-          "evidence_refs": [
-            "evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc"
-          ],
-          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "column_key": "dim-c4d16f0fc6289002",
+          "column_label": "Synchronized pinning improvement JEP and version",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
           "repair_count": 0
         }
       ],
       "verifier_decisions": [],
-      "checkpoints": [
-        {
-          "checkpoint_no": 1,
-          "snapshot_type": "LEDGER_HYDRATION",
-          "active_branch_id": "",
-          "final_loop_decision": "",
-          "local_verifier_status": "",
-          "global_verifier_decision": "",
-          "verified_row_count": 0,
-          "conflicted_row_count": 0,
-          "summary": {
-            "checkpoint_no": 0,
-            "snapshot_type": "",
-            "state_ledger": {
-              "active_branch_id": "",
-              "row_count": 0,
-              "column_count": 0,
-              "branch_count": 0,
-              "cell_count": 0,
-              "verified_row_count": 0,
-              "conflicted_row_count": 0,
-              "requirement_ready_row_count": 0,
-              "requirement_partial_row_count": 0,
-              "read_window_count": 0,
-              "evidence_card_count": 0,
-              "verified_row_samples": [],
-              "conflicted_row_samples": [],
-              "evidence_card_samples": [],
-              "read_window_samples": [],
-              "blocked_row_count": 0,
-              "guardrailed_row_count": 0,
-              "recovery_targeted_blocked_row_count": 0,
-              "uncovered_blocked_row_count": 0,
-              "requirement_partial_blocked_row_count": 0,
-              "blocked_row_samples": [],
-              "guardrailed_row_samples": [],
-              "need_more_evidence_row_samples": [],
-              "intent_requirement_count": 0,
-              "intent_satisfied_requirement_count": 0,
-              "intent_pending_requirement_count": 0,
-              "missing_intent_requirements": []
-            },
-            "research_intent_alignment_status": "",
-            "research_intent_alignment_reason": "",
-            "intent_constraint_count": 0,
-            "intent_satisfied_constraint_count": 0,
-            "intent_requirement_count": 0,
-            "intent_satisfied_requirement_count": 0,
-            "intent_pending_requirement_count": 0,
-            "missing_intent_requirements": [],
-            "recovery_targets": {
-              "requirement_ids": [],
-              "requirement_types": [],
-              "requirement_labels": [],
-              "target_columns": [],
-              "target_queries": [],
-              "target_sources": [],
-              "requirement_count": 0,
-              "query_count": 0,
-              "source_count": 0,
-              "column_count": 0
-            },
-            "verifier_gated_summary": {
-              "blocked_row_count": 0,
-              "guardrailed_row_count": 0,
-              "recovery_targeted_blocked_row_count": 0,
-              "uncovered_blocked_row_count": 0,
-              "requirement_partial_blocked_row_count": 0,
-              "blocked_row_samples": [],
-              "guardrailed_row_samples": [],
-              "need_more_evidence_row_samples": []
-            }
-          },
-          "counterfactual_summary": null,
-          "recovery_targets": {
-            "requirement_ids": [],
-            "requirement_types": [],
-            "requirement_labels": [],
-            "target_columns": [],
-            "target_queries": [],
-            "target_sources": [],
-            "requirement_count": 0,
-            "query_count": 0,
-            "source_count": 0,
-            "column_count": 0
-          },
-          "created_at": "2026-10-17T09:34:45Z"
-        }
-      ],
-      "source_evidence": [
-        {
-          "evidence_id": "evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc",
-          "window_id": "window-1",
-          "source_id": "web-ff58db045f25b84e",
-          "source_title": "JDK 21预告：虚拟线程正式发布及十多项新特性",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://developer.aliyun.com/article/1346841",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "Java 虚拟线程 正式发布 JDK 版本",
-          "read_focus": "Read external URL JDK 21预告：虚拟线程正式发布及十多项新特性 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "quote_text": "JDK 21预告：虚拟线程正式发布及十多项新特性",
-          "claim_text": "JDK 21 预告虚拟线程正式发布",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.7,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/25f47141-605b-4305-bcc9-76fbf863c87d/5d523da68950a9906ee2ee7cd9139efd261979c178a61290f77b4c4094ec5a56"
-        },
-        {
-          "evidence_id": "evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356",
-          "window_id": "window-6",
-          "source_id": "web-cff0cb0a0cc8d3d0",
-          "source_title": "Java虚拟线程",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E7%BA%BF%E7%A8%8B/69101820",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "Java 虚拟线程 正式发布 JDK 版本",
-          "read_focus": "Read external URL Java虚拟线程 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "quote_text": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-          "claim_text": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.95,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/25f47141-605b-4305-bcc9-76fbf863c87d/d9f21624559dc385c220779f68d2639681c49a637360a5e14f2b9e4e5be53826"
-        },
-        {
-          "evidence_id": "evidence:61ad1d564dd49eba1a582e62fa84035c25131577731d4f3b",
-          "window_id": "window-4",
-          "source_id": "web-c3410c307c426801",
-          "source_title": "JDK 21 提供虚拟线程等新功能以及长期支持",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.azul.com/zh-hans/blog/jdk-21-delivers-virtual-threads-other-new-features-and-long-term-support/",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "Java 虚拟线程 正式发布 JDK 版本",
-          "read_focus": "Read external URL JDK 21 提供虚拟线程等新功能以及长期支持 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "quote_text": "JDK 21 还有很多吸引开发者的其他功能：",
-          "claim_text": "JDK 21 提供虚拟线程等新功能",
-          "relation_type": "WEAK_SUPPORT",
-          "support_score": 0.4,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/25f47141-605b-4305-bcc9-76fbf863c87d/4585b44427c4af55c8590b6361a570fb78356e94724cf2050da9df72cac7d2bf"
-        },
-        {
-          "evidence_id": "evidence:448264d03c03b4bba1aa78b4dbf7c4658d98f2f13ba73503",
-          "window_id": "window-3",
-          "source_id": "web-7d21c93424b9261e",
-          "source_title": "Virtual Threads after JDK 24: What Changed for Production ...",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://www.infoq.com/articles/virtual-threads-after-jdk24/",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "JEP 491 synchronized 虚拟线程 pinning JDK 24",
-          "read_focus": "Read external URL Virtual Threads after JDK 24: What Changed for Production ... for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "quote_text": "JDK 24 removed the most visible monitor-related failure mode from early virtual-thread rollouts.",
-          "claim_text": "JDK 24 removed the most visible monitor-related failure mode from early virtual-thread rollouts.",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.85,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/2231d6b5-ac68-4353-979a-5d2c717fe0a7/18a9f886e40fa7cdb320bd3ddc019526f0dc2d182f73d55540a70d31a33cb9cc"
-        },
-        {
-          "evidence_id": "evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1",
-          "window_id": "window-2",
-          "source_id": "web-a202bb7fd72d725b",
-          "source_title": "Java 24 Stops Pinning Virtual Threads (Almost)",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://inside.java/2024/11/21/newscast-80/",
-          "provider": "serper_mcp",
-          "adapter": "external_url",
-          "search_query": "JEP 491 synchronized 虚拟线程 pinning JDK 24",
-          "read_focus": "Read external URL Java 24 Stops Pinning Virtual Threads (Almost) for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "quote_text": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-          "claim_text": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-          "relation_type": "SUPPORTS",
-          "support_score": 0.9,
-          "conflict_score": 0.0,
-          "snapshot_status": "EXTERNAL_ARCHIVED",
-          "snapshot_key": "research/external/2231d6b5-ac68-4353-979a-5d2c717fe0a7/91900e212db2abde3a86fe6484b91c222d13dec007b9feb4c0319d442df07116"
-        }
-      ],
-      "cell_evidence": [
-        {
-          "cell_id": "subject:q-df7694f1e93d0ae0",
-          "row_id": "subject",
-          "evidence_id": "evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc",
-          "source_id": "web-ff58db045f25b84e",
-          "source_title": "JDK 21预告：虚拟线程正式发布及十多项新特性",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://developer.aliyun.com/article/1346841"
-        },
-        {
-          "cell_id": "subject:finding-30a32032a48c8d1b",
-          "row_id": "subject",
-          "evidence_id": "evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356",
-          "source_id": "web-cff0cb0a0cc8d3d0",
-          "source_title": "Java虚拟线程",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E7%BA%BF%E7%A8%8B/69101820"
-        },
-        {
-          "cell_id": "subject:q-1ce8b71b0ee93c6e",
-          "row_id": "subject",
-          "evidence_id": "evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1",
-          "source_id": "web-a202bb7fd72d725b",
-          "source_title": "Java 24 Stops Pinning Virtual Threads (Almost)",
-          "generated_by": "",
-          "generated_ref_id": "",
-          "source_url": "https://inside.java/2024/11/21/newscast-80/"
-        }
-      ],
+      "checkpoints": [],
+      "source_evidence": [],
+      "cell_evidence": [],
       "branch_decisions": [],
       "loop_rounds": [],
       "loop_decision_payload": {}
     },
     "traces": [
       {
-        "trace_id": "48907742-5bd2-4c73-be80-3fa64c852c0e",
+        "trace_id": "5c9b26d9-9ad0-479e-b2e9-dd47780f4b63",
         "trace_type": "RUN_CREATED",
         "trace_message": "Research run 已入队",
         "payload": {
+          "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "profile_key": "DEFAULT",
           "research_intent": {
             "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
             "deliverable_format": "Markdown research report with citation audit",
@@ -653,142 +405,63 @@
             "research_type": "AUTO"
           },
           "retrieval_mode": "WEB_ONLY",
-          "source_scope_count": 0,
-          "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-          "profile_key": "DEFAULT"
+          "source_scope_count": 0
         },
-        "created_at": "2026-10-17T09:33:42Z"
+        "created_at": "2026-10-17T10:12:29Z"
       },
       {
-        "trace_id": "28199ab6-44c4-4d9f-9399-6465827f6751",
-        "trace_type": "PLAN_FALLBACK",
-        "trace_message": "模型规划不可用，沿用规则生成的表格",
+        "trace_id": "2ca0f67b-fdd1-4ff2-837b-8a6f300c1364",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
         "payload": {
-          "reason_code": "PLANNER_FALLBACK_DETERMINISTIC",
-          "detail": "PLANNER_PLANNING_LLM_OUTPUT_INVALID"
+          "reason_codes": [],
+          "columns": 2,
+          "rows": 1,
+          "planner_version": "llm-matrix.v1"
         },
-        "created_at": "2026-10-17T09:34:02Z"
+        "created_at": "2026-10-17T10:12:44Z"
       },
       {
-        "trace_id": "134cb389-a881-4df0-b224-847439bd16cf",
-        "trace_type": "INCREMENTAL_FINALIZED",
-        "trace_message": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
-        "payload": {
-          "cell_count": 3
-        },
-        "created_at": "2026-10-17T09:35:24Z"
+        "trace_id": "abdcf1b7-4c06-4d2e-ba0b-65b48348861c",
+        "trace_type": "RUN_FAILED",
+        "trace_message": "RESEARCH_WEB_PROVIDER_UNAVAILABLE",
+        "payload": {},
+        "created_at": "2026-10-17T10:12:59Z"
       }
     ],
-    "created_at": "2026-10-17T09:33:42Z",
-    "updated_at": "2026-10-17T09:35:24Z",
+    "created_at": "2026-10-17T10:12:29Z",
+    "updated_at": "2026-10-17T10:12:59Z",
     "saved_report_source": null,
     "agent_execution_projection": {
-      "candidates": [
-        {
-          "confidence": 0.7,
-          "candidate_id": "e9d57cb6-3bd6-4b3c-afd6-16f5b68f6ebb",
-          "cell_key": "subject:q-df7694f1e93d0ae0",
-          "task_id": "25f47141-605b-4305-bcc9-76fbf863c87d",
-          "base_cell_version": 0
-        },
-        {
-          "confidence": 0.95,
-          "candidate_id": "f2e06781-531d-49b9-9c21-68c86a0a7d16",
-          "cell_key": "subject:finding-30a32032a48c8d1b",
-          "task_id": "25f47141-605b-4305-bcc9-76fbf863c87d",
-          "base_cell_version": 0
-        },
-        {
-          "confidence": 0.9,
-          "candidate_id": "ef970a21-b6de-417b-a55d-f3a7d7c00520",
-          "cell_key": "subject:q-1ce8b71b0ee93c6e",
-          "task_id": "2231d6b5-ac68-4353-979a-5d2c717fe0a7",
-          "base_cell_version": 0
-        }
-      ],
-      "candidate_count": 3,
-      "task_count": 4,
-      "merge_count": 3,
+      "merge_count": 0,
       "execution_mode": "INCREMENTAL_V1",
-      "merges": [
-        {
-          "merge_id": "merge:5538d38d7d78bc130b47d391a19cb9d57730e8ba482984cfad321264919a5fc6",
-          "candidate_id": "f2e06781-531d-49b9-9c21-68c86a0a7d16",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "subject:finding-30a32032a48c8d1b"
-        },
-        {
-          "merge_id": "merge:86da049fe119bdae3e920746ea65ec996d6955cd03f68487852d2accd20207c7",
-          "candidate_id": "e9d57cb6-3bd6-4b3c-afd6-16f5b68f6ebb",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "subject:q-df7694f1e93d0ae0"
-        },
-        {
-          "merge_id": "merge:256e2ec562ac75ee0c3342d3dccd5b791f92d44eb0843b52bed61093d84b5a70",
-          "candidate_id": "ef970a21-b6de-417b-a55d-f3a7d7c00520",
-          "decision": "ACCEPTED",
-          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
-          "expected_cell_version": 0,
-          "result_cell_version": 1,
-          "cell_key": "subject:q-1ce8b71b0ee93c6e"
-        }
-      ],
-      "checkpoints": [
-        {
-          "checkpoint_seq": 1,
-          "task_high_water_mark": 2,
-          "merge_high_water_mark": 2,
-          "candidate_high_water_mark": 2
-        }
-      ],
+      "merges": [],
+      "checkpoints": [],
       "tasks": [
         {
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T09:34:58Z",
-          "lease_epoch": 1,
-          "task_id": "e47203ff-71da-437a-84d6-959dae7bdff6",
-          "task_key": "planning:049cc7c5-e53e-465e-8943-3b998069e439",
-          "worker_instance_id": "research-agent-worker-1-2",
-          "fencing_token": 1,
-          "attempt_count": 1
-        },
-        {
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T09:35:34Z",
-          "lease_epoch": 1,
-          "task_id": "25f47141-605b-4305-bcc9-76fbf863c87d",
-          "task_key": "deep-cell:0027f4a96ad1aa254bb830e1088ed51d",
           "worker_instance_id": "research-agent-worker-1-1",
           "fencing_token": 1,
-          "attempt_count": 1
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:13:30Z",
+          "lease_epoch": 1,
+          "task_id": "72b9585e-8eb1-402a-8d20-40c98cd7ed5c",
+          "task_key": "planning:71e86f85-1892-41d7-9d5b-39516ffa4f50"
         },
         {
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T09:36:01Z",
-          "lease_epoch": 1,
-          "task_id": "2231d6b5-ac68-4353-979a-5d2c717fe0a7",
-          "task_key": "counterfactual:552caf7c3b2f47b1872cdeafc0a76085",
-          "worker_instance_id": "research-agent-worker-1-1",
+          "worker_instance_id": "",
           "fencing_token": 1,
-          "attempt_count": 1
-        },
-        {
-          "status": "SUBMITTED",
-          "lease_expires_at": "2026-10-17T09:36:17Z",
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "",
           "lease_epoch": 1,
-          "task_id": "b1e57c53-8c7a-4cd9-bb53-fe8196599656",
-          "task_key": "synthesis:5be11357cee69852dfb26fc20797ebf1",
-          "worker_instance_id": "research-agent-worker-1-1",
-          "fencing_token": 1,
-          "attempt_count": 1
+          "task_id": "08a8e601-9c20-4b37-8bd1-db483e0d3703",
+          "task_key": "deep-cell:8945affed6df52bfdf914a3156e670f9"
         }
-      ]
+      ],
+      "candidates": [],
+      "candidate_count": 0,
+      "task_count": 2
     }
   },
   "resources": {
@@ -797,85 +470,85 @@
       "data": {
         "plan_status": "READY",
         "review_deadline": null,
-        "planner": "DETERMINISTIC",
+        "planner": "llm-matrix.v1",
         "rows": [
           {
-            "entity_key": "subject",
-            "label": "Subject"
+            "entity_key": "entity-9e5e1ac20b99b2fb",
+            "label": "Java Virtual Threads"
           }
         ],
         "columns": [
           {
-            "label": "finding-30a32032a48c8d1b",
-            "column_key": "finding-30a32032a48c8d1b"
+            "column_key": "dim-639518373d5aed9d",
+            "label": "Formal release JDK version",
+            "description": "The JDK release in which virtual threads became a final/standard feature, with the JEP number that introduced them.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
           },
           {
-            "label": "q-1ce8b71b0ee93c6e",
-            "column_key": "q-1ce8b71b0ee93c6e"
-          },
-          {
-            "label": "q-df7694f1e93d0ae0",
-            "column_key": "q-df7694f1e93d0ae0"
+            "column_key": "dim-c4d16f0fc6289002",
+            "label": "Synchronized pinning improvement JEP and version",
+            "description": "The JEP that removed/improved thread pinning caused by synchronized blocks and the JDK version in which it was delivered.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
           }
         ],
-        "brief": {},
-        "effort_tier": "",
-        "authoritative_domains": [],
-        "perspectives": []
+        "brief": {
+          "scope": "JDK release history and JEPs covering virtual threads and synchronized pinning behavior.",
+          "objective": "Determine which JDK version formally released Java virtual threads and which version improved the synchronized-caused thread pinning issue, citing the relevant JEPs.",
+          "exclusions": [
+            "General Java concurrency tutorials",
+            "Non-JEP third-party benchmarks"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "openjdk.org",
+          "docs.oracle.com",
+          "oracle.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which JEP finalized virtual threads and in which JDK?",
+              "Which JEP addressed synchronized pinning and when?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Is the version and JEP citation authoritative for adoption planning?"
+            ]
+          }
+        ]
       }
     },
     "cells": {
       "available": true,
       "data": [
         {
-          "cell_key": "subject:finding-30a32032a48c8d1b",
-          "entity_label": "Subject",
-          "column_label": "finding-30a32032a48c8d1b",
-          "cell_status": "VERIFIED",
-          "candidate_value": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-          "equivalent_claims": [
-            {
-              "source_domain": "baidu.com",
-              "claim_text": "JDK 21于2023年9月19日正式发布，虚拟线程结束预览，作为正式特性推出",
-              "evidence_key": "evidence:b314d84dbe3b62a7b1cb4bc47333e52ffaecbbf1450e9356"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 950000,
+          "cell_key": "entity-9e5e1ac20b99b2fb:dim-639518373d5aed9d",
+          "entity_label": "Java Virtual Threads",
+          "column_label": "Formal release JDK version",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
           "conflicts": []
         },
         {
-          "cell_key": "subject:q-1ce8b71b0ee93c6e",
-          "entity_label": "Subject",
-          "column_label": "q-1ce8b71b0ee93c6e",
-          "cell_status": "VERIFIED",
-          "candidate_value": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-          "equivalent_claims": [
-            {
-              "source_domain": "inside.java",
-              "claim_text": "This change is already integrated into Java 24 and available in the latest JDK 24 EA builds.",
-              "evidence_key": "evidence:8efb423fe0cbaa5eb459b3bdb87e68b4daef6e31f04d4bb1"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 900000,
-          "conflicts": []
-        },
-        {
-          "cell_key": "subject:q-df7694f1e93d0ae0",
-          "entity_label": "Subject",
-          "column_label": "q-df7694f1e93d0ae0",
-          "cell_status": "VERIFIED",
-          "candidate_value": "JDK 21 预告虚拟线程正式发布",
-          "equivalent_claims": [
-            {
-              "source_domain": "aliyun.com",
-              "claim_text": "JDK 21 预告虚拟线程正式发布",
-              "evidence_key": "evidence:c65c9621e2827acbba64615484a11f29e3b1ea9e133162bc"
-            }
-          ],
-          "independent_source_count": 1,
-          "confidence_ppm": 700000,
+          "cell_key": "entity-9e5e1ac20b99b2fb:dim-c4d16f0fc6289002",
+          "entity_label": "Java Virtual Threads",
+          "column_label": "Synchronized pinning improvement JEP and version",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
           "conflicts": []
         }
       ]
@@ -886,21 +559,7 @@
     },
     "replans": {
       "available": true,
-      "data": [
-        {
-          "plan_revision_from": 1,
-          "plan_revision_to": 2,
-          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
-          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
-          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
-          "affected_cells": [
-            "subject:q-1ce8b71b0ee93c6e"
-          ],
-          "strategy": "NARROW",
-          "query_count": 2,
-          "created_at": "2026-10-17T09:34:45Z"
-        }
-      ]
+      "data": []
     },
     "discovery-proposals": {
       "available": true,
