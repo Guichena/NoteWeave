@@ -309,3 +309,19 @@ def test_malformed_comparison_row_is_dropped_instead_of_failing_the_article() ->
 
     assert result.mode == "LLM"
     assert len(result.narrative["comparison_table"]["rows"]) == 2
+
+
+def test_only_the_paragraph_with_an_unsupported_number_is_dropped() -> None:
+    client = FakeLlmClient({"research.synthesis": json.dumps({
+        "title": "Latency findings",
+        "executive_summary": "Latency is measured.",
+        "sections": [{"heading": "Observed performance", "paragraphs": [
+            {"text": "Version 2.1 records a measured latency of 50 ms.", "cell_keys": ["latency"], "evidence_keys": ["evidence-a"]},
+            {"text": "Version 3.0 records 40 ms.", "cell_keys": ["latency"], "evidence_keys": ["evidence-a"]},
+        ]}],
+    })})
+
+    result = NarrativeReportPolisher(client).polish(INPUT)
+
+    assert result.mode == "LLM"
+    assert "50 ms" in result.markdown and "3.0" not in result.markdown

@@ -88,7 +88,8 @@ class ResearchMatrixPlanningService {
         // 问题本身由几个子问题组成时，用子问题作为列，比通用的回答、关键证据等列更贴近要回答的内容
         List<ColumnPlan> subQuestions = subQuestionColumns(normalizedQuestion);
         List<ColumnPlan> columns = new ArrayList<>(subQuestions.size() >= 2 ? subQuestions : BASE_COLUMNS);
-        for (String finding : intent.constraints()) {
+        // 研究意图里的约束多是报告格式要求（如必须有原文引用），有子问题列时不再加成列
+        for (String finding : subQuestions.size() >= 2 ? List.<String>of() : intent.constraints()) {
             if (columns.size() >= MAX_COLUMNS) break;
             String key = "finding-" + shortDigest(finding);
             if (columns.stream().noneMatch(column -> column.key().equals(key))) {

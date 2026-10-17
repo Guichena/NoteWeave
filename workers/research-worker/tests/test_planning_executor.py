@@ -282,3 +282,10 @@ def test_second_oversized_plan_is_repaired_and_planned() -> None:
 
     assert completion.role_result["status"] == "PLANNED"
     assert len(llm.calls) == 2
+
+
+def test_echoed_request_is_rejected_with_a_specific_reason() -> None:
+    draft = validate_plan({"purpose": "research.plan.matrix", "payload": {"policy": []}}, PLANNING_INPUT)
+
+    assert draft.plan is None
+    assert "repeated the request" in draft.problems[0]

@@ -1,0 +1,1230 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-oauth-oidc",
+  "run_id": "95a666e5-277d-411d-8854-36b15f1991f0",
+  "workspace_id": "762c8abf-7065-4733-8485-42391f13c4c8",
+  "started_at": "2026-10-17T09:03:59.895472+00:00",
+  "finished_at": "2026-10-17T09:06:45.791647+00:00",
+  "wall_seconds": 165.9,
+  "run_detail": {
+    "research_run_id": "95a666e5-277d-411d-8854-36b15f1991f0",
+    "workspace_id": "762c8abf-7065-4733-8485-42391f13c4c8",
+    "task_id": "e9033acb-7b4c-41ef-90c3-9e292c6a366d",
+    "question": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+    "final_report_markdown": "# OAuth 2.1 相对 OAuth 2.0 的调整及 OIDC 的增强\n\nOAuth 2.1 将 OAuth 2.0 核心未规定的 PKCE 等功能列为必需，且不再规定 Implicit 和 Resource Owner Credentials 等授权类型；OpenID Connect 则要求始终通过 OAuth 2.0 请求语法传递含 openid scope 值的 scope 参数，并在本身不提供用户认证机制的 OAuth 2.0 之上增加认证层以确认用户身份。\n\n## 直接回答\n\n本次核验的资料显示，OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），同时 Implicit、Resource Owner Credentials 等授权类型在 OAuth 2.1 中不再被规定。原文表述为：“Specifically, features not specified in OAuth 2.0 core, such as PKCE, are required in OAuth 2.1.”，以及“some features available in OAuth 2.0, such as the Implicit or Resource Owner Credentials grant types, are not specified in OAuth 2.1”。 [evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f] [evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e]\n\n关于 OIDC 在其上增加的内容，OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以向底层 OAuth 2.0 逻辑表明这是 OpenID Connect 请求：“a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value to indicate to the underlying OAuth 2.0 logic that this is an OpenID Connect request.”，并且即使 Request Object 中含有 scope 也须如此。结合背景，OAuth 2.0 本身不提供用户认证机制——原文指出“OAuth 2.0 alone does not provide mechanisms to authenticate users—it assumes that authentication is performed by the application itself or through another mechanism.”，可见 OpenID Connect 是在其之上扩展出认证层来确认用户身份。 [evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7] [evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09] [evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70]\n\n## OAuth 2.1 的变化\n\n从已验证的来源看，OAuth 2.1 的调整体现在两方面：一是把 OAuth 2.0 核心未规定的特性（例如 PKCE）提升为必需；二是对 OAuth 2.0 中可用的部分授权类型作出取舍，Implicit 与 Resource Owner Credentials 授权类型在 OAuth 2.1 中不再被规定。因此，迁移到 OAuth 2.1 意味着原先依赖这些授权类型的做法需要重新评估。 [evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f] [evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e]\n\n## OpenID Connect 增加的认证层\n\nOIDC 的增强首先是请求层面的强制约束：scope 参数必须始终通过 OAuth 2.0 请求语法传递，且须包含 openid scope 值，以便底层 OAuth 2.0 逻辑识别这是 OpenID Connect 请求。这一要求具有无条件性，即便 Request Object 中已包含 scope，也仍须在请求语法中传递该参数。 [evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7] [evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09]\n\n这一设计的原因在于 OAuth 2.0 与认证的分工：OAuth 2.0 单独并不提供认证用户的机制，而是假定认证由应用自身或另一机制完成；OpenID Connect 因此在其之上扩展出认证层以确认用户身份。 [evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70]\n\n## 对比表\n\n| 方面 | 要点 | 原文依据 |\n| --- | --- | --- |\n| OAuth 2.1 相对 OAuth 2.0 | OAuth 2.0 核心未规定的特性（如 PKCE）在 OAuth 2.1 中为必需 | features not specified in OAuth 2.0 core, such as PKCE, are required in OAuth 2.1 [evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f] |\n| OAuth 2.1 相对 OAuth 2.0 | Implicit 与 Resource Owner Credentials 授权类型在 OAuth 2.1 中不再被规定 | some features available in OAuth 2.0, such as the Implicit or Resource Owner Credentials grant types, are not specified in OAuth 2.1 [evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e] |\n| OIDC 在 OAuth 2.0 之上 | 须始终通过 OAuth 2.0 请求语法传递含 openid scope 值的 scope 参数，即使 Request Object 中含 scope | a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value [evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7] [evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09] |\n| OIDC 在 OAuth 2.0 之上 | OAuth 2.0 不提供用户认证机制，OpenID Connect 扩展出认证层以确认用户身份 | OAuth 2.0 alone does not provide mechanisms to authenticate users [evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70] |\n\n## Citation audit\n\n### 研究对象 · 结论\n\n- Evidence: `evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7`\n- Exact quote: “a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value”\n- Snapshot: `research/external/e7885f01-4501-4d0e-b6b2-8d46f98adf60/df4697dfd658f46418cb7fcf10b5e58384ca4b855938de715e1d15962ece1c66`\n- URL: https://openid.net/specs/openid-connect-core-1_0.html\n\n### 研究对象 · 正式结论必须有 exact quote、snapshot 和 URL\n\n- Evidence: `evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09`\n- Exact quote: “a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value to indicate to the underlying OAuth 2.0 logic that this is an OpenID Connect request.”\n- Snapshot: `research/external/ac1553df-5a5f-4bcc-bea5-6e4171dd978e/df4697dfd658f46418cb7fcf10b5e58384ca4b855938de715e1d15962ece1c66`\n- URL: https://openid.net/specs/openid-connect-core-1_0.html\n\n### 研究对象 · 影响与启示\n\n- Evidence: `evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70`\n- Exact quote: “OAuth 2.0 alone does not provide mechanisms to authenticate users—it assumes that authentication is performed by the application itself or through another mechanism.”\n- Snapshot: `research/external/0fed8eab-d3dc-43be-9d40-49873db1a3d7/3344a7a6fc48d5f10c4576b8fd18e13ac5bba29a163ef3d2d50738607effa111`\n- URL: https://supertokens.com/blog/openid-connect-vs-oauth2\n\n### 研究对象 · 关键证据\n\n- Evidence: `evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f`\n- Exact quote: “Specifically, features not specified in OAuth 2.0 core, such as PKCE, are required in OAuth 2.1.”\n- Snapshot: `research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e`\n- URL: https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10\n\n### 研究对象 · 局限与风险\n\n- Evidence: `evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e`\n- Exact quote: “some features available in OAuth 2.0, such as the Implicit or Resource Owner Credentials grant types, are not specified in OAuth 2.1”\n- Snapshot: `research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e`\n- URL: https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/762c8abf-7065-4733-8485-42391f13c4c8/research/95a666e5-277d-411d-8854-36b15f1991f0/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 7000,
+      "sha256": "8ab17f7152272d882eb03b381e752e58328ac7ef13d30ea980d7ebb7a5b0f526"
+    },
+    "research_artifact": {
+      "artifact_id": "95a666e5-277d-411d-8854-36b15f1991f0",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "95a666e5-277d-411d-8854-36b15f1991f0",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/762c8abf-7065-4733-8485-42391f13c4c8/research/95a666e5-277d-411d-8854-36b15f1991f0/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 7000,
+        "sha256": "8ab17f7152272d882eb03b381e752e58328ac7ef13d30ea980d7ebb7a5b0f526"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "OAuth 2.1 differences from OAuth 2.0 draft specification",
+          "OAuth 2.1 规范 变更",
+          "OpenID Connect Core 1.0 specification OAuth 2.0 authentication layer",
+          "OpenID Connect Core specification id_token claims on top of OAuth 2.0",
+          "OAuth 2.1 与 OIDC 规范差异",
+          "OAuth 2.1 specification changes from OAuth 2.0 PKCE",
+          "why use OpenID Connect instead of plain OAuth 2.0 access tokens",
+          "OAuth 2.1 impact on existing OIDC deployments",
+          "OAuth 2.1 draft standard status 2025",
+          "openid connect core 1.0 errata id_token"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "column_label": "局限与风险",
+            "candidate_value": "Implicit 与 Resource Owner Credentials 等授权类型在 OAuth 2.1 中未被规定",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "column_label": "结论",
+            "candidate_value": "即使 Request Object 中包含 scope，也必须通过 OAuth 2.0 请求语法传递包含 openid scope 的 scope 参数",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:finding-30a32032a48c8d1b",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "finding-30a32032a48c8d1b",
+            "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+            "candidate_value": "OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以表明这是 OpenID Connect 请求。",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "column_label": "关键证据",
+            "candidate_value": "OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），并移除 Implicit 和 Resource Owner Credentials 授权类型",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "column_label": "影响与启示",
+            "candidate_value": "OAuth 2.0 本身不提供用户认证机制，OpenID Connect 在其之上扩展出认证层来确认用户身份。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "column_label": "局限与风险",
+          "candidate_value": "Implicit 与 Resource Owner Credentials 等授权类型在 OAuth 2.1 中未被规定",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "column_label": "结论",
+          "candidate_value": "即使 Request Object 中包含 scope，也必须通过 OAuth 2.0 请求语法传递包含 openid scope 的 scope 参数",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "finding-30a32032a48c8d1b",
+          "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+          "candidate_value": "OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以表明这是 OpenID Connect 请求。",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "column_label": "关键证据",
+          "candidate_value": "OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），并移除 Implicit 和 Resource Owner Credentials 授权类型",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "column_label": "影响与启示",
+          "candidate_value": "OAuth 2.0 本身不提供用户认证机制，OpenID Connect 在其之上扩展出认证层来确认用户身份。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T09:05:19Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:31cb5a4b03987810d0104acb62dcb5b93c08b0d9020b46d3",
+          "window_id": "window-4",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 differences from OAuth 2.0 draft specification",
+          "read_focus": "Read external URL draft-ietf-oauth-v2-1-10 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "OAuth 2.1 is compatible with OAuth 2.0 with the extensions and restrictions from known best current practices applied.",
+          "claim_text": "OAuth 2.1 的兼容性：PKCE 等 OAuth 2.0 核心未规定的特性在 OAuth 2.1 中变为要求",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e"
+        },
+        {
+          "evidence_id": "evidence:af005fc01da983505f4eb5e782d0eb0c016f7b209f34de50",
+          "window_id": "window-2",
+          "source_id": "web-934f341858727fe8",
+          "source_title": "OAuth 2.1 变化详解：IAM 协议升级、PKCE 强制与迁移指南",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://idaas.xlabs.club/docs/protocols/oauth2.1-changes/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 规范 变更",
+          "read_focus": "Read external URL OAuth 2.1 变化详解：IAM 协议升级、PKCE 强制与迁移指南 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "**OAuth 2.1**：所有使用授权码流程的客户端——不管是 SPA、移动 App 还是后端 Web 应用——都必须使用 PKCE。没有例外。",
+          "claim_text": "OAuth 2.1 将所有授权码流程客户端强制使用 PKCE，且 Implicit Grant 被完全移除",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/122281907a12f43c24c0cb5acdbe9fd60ea9a097714997df918dcc3aa2f16f32"
+        },
+        {
+          "evidence_id": "evidence:4bde940ca30457b1df79001b7a8390e952a29ce659301d6a",
+          "window_id": "window-3",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenID Connect Core 1.0 specification OAuth 2.0 authentication layer",
+          "read_focus": "Read external URL OpenID Connect Core 1.0 incorporating errata set 2 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "> Authentication Request\n> :   OAuth 2.0 Authorization Request using extension parameters and scopes defined by OpenID Connect to request that the End-User be authenticated by the Authorization Server",
+          "claim_text": "OIDC 定义使用扩展参数和范围的 OAuth 2.0 授权请求，以请求授权服务器认证最终用户",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/ee25a5e6058fc759e0d6c40b8fcf1a7452080b638151a39467cf4fdcda8ffbd9"
+        },
+        {
+          "evidence_id": "evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f",
+          "window_id": "window-4",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 differences from OAuth 2.0 draft specification",
+          "read_focus": "Read external URL draft-ietf-oauth-v2-1-10 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "Specifically, features not specified in OAuth 2.0 core, such as PKCE, are required in OAuth 2.1.",
+          "claim_text": "OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），并移除 Implicit 和 Resource Owner Credentials 授权类型",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e"
+        },
+        {
+          "evidence_id": "evidence:2e6e7b4301b26da74c3a7d37aac895202c6b0f81257e3420",
+          "window_id": "window-4",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 differences from OAuth 2.0 draft specification",
+          "read_focus": "Read external URL draft-ietf-oauth-v2-1-10 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "some behaviors allowed in OAuth 2.0 are restricted in OAuth 2.1, such as the strict string matching of redirect URIs required by OAuth 2.1",
+          "claim_text": "OAuth 2.1 限制了 OAuth 2.0 允许的某些行为，例如要求 redirect URI 严格字符串匹配",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e"
+        },
+        {
+          "evidence_id": "evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e",
+          "window_id": "window-4",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 differences from OAuth 2.0 draft specification",
+          "read_focus": "Read external URL draft-ietf-oauth-v2-1-10 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "some features available in OAuth 2.0, such as the Implicit or Resource Owner Credentials grant types, are not specified in OAuth 2.1",
+          "claim_text": "Implicit 与 Resource Owner Credentials 等授权类型在 OAuth 2.1 中未被规定",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3defd7c4-3891-4009-ba75-07f253f7ec64/050ded90b9f5fe6bd1c02f8d5e912980367bae56b8952996f4987dc13137f94e"
+        },
+        {
+          "evidence_id": "evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7",
+          "window_id": "window-1",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenID Connect Core specification id_token claims on top of OAuth 2.0",
+          "read_focus": "Read external URL OpenID Connect Core 1.0 incorporating errata set 2 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value",
+          "claim_text": "即使 Request Object 中包含 scope，也必须通过 OAuth 2.0 请求语法传递包含 openid scope 的 scope 参数",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e7885f01-4501-4d0e-b6b2-8d46f98adf60/df4697dfd658f46418cb7fcf10b5e58384ca4b855938de715e1d15962ece1c66"
+        },
+        {
+          "evidence_id": "evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70",
+          "window_id": "window-2",
+          "source_id": "web-5967a3a6efee55ed",
+          "source_title": "OpenID vs OAuth: Understanding API Security Protocols",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://supertokens.com/blog/openid-connect-vs-oauth2",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "why use OpenID Connect instead of plain OAuth 2.0 access tokens",
+          "read_focus": "Read external URL OpenID vs OAuth: Understanding API Security Protocols for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "OAuth 2.0 alone does not provide mechanisms to authenticate users—it assumes that authentication is performed by the application itself or through another mechanism.",
+          "claim_text": "OAuth 2.0 本身不提供用户认证机制，OpenID Connect 在其之上扩展出认证层来确认用户身份。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0fed8eab-d3dc-43be-9d40-49873db1a3d7/3344a7a6fc48d5f10c4576b8fd18e13ac5bba29a163ef3d2d50738607effa111"
+        },
+        {
+          "evidence_id": "evidence:91d815d47b7f7b0420e80291473081cd3c22e50e0e4f98c6",
+          "window_id": "window-2",
+          "source_id": "web-5967a3a6efee55ed",
+          "source_title": "OpenID vs OAuth: Understanding API Security Protocols",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://supertokens.com/blog/openid-connect-vs-oauth2",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "why use OpenID Connect instead of plain OAuth 2.0 access tokens",
+          "read_focus": "Read external URL OpenID vs OAuth: Understanding API Security Protocols for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "Relying on plain OAuth 2.0 for authentication is dangerous if you (the client) are just trusting ANY valid access token you receive",
+          "claim_text": "仅依赖 OAuth 2.0 做认证是危险的，因为任何有效访问令牌都可能并非为该用户登录本站而生成；OIDC 的 ID 令牌可让客户端确认令牌来源。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0fed8eab-d3dc-43be-9d40-49873db1a3d7/3344a7a6fc48d5f10c4576b8fd18e13ac5bba29a163ef3d2d50738607effa111"
+        },
+        {
+          "evidence_id": "evidence:47eea962f1300c1e74957d7842911275e2c57d3138c947a4",
+          "window_id": "window-4",
+          "source_id": "web-549a72b2748dac26",
+          "source_title": "OAuth 2.1 Guide: What Changed and How to Migrate",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://aembit.io/blog/oauth-2-1-guide-migration-security/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 impact on existing OIDC deployments",
+          "read_focus": "Read external URL OAuth 2.1 Guide: What Changed and How to Migrate for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "Roll out OAuth 2.1 changes to development environments first, then use feature flags to bring production traffic in gradually rather than switching everything at once.",
+          "claim_text": "迁移 OAuth 2.1 需要逐步推进：先部署到开发环境，再用功能开关逐步引入生产流量，并观察认证失败率。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0fed8eab-d3dc-43be-9d40-49873db1a3d7/7eaf7af3a4a387ac5804b544e4f8a728600dc69b325a78c9a71c5e8cfbb1c2b9"
+        },
+        {
+          "evidence_id": "evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09",
+          "window_id": "window-2",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "openid connect core 1.0 errata id_token",
+          "read_focus": "Read external URL OpenID Connect Core 1.0 incorporating errata set 2 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "a scope parameter MUST always be passed using the OAuth 2.0 request syntax containing the openid scope value to indicate to the underlying OAuth 2.0 logic that this is an OpenID Connect request.",
+          "claim_text": "OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以表明这是 OpenID Connect 请求。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ac1553df-5a5f-4bcc-bea5-6e4171dd978e/df4697dfd658f46418cb7fcf10b5e58384ca4b855938de715e1d15962ece1c66"
+        },
+        {
+          "evidence_id": "evidence:83fc2b5bd9a2e2939fd5d8d080ae910eca136e1d91e78b13",
+          "window_id": "window-2",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "openid connect core 1.0 errata id_token",
+          "read_focus": "Read external URL OpenID Connect Core 1.0 incorporating errata set 2 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "When the request\\_uri parameter is used, the OpenID Connect request parameter values contained in the referenced JWT supersede those passed using the OAuth 2.0 request syntax.",
+          "claim_text": "在使用 request_uri 时，OpenID Connect 请求参数值可取代通过 OAuth 2.0 请求语法传递的值。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ac1553df-5a5f-4bcc-bea5-6e4171dd978e/df4697dfd658f46418cb7fcf10b5e58384ca4b855938de715e1d15962ece1c66"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10"
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "evidence_id": "evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10"
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html"
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "evidence_id": "evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70",
+          "source_id": "web-5967a3a6efee55ed",
+          "source_title": "OpenID vs OAuth: Understanding API Security Protocols",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://supertokens.com/blog/openid-connect-vs-oauth2"
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "evidence_id": "evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "a706fc77-2981-4ada-b478-5cf924ffd69d",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "profile_key": "DEFAULT",
+          "question": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY",
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          }
+        },
+        "created_at": "2026-10-17T09:03:59Z"
+      },
+      {
+        "trace_id": "eef3f1b9-d841-4c7c-a554-cf7d2242243b",
+        "trace_type": "PLAN_FALLBACK",
+        "trace_message": "模型规划不可用，沿用规则生成的表格",
+        "payload": {
+          "detail": "PLANNER_PLANNING_LLM_OUTPUT_INVALID",
+          "reason_code": "PLANNER_FALLBACK_DETERMINISTIC"
+        },
+        "created_at": "2026-10-17T09:04:19Z"
+      },
+      {
+        "trace_id": "dd0514ca-6524-4bf4-8bf4-3ff03839e27f",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+        "payload": {
+          "cell_count": 5
+        },
+        "created_at": "2026-10-17T09:06:43Z"
+      }
+    ],
+    "created_at": "2026-10-17T09:03:59Z",
+    "updated_at": "2026-10-17T09:06:43Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "task_id": "3defd7c4-3891-4009-ba75-07f253f7ec64",
+          "cell_key": "subject:limitations",
+          "candidate_id": "899bb458-b86e-401d-a678-ace2feaa7c65",
+          "confidence": 0.9
+        },
+        {
+          "base_cell_version": 0,
+          "task_id": "3defd7c4-3891-4009-ba75-07f253f7ec64",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "9b3a7d7b-49d1-48e6-be86-5a409e99309c",
+          "confidence": 0.95
+        },
+        {
+          "base_cell_version": 0,
+          "task_id": "e7885f01-4501-4d0e-b6b2-8d46f98adf60",
+          "cell_key": "subject:answer",
+          "candidate_id": "ad156443-2cb0-481e-baca-c9f692acbdd9",
+          "confidence": 0.8
+        },
+        {
+          "base_cell_version": 0,
+          "task_id": "0fed8eab-d3dc-43be-9d40-49873db1a3d7",
+          "cell_key": "subject:implications",
+          "candidate_id": "09a9f6b1-1327-4941-a6d1-9ac9899008e0",
+          "confidence": 0.95
+        },
+        {
+          "base_cell_version": 0,
+          "task_id": "ac1553df-5a5f-4bcc-bea5-6e4171dd978e",
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "candidate_id": "c4fa86ff-4615-4a89-87f0-c3c3abc99bf9",
+          "confidence": 0.8
+        }
+      ],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "planning:95a666e5-277d-411d-8854-36b15f1991f0",
+          "task_id": "e180c9c3-b799-4f91-8971-626a6133d320",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:05:16Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:e9e4efdd3c1fdd3bf223fa07f939a6b9",
+          "task_id": "3defd7c4-3891-4009-ba75-07f253f7ec64",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:05:51Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "deep-cell:718bb79984be20181e7ed3f6e386203c",
+          "task_id": "e7885f01-4501-4d0e-b6b2-8d46f98adf60",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:06:06Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:46b81f0fcb6c612f1e98d9b3f313b460",
+          "task_id": "0fed8eab-d3dc-43be-9d40-49873db1a3d7",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:06:50Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:c453700edabbaa73aaa1ac21b51e12f2",
+          "task_id": "ac1553df-5a5f-4bcc-bea5-6e4171dd978e",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:07:30Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "synthesis:84ba48d2843c8f9ee4a25f6280857c48",
+          "task_id": "7ce95b28-a93c-4605-89c9-70a0b4a4f59b",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T09:07:35Z",
+          "status": "SUBMITTED"
+        }
+      ],
+      "checkpoints": [
+        {
+          "candidate_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "task_high_water_mark": 3,
+          "checkpoint_seq": 1
+        }
+      ],
+      "merges": [
+        {
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "9b3a7d7b-49d1-48e6-be86-5a409e99309c",
+          "merge_id": "merge:ad1b3707fe0197729996fcece1aeae6374c50bbee93c1709a7e9a5d8dc7548fa"
+        },
+        {
+          "cell_key": "subject:limitations",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "899bb458-b86e-401d-a678-ace2feaa7c65",
+          "merge_id": "merge:1cb854e3999bcdb251feb5ed858ece65b5eca8ddcc7cdc3b388cd2bcdcac3466"
+        },
+        {
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "ad156443-2cb0-481e-baca-c9f692acbdd9",
+          "merge_id": "merge:9cb70db4edf2366efb7c04defd91e952a460ccf8c82a4febb646a86099b611f4"
+        },
+        {
+          "cell_key": "subject:implications",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "09a9f6b1-1327-4941-a6d1-9ac9899008e0",
+          "merge_id": "merge:75b5e337b31991ca03eb8bd262ab7172d56c45f3df3db87b298c65a5a177936a"
+        },
+        {
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "c4fa86ff-4615-4a89-87f0-c3c3abc99bf9",
+          "merge_id": "merge:7bee0fcf189dbaac8fad1b87b03feeeb93226c586ca0c6f5bb901193b09e51b6"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 5,
+      "task_count": 6,
+      "candidate_count": 5
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "DETERMINISTIC",
+        "rows": [
+          {
+            "entity_key": "subject",
+            "label": "Subject"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "answer",
+            "label": "answer"
+          },
+          {
+            "column_key": "finding-30a32032a48c8d1b",
+            "label": "finding-30a32032a48c8d1b"
+          },
+          {
+            "column_key": "implications",
+            "label": "implications"
+          },
+          {
+            "column_key": "key_evidence",
+            "label": "key_evidence"
+          },
+          {
+            "column_key": "limitations",
+            "label": "limitations"
+          }
+        ],
+        "brief": {},
+        "effort_tier": "",
+        "authoritative_domains": [],
+        "perspectives": []
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "subject:answer",
+          "entity_label": "Subject",
+          "column_label": "answer",
+          "cell_status": "VERIFIED",
+          "candidate_value": "即使 Request Object 中包含 scope，也必须通过 OAuth 2.0 请求语法传递包含 openid scope 的 scope 参数",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:845b4d4e3364395aa4074c98a5e7c998b00fa336ee2351f7",
+              "claim_text": "即使 Request Object 中包含 scope，也必须通过 OAuth 2.0 请求语法传递包含 openid scope 的 scope 参数",
+              "source_domain": "openid.net"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "entity_label": "Subject",
+          "column_label": "finding-30a32032a48c8d1b",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以表明这是 OpenID Connect 请求。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:de026dacc4ac5aa67fb9426bf51ab311edfee4ce866c2b09",
+              "claim_text": "OpenID Connect 要求在 OAuth 2.0 请求语法中始终传递包含 openid scope 值的 scope 参数，以表明这是 OpenID Connect 请求。",
+              "source_domain": "openid.net"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:implications",
+          "entity_label": "Subject",
+          "column_label": "implications",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OAuth 2.0 本身不提供用户认证机制，OpenID Connect 在其之上扩展出认证层来确认用户身份。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:8c773ed887a9493306fd8701dd240dd0a82848b2d8810b70",
+              "claim_text": "OAuth 2.0 本身不提供用户认证机制，OpenID Connect 在其之上扩展出认证层来确认用户身份。",
+              "source_domain": "supertokens.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:key_evidence",
+          "entity_label": "Subject",
+          "column_label": "key_evidence",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），并移除 Implicit 和 Resource Owner Credentials 授权类型",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f8855044bf071519f37eaf2bbb86673c4fa89b624bf7fb7f",
+              "claim_text": "OAuth 2.1 要求 OAuth 2.0 核心未规定的特性（如 PKCE），并移除 Implicit 和 Resource Owner Credentials 授权类型",
+              "source_domain": "ietf.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:limitations",
+          "entity_label": "Subject",
+          "column_label": "limitations",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Implicit 与 Resource Owner Credentials 等授权类型在 OAuth 2.1 中未被规定",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:e586cd1880c9530774320af69f30056ab8e68193cc457e3e",
+              "claim_text": "Implicit 与 Resource Owner Credentials 等授权类型在 OAuth 2.1 中未被规定",
+              "source_domain": "ietf.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:finding-30a32032a48c8d1b",
+            "subject:implications"
+          ],
+          "strategy": "BROADEN",
+          "query_count": 4,
+          "created_at": "2026-10-17T09:05:19Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

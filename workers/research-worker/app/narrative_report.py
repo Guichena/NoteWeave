@@ -139,6 +139,7 @@ def _normalize_narrative(
     summary = str(payload.get("executive_summary") or "").strip()
     if not title or not summary:
         raise ValueError("NARRATIVE_HEADER_MISSING")
+    dropped_unsupported = 0
     cells_by_key = {str(cell["cell_key"]): cell for cell in cells}
     sections: list[dict[str, object]] = []
     for raw_section in payload.get("sections", []):
@@ -168,17 +169,21 @@ def _normalize_narrative(
             source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
             paragraph_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(text)}
             if not paragraph_tokens.issubset(source_tokens):
-                raise ValueError("NARRATIVE_UNSUPPORTED_TYPED_FACT")
+                # 只去掉写了来源里没有的数字或版本号的那一段，其余段落照常保留；全部去掉时才退回模板
+                dropped_unsupported += 1
+                continue
             paragraphs.append({
                 "text": text,
                 "cell_keys": cell_keys,
                 "evidence_keys": evidence_keys,
             })
         if not paragraphs:
+            if dropped_unsupported:
+                continue
             raise ValueError("NARRATIVE_SECTION_EMPTY")
         sections.append({"heading": heading, "paragraphs": paragraphs})
     if not sections:
-        raise ValueError("NARRATIVE_SECTIONS_MISSING")
+        raise ValueError("NARRATIVE_UNSUPPORTED_TYPED_FACT" if dropped_unsupported else "NARRATIVE_SECTIONS_MISSING")
     comparison_table = _normalize_comparison_table(
         payload.get("comparison_table"), cells_by_key, trusted_context
     )

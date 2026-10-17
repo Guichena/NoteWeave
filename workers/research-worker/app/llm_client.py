@@ -174,7 +174,8 @@ class OpenAICompatibleLlmClient:
                     "role": "system",
                     "content": (
                         "You are a NoteWeave research worker component. "
-                        "Return only valid JSON for the requested contract."
+                        "Return only valid JSON for the requested contract: produce the result object described by "
+                        "the payload's output_schema, schema or contract. Never repeat or quote the input payload."
                     ),
                 },
                 {

@@ -239,6 +239,10 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
     """
     if not isinstance(raw, dict) or raw.get("_unparsable"):
         return PlanDraft(None, ["output is not a JSON object"])
+    if "entities" not in raw and ("payload" in raw or "policy" in raw or "purpose" in raw):
+        # 模型有时把请求原样复述回来，单独说明原因，修复时更容易改对
+        return PlanDraft(None, ["you repeated the request; return only the plan object described by output_schema, "
+                                "starting with effort_tier, entities and dimensions"])
     problems: list[str] = []
     max_rows = int(planning_input.get("max_rows") or 20)
     min_columns = int(planning_input.get("min_columns") or 2)
