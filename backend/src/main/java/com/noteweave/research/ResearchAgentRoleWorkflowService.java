@@ -216,13 +216,16 @@ class ResearchAgentRoleWorkflowService {
         List<Map<String, Object>> synthesisCells = cells.stream().map(cell -> {
             String[] parts = cell.key().split(":", 2);
             Map<String, Object> item = new LinkedHashMap<>();
+            // 单元格的值只取了证据最多的一组结论；同一单元格其余通过资格校验的结论也交给成文，
+            // 需要列举多项或补充细节时可以引用，引用的证据编号仍须属于这个单元格
+            List<String> evidenceKeys = withRelatedEvidence(runId, cell);
             item.put("cell_key", cell.key());
             item.put("candidate_value", cell.value());
-            item.put("evidence_keys", cell.evidenceKeys());
+            item.put("evidence_keys", evidenceKeys);
             item.put("guarded", false);
             item.put("entity_label", labels.getOrDefault(parts[0], ""));
             item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
-            item.put("supporting_quotes", supportingQuotes(runId, cell.evidenceKeys()));
+            item.put("supporting_quotes", supportingQuotes(runId, evidenceKeys));
             return item;
         }).toList();
         String ledgerDigest = canonicalizer.domainSeparatedDigest(LEDGER_DIGEST_DOMAIN, synthesisCells);
@@ -236,7 +239,38 @@ class ResearchAgentRoleWorkflowService {
                 Map.of("allowed_tools", List.of(), "synthesis_input", synthesisInput));
     }
 
-    private static final int MAX_SUPPORTING_QUOTES = 3;
+    private static final int MAX_SUPPORTING_QUOTES = 6;
+    private static final int MAX_SYNTHESIS_EVIDENCE_PER_CELL = 8;
+
+    /** 单元格自身的证据，加上同一单元格其他候选簇里通过资格校验的证据，最多 8 条。 */
+    private List<String> withRelatedEvidence(String runId, CellScope cell) {
+        java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(cell.evidenceKeys());
+        var clusterService = new ResearchClaimClusterService(jdbcTemplate, objectMapper);
+        for (Map<String, Object> cluster : clusterService.clusters(runId, cell.key())) {
+            Object raw = cluster.get("evidence_keys");
+            if (!(raw instanceof List<?> list)) continue;
+            for (Object key : list) {
+                if (keys.size() >= MAX_SYNTHESIS_EVIDENCE_PER_CELL) break;
+                String evidenceKey = String.valueOf(key);
+                if (!keys.contains(evidenceKey) && qualifiedEvidence(runId, evidenceKey)) keys.add(evidenceKey);
+            }
+        }
+        return List.copyOf(keys);
+    }
+
+    private boolean qualifiedEvidence(String runId, String evidenceKey) {
+        Integer rejected = jdbcTemplate.queryForObject("""
+                select count(*) from source_evidence evidence
+                left join research_evidence_validation validation on validation.evidence_id = evidence.id
+                where evidence.research_run_id = ? and evidence.evidence_key = ?
+                  and (validation.final_status is null or validation.final_status = 'REJECTED'
+                       or evidence.relation_type <> 'SUPPORTS')
+                """, Integer.class, runId, evidenceKey);
+        Integer present = jdbcTemplate.queryForObject(
+                "select count(*) from source_evidence where research_run_id = ? and evidence_key = ?",
+                Integer.class, runId, evidenceKey);
+        return present != null && present > 0 && (rejected == null || rejected == 0);
+    }
     private static final int MAX_QUOTE_CHARS = 400;
 
     private List<String> supportingQuotes(String runId, List<String> evidenceKeys) {

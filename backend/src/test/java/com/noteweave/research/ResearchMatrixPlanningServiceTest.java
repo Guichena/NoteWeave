@@ -33,10 +33,22 @@ class ResearchMatrixPlanningServiceTest {
         ResearchIntentResponse intent = new ResearchIntentResponse(
                 "回答问题", "report", List.of(), "", "STANDARD", "AUTO");
 
-        ResearchMatrixPlanningService.MatrixPlan plan = planner.plan("提高测试覆盖率门槛是否降低了缺陷逃逸率？", intent);
+        ResearchMatrixPlanningService.MatrixPlan plan = planner.plan("PostgreSQL 17 的增量备份怎么使用？", intent);
 
         assertThat(plan.columns()).extracting(ResearchMatrixPlanningService.ColumnPlan::key)
                 .containsExactly("answer", "key_evidence", "limitations", "implications");
+    }
+
+    @Test
+    void conflictQuestionUsesSupportingOpposingAndConditionColumns() {
+        ResearchIntentResponse intent = new ResearchIntentResponse(
+                "回答问题", "report", List.of(), "", "STANDARD", "AUTO");
+
+        for (String question : List.of("提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+                "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。")) {
+            assertThat(planner.plan(question, intent).columns()).extracting(ResearchMatrixPlanningService.ColumnPlan::key)
+                    .containsExactly("conflict-supporting", "conflict-opposing", "conflict-conditions");
+        }
     }
 
     @Test

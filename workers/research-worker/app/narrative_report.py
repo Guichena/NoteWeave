@@ -67,6 +67,10 @@ class NarrativeReportPolisher:
                 "Write a cohesive professional research article, not an audit log.",
                 "Never mention frozen cells, ledgers, cell keys or other internal terms in the prose; refer to the "
                 "verified sources instead (for example '本次核验的资料显示').",
+                "When a cell's supporting_quotes contain several different facts or list items for its column, cover "
+                "each relevant one instead of only candidate_value.",
+                "For a question that weighs supporting against opposing evidence, present both sides with their "
+                "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary must directly answer research_question in one to three sentences using the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
                 "instead of answering.",

@@ -86,7 +86,8 @@ class ResearchMatrixPlanningService {
         String normalizedQuestion = Normalizer.normalize(question == null ? "" : question.strip(), Normalizer.Form.NFC);
         List<RowPlan> rows = comparisonRows(normalizedQuestion, intent);
         // 问题本身由几个子问题组成时，用子问题作为列，比通用的回答、关键证据等列更贴近要回答的内容
-        List<ColumnPlan> subQuestions = subQuestionColumns(normalizedQuestion);
+        List<ColumnPlan> subQuestions = CONFLICT_QUESTION.matcher(normalizedQuestion).find()
+                ? CONFLICT_COLUMNS : subQuestionColumns(normalizedQuestion);
         List<ColumnPlan> columns = new ArrayList<>(subQuestions.size() >= 2 ? subQuestions : BASE_COLUMNS);
         // 研究意图里的约束多是报告格式要求（如必须有原文引用），有子问题列时不再加成列
         for (String finding : subQuestions.size() >= 2 ? List.<String>of() : intent.constraints()) {
@@ -153,6 +154,14 @@ class ResearchMatrixPlanningService {
         return rows;
     }
 
+    /** 问是否、并要求比较支持与反对或不同研究结论的问题，按冲突类问题的固定三列规划。 */
+    private static final Pattern CONFLICT_QUESTION = Pattern.compile(
+            "(?i)(?:是否|能否|会不会|whether|does)[^。？?]*(?:支持和反对|支持与反对|不同研究|不同组织|结论不一致|证据|实证|studies|evidence)"
+                    + "|(?:支持和反对|支持与反对|结论不一致|不同研究|不同组织的实证)");
+    private static final List<ColumnPlan> CONFLICT_COLUMNS = List.of(
+            new ColumnPlan("conflict-supporting", "支持的证据与来源", false, "QUALIFIED_SOURCE"),
+            new ColumnPlan("conflict-opposing", "反对、不显著或相反的证据与来源", false, "QUALIFIED_SOURCE"),
+            new ColumnPlan("conflict-conditions", "结论成立的条件、研究方法差异或混杂因素", false, "QUALIFIED_SOURCE"));
     private static final Pattern SENTENCE_SEPARATOR = Pattern.compile("[？?；;。！!\n]+");
     private static final Pattern CLAUSE_SEPARATOR = Pattern.compile("[，,]");
     private static final Pattern QUESTION_WORD = Pattern.compile(

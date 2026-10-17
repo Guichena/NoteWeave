@@ -81,6 +81,7 @@ public class ResearchAgentIncrementalFinalizationService {
         String markdown = synthesis == null ? render(run.question(), cells, matrixLabels(jdbcTemplate, runId)) : synthesis.markdown();
         markdown = appendCitationAudit(runId, markdown, cells);
         markdown = ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, markdown);
+        markdown = appendSupplementaryCitations(jdbcTemplate, runId, markdown);
         String title = ResearchDisplayLabels.reportTitle(run.question());
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);
@@ -228,6 +229,36 @@ public class ResearchAgentIncrementalFinalizationService {
     }
 
     /** 研究矩阵里行和列的显示名，键为行键或列键。 */
+    private static final java.util.regex.Pattern CITED_EVIDENCE = java.util.regex.Pattern.compile("\\[(evidence:[0-9a-f]{16,64})]");
+
+    /**
+     * 正文引用了单元格自身证据之外的同单元格证据时，引用核对里没有它们的原文；
+     * 在末尾补上原文、快照与网址，保证每个引用都能追溯。
+     */
+    static String appendSupplementaryCitations(JdbcTemplate jdbcTemplate, String runId, String markdown) {
+        java.util.LinkedHashSet<String> missing = new java.util.LinkedHashSet<>();
+        java.util.regex.Matcher matcher = CITED_EVIDENCE.matcher(markdown);
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            if (!markdown.contains("Evidence: `" + key + "`")) missing.add(key);
+        }
+        StringBuilder appendix = new StringBuilder();
+        for (String key : missing) {
+            List<String[]> rows = jdbcTemplate.query("""
+                    select quote_text, snapshot_key, source_url from source_evidence
+                    where research_run_id = ? and evidence_key = ?
+                    """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2), rs.getString(3)}, runId, key);
+            if (rows.isEmpty()) continue;
+            String[] row = rows.get(0);
+            appendix.append("- Evidence: `").append(key).append("`\n")
+                    .append("  - Exact quote: “").append(row[0] == null ? "" : row[0].replace('\n', ' ')).append("”\n")
+                    .append("  - Snapshot: `").append(row[1] == null ? "" : row[1]).append("`\n")
+                    .append("  - URL: ").append(row[2] == null ? "" : row[2]).append("\n");
+        }
+        if (appendix.isEmpty()) return markdown;
+        return markdown.stripTrailing() + "\n\n## 补充引用\n\n" + appendix;
+    }
+
     static java.util.Map<String, String> matrixLabels(JdbcTemplate jdbcTemplate, String runId) {
         java.util.Map<String, String> labels = new java.util.HashMap<>();
         if (runId == null || runId.isBlank()) return labels;

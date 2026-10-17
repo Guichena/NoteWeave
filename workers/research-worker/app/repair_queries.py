@@ -24,14 +24,18 @@ def plan_repair_queries(context, target, llm):
                     {"policy": "Generate new short search queries for this repair reason. For conflicts target "
                      "the exact opposing claims: exceptions, version differences, counterexamples, errata. "
                      "For exhausted gain broaden, narrow or switch language. For failed providers change "
-                     "both query wording and source type. Do not repeat tried queries. Return strategy and queries.",
+                     "both query wording and source type. Do not repeat tried queries. Use each column's label and "
+                     "description to decide what is still missing. For software, standards and science topics write "
+                     "English queries, include known identifiers (JEP, RFC, PEP, version numbers) and keep the "
+                     "entity's version. For empirical questions target studies and data. Return strategy and queries.",
                      "repair_target": target, "entity": context.entity_label,
                      "columns": [vars(c) for c in context.columns], "tried_queries": list(tried),
                      "output_schema": {"strategy": "|".join(sorted(STRATEGIES)), "queries": ["string"]},
                      "validation_errors": errors}))
                 chosen = raw.get("strategy") if isinstance(raw, dict) else None
                 items = raw.get("queries") if isinstance(raw, dict) else None
-                if (not isinstance(raw, dict) or set(raw) != {"strategy", "queries"}
+                # 只要求包含 strategy 与 queries，模型附带的其他字段忽略，不因此退回规则检索词
+                if (not isinstance(raw, dict) or not {"strategy", "queries"} <= set(raw)
                         or chosen not in STRATEGIES or not isinstance(items, list) or not 1 <= len(items) <= context.max_queries):
                     raise ValueError("策略、输出字段或查询条数不符合约定")
                 if cause == "EVIDENCE_CONFLICT" and chosen != "COUNTER_EVIDENCE":

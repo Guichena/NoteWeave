@@ -171,7 +171,12 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "'OAuth 2.1'), list that pair in not_applicable; those cells are not researched. Prefer one entity for "
             "the overall topic when most dimensions would not apply to the separate entities.",
             "Requests about the report itself, such as citing the original text or giving sources, are output "
-            "requirements, never dimensions.",
+            "requirements, never dimensions; but identifiers the question asks to name (for example the JEP or "
+            "RFC number) belong in the description of the matching dimension.",
+            "For a question that asks whether X improves or causes Y and wants supporting and opposing evidence "
+            "(or results from different studies or organizations), use one entity for the topic and the "
+            "dimensions: supporting evidence with its source, opposing or inconclusive evidence with its source, "
+            "and the conditions, methods or confounders that explain the difference.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
             "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "

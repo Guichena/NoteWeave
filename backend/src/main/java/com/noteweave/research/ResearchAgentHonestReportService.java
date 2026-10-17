@@ -104,7 +104,8 @@ class ResearchAgentHonestReportService {
         // 内部完成状态与原因码放在末尾，供排查使用
         report.append("## 完成判定原因\n\n- 完成状态：`").append(decision.terminalState().name()).append("`\n");
         decision.reasonCodes().forEach(reason -> report.append("- ").append(markdown(reason)).append("\n"));
-        return ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString());
+        return ResearchAgentIncrementalFinalizationService.appendSupplementaryCitations(jdbcTemplate, runId,
+                ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString()));
     }
 
     /**
