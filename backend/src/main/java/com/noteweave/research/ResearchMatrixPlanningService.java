@@ -85,7 +85,9 @@ class ResearchMatrixPlanningService {
     MatrixPlan plan(String question, ResearchIntentResponse intent) {
         String normalizedQuestion = Normalizer.normalize(question == null ? "" : question.strip(), Normalizer.Form.NFC);
         List<RowPlan> rows = comparisonRows(normalizedQuestion, intent);
-        List<ColumnPlan> columns = new ArrayList<>(BASE_COLUMNS);
+        // 问题本身由几个子问题组成时，用子问题作为列，比通用的回答、关键证据等列更贴近要回答的内容
+        List<ColumnPlan> subQuestions = subQuestionColumns(normalizedQuestion);
+        List<ColumnPlan> columns = new ArrayList<>(subQuestions.size() >= 2 ? subQuestions : BASE_COLUMNS);
         for (String finding : intent.constraints()) {
             if (columns.size() >= MAX_COLUMNS) break;
             String key = "finding-" + shortDigest(finding);
@@ -94,7 +96,7 @@ class ResearchMatrixPlanningService {
                         HIGH_RISK.matcher(finding).find() ? "TWO_INDEPENDENT_SOURCES" : "QUALIFIED_SOURCE"));
             }
         }
-        boolean bounded = intent.constraints().size() > Math.max(0, MAX_COLUMNS - BASE_COLUMNS.size());
+        boolean bounded = intent.constraints().size() > Math.max(0, MAX_COLUMNS - (subQuestions.size() >= 2 ? subQuestions.size() : BASE_COLUMNS.size()));
         if (rows.size() > MAX_ROWS) {
             rows = new ArrayList<>(rows.subList(0, MAX_ROWS));
             bounded = true;
@@ -148,6 +150,35 @@ class ResearchMatrixPlanningService {
             rows.add(new RowPlan(key, label));
         }
         return rows;
+    }
+
+    private static final Pattern SENTENCE_SEPARATOR = Pattern.compile("[？?；;。！!\n]+");
+    private static final Pattern CLAUSE_SEPARATOR = Pattern.compile("[，,]");
+    private static final Pattern QUESTION_WORD = Pattern.compile(
+            "(?i)哪|什么|如何|怎么|怎样|是否|多少|为什么|为何|吗|何时|几|区别|差异|\\b(?:what|which|how|when|why|does|do|is|are|can)\\b");
+    private static final Pattern INSTRUCTION = Pattern.compile(
+            "^(?:请|引用|给出|列出|附上|注明|说明来源|并引用|并给出|cite|quote|include|provide)", Pattern.CASE_INSENSITIVE);
+
+    /** 把问题拆成子问题：先按句号、问号、分号断句，再把逗号两边都像问题的句子拆开；引用要求等指令不作为列。 */
+    private List<ColumnPlan> subQuestionColumns(String question) {
+        List<String> parts = new ArrayList<>();
+        for (String sentence : SENTENCE_SEPARATOR.split(question)) {
+            String[] clauses = CLAUSE_SEPARATOR.split(sentence);
+            boolean allQuestions = clauses.length > 1;
+            for (String clause : clauses) allQuestions &= QUESTION_WORD.matcher(clause).find();
+            if (allQuestions) parts.addAll(List.of(clauses));
+            else parts.add(sentence);
+        }
+        List<ColumnPlan> columns = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String raw : parts) {
+            String label = raw.strip();
+            if (label.isEmpty() || INSTRUCTION.matcher(label).find() || !QUESTION_WORD.matcher(label).find()) continue;
+            if (label.codePointCount(0, label.length()) > 120 || !seen.add(label)) continue;
+            columns.add(new ColumnPlan("q-" + shortDigest(label), label, false, "QUALIFIED_SOURCE"));
+            if (columns.size() >= MAX_COLUMNS) break;
+        }
+        return columns;
     }
 
     private String shortDigest(String value) {

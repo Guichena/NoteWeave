@@ -16,6 +16,30 @@ class ResearchMatrixPlanningServiceTest {
             mock(ResearchAgentFeatureFlagService.class), true);
 
     @Test
+    void multiPartQuestionUsesItsSubQuestionsAsColumnsAndDropsCitationInstructions() {
+        ResearchIntentResponse intent = new ResearchIntentResponse(
+                "回答问题", "report", List.of(), "", "STANDARD", "AUTO");
+
+        ResearchMatrixPlanningService.MatrixPlan plan = planner.plan(
+                "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。", intent);
+
+        assertThat(plan.columns()).extracting(ResearchMatrixPlanningService.ColumnPlan::label).containsExactly(
+                "Java 虚拟线程在哪个 JDK 版本正式发布", "synchronized 导致的线程固定问题在哪个版本改善");
+        assertThat(plan.columns()).allMatch(column -> column.key().startsWith("q-"));
+    }
+
+    @Test
+    void singleQuestionKeepsTheGeneralColumns() {
+        ResearchIntentResponse intent = new ResearchIntentResponse(
+                "回答问题", "report", List.of(), "", "STANDARD", "AUTO");
+
+        ResearchMatrixPlanningService.MatrixPlan plan = planner.plan("提高测试覆盖率门槛是否降低了缺陷逃逸率？", intent);
+
+        assertThat(plan.columns()).extracting(ResearchMatrixPlanningService.ColumnPlan::key)
+                .containsExactly("answer", "key_evidence", "limitations", "implications");
+    }
+
+    @Test
     void identicalIntentProducesAnIdenticalBoundedPlanDigest() {
         ResearchIntentResponse intent = new ResearchIntentResponse(
                 "Compare two systems", "table", List.of("licensing", "security"),

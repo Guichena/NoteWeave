@@ -820,15 +820,18 @@ def _cell_query_context(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan)
         tried_queries=tuple(str(item) for item in tried if isinstance(item, str))
         if isinstance(tried, list) else (),
         role=snapshot.role,
-        max_queries=_EFFORT_QUERY_COUNTS.get(str(policy.get("effort_tier") or "").upper(), DEFAULT_MAX_QUERIES),
+        # 合并任务里每多一个单元格多一条检索词，否则多个单元格平摊两三条检索词，后面的单元格常常检不到材料
+        max_queries=min(MAX_QUERIES_PER_TASK, _EFFORT_QUERY_COUNTS.get(
+            str(policy.get("effort_tier") or "").upper(), DEFAULT_MAX_QUERIES) + max(0, len(columns) - 1)),
         objective=str(policy.get("objective") or "").strip(),
         boundaries=_string_tuple(policy.get("boundaries")),
         authoritative_domains=_string_tuple(policy.get("authoritative_domains")),
     )
 
 
-# 投入等级决定每个深挖任务生成几条检索词
+# 投入等级决定每个深挖任务的基础检索词条数，合并任务按单元格数追加，最多 6 条
 _EFFORT_QUERY_COUNTS = {"SIMPLE": 2, "STANDARD": 3, "COMPLEX": 4}
+MAX_QUERIES_PER_TASK = 6
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:

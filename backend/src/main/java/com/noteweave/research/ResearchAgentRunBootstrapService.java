@@ -15,12 +15,18 @@ public class ResearchAgentRunBootstrapService {
     private final JdbcTemplate jdbcTemplate;
     private final ResearchMatrixPlanningService matrixPlanningService;
 
+    /** 与规划结果一致：高风险两路取证默认关闭，兜底表格也不再标记高风险单元格。 */
+    private final boolean highRiskQuorumEnabled;
+
     public ResearchAgentRunBootstrapService(
             JdbcTemplate jdbcTemplate,
-            ResearchMatrixPlanningService matrixPlanningService
+            ResearchMatrixPlanningService matrixPlanningService,
+            @org.springframework.beans.factory.annotation.Value("${noteweave.research.agent.high-risk-quorum-enabled:false}")
+            boolean highRiskQuorumEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.matrixPlanningService = matrixPlanningService;
+        this.highRiskQuorumEnabled = highRiskQuorumEnabled;
     }
 
     public BootstrapReceipt bootstrap(String runId, String question, ResearchIntentResponse intent) {
@@ -61,8 +67,8 @@ public class ResearchAgentRunBootstrapService {
                             cell_version, plan_revision, entity_set_version, high_risk)
                         values (?, ?, ?, ?, ?, ?, null, 'GAP', '[]', 0, 0, 1, 1, ?)
                         """, Ids.newId(), runId, rowId, row.key() + ":" + column.key(), branchId,
-                        column.key(), column.highRisk()
-                                || (conflictSensitive && List.of("answer", "key_evidence").contains(column.key())));
+                        column.key(), highRiskQuorumEnabled && (column.highRisk()
+                                || (conflictSensitive && List.of("answer", "key_evidence").contains(column.key()))));
                 cellCount++;
             }
         }
