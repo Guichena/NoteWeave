@@ -1,0 +1,862 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-k8s-sidecar",
+  "run_id": "870dd9c8-c700-41bf-b715-a621439a074d",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:17:00.492313+00:00",
+  "finished_at": "2026-10-17T14:18:20.910565+00:00",
+  "wall_seconds": 80.4,
+  "run_detail": {
+    "research_run_id": "870dd9c8-c700-41bf-b715-a621439a074d",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "46b44c75-e233-486b-bf0d-c4cc51504e70",
+    "question": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+    "final_report_markdown": "# Kubernetes 原生 Sidecar 容器：引入版本、稳定版本与声明方式\n\n本次核验的资料显示，Kubernetes 原生 Sidecar 容器于 Kubernetes 1.28 以 alpha 形式引入，其标志是 init 容器的 restartPolicy 字段；该能力在 Kubernetes v1.33 达到 stable。声明方式是：在 Pod 的 initContainers 中为容器指定 restartPolicy 字段，该字段可省略，也可设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器。\n\n## 直接回答\n\n关于引入版本，本次核验的资料显示，Kubernetes 1.28 以 alpha 形式引入了对 sidecar 容器的 API 感知，即面向 init 容器新增 alpha 的 restartPolicy 字段。 [evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44]\n\n关于稳定版本，本次核验的资料显示，Sidecar 容器在 Kubernetes v1.33 达到 stable。 [evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa]\n\n关于声明方式，本次核验的资料显示，可以在 Pod 的 initContainers 字段中为所列容器指定 restartPolicy；对于 init 容器，该字段可以省略，也可以设为 Always。新增的 restartPolicy 字段用于表明某个 init 容器是 sidecar 容器，因此设为 Always 即表示该 init 容器作为 sidecar 容器。 [evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca] [evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80] [evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e]\n\n## 版本演进与声明语义\n\n从版本演进看，原生 Sidecar 容器的能力起点是 Kubernetes 1.28 引入的 alpha 版 restartPolicy 字段；本次核验的资料显示，该能力最终在 Kubernetes v1.33 达到 stable。这一路径表明该特性从 API 感知阶段走向稳定可用阶段。 [evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44] [evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa]\n\n在声明语义上，restartPolicy 被置于 Pod 的 initContainers 之下，用于标注其中的 sidecar 容器；对 init 容器而言，该字段既可省略，也可显式设为 Always，后者正是把该 init 容器认定为 sidecar 容器的方式。 [evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca] [evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80] [evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e]\n\n## 对比表\n\n| 方面 | 事实 | 依据 |\n| --- | --- | --- |\n| 引入版本 | Kubernetes 1.28 以 alpha 形式引入 init 容器的 restartPolicy 字段（对 sidecar 容器的 API 感知） | Kubernetes 1.28 发布说明 [evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44] |\n| 稳定版本 | Kubernetes v1.33 达到 stable | Kubernetes v1.33 文档 [evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa] |\n| 声明方式 | 在 Pod 的 initContainers 中指定 restartPolicy；可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器 | Kubernetes 文档 [evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca] [evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80] [evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e] |\n\n## Citation audit\n\n### Kubernetes Native Sidecar Containers · Declaration method\n\n- Evidence: `evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca`\n- Exact quote: “you can specify a `restartPolicy`<br>for containers listed in a Pod's `initContainers` field.”\n- Snapshot: `research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/84ce38346d9b1d2ae78bc7264cc05139ebdd4feae9d84918e2e2587a3f7a8ac0`\n- URL: https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/\n\n### Kubernetes Native Sidecar Containers · Declaration method\n\n- Evidence: `evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80`\n- Exact quote: “New field `restartPolicy` to indicate that an init container is a sidecar container”\n- Snapshot: `research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/ae5cab1474746f7b4f7690a5131a2118fcc142a8ddcef9fad32e22a1282c0b53`\n- URL: https://github.com/stackabletech/issues/issues/420\n\n### Kubernetes Native Sidecar Containers · Declaration method\n\n- Evidence: `evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e`\n- Exact quote: “For init containers, you can either omit the `restartPolicy` field, or set it to `Always`.”\n- Snapshot: `research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/c1ff79ebaf20c7f2d79382ed22b174160b95f70e504beeffb39865e1d899ae41`\n- URL: https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/\n\n### Kubernetes Native Sidecar Containers · Stabilized version\n\n- Evidence: `evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa`\n- Exact quote: “`Kubernetes v1.33 [stable]`”\n- Snapshot: `research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/84ce38346d9b1d2ae78bc7264cc05139ebdd4feae9d84918e2e2587a3f7a8ac0`\n- URL: https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/\n\n### Kubernetes Native Sidecar Containers · Introduced version\n\n- Evidence: `evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44`\n- Exact quote: “## API awareness of sidecar containers (alpha)<br><br>Kubernetes 1.28 introduces an alpha `restartPolicy` field for [init containers]”\n- Snapshot: `research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/c1ff79ebaf20c7f2d79382ed22b174160b95f70e504beeffb39865e1d899ae41`\n- URL: https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/870dd9c8-c700-41bf-b715-a621439a074d/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 5355,
+      "sha256": "e0725661a9e45ce8157663333718857676dedbd25c7fec8d2f81902eb42c8404"
+    },
+    "research_artifact": {
+      "artifact_id": "870dd9c8-c700-41bf-b715-a621439a074d",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "870dd9c8-c700-41bf-b715-a621439a074d",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/870dd9c8-c700-41bf-b715-a621439a074d/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 5355,
+        "sha256": "e0725661a9e45ce8157663333718857676dedbd25c7fec8d2f81902eb42c8404"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Kubernetes native sidecar containers",
+          "Kubernetes 1.28 sidecar containers alpha release notes",
+          "KEP-753 sidecar containers graduation GA stable"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-dd93d09bb537de83",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Kubernetes Native Sidecar Containers",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+            "read_focus": "Determine which Kubernetes version introduced native sidecar containers, which version stabilized them, and how to declare them, with official citations.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-dd93d09bb537de83:dim-dac74aa456b22315",
+            "row_id": "entity-dd93d09bb537de83",
+            "branch_id": "branch-main",
+            "column_key": "dim-dac74aa456b22315",
+            "column_label": "Stabilized version",
+            "candidate_value": "Sidecar 容器在 Kubernetes v1.33 达到 stable",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+            "row_id": "entity-dd93d09bb537de83",
+            "branch_id": "branch-main",
+            "column_key": "dim-a276de70b2d0b69f",
+            "column_label": "Declaration method",
+            "candidate_value": "init 容器的 restartPolicy 可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca",
+              "evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80",
+              "evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9",
+            "row_id": "entity-dd93d09bb537de83",
+            "branch_id": "branch-main",
+            "column_key": "dim-e0324bc1cd8b67c9",
+            "column_label": "Introduced version",
+            "candidate_value": "Kubernetes 1.28 以 alpha 形式引入对 sidecar 容器的 API 感知（restartPolicy 字段）",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-dd93d09bb537de83",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Kubernetes Native Sidecar Containers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+          "read_focus": "Determine which Kubernetes version introduced native sidecar containers, which version stabilized them, and how to declare them, with official citations.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-dac74aa456b22315",
+          "row_id": "entity-dd93d09bb537de83",
+          "branch_id": "branch-main",
+          "column_key": "dim-dac74aa456b22315",
+          "column_label": "Stabilized version",
+          "candidate_value": "Sidecar 容器在 Kubernetes v1.33 达到 stable",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "row_id": "entity-dd93d09bb537de83",
+          "branch_id": "branch-main",
+          "column_key": "dim-a276de70b2d0b69f",
+          "column_label": "Declaration method",
+          "candidate_value": "init 容器的 restartPolicy 可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca",
+            "evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80",
+            "evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9",
+          "row_id": "entity-dd93d09bb537de83",
+          "branch_id": "branch-main",
+          "column_key": "dim-e0324bc1cd8b67c9",
+          "column_label": "Introduced version",
+          "candidate_value": "Kubernetes 1.28 以 alpha 形式引入对 sidecar 容器的 API 感知（restartPolicy 字段）",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa",
+          "window_id": "window-1",
+          "source_id": "web-2ed3984d8bc0ce93",
+          "source_title": "Sidecar Containers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kubernetes native sidecar containers",
+          "read_focus": "Read external URL Sidecar Containers for claims that answer: Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。\n\nCurrent Table-as-State entity: Kubernetes Native Sidecar Containers. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`Kubernetes v1.33 [stable]`",
+          "claim_text": "Sidecar 容器在 Kubernetes v1.33 达到 stable",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/84ce38346d9b1d2ae78bc7264cc05139ebdd4feae9d84918e2e2587a3f7a8ac0"
+        },
+        {
+          "evidence_id": "evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e",
+          "window_id": "window-5",
+          "source_id": "web-84df585a20dcf9c1",
+          "source_title": "Kubernetes v1.28: Planternetes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kubernetes 1.28 sidecar containers alpha release notes",
+          "read_focus": "Read external URL Kubernetes v1.28: Planternetes for claims that answer: Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。\n\nCurrent Table-as-State entity: Kubernetes Native Sidecar Containers. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For init containers, you can either omit the `restartPolicy` field, or set it to `Always`.",
+          "claim_text": "init 容器的 restartPolicy 可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/c1ff79ebaf20c7f2d79382ed22b174160b95f70e504beeffb39865e1d899ae41"
+        },
+        {
+          "evidence_id": "evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44",
+          "window_id": "window-5",
+          "source_id": "web-84df585a20dcf9c1",
+          "source_title": "Kubernetes v1.28: Planternetes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kubernetes 1.28 sidecar containers alpha release notes",
+          "read_focus": "Read external URL Kubernetes v1.28: Planternetes for claims that answer: Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。\n\nCurrent Table-as-State entity: Kubernetes Native Sidecar Containers. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "## API awareness of sidecar containers (alpha)\n\nKubernetes 1.28 introduces an alpha `restartPolicy` field for [init containers]",
+          "claim_text": "Kubernetes 1.28 以 alpha 形式引入对 sidecar 容器的 API 感知（restartPolicy 字段）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/c1ff79ebaf20c7f2d79382ed22b174160b95f70e504beeffb39865e1d899ae41"
+        },
+        {
+          "evidence_id": "evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80",
+          "window_id": "window-2",
+          "source_id": "web-11d402b12102d6bd",
+          "source_title": "Evaluate Kubernetes 1.28 changes · Issue #420",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/stackabletech/issues/issues/420",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kubernetes 1.28 sidecar containers alpha release notes",
+          "read_focus": "Read external URL Evaluate Kubernetes 1.28 changes · Issue #420 for claims that answer: Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。\n\nCurrent Table-as-State entity: Kubernetes Native Sidecar Containers. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "New field `restartPolicy` to indicate that an init container is a sidecar container",
+          "claim_text": "新增 restartPolicy 字段用于表明某个 init 容器是 sidecar 容器",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/ae5cab1474746f7b4f7690a5131a2118fcc142a8ddcef9fad32e22a1282c0b53"
+        },
+        {
+          "evidence_id": "evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca",
+          "window_id": "window-1",
+          "source_id": "web-2ed3984d8bc0ce93",
+          "source_title": "Sidecar Containers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kubernetes native sidecar containers",
+          "read_focus": "Read external URL Sidecar Containers for claims that answer: Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。\n\nCurrent Table-as-State entity: Kubernetes Native Sidecar Containers. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "you can specify a `restartPolicy`\nfor containers listed in a Pod's `initContainers` field.",
+          "claim_text": "在 Pod 的 initContainers 字段中列出的容器可指定 restartPolicy，从而声明为可重启的 sidecar 容器",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5ce0ae97-4bbf-4d1b-8ce2-08a397cac726/84ce38346d9b1d2ae78bc7264cc05139ebdd4feae9d84918e2e2587a3f7a8ac0"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "row_id": "entity-dd93d09bb537de83",
+          "evidence_id": "evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca",
+          "source_id": "web-2ed3984d8bc0ce93",
+          "source_title": "Sidecar Containers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/"
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "row_id": "entity-dd93d09bb537de83",
+          "evidence_id": "evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e",
+          "source_id": "web-84df585a20dcf9c1",
+          "source_title": "Kubernetes v1.28: Planternetes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/"
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9",
+          "row_id": "entity-dd93d09bb537de83",
+          "evidence_id": "evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44",
+          "source_id": "web-84df585a20dcf9c1",
+          "source_title": "Kubernetes v1.28: Planternetes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/blog/2023/08/15/kubernetes-v1-28-release/"
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-dac74aa456b22315",
+          "row_id": "entity-dd93d09bb537de83",
+          "evidence_id": "evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa",
+          "source_id": "web-2ed3984d8bc0ce93",
+          "source_title": "Sidecar Containers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/"
+        },
+        {
+          "cell_id": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "row_id": "entity-dd93d09bb537de83",
+          "evidence_id": "evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80",
+          "source_id": "web-11d402b12102d6bd",
+          "source_title": "Evaluate Kubernetes 1.28 changes · Issue #420",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/stackabletech/issues/issues/420"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "1e33f246-4613-444e-a93e-168c18a96d31",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:17:00Z"
+      },
+      {
+        "trace_id": "e4a531e0-ab8d-42ec-b46f-305d599b2a31",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T14:17:11Z"
+      },
+      {
+        "trace_id": "4d27ec51-12fd-4d97-b95e-f3bbc8a0bf29",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Kubernetes 原生 Sidecar 容器是在哪个版本引入、哪个版本稳定的，具体怎么声明？引用官方文档或发布说明。",
+        "payload": {
+          "cell_count": 3
+        },
+        "created_at": "2026-10-17T14:18:16Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:17:00Z",
+    "updated_at": "2026-10-17T14:18:16Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:18:01Z",
+          "lease_epoch": 1,
+          "task_id": "a48e814c-1148-41b5-9fe8-6c86d7970d6e",
+          "task_key": "planning:870dd9c8-c700-41bf-b715-a621439a074d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:18:59Z",
+          "lease_epoch": 1,
+          "task_id": "5ce0ae97-4bbf-4d1b-8ce2-08a397cac726",
+          "task_key": "deep-cell:73e22f67715e45790ed7ae16e6d8d1f0",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:19:10Z",
+          "lease_epoch": 1,
+          "task_id": "f9153672-21b0-4fe7-96b6-590d22342cbe",
+          "task_key": "synthesis:9ae2655844c1abd169d667951b8238b5",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "8d5afb79-4f20-40aa-b259-52f23f2f13f5",
+          "cell_key": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "task_id": "5ce0ae97-4bbf-4d1b-8ce2-08a397cac726"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "a9c9f92c-8c8f-4502-bccd-781df8de788a",
+          "cell_key": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9",
+          "task_id": "5ce0ae97-4bbf-4d1b-8ce2-08a397cac726"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "e27c8d19-0869-48e1-94f0-6091da375cbf",
+          "cell_key": "entity-dd93d09bb537de83:dim-dac74aa456b22315",
+          "task_id": "5ce0ae97-4bbf-4d1b-8ce2-08a397cac726"
+        }
+      ],
+      "candidate_count": 3,
+      "task_count": 3,
+      "merge_count": 3,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:9f06b0adf67ed2bebb1e1933ef0bce5601428491473b2b8540e4a7c4b4da13ea",
+          "candidate_id": "e27c8d19-0869-48e1-94f0-6091da375cbf",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-dd93d09bb537de83:dim-dac74aa456b22315"
+        },
+        {
+          "merge_id": "merge:f810bbf3732a188ef0155aeefef1ed33d235af1fd68db8c01f8fb676be8b8b79",
+          "candidate_id": "a9c9f92c-8c8f-4502-bccd-781df8de788a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9"
+        },
+        {
+          "merge_id": "merge:37a8c13c678d676c7faeeccf72bc10f6180c3e03da60ef39555868c943a70110",
+          "candidate_id": "8d5afb79-4f20-40aa-b259-52f23f2f13f5",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f"
+        }
+      ],
+      "checkpoints": []
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-dd93d09bb537de83",
+            "label": "Kubernetes Native Sidecar Containers"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-a276de70b2d0b69f",
+            "label": "Declaration method",
+            "description": "How to declare a native sidecar container in a pod spec, including the initContainers placement and the restartPolicy field value.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-dac74aa456b22315",
+            "label": "Stabilized version",
+            "description": "The Kubernetes version in which native sidecar containers reached stable/GA, with the associated KEP or release announcement.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e0324bc1cd8b67c9",
+            "label": "Introduced version",
+            "description": "The Kubernetes version and release stage (e.g., alpha) in which native sidecar containers were first introduced, per official release notes or docs.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Kubernetes native sidecar containers (KEP-753): introduction version/release stage, stabilization version, and pod spec declaration syntax.",
+          "objective": "Determine which Kubernetes version introduced native sidecar containers, which version stabilized them, and how to declare them, with official citations.",
+          "exclusions": [
+            "Istio-managed sidecar injection",
+            "Third-party sidecar patterns unrelated to native Kubernetes feature",
+            "Support status of unrelated versions"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with per-cell exact quotes, snapshots, URLs and citation audit."
+        },
+        "effort_tier": "SIMPLE",
+        "authoritative_domains": [
+          "kubernetes.io",
+          "github.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "How exactly do I configure a native sidecar in a pod YAML?",
+              "What field and value enables it?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Which cluster version do I need for alpha vs. stable?",
+              "Is it safe to adopt in production at the stable version?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-dd93d09bb537de83:dim-a276de70b2d0b69f",
+          "entity_label": "Kubernetes Native Sidecar Containers",
+          "column_label": "Declaration method",
+          "cell_status": "VERIFIED",
+          "candidate_value": "init 容器的 restartPolicy 可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:324bb9dee821bf1ba2c4041043536e27d3547e70a0c163ca",
+              "source_domain": "kubernetes.io",
+              "claim_text": "在 Pod 的 initContainers 字段中列出的容器可指定 restartPolicy，从而声明为可重启的 sidecar 容器"
+            },
+            {
+              "evidence_key": "evidence:c4fb497e31d43a49842b20e172b5ce4c70ebd62b37646f80",
+              "source_domain": "github.com",
+              "claim_text": "新增 restartPolicy 字段用于表明某个 init 容器是 sidecar 容器"
+            },
+            {
+              "evidence_key": "evidence:e0443baaeda29b4d30128e40492f79eec41661a3227b5a0e",
+              "source_domain": "kubernetes.io",
+              "claim_text": "init 容器的 restartPolicy 可省略或设为 Always，设为 Always 即表示该 init 容器是 sidecar 容器"
+            }
+          ],
+          "independent_source_count": 2,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-dd93d09bb537de83:dim-dac74aa456b22315",
+          "entity_label": "Kubernetes Native Sidecar Containers",
+          "column_label": "Stabilized version",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Sidecar 容器在 Kubernetes v1.33 达到 stable",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ab192190b8616a2cac81aba51cef136b0fdcaaef1ce120aa",
+              "source_domain": "kubernetes.io",
+              "claim_text": "Sidecar 容器在 Kubernetes v1.33 达到 stable"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-dd93d09bb537de83:dim-e0324bc1cd8b67c9",
+          "entity_label": "Kubernetes Native Sidecar Containers",
+          "column_label": "Introduced version",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Kubernetes 1.28 以 alpha 形式引入对 sidecar 容器的 API 感知（restartPolicy 字段）",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d312e3db98f82db5b0a081a2e61d0f1b3ecef358f477fa44",
+              "source_domain": "kubernetes.io",
+              "claim_text": "Kubernetes 1.28 以 alpha 形式引入对 sidecar 容器的 API 感知（restartPolicy 字段）"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

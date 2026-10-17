@@ -491,6 +491,8 @@ class ExternalSearchAdapter:
     ) -> ResearchSearchHit | None:
         title = str(raw_result.get("title") or raw_result.get("name") or "").strip()
         url = str(raw_result.get("url") or raw_result.get("link") or "").strip()
+        # 所有渠道的结果网址统一做百分号编码，含中文或空格的网址否则会被归档接口拒收
+        url = _safe_result_url(url) if url.lower().startswith(("http://", "https://")) else url
         snippet = str(
             raw_result.get("snippet")
             or raw_result.get("description")

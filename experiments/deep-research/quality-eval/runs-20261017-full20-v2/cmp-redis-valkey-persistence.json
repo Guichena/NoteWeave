@@ -1,0 +1,2337 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-redis-valkey-persistence",
+  "run_id": "c29ac850-f285-48d2-afa3-537d8241ce5d",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T13:35:55.704884+00:00",
+  "finished_at": "2026-10-17T13:41:07.471079+00:00",
+  "wall_seconds": 311.8,
+  "run_detail": {
+    "research_run_id": "c29ac850-f285-48d2-afa3-537d8241ce5d",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "3c89c8a9-82fd-4c4b-b657-2374dbaa73d2",
+    "question": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+    "final_report_markdown": "# Redis 7.4 与 Valkey 8 的持久化选项与许可证差异比较\n\n本次核验的资料显示，Valkey 8 与 Redis 7.4 在 RDB 快照调度上均有默认自动保存安排（Redis 7.4 明确为按变更键数量的时间间隔触发），并且两者都提供 AOF 持久化，但可核验的细节侧重不同：Valkey 8 记录了可选禁用 RDB、multi part AOF 机制与 fsync 默认每秒一次，以及 AOF 被截断时仍可加载并丢弃最后一条不完整命令；Redis 7.4 记录了三种 fsync 策略（每次写入、每秒、禁用）与 redis-check-aof 修复半写入命令，并提到 multi-part AOF。许可证方面，仅 Valkey 8 的 BSD 3-Clause（仅要求署名）有可核验依据；Redis 7.4 的许可证与迁移兼容性说明缺少足够证据，因此相关差异无法完整回答。\n\n## 直接回答\n\n持久化方面，本次核验的资料显示 Valkey 8 可通过 config set save \"\" 选择性禁用 RDB 快照，并且主要版本的 AOF 在结尾存在不完整命令时仍可加载，只是丢弃最后一条非良构命令。 [evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2] [evidence:d65867c2541f2805fe454bf0518bc6a12fc2a67510c54f41] [evidence:5e3430ac2936761244e726e5903a242237226cd6f0ac7bca] [evidence:c3343c2abcb7b00759e8388134014984a2a1a536aab9781a] [evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423] [evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3] [evidence:3c188cc6fc0a437f58b17d8e65ee28c1d5e7858316ab3ae0]\n\nRedis 7.4 的官方资料则记录了默认 RDB 快照按变更键数量的时间间隔触发，以及三种 fsync 策略（每次写入、每秒一次、禁用）；AOF 结尾出现半写入命令时，redis-check-aof 工具能够轻易修复。 [evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128] [evidence:6b10b440c82c07a9352e52275c318e2832f932c31fca4387] [evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e] [evidence:fe141e10bbe31d93fb78d8dca2b993d39561e4a722c2ab3d] [evidence:b55e14c18425716cd7588f706bbcb76cb3a2ba5a034c13fc] [evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f]\n\n许可证方面，本次核验的资料显示 Valkey 使用 BSD 3-Clause，仅要求署名；Redis 7.4 的许可证在现有资料中缺少足够证据，无法据此比较两者的许可证差异。 [evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb]\n\n## RDB 与 AOF 持久化选项\n\n在 RDB 快照方面，本次核验的资料显示 Valkey 8 可以选择性地禁用 RDB，方式是通过 config set save \"\"；同一份资料还提到暂停快照需要把开始时间设为将来，并且快照调度由开始时间和快照间隔两项设置决定。Redis 7.4 的资料给出了默认自动保存安排：至少有一个键发生变化时每小时保存一次，至少 100 个键变化时每五分钟保存一次，至少 10000 个键变化时每 60 秒保存一次。 [evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2] [evidence:d65867c2541f2805fe454bf0518bc6a12fc2a67510c54f41] [evidence:5e3430ac2936761244e726e5903a242237226cd6f0ac7bca] [evidence:c3343c2abcb7b00759e8388134014984a2a1a536aab9781a] [evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128] [evidence:6b10b440c82c07a9352e52275c318e2832f932c31fca4387]\n\nAOF 方面，本次核验的资料显示 Valkey 8 采用 multi part AOF 机制，把原始单个 AOF 文件拆分为最多一个 base 文件与若干增量文件，并记录其建议且默认的 fsync 策略为每秒一次。Redis 7.4 的资料表明其支持三种 fsync 策略，即每次写入、每秒一次和禁用，并注明其中一种是默认 Redis 策略；其资料同样提到 multi-part AOF 机制，将原始 AOF 拆分为 base 与增量文件。 [evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f] [evidence:93bc95a8ba7b752f0678cd3ce97be5003a289a8d6c1cf34c] [evidence:b0470e91ce9e0a87cf5934e2dc51acfed882e8ed621b132f] [evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3] [evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e] [evidence:fe141e10bbe31d93fb78d8dca2b993d39561e4a722c2ab3d] [evidence:b55e14c18425716cd7588f706bbcb76cb3a2ba5a034c13fc]\n\n## 故障情形下的持久化行为与兼容性\n\n两份资料对 AOF 结尾不完整的处理方式不同。本次核验的资料显示，Valkey 8 的最新主要版本能够加载结尾存在不完整命令的 AOF，只是丢弃文件中最后一条非良构命令；Redis 7.4 的资料则说明，即使日志因磁盘满或其他原因在结尾留下半写入命令，redis-check-aof 工具也能轻易修复。 [evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423] [evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3] [evidence:3c188cc6fc0a437f58b17d8e65ee28c1d5e7858316ab3ae0] [evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f]\n\n在迁移与格式兼容方面，本次核验的资料显示 Valkey 8 使用兼容的协议、配置以及 RDB/AOF 格式，其 RDB 与 AOF 文件与 Redis OSS 7.2 可互读互写；资料还提到 RDB/AOF 持久化、Redis Cluster 与 Sentinel 均在使用，且不含 Redis Stack 模块。Redis 7.4 一侧未找到足够证据，故无法就其迁移兼容性作出比较。 [evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611] [evidence:1433345f210bdbf01809273c1a214ca9594367fc7f1ae09a] [evidence:e14786e34462f8c2246d9aa57a406514b1956973ab0926cf]\n\n## 许可证\n\n本次核验的资料显示，Valkey 使用 BSD 3-Clause，该许可证仅要求署名。对于 Redis 7.4 的许可证，现有资料中没有可支撑的证据，因此两者在许可证上的具体差异尚不能完整给出。 [evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb]\n\n## 对比表\n\n| 对比维度 | Redis 7.4 | Valkey 8 |\n| --- | --- | --- |\n| RDB 快照选项 | 默认每小时（至少一个键变化）、每五分钟（至少 100 个键变化）、每 60 秒（至少 10000 个键变化）保存快照 | 可通过 config set save \"\" 选择性禁用 RDB；暂停快照需将开始时间设为将来；调度由开始时间与间隔决定 [evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128] [evidence:6b10b440c82c07a9352e52275c318e2832f932c31fca4387] [evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2] [evidence:d65867c2541f2805fe454bf0518bc6a12fc2a67510c54f41] [evidence:5e3430ac2936761244e726e5903a242237226cd6f0ac7bca] [evidence:c3343c2abcb7b00759e8388134014984a2a1a536aab9781a] |\n| AOF 选项 | 支持每次写入、每秒一次、禁用三种 fsync 策略（其中一种为默认 Redis 策略）；采用 multi-part AOF，拆分为 base 与增量文件 | 采用 multi part AOF，拆分为最多一个 base 文件与若干增量文件；建议且默认 fsync 每秒一次 [evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e] [evidence:fe141e10bbe31d93fb78d8dca2b993d39561e4a722c2ab3d] [evidence:b55e14c18425716cd7588f706bbcb76cb3a2ba5a034c13fc] [evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f] [evidence:93bc95a8ba7b752f0678cd3ce97be5003a289a8d6c1cf34c] [evidence:b0470e91ce9e0a87cf5934e2dc51acfed882e8ed621b132f] [evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3] |\n| 故障时持久化行为 | AOF 结尾半写入命令可被 redis-check-aof 轻易修复 | 最新主要版本可加载结尾不完整的 AOF，丢弃最后一条非良构命令 [evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f] [evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423] [evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3] [evidence:3c188cc6fc0a437f58b17d8e65ee28c1d5e7858316ab3ae0] |\n| 迁移或兼容性说明 | 现有资料未提供足够证据 | 使用兼容的协议、配置及 RDB/AOF 格式；RDB 与 AOF 文件与 Redis OSS 7.2 可互读互写 [evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611] [evidence:1433345f210bdbf01809273c1a214ca9594367fc7f1ae09a] [evidence:e14786e34462f8c2246d9aa57a406514b1956973ab0926cf] |\n| 许可证 | 现有资料未提供足够证据 | BSD 3-Clause，仅要求署名 [evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb] |\n\n**核验情况：** 已核验 8 项，未找到足够证据 2 项。\n\n## 结论汇总\n\n| 研究对象 | RDB snapshot options | AOF persistence options | Persistence behavior on failure | License | Migration or compatibility notes |\n|---|---|---|---|---|---|\n| Redis 7.4 | By default, Redis will save a snapshot of your database every hour if at least o… | Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。 | 即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复 | 未找到证据 | 未找到证据 |\n| Valkey 8 | 可通过 config set save \"\" 选择性禁用 RDB 快照 | Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。 | AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令 | Valkey 使用 BSD 3-Clause，仅要求署名。 | Uses compatible protocol, configuration, and RDB/AOF formats. |\n\n## 引用核对\n\n### 可通过 config set save \"\" 选择性禁用 RDB 快照\n\n- 研究项：`Valkey 8 · RDB snapshot options`\n- 候选：`85ff74fe-5790-4eef-99c2-f9bf4ed64693`\n- Evidence: `evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2`\n  - Exact quote: “* Optionally disable RDB: \\`valkey-cli config set save \"\"\\`”\n  - Snapshot: `research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/b9159c28e7bad36ed96b1ca3b25859cd8a8abd95ffea6b0d334f104883b8e0bc`\n  - URL: https://valkey.io/topics/persistence/\n\n### Uses compatible protocol, configuration, and RDB/AOF formats.\n\n- 研究项：`Valkey 8 · Migration or compatibility notes`\n- 候选：`f0b7c8d0-1676-4d38-a59d-780a00c5d9b2`\n- Evidence: `evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611`\n  - Exact quote: “Uses compatible protocol, configuration, and RDB/AOF formats.”\n  - Snapshot: `research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4`\n  - URL: https://valkey.io/topics/migration/\n\n### Valkey 使用 BSD 3-Clause，仅要求署名。\n\n- 研究项：`Valkey 8 · License`\n- 候选：`de5614ed-8038-471b-98ab-91ae327a94a4`\n- Evidence: `evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb`\n  - Exact quote: “Valkey uses BSD 3-Clause, which only requires attribution.”\n  - Snapshot: `research/external/1467aef1-1de2-4edf-8fc5-7ebd15c79371/df5ef2568b7a18b909398add0cf9596913060c589ef71eb987c0871109128afd`\n  - URL: https://redis.io/blog/what-is-valkey/\n\n### AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令\n\n- 研究项：`Valkey 8 · Persistence behavior on failure`\n- 候选：`9442a6a0-47fd-4e52-9cd3-afdeaf225ce0`\n- Evidence: `evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423`\n  - Exact quote: “The latest major versions of Valkey will be able to load the AOF anyway, just discarding the last non well formed command in the file.”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n\n### Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。\n\n- 研究项：`Valkey 8 · AOF persistence options`\n- 候选：`06cea923-adc5-4e15-aa1c-4783a62b0c1a`\n- Evidence: `evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f`\n  - Exact quote: “Valkey uses a multi part AOF mechanism. That is, the original single AOF file is split into base file (at most one) and incremental files (there may be more than one).”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n\n### By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.\n\n- 研究项：`Redis 7.4 · RDB snapshot options`\n- 候选：`02324941-83a2-4612-befb-c6944c74b119`\n- Evidence: `evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128`\n  - Exact quote: “By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.”\n  - Snapshot: `research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/5b06ecf5f2292b1448820e06c37072d213036ba63755944298119d6f3de2dab4`\n  - URL: https://redis.io/tutorials/operate/redis-at-scale/persistence-and-durability/\n\n### 即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复\n\n- 研究项：`Redis 7.4 · Persistence behavior on failure`\n- 候选：`0dff13a0-e416-48d3-a1dc-49b0d3457ffa`\n- Evidence: `evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f`\n  - Exact quote: “Even if the log ends with a half-written command for some reason (disk full or other reasons) the redis-check-aof tool is able to fix it easily.”\n  - Snapshot: `research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/933fa35e7c8ae67229a76e522d694ec654db8c013c57da9e74928e2e4d591917`\n  - URL: https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/\n\n### Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。\n\n- 研究项：`Redis 7.4 · AOF persistence options`\n- 候选：`27519033-b4bd-4384-b499-d6acbc0ee13f`\n- Evidence: `evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e`\n  - Exact quote: “Redis supports three fsync policies: every write, every second, and disabled.”\n  - Snapshot: `research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/ac8aa3aaa0ec3c5ca7f4b61251045f74fe0677d993d85b53b0f61150341ab43f`\n  - URL: https://redis.io/docs/latest/operate/rs/7.4/databases/configure/database-persistence/\n\n## 局限与未解决项\n\n- **Redis 7.4 · Migration or compatibility notes**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Redis 7.4 · License**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:d65867c2541f2805fe454bf0518bc6a12fc2a67510c54f41`\n  - Exact quote: “To pause snapshots, you must set the start time to the future.”\n  - Snapshot: `research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/093af5e201eda1d0cbc87994ffe2a19b682a853b261a9a0f9acc81c78086796c`\n  - URL: https://docs.cloud.google.com/memorystore/docs/valkey/about-rdb-persistence\n- Evidence: `evidence:5e3430ac2936761244e726e5903a242237226cd6f0ac7bca`\n  - Exact quote: “* `rdb`, use this if you want to enable RDB snapshot for persistence.”\n  - Snapshot: `research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/b38950879523d70ed98cae2ef8be6e1bbf445438e964b171d828e19177fcf6dd`\n  - URL: https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-for-valkey-on-kubernetes/3-0/valkey-on-kubernetes/persistence.html\n- Evidence: `evidence:c3343c2abcb7b00759e8388134014984a2a1a536aab9781a`\n  - Exact quote: “Scheduling snapshots is determined by two settings: the snapshot start time, and the snapshot interval.”\n  - Snapshot: `research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/093af5e201eda1d0cbc87994ffe2a19b682a853b261a9a0f9acc81c78086796c`\n  - URL: https://docs.cloud.google.com/memorystore/docs/valkey/about-rdb-persistence\n- Evidence: `evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3`\n  - Exact quote: “The suggested (and default) policy is to `fsync` every second.”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n- Evidence: `evidence:3c188cc6fc0a437f58b17d8e65ee28c1d5e7858316ab3ae0`\n  - Exact quote: “# AOF loaded anyway because aof-load-truncated is enabled”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n- Evidence: `evidence:6b10b440c82c07a9352e52275c318e2832f932c31fca4387`\n  - Exact quote: “In this configuration, Redis uses the AOF for durability during normal operation and can still produce RDB snapshots for backups and faster restarts.”\n  - Snapshot: `research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/5b06ecf5f2292b1448820e06c37072d213036ba63755944298119d6f3de2dab4`\n  - URL: https://redis.io/tutorials/operate/redis-at-scale/persistence-and-durability/\n- Evidence: `evidence:fe141e10bbe31d93fb78d8dca2b993d39561e4a722c2ab3d`\n  - Exact quote: “This is the default Redis policy.”\n  - Snapshot: `research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/ac8aa3aaa0ec3c5ca7f4b61251045f74fe0677d993d85b53b0f61150341ab43f`\n  - URL: https://redis.io/docs/latest/operate/rs/7.4/databases/configure/database-persistence/\n- Evidence: `evidence:b55e14c18425716cd7588f706bbcb76cb3a2ba5a034c13fc`\n  - Exact quote: “Redis uses a multi-part AOF mechanism, wherein the original AOF splits into base and incremental files.”\n  - Snapshot: `research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/3b4ae913a60fb0079ed9f48c8c5c58b67a5ee84d4ff003d14dcad9acccf2ad41`\n  - URL: https://redis.io/technology/durable-redis/\n- Evidence: `evidence:93bc95a8ba7b752f0678cd3ce97be5003a289a8d6c1cf34c`\n  - Exact quote: “appendonly yes appendonly yes”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n- Evidence: `evidence:b0470e91ce9e0a87cf5934e2dc51acfed882e8ed621b132f`\n  - Exact quote: “Valkey supports an interesting feature: it is able to rebuild the AOF in the background without interrupting service to clients. Whenever you issue a `BGREWRITEAOF`, Valkey will write the shortest sequence of commands needed to rebuild the current dataset in memory.”\n  - Snapshot: `research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9`\n  - URL: https://valkey.io/topics/persistence/\n- Evidence: `evidence:1433345f210bdbf01809273c1a214ca9594367fc7f1ae09a`\n  - Exact quote: “Valkey reads and writes RDB and AOF files compatible with Redis OSS 7.2.”\n  - Snapshot: `research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4`\n  - URL: https://valkey.io/topics/migration/\n- Evidence: `evidence:e14786e34462f8c2246d9aa57a406514b1956973ab0926cf`\n  - Exact quote: “RDB/AOF persistence, Redis Cluster, Sentinel are all in use, no Redis Stack modules.”\n  - Snapshot: `research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/70111132f140fabdce07e87efb7c7686aedd8b449b18d3fa503439fbb8bf3dca`\n  - URL: https://github.com/orgs/valkey-io/discussions/4646",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/c29ac850-f285-48d2-afa3-537d8241ce5d/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 19111,
+      "sha256": "841924fde9034825723db14d168308c03784d5a1f676ed3ca0b26040a5fad77d"
+    },
+    "research_artifact": {
+      "artifact_id": "c29ac850-f285-48d2-afa3-537d8241ce5d",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "c29ac850-f285-48d2-afa3-537d8241ce5d",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/c29ac850-f285-48d2-afa3-537d8241ce5d/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 19111,
+        "sha256": "841924fde9034825723db14d168308c03784d5a1f676ed3ca0b26040a5fad77d"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Redis 7.4 AOF appendfsync appendonly multi-part AOF documentation",
+          "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "Valkey 8 persistence AOF Redis 7.4 differences",
+          "Redis 7.4 stop-writes-on-bgsave-error AOF fsync error handling aof-load-truncated",
+          "Redis 7.4 AOF appendfsync multi-part AOF rewrite configuration",
+          "Redis 7.4 persistence options documentation",
+          "Redis 7.4 RDB persistence save points configuration",
+          "Valkey 8 RDB snapshot persistence save configuration",
+          "Valkey 8 persistence RDB AOF",
+          "Valkey 8 RDB snapshot persistence configuration save points",
+          "Redis 7.4 RDB persistence save points configuration dbfilename",
+          "Redis 7.4 persistence RDB AOF license",
+          "Valkey 8 Redis 7.4 license RSALv2 SSPLv1 官方说明 适用条件",
+          "Valkey 8 Redis 7.4 license RSALv2 SSPLv1 primary research limitations",
+          "Redis 7.4 Redis 7.4 license RSALv2 SSPLv1 官方说明 适用条件",
+          "Redis 7.4 Redis 7.4 license RSALv2 SSPLv1 primary research limitations",
+          "Valkey 8 migration from Redis RDB AOF file compatibility documentation",
+          "Valkey Redis persistence format compatibility migration upgrade guide",
+          "Valkey Redis RDB file format compatibility replica upgrade",
+          "Valkey migration guide from Redis 7.4 RDB AOF compatibility documentation"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "source_id": "",
+            "source_title": "Redis 7.4",
+            "evidence_id": "",
+            "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "source_id": "",
+            "source_title": "Redis 7.4",
+            "evidence_id": "",
+            "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Valkey 8",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+            "read_focus": "Compare Redis 7.4 and Valkey 8 persistence options and licensing with official-source quotations.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Redis 7.4",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+            "read_focus": "Compare Redis 7.4 and Valkey 8 persistence options and licensing with official-source quotations.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-587a85161555f89c:dim-fea63638e84f761a",
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "column_key": "dim-fea63638e84f761a",
+            "column_label": "AOF persistence options",
+            "candidate_value": "Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03",
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "column_key": "dim-517aba1fc6eabc03",
+            "column_label": "RDB snapshot options",
+            "candidate_value": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a",
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "column_key": "dim-fea63638e84f761a",
+            "column_label": "AOF persistence options",
+            "candidate_value": "Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714",
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "column_key": "dim-cc1d3b0234846714",
+            "column_label": "License",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "column_key": "dim-7d5c817426e81843",
+            "column_label": "Migration or compatibility notes",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-587a85161555f89c:dim-cc1d3b0234846714",
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "column_key": "dim-cc1d3b0234846714",
+            "column_label": "License",
+            "candidate_value": "Valkey 使用 BSD 3-Clause，仅要求署名。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-587a85161555f89c:dim-517aba1fc6eabc03",
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "column_key": "dim-517aba1fc6eabc03",
+            "column_label": "RDB snapshot options",
+            "candidate_value": "可通过 config set save \"\" 选择性禁用 RDB 快照",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-587a85161555f89c:dim-7d5c817426e81843",
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "column_key": "dim-7d5c817426e81843",
+            "column_label": "Migration or compatibility notes",
+            "candidate_value": "Uses compatible protocol, configuration, and RDB/AOF formats.",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9",
+            "row_id": "entity-9c977e0a4b3ec7a7",
+            "branch_id": "branch-main",
+            "column_key": "dim-ebb89ddcd2bf98c9",
+            "column_label": "Persistence behavior on failure",
+            "candidate_value": "即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9",
+            "row_id": "entity-587a85161555f89c",
+            "branch_id": "branch-main",
+            "column_key": "dim-ebb89ddcd2bf98c9",
+            "column_label": "Persistence behavior on failure",
+            "candidate_value": "AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Valkey 8",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+          "read_focus": "Compare Redis 7.4 and Valkey 8 persistence options and licensing with official-source quotations.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Redis 7.4",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+          "read_focus": "Compare Redis 7.4 and Valkey 8 persistence options and licensing with official-source quotations.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-587a85161555f89c:dim-fea63638e84f761a",
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "column_key": "dim-fea63638e84f761a",
+          "column_label": "AOF persistence options",
+          "candidate_value": "Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "column_key": "dim-517aba1fc6eabc03",
+          "column_label": "RDB snapshot options",
+          "candidate_value": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "column_key": "dim-fea63638e84f761a",
+          "column_label": "AOF persistence options",
+          "candidate_value": "Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "column_key": "dim-cc1d3b0234846714",
+          "column_label": "License",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "column_key": "dim-7d5c817426e81843",
+          "column_label": "Migration or compatibility notes",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-cc1d3b0234846714",
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "column_key": "dim-cc1d3b0234846714",
+          "column_label": "License",
+          "candidate_value": "Valkey 使用 BSD 3-Clause，仅要求署名。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-517aba1fc6eabc03",
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "column_key": "dim-517aba1fc6eabc03",
+          "column_label": "RDB snapshot options",
+          "candidate_value": "可通过 config set save \"\" 选择性禁用 RDB 快照",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-7d5c817426e81843",
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "column_key": "dim-7d5c817426e81843",
+          "column_label": "Migration or compatibility notes",
+          "candidate_value": "Uses compatible protocol, configuration, and RDB/AOF formats.",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "branch_id": "branch-main",
+          "column_key": "dim-ebb89ddcd2bf98c9",
+          "column_label": "Persistence behavior on failure",
+          "candidate_value": "即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9",
+          "row_id": "entity-587a85161555f89c",
+          "branch_id": "branch-main",
+          "column_key": "dim-ebb89ddcd2bf98c9",
+          "column_label": "Persistence behavior on failure",
+          "candidate_value": "AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T13:39:00Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey uses a multi part AOF mechanism. That is, the original single AOF file is split into base file (at most one) and incremental files (there may be more than one).",
+          "claim_text": "Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:93bc95a8ba7b752f0678cd3ce97be5003a289a8d6c1cf34c",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "appendonly yes appendonly yes",
+          "claim_text": "Valkey 通过在配置文件中设置 appendonly yes 来启用 AOF 持久化，会将每个修改数据集的命令追加到 AOF。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:e659ef65f21c7ed31d8b654ecff2f4a6eab304b3c9687fb3",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The suggested (and default) policy is to `fsync` every second.",
+          "claim_text": "Valkey 建议（也是默认）的 AOF 策略是每秒 fsync 一次",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:3c188cc6fc0a437f58b17d8e65ee28c1d5e7858316ab3ae0",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "# AOF loaded anyway because aof-load-truncated is enabled",
+          "claim_text": "aof-load-truncated 启用时，AOF 仍会加载（对应截断日志中的提示）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:b0470e91ce9e0a87cf5934e2dc51acfed882e8ed621b132f",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey supports an interesting feature: it is able to rebuild the AOF in the background without interrupting service to clients. Whenever you issue a `BGREWRITEAOF`, Valkey will write the shortest sequence of commands needed to rebuild the current dataset in memory.",
+          "claim_text": "Valkey 支持通过 BGREWRITEAOF 重写 AOF，在后台生成重建当前数据集所需的最短命令序列。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423",
+          "window_id": "window-3",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 AOF persistence appendfsync appendonly options documentation site:valkey.io",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The latest major versions of Valkey will be able to load the AOF anyway, just discarding the last non well formed command in the file.",
+          "claim_text": "AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d4231d72-a3cf-4d18-8686-3dbb6f428c23/a4cc61f262f5d39a968bafd667054b2fd391863aad442b4d8537a8c11ae046b9"
+        },
+        {
+          "evidence_id": "evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f",
+          "window_id": "window-2",
+          "source_id": "web-7a50f55ddfb459ea",
+          "source_title": "Redis persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence options documentation",
+          "read_focus": "Read external URL Redis persistence | Docs for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Even if the log ends with a half-written command for some reason (disk full or other reasons) the redis-check-aof tool is able to fix it easily.",
+          "claim_text": "即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/933fa35e7c8ae67229a76e522d694ec654db8c013c57da9e74928e2e4d591917"
+        },
+        {
+          "evidence_id": "evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e",
+          "window_id": "window-1",
+          "source_id": "web-a4b56139551b79ea",
+          "source_title": "Configure database persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/rs/7.4/databases/configure/database-persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence options documentation",
+          "read_focus": "Read external URL Configure database persistence | Docs for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Redis supports three fsync policies: every write, every second, and disabled.",
+          "claim_text": "Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/ac8aa3aaa0ec3c5ca7f4b61251045f74fe0677d993d85b53b0f61150341ab43f"
+        },
+        {
+          "evidence_id": "evidence:b55e14c18425716cd7588f706bbcb76cb3a2ba5a034c13fc",
+          "window_id": "window-5",
+          "source_id": "web-e31309532ccedb0c",
+          "source_title": "Durable Redis technology for fast data storage",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/technology/durable-redis/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 AOF appendfsync multi-part AOF rewrite configuration",
+          "read_focus": "Read external URL Durable Redis technology for fast data storage for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Redis uses a multi-part AOF mechanism, wherein the original AOF splits into base and incremental files.",
+          "claim_text": "Redis 采用多部分 AOF 机制，原始 AOF 拆分为基础文件和增量文件。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/3b4ae913a60fb0079ed9f48c8c5c58b67a5ee84d4ff003d14dcad9acccf2ad41"
+        },
+        {
+          "evidence_id": "evidence:fe141e10bbe31d93fb78d8dca2b993d39561e4a722c2ab3d",
+          "window_id": "window-1",
+          "source_id": "web-a4b56139551b79ea",
+          "source_title": "Configure database persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/rs/7.4/databases/configure/database-persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence options documentation",
+          "read_focus": "Read external URL Configure database persistence | Docs for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This is the default Redis policy.",
+          "claim_text": "AOF 每秒 fsync 一次是 Redis 的默认策略。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/70fbfb4b-f9e8-4d80-813a-de9cf312a085/ac8aa3aaa0ec3c5ca7f4b61251045f74fe0677d993d85b53b0f61150341ab43f"
+        },
+        {
+          "evidence_id": "evidence:c3343c2abcb7b00759e8388134014984a2a1a536aab9781a",
+          "window_id": "window-6",
+          "source_id": "web-1563f7ca781c5daf",
+          "source_title": "About RDB persistence | Memorystore for Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.cloud.google.com/memorystore/docs/valkey/about-rdb-persistence",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 RDB snapshot persistence save configuration",
+          "read_focus": "Read external URL About RDB persistence | Memorystore for Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Scheduling snapshots is determined by two settings: the snapshot start time, and the snapshot interval.",
+          "claim_text": "快照调度由快照开始时间和快照间隔两个设置决定",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/093af5e201eda1d0cbc87994ffe2a19b682a853b261a9a0f9acc81c78086796c"
+        },
+        {
+          "evidence_id": "evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2",
+          "window_id": "window-1",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 persistence RDB AOF",
+          "read_focus": "Read external URL Valkey Documentation · Persistence for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Optionally disable RDB: `valkey-cli config set save \"\"`",
+          "claim_text": "可通过 config set save \"\" 选择性禁用 RDB 快照",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/b9159c28e7bad36ed96b1ca3b25859cd8a8abd95ffea6b0d334f104883b8e0bc"
+        },
+        {
+          "evidence_id": "evidence:5e3430ac2936761244e726e5903a242237226cd6f0ac7bca",
+          "window_id": "window-5",
+          "source_id": "web-97eb0a4729db8f66",
+          "source_title": "Enable Valkey persistence - Broadcom TechDocs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://techdocs.broadcom.com/us/en/vmware-tanzu/data-solutions/tanzu-for-valkey-on-kubernetes/3-0/valkey-on-kubernetes/persistence.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 persistence RDB AOF",
+          "read_focus": "Read external URL Enable Valkey persistence - Broadcom TechDocs for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* `rdb`, use this if you want to enable RDB snapshot for persistence.",
+          "claim_text": "可通过 spec.persistence 的 rdb 键启用 RDB 快照",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/b38950879523d70ed98cae2ef8be6e1bbf445438e964b171d828e19177fcf6dd"
+        },
+        {
+          "evidence_id": "evidence:9eee79ef6423b217a8c09c94d14d09e6f46818e2aa34b59c",
+          "window_id": "window-3",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 persistence RDB AOF",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "by copying the most recent on-disk snapshot from the Redis server to Valkey and starting Valkey server with it",
+          "claim_text": "物理迁移可复制 Redis 最近快照到 Valkey，启动时由 Valkey 读取恢复",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/26d3bf565336d72da1dd106a97aa1e6cd7cdc277803a9c9dbdedac3502e701e7"
+        },
+        {
+          "evidence_id": "evidence:b8760df84a2485b7de40d66eb4b284710e00e13ea3053a65",
+          "window_id": "window-3",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 persistence RDB AOF",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Persistence: Valkey reads and writes RDB and AOF files compatible with Redis OSS 7.2.",
+          "claim_text": "Valkey 读写与 Redis OSS 7.2 兼容的 RDB 和 AOF 文件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/26d3bf565336d72da1dd106a97aa1e6cd7cdc277803a9c9dbdedac3502e701e7"
+        },
+        {
+          "evidence_id": "evidence:d65867c2541f2805fe454bf0518bc6a12fc2a67510c54f41",
+          "window_id": "window-6",
+          "source_id": "web-1563f7ca781c5daf",
+          "source_title": "About RDB persistence | Memorystore for Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.cloud.google.com/memorystore/docs/valkey/about-rdb-persistence",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 RDB snapshot persistence save configuration",
+          "read_focus": "Read external URL About RDB persistence | Memorystore for Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To pause snapshots, you must set the start time to the future.",
+          "claim_text": "将开始时间设为未来时间可暂停 RDB 快照",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/093af5e201eda1d0cbc87994ffe2a19b682a853b261a9a0f9acc81c78086796c"
+        },
+        {
+          "evidence_id": "evidence:69f0deb244e7a2e6f4623a9c39c826b205ba4bf73d5229a5",
+          "window_id": "window-3",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 persistence RDB AOF",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "RDB files produced by Redis CE 7.4 and later are not compatible.",
+          "claim_text": "Redis CE 7.4 及之后生成的 RDB 文件与 Valkey 不兼容",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ead09d05-ac98-4750-8d93-1cb04818ff6e/26d3bf565336d72da1dd106a97aa1e6cd7cdc277803a9c9dbdedac3502e701e7"
+        },
+        {
+          "evidence_id": "evidence:194ecfb1049111b456afa631acacce9fea6dae91663783ce",
+          "window_id": "window-1",
+          "source_id": "web-0eb2b7da64fa4580",
+          "source_title": "Licenses",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/legal/licenses/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Licenses for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "managed service providers who used Redis 7.2 and prior versions under the BSD3 license but provided limited contributions",
+          "claim_text": "此前 Redis 7.2 及更早版本使用 BSD3 许可证",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/a4b489ebced514711e3657723b2331eff8cd813d9f9e7e0d8d0454a7d19bc748"
+        },
+        {
+          "evidence_id": "evidence:ce5b4dd7ed4ad3c74e1be968e1e76f5862f62bc7743903ce",
+          "window_id": "window-5",
+          "source_id": "web-f30d4cbcf8235263",
+          "source_title": "Redis Adopts Dual Source-Available Licensing",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/redis-adopts-dual-source-available-licensing/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Redis Adopts Dual Source-Available Licensing for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "RSALv2 is a permissive non-copyleft license, allowing the right to “use, copy, distribute, make available, and prepare derivative works of the software” and has only two primary limitations.",
+          "claim_text": "RSALv2 是非 copyleft 的宽松许可证，但不得将软件商业化或作为托管服务提供",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/f1481d4d8f7e2e5def113013a8fea0cb14aedf10b6a14c3d704ef5a25e70f68e"
+        },
+        {
+          "evidence_id": "evidence:2e9bf2373598fdd97437a8b179158b9b07b9de2baf1e90cc",
+          "window_id": "window-1",
+          "source_id": "web-0eb2b7da64fa4580",
+          "source_title": "Licenses",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/legal/licenses/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Licenses for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If you are switching from an earlier Redis Open Source version (7.2 or earlier) and using the code or artifacts provided by Redis, as-is, the answer is simple again: No.",
+          "claim_text": "从 7.2 或更早版本迁移到更新版本时，若原样使用 Redis 提供的代码或产物则不受影响",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/a4b489ebced514711e3657723b2331eff8cd813d9f9e7e0d8d0454a7d19bc748"
+        },
+        {
+          "evidence_id": "evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128",
+          "window_id": "window-6",
+          "source_id": "web-61e12b9c9cd0f9d8",
+          "source_title": "Redis Persistence and Durability: RDB Snapshots & AOF",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/tutorials/operate/redis-at-scale/persistence-and-durability/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 RDB persistence save points configuration dbfilename",
+          "read_focus": "Read external URL Redis Persistence and Durability: RDB Snapshots & AOF for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.",
+          "claim_text": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/5b06ecf5f2292b1448820e06c37072d213036ba63755944298119d6f3de2dab4"
+        },
+        {
+          "evidence_id": "evidence:556555be1a61098ea79f6bcf4464bba10558795ecefac570",
+          "window_id": "window-1",
+          "source_id": "web-0eb2b7da64fa4580",
+          "source_title": "Licenses",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/legal/licenses/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Licenses for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If you are switching from an earlier Redis Open Source version (7.2 or earlier), using modified code, and it is offered as a network server, the operators of those servers are required to provide the source code of the modified version running there to the users of that server.",
+          "claim_text": "从 7.2 或更早版本迁移且修改了代码并以网络服务形式提供时，运营者需向用户提供修改版源代码",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/a4b489ebced514711e3657723b2331eff8cd813d9f9e7e0d8d0454a7d19bc748"
+        },
+        {
+          "evidence_id": "evidence:d5bc64ced372d8b79b134cb275256bf44856dca87480a98d",
+          "window_id": "window-5",
+          "source_id": "web-f30d4cbcf8235263",
+          "source_title": "Redis Adopts Dual Source-Available Licensing",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/redis-adopts-dual-source-available-licensing/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Redis Adopts Dual Source-Available Licensing for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "version 2](/legal/rsalv2-agreement/) (RSALv2) or the Server Side Public License version 1 (SSPLv1) starting with Redis v7.4 and for all future releases of Redis.",
+          "claim_text": "Redis 7.4 起采用 RSALv2 或 SSPLv1 双许可证",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/f1481d4d8f7e2e5def113013a8fea0cb14aedf10b6a14c3d704ef5a25e70f68e"
+        },
+        {
+          "evidence_id": "evidence:4d9e962368dde4768f9a5f500786e396a63d12269a60dc8d",
+          "window_id": "window-3",
+          "source_id": "web-7a50f55ddfb459ea",
+          "source_title": "Redis persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Redis persistence | Docs for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The latest major versions of Redis will be able to load the AOF anyway, just discarding the last non well formed command in the file.",
+          "claim_text": "默认 AOF fsync 策略下 AOF 可能截断，Redis 最新主版本仍能加载并丢弃最后一条不完整命令",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/933fa35e7c8ae67229a76e522d694ec654db8c013c57da9e74928e2e4d591917"
+        },
+        {
+          "evidence_id": "evidence:e54e505caa74b10aeed72b80e652c011a6496613583e1662",
+          "window_id": "window-1",
+          "source_id": "web-0eb2b7da64fa4580",
+          "source_title": "Licenses",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/legal/licenses/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Licenses for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If you are switching from Redis Community Edition (version 7.4.x or later) or from Redis Stack to Redis 8 the answer is simple: No.",
+          "claim_text": "从 Redis Community Edition（7.4.x 或之后）切换到 Redis 8 无需额外处理",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/a4b489ebced514711e3657723b2331eff8cd813d9f9e7e0d8d0454a7d19bc748"
+        },
+        {
+          "evidence_id": "evidence:0ffcf5e9305949651f6fb558feeb7bee7a6667088dbf86bb",
+          "window_id": "window-5",
+          "source_id": "web-f30d4cbcf8235263",
+          "source_title": "Redis Adopts Dual Source-Available Licensing",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/redis-adopts-dual-source-available-licensing/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 persistence RDB AOF license",
+          "read_focus": "Read external URL Redis Adopts Dual Source-Available Licensing for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To be clear, neither RSALv2 nor SSPL is an OSI-approved license, and each has its restrictions.",
+          "claim_text": "To be clear, neither RSALv2 nor SSPL is an OSI-approved license, and each has its restrictions.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/f1481d4d8f7e2e5def113013a8fea0cb14aedf10b6a14c3d704ef5a25e70f68e"
+        },
+        {
+          "evidence_id": "evidence:6b10b440c82c07a9352e52275c318e2832f932c31fca4387",
+          "window_id": "window-6",
+          "source_id": "web-61e12b9c9cd0f9d8",
+          "source_title": "Redis Persistence and Durability: RDB Snapshots & AOF",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/tutorials/operate/redis-at-scale/persistence-and-durability/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 RDB persistence save points configuration dbfilename",
+          "read_focus": "Read external URL Redis Persistence and Durability: RDB Snapshots & AOF for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In this configuration, Redis uses the AOF for durability during normal operation and can still produce RDB snapshots for backups and faster restarts.",
+          "claim_text": "Redis 同时启用 RDB 与 AOF 时，正常运行时用 AOF 保证持久化，同时仍可生成 RDB 快照用于备份和更快重启。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9b7e7fa8-60b4-48b5-859c-c74b9bbd660a/5b06ecf5f2292b1448820e06c37072d213036ba63755944298119d6f3de2dab4"
+        },
+        {
+          "evidence_id": "evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb",
+          "window_id": "window-3",
+          "source_id": "web-1063ecb36aef7db1",
+          "source_title": "What is Valkey? A comparison with Redis",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/what-is-valkey/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 Redis 7.4 license RSALv2 SSPLv1 官方说明 适用条件",
+          "read_focus": "Read external URL What is Valkey? A comparison with Redis for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey uses BSD 3-Clause, which only requires attribution.",
+          "claim_text": "Valkey 使用 BSD 3-Clause，仅要求署名。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/1467aef1-1de2-4edf-8fc5-7ebd15c79371/df5ef2568b7a18b909398add0cf9596913060c589ef71eb987c0871109128afd"
+        },
+        {
+          "evidence_id": "evidence:fd3ba48deccf9ea01ef64bd41257eb572e4b478769c8ca0d",
+          "window_id": "window-3",
+          "source_id": "web-f30d4cbcf8235263",
+          "source_title": "Redis Adopts Dual Source-Available Licensing",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/redis-adopts-dual-source-available-licensing/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Redis 7.4 Redis 7.4 license RSALv2 SSPLv1 官方说明 适用条件",
+          "read_focus": "Read external URL Redis Adopts Dual Source-Available Licensing for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "(RSALv2) or the Server Side Public License version 1 (SSPLv1) starting with Redis v7.4 and for all future releases of Redis.",
+          "claim_text": "Redis 7.4 起采用 RSALv2 或 SSPLv1 双许可证。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/49ca3192-ba80-4718-bf31-1380bad768f3/f1481d4d8f7e2e5def113013a8fea0cb14aedf10b6a14c3d704ef5a25e70f68e"
+        },
+        {
+          "evidence_id": "evidence:6922bfee2074c053e20517ffa88482cc65f3b8c5c9f642db",
+          "window_id": "window-2",
+          "source_id": "web-c89f265f7681255a",
+          "source_title": "[NEW] Migrate from Redis 7.4.0 to Valkey 7.2.5 · Issue #845",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/valkey-io/valkey/issues/845",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 migration from Redis RDB AOF file compatibility documentation",
+          "read_focus": "Read external URL [NEW] Migrate from Redis 7.4.0 to Valkey 7.2.5 · Issue #845 for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "# Can't handle RDB format version 12",
+          "claim_text": "直接复制 Redis 的 .rdb 文件到 Valkey 启动时出现无法处理 RDB 格式版本的致命错误",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.7,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/2e19e12d4da60e3334301f5d32dd984b5b5d225280bbed770b227f36ebadeff6"
+        },
+        {
+          "evidence_id": "evidence:e14786e34462f8c2246d9aa57a406514b1956973ab0926cf",
+          "window_id": "window-5",
+          "source_id": "web-aa310c75bf753577",
+          "source_title": "Recommendation for Valkey version when migrating from ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/orgs/valkey-io/discussions/4646",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey Redis persistence format compatibility migration upgrade guide",
+          "read_focus": "Read external URL Recommendation for Valkey version when migrating from ... for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "RDB/AOF persistence, Redis Cluster, Sentinel are all in use, no Redis Stack modules.",
+          "claim_text": "迁移场景涉及 RDB/AOF 持久化、Redis Cluster 与 Sentinel 的使用",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.5,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/70111132f140fabdce07e87efb7c7686aedd8b449b18d3fa503439fbb8bf3dca"
+        },
+        {
+          "evidence_id": "evidence:4086ed7613459f35368407506a4b66be6e54a908e8cc98e9",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 migration from Redis RDB AOF file compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "RDB files produced by Redis CE 7.4 and later are not compatible.",
+          "claim_text": "Redis CE 7.4 及之后版本产生的 RDB 文件与 Valkey 不兼容",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.8,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:1433345f210bdbf01809273c1a214ca9594367fc7f1ae09a",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 migration from Redis RDB AOF file compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey reads and writes RDB and AOF files compatible with Redis OSS 7.2.",
+          "claim_text": "Valkey 读写与 Redis OSS 7.2 兼容的 RDB 和 AOF 文件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey 8 migration from Redis RDB AOF file compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Valkey 8. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Uses compatible protocol, configuration, and RDB/AOF formats.",
+          "claim_text": "Uses compatible protocol, configuration, and RDB/AOF formats.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7e0e73d3-9627-4fd4-ace9-961ada50e8dd/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:07271f5063084c8979565bcac92fd5809a5ace86434a2ca0",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey migration guide from Redis 7.4 RDB AOF compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Redis Community Edition (CE) version 7.4 and later produce data files that are not compatible with Valkey.",
+          "claim_text": "Redis CE 7.4 及之后版本产生的数据文件与 Valkey 不兼容。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:872c2e30f01e5ac05f175e9f4a57d3e4b46ff9aebe872241",
+          "window_id": "window-5",
+          "source_id": "web-f41ae138d31b5e66",
+          "source_title": "Best practice for migrating from Redis 7.4 cluster (RDB v12 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/orgs/valkey-io/discussions/3876",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey Redis RDB file format compatibility replica upgrade",
+          "read_focus": "Read external URL Best practice for migrating from Redis 7.4 cluster (RDB v12 ... for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey rejects the RDB v12 file with Can't handle RDB format version 12 .",
+          "claim_text": "Valkey 拒绝 RDB v12 文件并报错 Can't handle RDB format version 12。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/6139012c417b772aa9123985e0aea2392013d7b0053f8f8248c1d28eb2b82fd6"
+        },
+        {
+          "evidence_id": "evidence:0ba830fe3c821f02bbea6710b60bdfbc526fe1dec36cd2e0",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey migration guide from Redis 7.4 RDB AOF compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Valkey reads and writes RDB and AOF files compatible with Redis OSS 7.2. RDB files produced by Redis CE 7.4 and later are not compatible.",
+          "claim_text": "Valkey 读写与 Redis OSS 7.2 兼容的 RDB 和 AOF 文件，而 Redis CE 7.4 及之后产生的 RDB 文件不兼容。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:2e9d9be9aede50001f1ba9d1bfda7927c6a8f5c883310879",
+          "window_id": "window-2",
+          "source_id": "web-c89f265f7681255a",
+          "source_title": "[NEW] Migrate from Redis 7.4.0 to Valkey 7.2.5 · Issue #845",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/valkey-io/valkey/issues/845",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey migration guide from Redis 7.4 RDB AOF compatibility documentation",
+          "read_focus": "Read external URL [NEW] Migrate from Redis 7.4.0 to Valkey 7.2.5 · Issue #845 for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Redis 7.4 is a proprietary data format, so it's not currently on our roadmap to support migrating to Valkey 7.2 or Valkey 8.0.",
+          "claim_text": "Redis 7.4 是专有数据格式，迁移到 Valkey 7.2 或 Valkey 8.0 不在路线图上。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/afbe06c48d35e49e851b3f63e236a5438d5058f46dc74e3981219e687aa116bc"
+        },
+        {
+          "evidence_id": "evidence:baad2cb495b2e7e2058a0f99017428a91996724ab8cd8e60",
+          "window_id": "window-1",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey migration guide from Redis 7.4 RDB AOF compatibility documentation",
+          "read_focus": "Read external URL Documentation: Migration from Redis to Valkey for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| CE 7.4 and later | n/a | Data files are not compatible with Valkey. |",
+          "claim_text": "迁移表中 CE 7.4 及之后版本对应 Valkey 目标为 n/a，数据文件与 Valkey 不兼容。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/e9d3b85d390d3fe0c674df173e9a88b5649daa03ed477190b9c0e336a983bda4"
+        },
+        {
+          "evidence_id": "evidence:81892910d9bed3529de48ad841ffc81576b6bae99a05c408",
+          "window_id": "window-5",
+          "source_id": "web-f41ae138d31b5e66",
+          "source_title": "Best practice for migrating from Redis 7.4 cluster (RDB v12 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/orgs/valkey-io/discussions/3876",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Valkey Redis RDB file format compatibility replica upgrade",
+          "read_focus": "Read external URL Best practice for migrating from Redis 7.4 cluster (RDB v12 ... for claims that answer: 比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。\n\nCurrent Table-as-State entity: Redis 7.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Root cause: Redis 7.4 produces RDB v12 , which Valkey (forked from Redis 7.2.4, RDB v11) cannot parse",
+          "claim_text": "Redis 7.4 产生 RDB v12，从 Redis 7.2.4 fork 的 Valkey（RDB v11）无法解析。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b10604af-4261-4335-9481-19d8462f43d2/6139012c417b772aa9123985e0aea2392013d7b0053f8f8248c1d28eb2b82fd6"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-587a85161555f89c:dim-fea63638e84f761a",
+          "row_id": "entity-587a85161555f89c",
+          "evidence_id": "evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/"
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9",
+          "row_id": "entity-587a85161555f89c",
+          "evidence_id": "evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/"
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "evidence_id": "evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e",
+          "source_id": "web-a4b56139551b79ea",
+          "source_title": "Configure database persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/rs/7.4/databases/configure/database-persistence/"
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "evidence_id": "evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f",
+          "source_id": "web-7a50f55ddfb459ea",
+          "source_title": "Redis persistence | Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/"
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-517aba1fc6eabc03",
+          "row_id": "entity-587a85161555f89c",
+          "evidence_id": "evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2",
+          "source_id": "web-a42bb43bf0c59574",
+          "source_title": "Valkey Documentation · Persistence",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/persistence/"
+        },
+        {
+          "cell_id": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03",
+          "row_id": "entity-9c977e0a4b3ec7a7",
+          "evidence_id": "evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128",
+          "source_id": "web-61e12b9c9cd0f9d8",
+          "source_title": "Redis Persistence and Durability: RDB Snapshots & AOF",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/tutorials/operate/redis-at-scale/persistence-and-durability/"
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-cc1d3b0234846714",
+          "row_id": "entity-587a85161555f89c",
+          "evidence_id": "evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb",
+          "source_id": "web-1063ecb36aef7db1",
+          "source_title": "What is Valkey? A comparison with Redis",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://redis.io/blog/what-is-valkey/"
+        },
+        {
+          "cell_id": "entity-587a85161555f89c:dim-7d5c817426e81843",
+          "row_id": "entity-587a85161555f89c",
+          "evidence_id": "evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611",
+          "source_id": "web-40b5e9a98b34ed59",
+          "source_title": "Documentation: Migration from Redis to Valkey",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://valkey.io/topics/migration/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "7da03db4-61b3-47fc-b2ce-af50dea3e1ad",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 Redis 7.4 与 Valkey 8 的持久化选项和许可证差异，引用官方资料。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T13:35:55Z"
+      },
+      {
+        "trace_id": "ba524c1e-577b-4db5-ac25-4eed1a27c9fc",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 5
+        },
+        "created_at": "2026-10-17T13:36:07Z"
+      },
+      {
+        "trace_id": "ddb670c6-b671-49be-8477-b13d2f798f4d",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T13:41:05Z"
+      }
+    ],
+    "created_at": "2026-10-17T13:35:55Z",
+    "updated_at": "2026-10-17T13:41:05Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:36:57Z",
+          "lease_epoch": 1,
+          "task_id": "79726137-79b2-4e57-81b5-f5f866053566",
+          "task_key": "planning:c29ac850-f285-48d2-afa3-537d8241ce5d",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:38:10Z",
+          "lease_epoch": 1,
+          "task_id": "70fbfb4b-f9e8-4d80-813a-de9cf312a085",
+          "task_key": "deep-cell:2067230e006be40917d6659fcb8d1dd4",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:39:49Z",
+          "lease_epoch": 1,
+          "task_id": "9b7e7fa8-60b4-48b5-859c-c74b9bbd660a",
+          "task_key": "deep-cell:01a045da4163e3849db2fc12c1777647",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:37:55Z",
+          "lease_epoch": 1,
+          "task_id": "d4231d72-a3cf-4d18-8686-3dbb6f428c23",
+          "task_key": "deep-cell:4f2bf71d9d149f458d4e59594166fa9b",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:38:56Z",
+          "lease_epoch": 1,
+          "task_id": "ead09d05-ac98-4750-8d93-1cb04818ff6e",
+          "task_key": "deep-cell:6ffb16659c153b6a493cb5e28c32d99b",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:40:32Z",
+          "lease_epoch": 1,
+          "task_id": "1467aef1-1de2-4edf-8fc5-7ebd15c79371",
+          "task_key": "counterfactual:3afa90ce7a9545d94ace4d4bf4491cae",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:40:32Z",
+          "lease_epoch": 1,
+          "task_id": "49ca3192-ba80-4718-bf31-1380bad768f3",
+          "task_key": "counterfactual:00d394f3c68a27ea57344586be8697da",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:41:26Z",
+          "lease_epoch": 1,
+          "task_id": "7e0e73d3-9627-4fd4-ace9-961ada50e8dd",
+          "task_key": "counterfactual:e229681a8a690297b7d1decb2d1ba7f1",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:41:22Z",
+          "lease_epoch": 1,
+          "task_id": "b10604af-4261-4335-9481-19d8462f43d2",
+          "task_key": "counterfactual:db39f391c3b3535677868459831533aa",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:41:53Z",
+          "lease_epoch": 1,
+          "task_id": "2af1144e-e0ad-4076-bc61-d4ac1f4d7b40",
+          "task_key": "synthesis:ad56c65d5c8cb8d2783809466b63da3e",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "06cea923-adc5-4e15-aa1c-4783a62b0c1a",
+          "cell_key": "entity-587a85161555f89c:dim-fea63638e84f761a",
+          "task_id": "d4231d72-a3cf-4d18-8686-3dbb6f428c23"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "9442a6a0-47fd-4e52-9cd3-afdeaf225ce0",
+          "cell_key": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9",
+          "task_id": "d4231d72-a3cf-4d18-8686-3dbb6f428c23"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "0dff13a0-e416-48d3-a1dc-49b0d3457ffa",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9",
+          "task_id": "70fbfb4b-f9e8-4d80-813a-de9cf312a085"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "27519033-b4bd-4384-b499-d6acbc0ee13f",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a",
+          "task_id": "70fbfb4b-f9e8-4d80-813a-de9cf312a085"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "466915dc-f0ab-4938-9ca9-0c544a6e3b2e",
+          "cell_key": "entity-587a85161555f89c:dim-7d5c817426e81843",
+          "task_id": "ead09d05-ac98-4750-8d93-1cb04818ff6e"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "85ff74fe-5790-4eef-99c2-f9bf4ed64693",
+          "cell_key": "entity-587a85161555f89c:dim-517aba1fc6eabc03",
+          "task_id": "ead09d05-ac98-4750-8d93-1cb04818ff6e"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "02324941-83a2-4612-befb-c6944c74b119",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03",
+          "task_id": "9b7e7fa8-60b4-48b5-859c-c74b9bbd660a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "92b29e0e-7f26-4921-b9f8-a65b869e591b",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714",
+          "task_id": "9b7e7fa8-60b4-48b5-859c-c74b9bbd660a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "de85fb6b-8db6-401c-a0c4-7bdfbb0e66c4",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+          "task_id": "9b7e7fa8-60b4-48b5-859c-c74b9bbd660a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "de5614ed-8038-471b-98ab-91ae327a94a4",
+          "cell_key": "entity-587a85161555f89c:dim-cc1d3b0234846714",
+          "task_id": "1467aef1-1de2-4edf-8fc5-7ebd15c79371"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "a9a33995-68c0-45d7-88b1-fa60d29de02e",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714",
+          "task_id": "49ca3192-ba80-4718-bf31-1380bad768f3"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "f0b7c8d0-1676-4d38-a59d-780a00c5d9b2",
+          "cell_key": "entity-587a85161555f89c:dim-7d5c817426e81843",
+          "task_id": "7e0e73d3-9627-4fd4-ace9-961ada50e8dd"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "43e0b059-6dbe-4789-bc77-ad5a3fe3f1cb",
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+          "task_id": "b10604af-4261-4335-9481-19d8462f43d2"
+        }
+      ],
+      "candidate_count": 13,
+      "task_count": 10,
+      "merge_count": 13,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:7ac9a37f63725b1e88836eb64d6f55fe370ddcb0f3bbf767e0f2d92a92014935",
+          "candidate_id": "9442a6a0-47fd-4e52-9cd3-afdeaf225ce0",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9"
+        },
+        {
+          "merge_id": "merge:92ae2bd320baa532b7e8acea2352099725d37380c06b42c21a7e92c09c6b2c9a",
+          "candidate_id": "06cea923-adc5-4e15-aa1c-4783a62b0c1a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-587a85161555f89c:dim-fea63638e84f761a"
+        },
+        {
+          "merge_id": "merge:029cfd00da03e8759a119df104f837a106bb64ccb88b148138c3acf98e006327",
+          "candidate_id": "27519033-b4bd-4384-b499-d6acbc0ee13f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a"
+        },
+        {
+          "merge_id": "merge:901d22acbaa81f8855764e64f410d8fee58d66010a8b36ebc27365cfd2aa7505",
+          "candidate_id": "0dff13a0-e416-48d3-a1dc-49b0d3457ffa",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9"
+        },
+        {
+          "merge_id": "merge:27338ecc114b6c499be88cfc351b50809be1f90044d4fcf31dea76b498c8de18",
+          "candidate_id": "85ff74fe-5790-4eef-99c2-f9bf4ed64693",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-587a85161555f89c:dim-517aba1fc6eabc03"
+        },
+        {
+          "merge_id": "merge:c3bff52148f57ce137869c68e83ff4762e6f70e870504d35649a28c8d53cb6d2",
+          "candidate_id": "466915dc-f0ab-4938-9ca9-0c544a6e3b2e",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-587a85161555f89c:dim-7d5c817426e81843"
+        },
+        {
+          "merge_id": "merge:2ac4ed57a009d1cc92f53afa95c57027c0e6c0b008b424f7708c3de5a416332b",
+          "candidate_id": "02324941-83a2-4612-befb-c6944c74b119",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03"
+        },
+        {
+          "merge_id": "merge:1c5b361b604fb41d07e8bfd11d2de3ba8aa2b89391ddb207eea48c040f8af423",
+          "candidate_id": "de85fb6b-8db6-401c-a0c4-7bdfbb0e66c4",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843"
+        },
+        {
+          "merge_id": "merge:6b28a878fb5cdb045c57a923ca0b87bc9be44f67f2b2981208f36261ec3190b2",
+          "candidate_id": "92b29e0e-7f26-4921-b9f8-a65b869e591b",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714"
+        },
+        {
+          "merge_id": "merge:08143cb89747ae2571b3956e11c3f2fd024be1631f729f70a5db0b28a439f80d",
+          "candidate_id": "de5614ed-8038-471b-98ab-91ae327a94a4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-587a85161555f89c:dim-cc1d3b0234846714"
+        },
+        {
+          "merge_id": "merge:addb0bded53afac37871b593e4711fc0add9e7fd5ee638190ee28945cafac672",
+          "candidate_id": "a9a33995-68c0-45d7-88b1-fa60d29de02e",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714"
+        },
+        {
+          "merge_id": "merge:fb2e7dfb9cd6ec8cdb48ab98d17340fc9d4839f37517e56a5ad5889140fb8374",
+          "candidate_id": "f0b7c8d0-1676-4d38-a59d-780a00c5d9b2",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-587a85161555f89c:dim-7d5c817426e81843"
+        },
+        {
+          "merge_id": "merge:2dba7917d342382d47446d50f781585ffab6cdb07faa9fd122cef014c61eafdc",
+          "candidate_id": "43e0b059-6dbe-4789-bc77-ad5a3fe3f1cb",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 9,
+          "candidate_high_water_mark": 9
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-587a85161555f89c",
+            "label": "Valkey 8"
+          },
+          {
+            "entity_key": "entity-9c977e0a4b3ec7a7",
+            "label": "Redis 7.4"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-517aba1fc6eabc03",
+            "label": "RDB snapshot options",
+            "description": "What RDB point-in-time snapshot persistence options (save points, scheduling config, enabling/disabling) the release documents.",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-7d5c817426e81843",
+            "label": "Migration or compatibility notes",
+            "description": "What the project says about persistence data formats and migrating persistence data between Redis and Valkey.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-cc1d3b0234846714",
+            "label": "License",
+            "description": "The exact license terms applying to the release and how they differ from prior Redis open-source licensing.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-ebb89ddcd2bf98c9",
+            "label": "Persistence behavior on failure",
+            "description": "How each store behaves on write failure, fsync error, or AOF/RDB load failure, including default fsync policy and error handling.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-fea63638e84f761a",
+            "label": "AOF persistence options",
+            "description": "What append-only-file options (appendfsync modes, appendonly toggle, multi-part AOF, rewrite) the release documents.",
+            "answer_format": "LIST",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Persistence mechanisms (RDB, AOF), failure behavior, and license terms for the two named releases.",
+          "objective": "Compare Redis 7.4 and Valkey 8 persistence options and licensing with official-source quotations.",
+          "exclusions": [
+            "Performance benchmarking",
+            "Cluster/replication internals beyond persistence",
+            "Third-party managed service offerings"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with per-claim exact quote, snapshot and URL citation audit."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "redis.io",
+          "valkey.io",
+          "github.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which persistence options exist and how are they configured?",
+              "What happens when persistence fails?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "What license obligations come with each release?",
+              "Can persistence data be moved between them?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-587a85161555f89c:dim-517aba1fc6eabc03",
+          "entity_label": "Valkey 8",
+          "column_label": "RDB snapshot options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "可通过 config set save \"\" 选择性禁用 RDB 快照",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0fbbb7617497607299b158c1418d65357cc5dd7e283ba9c2",
+              "source_domain": "valkey.io",
+              "claim_text": "可通过 config set save \"\" 选择性禁用 RDB 快照"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-587a85161555f89c:dim-7d5c817426e81843",
+          "entity_label": "Valkey 8",
+          "column_label": "Migration or compatibility notes",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Uses compatible protocol, configuration, and RDB/AOF formats.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:52dc580b84c1fd0d992acdd282e3975e3790a0324f0d0611",
+              "source_domain": "valkey.io",
+              "claim_text": "Uses compatible protocol, configuration, and RDB/AOF formats."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-587a85161555f89c:dim-cc1d3b0234846714",
+          "entity_label": "Valkey 8",
+          "column_label": "License",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Valkey 使用 BSD 3-Clause，仅要求署名。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:35d8b5485342f4f9edcf7ed8dd0c40113cd1a3716f6789cb",
+              "source_domain": "redis.io",
+              "claim_text": "Valkey 使用 BSD 3-Clause，仅要求署名。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-587a85161555f89c:dim-ebb89ddcd2bf98c9",
+          "entity_label": "Valkey 8",
+          "column_label": "Persistence behavior on failure",
+          "cell_status": "VERIFIED",
+          "candidate_value": "AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:070a0277966f997153b9f13658dd132e14f1461413f7b423",
+              "source_domain": "valkey.io",
+              "claim_text": "AOF 最后一条命令可能被截断，最新主要版本仍会加载 AOF 并丢弃最后一条不完整命令"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-587a85161555f89c:dim-fea63638e84f761a",
+          "entity_label": "Valkey 8",
+          "column_label": "AOF persistence options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4b4c5d4f7accb9a27dde07a63ae1f1a0cba81226a08b674f",
+              "source_domain": "valkey.io",
+              "claim_text": "Valkey 采用 multi part AOF 机制，将原始单个 AOF 文件拆分为 base 文件（最多一个）和增量文件。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-517aba1fc6eabc03",
+          "entity_label": "Redis 7.4",
+          "column_label": "RDB snapshot options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:6edfa7ad4d97a9985e485b01aad9cdfc554bce9e2b61a128",
+              "source_domain": "redis.io",
+              "claim_text": "By default, Redis will save a snapshot of your database every hour if at least one key has changed, every five minutes if at least 100 keys have changed, or every 60 seconds if at least 10000 keys have changed."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+          "entity_label": "Redis 7.4",
+          "column_label": "Migration or compatibility notes",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714",
+          "entity_label": "Redis 7.4",
+          "column_label": "License",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-ebb89ddcd2bf98c9",
+          "entity_label": "Redis 7.4",
+          "column_label": "Persistence behavior on failure",
+          "cell_status": "VERIFIED",
+          "candidate_value": "即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d97e82277436d25caac2c83a1a19c63da4b0038e07b6030f",
+              "source_domain": "redis.io",
+              "claim_text": "即使是 AOF 日志结尾存在半写入命令，redis-check-aof 工具也能轻易修复"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9c977e0a4b3ec7a7:dim-fea63638e84f761a",
+          "entity_label": "Redis 7.4",
+          "column_label": "AOF persistence options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c5585c5b386f327f2e06fb059a46d6bdfdeee551df24d93e",
+              "source_domain": "redis.io",
+              "claim_text": "Redis 支持三种 fsync 策略：每次写入、每秒一次和禁用。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 4 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-587a85161555f89c:dim-7d5c817426e81843",
+            "entity-587a85161555f89c:dim-cc1d3b0234846714",
+            "entity-9c977e0a4b3ec7a7:dim-7d5c817426e81843",
+            "entity-9c977e0a4b3ec7a7:dim-cc1d3b0234846714"
+          ],
+          "strategy": "NARROW",
+          "query_count": 8,
+          "created_at": "2026-10-17T13:39:00Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -579,7 +579,10 @@ def _validated_completion_receipt(payload: dict[str, Any],
     if any(reserved[key] != consumed[key] + released[key] for key in _RESERVATION_KEYS):
         raise AgentTaskProtocolError("completion response budget conservation is invalid")
     expected_usage = completion.budget_usage.model_dump(mode="json")
-    if any(consumed[key] != expected_usage[key] for key in expected_usage):
+    # 任务换过租约后，后端把之前租约已授权的工具调用也计入消耗，这四项只要求不少于本次上报值，与后端重放校验一致
+    prior_round_keys = {"search_calls", "fetch_calls", "read_calls", "extract_calls"}
+    if any(consumed[key] < expected_usage[key] if key in prior_round_keys else consumed[key] != expected_usage[key]
+           for key in expected_usage):
         raise AgentTaskProtocolError("completion response worker usage does not match request")
     if (
         evidence_appended != len(completion.evidence)

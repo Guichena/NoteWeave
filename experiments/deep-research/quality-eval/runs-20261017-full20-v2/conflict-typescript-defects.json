@@ -1,0 +1,1521 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-typescript-defects",
+  "run_id": "272a7cad-5cf9-4326-b859-2134349e23d1",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:26:34.058551+00:00",
+  "finished_at": "2026-10-17T14:30:15.269177+00:00",
+  "wall_seconds": 221.2,
+  "run_detail": {
+    "research_run_id": "272a7cad-5cf9-4326-b859-2134349e23d1",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "fd56b57e-9969-41ab-b7b5-572b24ed3913",
+    "question": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+    "final_report_markdown": "# 为 JavaScript 项目引入 TypeScript 是否降低线上缺陷率：不同研究结论的比较\n\n本次核验的资料显示，关于 TypeScript 与 JavaScript 应用软件质量，目前尚缺乏大规模直接比较，动态类型与静态类型的研究结论也不确定；可获得的定量证据方向不一：一项研究认为使用 TypeScript 本可防止 400 个缺陷中的 60 个（15%），另一处资料则称本可多检出 3 个缺陷、相当于约 5% 的漏检，而 TypeScript 2.0 相对 1.8 的严格空值检查被证明可多检出 22 个缺陷、增加 58%。因此现有证据不足以就引入 TypeScript 是否降低线上缺陷率给出确定性结论，且缺少支持性研究项的证据。\n\n## 直接回答\n\n就“引入 TypeScript 是否降低线上缺陷率”这一问题，本次核验的资料并未给出一致答案。已有综述总结认为，现有研究没有对 TypeScript 与 JavaScript 应用软件质量进行大规模比较，动态类型与静态类型之间的研究结论仍不确定；在可获得的定量结果中，一项针对 GitHub 上 398 个 JavaScript 项目缺陷修复提交与问题跟踪数据的研究发现，使用 TypeScript 本可防止所考察 400 个缺陷中的 60 个，占 15%。 [evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc] [evidence:af4b2eefd659c3640de67afee4da9f7809be3220e720430b]\n\n从空值处理这一具体维度看，资料呈现的是局部而非整体结论：有说法称 TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着约 5% 的漏检；另一项结果则显示，在 TypeScript 2.0 下可检出而在 TypeScript 1.8 下检不出的缺陷有 22 个、增加 58%，被描述为严格空值检查价值的定量证明。两者范围不同——前者针对 TypeScript 整体缺陷检出能力，后者仅比较两个版本——不能相互替代，也不足以支撑对线上缺陷率的整体判断。 [evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0] [evidence:3d8b0167332e2e5aa45727e701918622c60dfe0080843053]\n\n## 各研究的定量结果与证据缺口\n\n在定量层面，本次核验的资料记录了若干可比较的数字。一项实证研究收集了 49,375 个已关闭 issue，并从中识别出 9032 个与缺陷报告相关的 issue；按版本看，超过 50% 的历史缺陷出现在 TypeScript 2.y.z 与 3.y.z 这两个主版本中。这些数字刻画的是 TypeScript 项目自身的缺陷分布，而非 JavaScript 项目引入 TypeScript 前后的线上缺陷率变化，因此解读时需限定在这一范围。 [evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01] [evidence:9839f895d01251979f1c30b9cbc226b3ee535611bc0ceae7]\n\n证据充分性方面，资料明确指出尚无研究在大规模上比较 TypeScript 与 JavaScript 应用的质量，动态类型与静态类型的研究结论也不确定；被引用的那项基于 398 个 GitHub JavaScript 项目的研究给出了 15% 的可预防缺陷比例，而空值检查相关的版本对比给出了 58% 的增量检出。两处比例来自不同研究、不同对象与不同比较基准，直接并列并不能得出统一的缺陷率结论。 [evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc] [evidence:af4b2eefd659c3640de67afee4da9f7809be3220e720430b] [evidence:3d8b0167332e2e5aa45727e701918622c60dfe0080843053]\n\n## 方法与条件差异\n\n结论之所以难以统一，与其所依赖的方法和前提有关。资料显示，相关分析采用 Spearman 秩相关与 Kruskal–Wallis 检验，原因是项目指标与各类缺陷计数高度偏斜、不服从正态分布，违背了 Pearson 相关与方差分析的假设；这表明研究者在面对偏态数据时选择了非参数方法。另一处说明则指出，由于映射并非一一对应，直接的定量比较不可行。这两点共同限定了不同研究结果之间能否直接换算或合并的边界。 [evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa] [evidence:0cb02d3586b3917b299e22fc3048af8cf837145832fe29ad]\n\n## 对比表\n\n| 研究/证据的关注点 | 关键结果 | 范围与条件 |\n| --- | --- | --- |\n| 大型直接比较的覆盖情况 | 现有研究未对 TypeScript 与 JavaScript 应用软件质量做大规模比较，动态类型与静态类型结论不确定 | 结论来自综述性总结，未给出统一缺陷率数值 [evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc] |\n| JavaScript 项目缺陷的可预防比例 | 使用 TypeScript 本可防止 400 个缺陷中的 60 个，即 15% | 基于 GitHub 上 398 个 JavaScript 项目的缺陷修复提交与问题跟踪数据 [evidence:af4b2eefd659c3640de67afee4da9f7809be3220e720430b] |\n| 空值处理与缺陷检出 | TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，约 5% 漏检 | 仅针对缺陷检出与空值处理维度 [evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0] |\n| TypeScript 版本间严格空值检查 | 22 个缺陷在 TypeScript 2.0 下可检出而在 1.8 下不可，增加 58% | 仅比较 TypeScript 2.0 与 1.8，不代表整体产品 [evidence:3d8b0167332e2e5aa45727e701918622c60dfe0080843053] |\n| Issue 层面的缺陷分布 | 收集 49,375 个已关闭 issue，识别 9032 个缺陷相关 issue；超过 50% 的历史缺陷出现在 TypeScript 2.y.z 与 3.y.z | TypeScript 项目自身的 issue 与版本分布 [evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01] [evidence:9839f895d01251979f1c30b9cbc226b3ee535611bc0ceae7] |\n| 统计方法前提 | 采用 Spearman 秩相关与 Kruskal–Wallis 检验，因数据高度偏斜非正态；映射非一一对应使直接定量比较不可行 | 限定于所分析的项目指标与缺陷计数 [evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa] [evidence:0cb02d3586b3917b299e22fc3048af8cf837145832fe29ad] |\n\n**核验情况：** 已核验 4 项，未找到足够证据 1 项。\n\n## 结论汇总\n\n| 研究对象 | 支持结论与来源 | 反对或不显著结论与来源 | 方法与条件差异 | 关键定量结果 | 证据充分性与缺口 |\n|---|---|---|---|---|---|\n| TypeScript 引入与线上缺陷率关系研究 | 未找到证据 | TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5% | 因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验 | 实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue | 该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。 |\n\n## 引用核对\n\n### TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%\n\n- 研究项：`TypeScript 引入与线上缺陷率关系研究 · 反对或不显著结论与来源`\n- 候选：`02b69bf1-c1d3-448c-8edf-9479af5abedc`\n- Evidence: `evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0`\n  - Exact quote: “TypeScript could have detected 3 more bugs, which amounts to an increase of around 5%”\n  - Snapshot: `research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/4d72e4f9a95971d81dbe15f3f790ae9226e6fb86165c13922cb692d235866202`\n  - URL: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf\n\n### 该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。\n\n- 研究项：`TypeScript 引入与线上缺陷率关系研究 · 证据充分性与缺口`\n- 候选：`cdcdcaf4-ae52-4ab5-b937-f5d557da427f`\n- Evidence: `evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc`\n  - Exact quote: “In summary, none of the existing studies compare the software quality of TypeScript and JavaScript applications at a large scale, and the results of studies on dynamic vs. static typing are inconclusive.”\n  - Snapshot: `research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/2dd9d7ea80caa33353ff1555e0489643cc96582af4fd6288bace35fbc73e0066`\n  - URL: https://arxiv.org/html/2203.11115v1\n\n### 因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验\n\n- 研究项：`TypeScript 引入与线上缺陷率关系研究 · 方法与条件差异`\n- 候选：`9fa3b9c0-6d8a-40bc-ad23-f65f6082221f`\n- Evidence: `evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa`\n  - Exact quote: “These non-parametric methods were selected because project metrics and per-category bug counts are highly skewed and non-normal, violating the assumptions of Pearson correlation and ANOVA.”\n  - Snapshot: `research/external/a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4/cd0ab5a980025ae0804bd567a0a2d798aa16c6addfacaaee3cca1399d4659b06`\n  - URL: https://arxiv.org/html/2601.21186v1\n\n### 实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue\n\n- 研究项：`TypeScript 引入与线上缺陷率关系研究 · 关键定量结果`\n- 候选：`062057e0-13b5-4622-95b7-3ab9612a912b`\n- Evidence: `evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01`\n  - Exact quote: “In our empirical study, we collected 49,375 closed issues and recognized all the 9032 issues related to bug reports from them.”\n  - Snapshot: `research/external/c432840d-ba9f-453c-83e9-1f02d428e875/cf5b69c15f9ea22190c3f8cd92735962d7b743f1894a5846fc937e013bdac740`\n  - URL: https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X\n\n## 局限与未解决项\n\n- **TypeScript 引入与线上缺陷率关系研究 · 支持结论与来源**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:af4b2eefd659c3640de67afee4da9f7809be3220e720430b`\n  - Exact quote: “They examined the bug fix commits and issue tracking data of 398 JavaScript projects from GitHub. As a result, they found that using TypeScript would have prevented 60 of the 400 bugs they examined (15%).”\n  - Snapshot: `research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/2dd9d7ea80caa33353ff1555e0489643cc96582af4fd6288bace35fbc73e0066`\n  - URL: https://arxiv.org/html/2203.11115v1\n- Evidence: `evidence:3d8b0167332e2e5aa45727e701918622c60dfe0080843053`\n  - Exact quote: “and found that 22 bugs, an increase of 58%, are detectable under TypeScript 2.0 but not under TypeScript 1.8. This result decisively and quantitatively demonstrates the value of TypeScript 2.0’s strict null checking.”\n  - Snapshot: `research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/4d72e4f9a95971d81dbe15f3f790ae9226e6fb86165c13922cb692d235866202`\n  - URL: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf\n- Evidence: `evidence:9839f895d01251979f1c30b9cbc226b3ee535611bc0ceae7`\n  - Exact quote: “More than 50% of historical bugs occur in major versions TypeScript 2.y.z and TypeScript 3.y.z.”\n  - Snapshot: `research/external/c432840d-ba9f-453c-83e9-1f02d428e875/cf5b69c15f9ea22190c3f8cd92735962d7b743f1894a5846fc937e013bdac740`\n  - URL: https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X\n- Evidence: `evidence:0cb02d3586b3917b299e22fc3048af8cf837145832fe29ad`\n  - Exact quote: “Since the mappings are not one-to-one, direct quantitative comparison is infeasible.”\n  - Snapshot: `research/external/a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4/cd0ab5a980025ae0804bd567a0a2d798aa16c6addfacaaee3cca1399d4659b06`\n  - URL: https://arxiv.org/html/2601.21186v1",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/272a7cad-5cf9-4326-b859-2134349e23d1/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 11734,
+      "sha256": "6e69a6729a096833a42f466e691959d6d3ea55f77c0e91ac7c34b0de947382f2"
+    },
+    "research_artifact": {
+      "artifact_id": "272a7cad-5cf9-4326-b859-2134349e23d1",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "272a7cad-5cf9-4326-b859-2134349e23d1",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/272a7cad-5cf9-4326-b859-2134349e23d1/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 11734,
+        "sha256": "6e69a6729a096833a42f466e691959d6d3ea55f77c0e91ac7c34b0de947382f2"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "TypeScript static typing fewer bugs empirical study",
+          "TypeScript defect reduction percentage mining study",
+          "TypeScript JavaScript bug rate study",
+          "TypeScript migration defect rate no significant difference null results",
+          "does TypeScript reduce bugs empirical study JavaScript",
+          "TypeScript adoption bug rate study",
+          "TypeScript 引入与线上缺陷率关系研究 TypeScript 降低缺陷率 研究 数据 primary research limitations",
+          "TypeScript 引入与线上缺陷率关系研究 TypeScript 降低缺陷率 研究 数据 官方说明 适用条件",
+          "TypeScript 引入与线上缺陷率关系研究 TypeScript adoption bug rate methodology comparison 官方说明 适用条件",
+          "TypeScript 引入与线上缺陷率关系研究 TypeScript adoption bug rate methodology comparison primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-eda71108e4795635",
+            "source_id": "",
+            "source_title": "TypeScript 引入与线上缺陷率关系研究",
+            "evidence_id": "",
+            "search_query": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-eda71108e4795635",
+            "source_id": "",
+            "source_title": "TypeScript 引入与线上缺陷率关系研究",
+            "evidence_id": "",
+            "search_query": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "TypeScript 引入与线上缺陷率关系研究",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+            "read_focus": "比较不同研究关于为 JavaScript 项目引入 TypeScript 是否降低线上缺陷率的结论，并解释分歧原因。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-eda71108e4795635:dim-dc0e819e0bfbe528",
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "column_key": "dim-dc0e819e0bfbe528",
+            "column_label": "关键定量结果",
+            "candidate_value": "实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-eda71108e4795635:dim-4a3e113dcbf2140a",
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "column_key": "dim-4a3e113dcbf2140a",
+            "column_label": "反对或不显著结论与来源",
+            "candidate_value": "TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-eda71108e4795635:dim-4c381080eda6abfb",
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "column_key": "dim-4c381080eda6abfb",
+            "column_label": "证据充分性与缺口",
+            "candidate_value": "该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-eda71108e4795635:dim-e7977631a1503747",
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "column_key": "dim-e7977631a1503747",
+            "column_label": "支持结论与来源",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-eda71108e4795635:dim-92e6f5985f02baea",
+            "row_id": "entity-eda71108e4795635",
+            "branch_id": "branch-main",
+            "column_key": "dim-92e6f5985f02baea",
+            "column_label": "方法与条件差异",
+            "candidate_value": "因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "TypeScript 引入与线上缺陷率关系研究",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+          "read_focus": "比较不同研究关于为 JavaScript 项目引入 TypeScript 是否降低线上缺陷率的结论，并解释分歧原因。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-eda71108e4795635:dim-dc0e819e0bfbe528",
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "column_key": "dim-dc0e819e0bfbe528",
+          "column_label": "关键定量结果",
+          "candidate_value": "实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-4a3e113dcbf2140a",
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "column_key": "dim-4a3e113dcbf2140a",
+          "column_label": "反对或不显著结论与来源",
+          "candidate_value": "TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-4c381080eda6abfb",
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "column_key": "dim-4c381080eda6abfb",
+          "column_label": "证据充分性与缺口",
+          "candidate_value": "该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-e7977631a1503747",
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "column_key": "dim-e7977631a1503747",
+          "column_label": "支持结论与来源",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-92e6f5985f02baea",
+          "row_id": "entity-eda71108e4795635",
+          "branch_id": "branch-main",
+          "column_key": "dim-92e6f5985f02baea",
+          "column_label": "方法与条件差异",
+          "candidate_value": "因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:28:45Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:29:56Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:30:02Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:eb2eb055abf3320397aa102a97de24ce67df6ed9402b8f26",
+          "window_id": "window-1",
+          "source_id": "web-931c62151f1dae81",
+          "source_title": "An Empirical Study of Bugs in the TypeScript Ecosystem",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2601.21186v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript static typing fewer bugs empirical study",
+          "read_focus": "Read external URL An Empirical Study of Bugs in the TypeScript Ecosystem for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "While static typing reduces traditional runtime and logic faults, it displaces failure risk upward into orchestration layers.",
+          "claim_text": "静态类型可减少传统的运行时与逻辑故障",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c432840d-ba9f-453c-83e9-1f02d428e875/67312ee9c3cd7c62c4b95c912ad982e921c94239fc77baad316e81b9d75558f0"
+        },
+        {
+          "evidence_id": "evidence:9839f895d01251979f1c30b9cbc226b3ee535611bc0ceae7",
+          "window_id": "window-4",
+          "source_id": "web-4414bd9c3b9df766",
+          "source_title": "An empirical study on bugs in TypeScript programming ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript static typing fewer bugs empirical study",
+          "read_focus": "Read external URL An empirical study on bugs in TypeScript programming ... for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "More than 50% of historical bugs occur in major versions TypeScript 2.y.z and TypeScript 3.y.z.",
+          "claim_text": "超过 50% 的历史缺陷发生在 TypeScript 2.y.z 和 3.y.z 主版本中",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.65,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c432840d-ba9f-453c-83e9-1f02d428e875/cf5b69c15f9ea22190c3f8cd92735962d7b743f1894a5846fc937e013bdac740"
+        },
+        {
+          "evidence_id": "evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01",
+          "window_id": "window-4",
+          "source_id": "web-4414bd9c3b9df766",
+          "source_title": "An empirical study on bugs in TypeScript programming ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript static typing fewer bugs empirical study",
+          "read_focus": "Read external URL An empirical study on bugs in TypeScript programming ... for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In our empirical study, we collected 49,375 closed issues and recognized all the 9032 issues related to bug reports from them.",
+          "claim_text": "实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c432840d-ba9f-453c-83e9-1f02d428e875/cf5b69c15f9ea22190c3f8cd92735962d7b743f1894a5846fc937e013bdac740"
+        },
+        {
+          "evidence_id": "evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0",
+          "window_id": "window-2",
+          "source_id": "web-74d3427247618ff2",
+          "source_title": "Quantifying Detectable Bugs in JavaScript",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript adoption bug rate study",
+          "read_focus": "Read external URL Quantifying Detectable Bugs in JavaScript for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "TypeScript could have detected 3 more bugs, which amounts to an increase of around 5%",
+          "claim_text": "TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/4d72e4f9a95971d81dbe15f3f790ae9226e6fb86165c13922cb692d235866202"
+        },
+        {
+          "evidence_id": "evidence:3d8b0167332e2e5aa45727e701918622c60dfe0080843053",
+          "window_id": "window-2",
+          "source_id": "web-74d3427247618ff2",
+          "source_title": "Quantifying Detectable Bugs in JavaScript",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript adoption bug rate study",
+          "read_focus": "Read external URL Quantifying Detectable Bugs in JavaScript for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "and found that 22 bugs, an increase of 58%, are detectable under TypeScript 2.0 but not under TypeScript 1.8. This result decisively and quantitatively demonstrates the value of TypeScript 2.0’s strict null checking.",
+          "claim_text": "Gao 等的同行评审论文用定量结果支持 TypeScript 的缺陷检测价值：在 TypeScript 2.0 下可检测的缺陷比 1.8 多 22 个，增加 58%。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/4d72e4f9a95971d81dbe15f3f790ae9226e6fb86165c13922cb692d235866202"
+        },
+        {
+          "evidence_id": "evidence:af4b2eefd659c3640de67afee4da9f7809be3220e720430b",
+          "window_id": "window-3",
+          "source_id": "web-ae7205e29a91b2e5",
+          "source_title": "To Type or Not to Type? A Systematic Comparison of ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2203.11115v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript migration defect rate no significant difference null results",
+          "read_focus": "Read external URL To Type or Not to Type? A Systematic Comparison of ... for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "They examined the bug fix commits and issue tracking data of 398 JavaScript projects from GitHub.\nAs a result, they found that using TypeScript would have prevented 60 of the 400 bugs they examined (15%).",
+          "claim_text": "现有研究多为间接证据：Gao 等基于 398 个 JavaScript 项目的缺陷修复提交估计，若使用 TypeScript 可预防 400 个缺陷中的 60 个（15%），但并非对 TS 应用与 JS 应用的直接对比。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/2dd9d7ea80caa33353ff1555e0489643cc96582af4fd6288bace35fbc73e0066"
+        },
+        {
+          "evidence_id": "evidence:65852b33e2979c817be2d10048b6beca331c83ee479be5a2",
+          "window_id": "window-4",
+          "source_id": "web-4414bd9c3b9df766",
+          "source_title": "An empirical study on bugs in TypeScript programming ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "does TypeScript reduce bugs empirical study JavaScript",
+          "read_focus": "Read external URL An empirical study on bugs in TypeScript programming ... for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "After the filtering, 8814 unduplicated and fixed bug reports were identified as research subjects.",
+          "claim_text": "该研究分析的是 TypeScript 语言实现自身的 8814 个历史 bug 报告，缺陷对象是语言实现而非使用 TypeScript 的项目线上缺陷，指标定义与目标问题不同。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.45,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/cf5b69c15f9ea22190c3f8cd92735962d7b743f1894a5846fc937e013bdac740"
+        },
+        {
+          "evidence_id": "evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc",
+          "window_id": "window-3",
+          "source_id": "web-ae7205e29a91b2e5",
+          "source_title": "To Type or Not to Type? A Systematic Comparison of ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2203.11115v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript migration defect rate no significant difference null results",
+          "read_focus": "Read external URL To Type or Not to Type? A Systematic Comparison of ... for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In summary, none of the existing studies compare the software quality of TypeScript and JavaScript applications at a large scale, and the results of studies on dynamic vs. static typing are inconclusive.",
+          "claim_text": "该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/2dd9d7ea80caa33353ff1555e0489643cc96582af4fd6288bace35fbc73e0066"
+        },
+        {
+          "evidence_id": "evidence:1da27147317b584e332b547fc0313896f9639c2aee653b41",
+          "window_id": "window-2",
+          "source_id": "web-74d3427247618ff2",
+          "source_title": "Quantifying Detectable Bugs in JavaScript",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript adoption bug rate study",
+          "read_focus": "Read external URL Quantifying Detectable Bugs in JavaScript for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "TypeScript could have detected 3 more bugs, which amounts to an increase of around 5%.",
+          "claim_text": "同一研究也承认 TypeScript 的 null 处理存在缺口：将可能为 undefined 或 null 的值与 string 拼接时 TypeScript 不报错，因此可能漏检约 3 个缺陷（约 5%），说明证据并非单向利好。",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.4,
+          "conflict_score": 0.6,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8d5d2011-d30c-4286-b5d5-c27ca7901c23/4d72e4f9a95971d81dbe15f3f790ae9226e6fb86165c13922cb692d235866202"
+        },
+        {
+          "evidence_id": "evidence:60432eda9638347de3b20899e321416e0823526968ecae35",
+          "window_id": "window-4",
+          "source_id": "web-c2f3559a39de2aca",
+          "source_title": "简介// Deepkit Enterprise TypeScript Framework",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://deepkit.io/zh/documentation/introduction",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript 引入与线上缺陷率关系研究 TypeScript 降低缺陷率 研究 数据 官方说明 适用条件",
+          "read_focus": "Read external URL 简介// Deepkit Enterprise TypeScript Framework for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "TypeScript 将静态类型的力量带入了 JavaScript，大幅减少运行时错误，使代码库更易于维护和理解。",
+          "claim_text": "Deepkit 文档称 TypeScript 将静态类型的力量带入 JavaScript，大幅减少运行时错误。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.4,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/48eba17c-b2e5-40d9-8d20-cf2721425cf6/3e32253b667b8cd4664e718fcd25f74fc9baa1b6fd7035d3d03e0860d4507c2c"
+        },
+        {
+          "evidence_id": "evidence:63b60f760d1dea9ee280abf7e64a8a9e15803589c04e416f",
+          "window_id": "window-3",
+          "source_id": "web-62d33d4584ce962c",
+          "source_title": "为JavaScript 程序员准备的TypeScript",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.typescriptlang.org/zh/docs/handbook/typescript-in-5-minutes.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript 引入与线上缺陷率关系研究 TypeScript 降低缺陷率 研究 数据 官方说明 适用条件",
+          "read_focus": "Read external URL 为JavaScript 程序员准备的TypeScript for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "TypeScript 的主要好处是，它可以检查代码中的意外行为，从而降低出现错误的机会。",
+          "claim_text": "TypeScript 官方文档称其类型系统可以检查代码中的意外行为，从而降低出现错误的机会。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.5,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/48eba17c-b2e5-40d9-8d20-cf2721425cf6/8c351f10aa9b258a2bdd3a4346c3b6a08c44db0a93ca9629d6226df44aa02ffc"
+        },
+        {
+          "evidence_id": "evidence:0cb02d3586b3917b299e22fc3048af8cf837145832fe29ad",
+          "window_id": "window-3",
+          "source_id": "web-931c62151f1dae81",
+          "source_title": "An Empirical Study of Bugs in the TypeScript Ecosystem",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2601.21186v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript 引入与线上缺陷率关系研究 TypeScript adoption bug rate methodology comparison primary research limitations",
+          "read_focus": "Read external URL An Empirical Study of Bugs in the TypeScript Ecosystem for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Since the mappings are not one-to-one, direct quantitative comparison is infeasible.",
+          "claim_text": "该研究因类别映射并非一一对应，判定无法直接做定量比较，仅估算最大对应占比",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4/cd0ab5a980025ae0804bd567a0a2d798aa16c6addfacaaee3cca1399d4659b06"
+        },
+        {
+          "evidence_id": "evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa",
+          "window_id": "window-3",
+          "source_id": "web-931c62151f1dae81",
+          "source_title": "An Empirical Study of Bugs in the TypeScript Ecosystem",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2601.21186v1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "TypeScript 引入与线上缺陷率关系研究 TypeScript adoption bug rate methodology comparison primary research limitations",
+          "read_focus": "Read external URL An Empirical Study of Bugs in the TypeScript Ecosystem for claims that answer: 为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。\n\nCurrent Table-as-State entity: TypeScript 引入与线上缺陷率关系研究. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "These non-parametric methods were selected because project metrics and per-category bug counts are highly skewed and non-normal, violating the assumptions of Pearson correlation and ANOVA.",
+          "claim_text": "因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4/cd0ab5a980025ae0804bd567a0a2d798aa16c6addfacaaee3cca1399d4659b06"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-eda71108e4795635:dim-dc0e819e0bfbe528",
+          "row_id": "entity-eda71108e4795635",
+          "evidence_id": "evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01",
+          "source_id": "web-4414bd9c3b9df766",
+          "source_title": "An empirical study on bugs in TypeScript programming ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.sciencedirect.com/science/article/abs/pii/S016412122500113X"
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-4c381080eda6abfb",
+          "row_id": "entity-eda71108e4795635",
+          "evidence_id": "evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc",
+          "source_id": "web-ae7205e29a91b2e5",
+          "source_title": "To Type or Not to Type? A Systematic Comparison of ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2203.11115v1"
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-4a3e113dcbf2140a",
+          "row_id": "entity-eda71108e4795635",
+          "evidence_id": "evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0",
+          "source_id": "web-74d3427247618ff2",
+          "source_title": "Quantifying Detectable Bugs in JavaScript",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.microsoft.com/en-us/research/wp-content/uploads/2017/09/gao2017javascript.pdf"
+        },
+        {
+          "cell_id": "entity-eda71108e4795635:dim-92e6f5985f02baea",
+          "row_id": "entity-eda71108e4795635",
+          "evidence_id": "evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa",
+          "source_id": "web-931c62151f1dae81",
+          "source_title": "An Empirical Study of Bugs in the TypeScript Ecosystem",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://arxiv.org/html/2601.21186v1"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "4d803718-89b4-40c7-b6d9-34fac243d2c9",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "为 JavaScript 项目引入 TypeScript 是否降低了线上缺陷率？比较不同研究的结论。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:26:34Z"
+      },
+      {
+        "trace_id": "8c9cd420-3dbb-46df-8ba2-eec57ec0ff97",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 5
+        },
+        "created_at": "2026-10-17T14:26:45Z"
+      },
+      {
+        "trace_id": "3f388832-1e94-4b1f-8b18-a8e9fb7a4c82",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T14:30:13Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:26:34Z",
+    "updated_at": "2026-10-17T14:30:13Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:27:35Z",
+          "lease_epoch": 1,
+          "task_id": "98ccbb2a-773a-47db-b92c-be383174a926",
+          "task_key": "planning:272a7cad-5cf9-4326-b859-2134349e23d1",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:29:33Z",
+          "lease_epoch": 1,
+          "task_id": "8d5d2011-d30c-4286-b5d5-c27ca7901c23",
+          "task_key": "deep-cell:40548823f4004d7e7a9a271e0afdef82",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:28:32Z",
+          "lease_epoch": 1,
+          "task_id": "c432840d-ba9f-453c-83e9-1f02d428e875",
+          "task_key": "deep-cell:b9fc5fb32d74c69f9c948b3a8528e5ce",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:30:17Z",
+          "lease_epoch": 1,
+          "task_id": "48eba17c-b2e5-40d9-8d20-cf2721425cf6",
+          "task_key": "counterfactual:feba115cc2ed66c6f2bca91abccfaa5c",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:30:50Z",
+          "lease_epoch": 1,
+          "task_id": "a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4",
+          "task_key": "counterfactual:025890be921dba8396de047a80184364",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:30:57Z",
+          "lease_epoch": 1,
+          "task_id": "81d47d05-4769-4772-abea-9092751ff7fe",
+          "task_key": "counterfactual:3cc454bd0d723883b769058bdccdc11f",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:31:02Z",
+          "lease_epoch": 1,
+          "task_id": "34c40cfd-6c01-4033-8d27-c818f1dd712a",
+          "task_key": "synthesis:1c16c491b2bc360a6bc3f3604e998986",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "062057e0-13b5-4622-95b7-3ab9612a912b",
+          "cell_key": "entity-eda71108e4795635:dim-dc0e819e0bfbe528",
+          "task_id": "c432840d-ba9f-453c-83e9-1f02d428e875"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "ca752c49-ea31-46ac-813f-0d47c5e8d9b6",
+          "cell_key": "entity-eda71108e4795635:dim-e7977631a1503747",
+          "task_id": "c432840d-ba9f-453c-83e9-1f02d428e875"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "02b69bf1-c1d3-448c-8edf-9479af5abedc",
+          "cell_key": "entity-eda71108e4795635:dim-4a3e113dcbf2140a",
+          "task_id": "8d5d2011-d30c-4286-b5d5-c27ca7901c23"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "cdcdcaf4-ae52-4ab5-b937-f5d557da427f",
+          "cell_key": "entity-eda71108e4795635:dim-4c381080eda6abfb",
+          "task_id": "8d5d2011-d30c-4286-b5d5-c27ca7901c23"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "9fa3b9c0-6d8a-40bc-ad23-f65f6082221f",
+          "cell_key": "entity-eda71108e4795635:dim-92e6f5985f02baea",
+          "task_id": "a40ddce0-76f4-45cd-bb0a-5ad9ef382bb4"
+        }
+      ],
+      "candidate_count": 5,
+      "task_count": 7,
+      "merge_count": 5,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:28518b3f7119f2a9a4248c907fa8c90b274efa8c289205e05b49202e1f67aac6",
+          "candidate_id": "ca752c49-ea31-46ac-813f-0d47c5e8d9b6",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-eda71108e4795635:dim-e7977631a1503747"
+        },
+        {
+          "merge_id": "merge:53f6f6f5431bee88234acc24cc8f5635b8f87c372ec6cc91cd219c1d69374826",
+          "candidate_id": "062057e0-13b5-4622-95b7-3ab9612a912b",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-eda71108e4795635:dim-dc0e819e0bfbe528"
+        },
+        {
+          "merge_id": "merge:b3a1847cd02b949701ae18544fbc25c22a81602fcd8d9d7a0f895b632720674d",
+          "candidate_id": "cdcdcaf4-ae52-4ab5-b937-f5d557da427f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-eda71108e4795635:dim-4c381080eda6abfb"
+        },
+        {
+          "merge_id": "merge:889ec449a8f85062641e1da93230c7550d07ed7fb5a3890b4af3949fde719713",
+          "candidate_id": "02b69bf1-c1d3-448c-8edf-9479af5abedc",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-eda71108e4795635:dim-4a3e113dcbf2140a"
+        },
+        {
+          "merge_id": "merge:cb94bfc07bb940aba03c2a9fe1013dbf303fe38d2a1b3dc7885ccd861f957569",
+          "candidate_id": "9fa3b9c0-6d8a-40bc-ad23-f65f6082221f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-eda71108e4795635:dim-92e6f5985f02baea"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 3,
+          "merge_high_water_mark": 4,
+          "candidate_high_water_mark": 4
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 6,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-eda71108e4795635",
+            "label": "TypeScript 引入与线上缺陷率关系研究"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-4a3e113dcbf2140a",
+            "label": "反对或不显著结论与来源",
+            "description": "哪些研究发现缺陷率无显著改善、改善有限或成本 outweigh 收益，及其出处。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-4c381080eda6abfb",
+            "label": "证据充分性与缺口",
+            "description": "现有证据的整体可信度、来源类型（厂商宣称 vs 同行评审 vs 社区调查）以及尚缺的证据。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-92e6f5985f02baea",
+            "label": "方法与条件差异",
+            "description": "解释各研究结论分歧的方法差异，如样本项目、指标定义、缺陷来源（运行时 vs 编译期）、迁移时间窗口与混杂因素。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-dc0e819e0bfbe528",
+            "label": "关键定量结果",
+            "description": "研究中报告的具体数字，如缺陷率下降百分比、样本量与统计显著性。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e7977631a1503747",
+            "label": "支持结论与来源",
+            "description": "哪些研究或数据给出 TypeScript 降低线上缺陷率（或减少缺陷）的正向结论及其出处。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "公开研究、厂商统计与系统综述中关于 TypeScript 采用与缺陷率的关系。",
+          "objective": "比较不同研究关于为 JavaScript 项目引入 TypeScript 是否降低线上缺陷率的结论，并解释分歧原因。",
+          "exclusions": [
+            "TypeScript 语言特性教程",
+            "TypeScript 与 JavaScript 性能基准",
+            "非缺陷率相关的开发者偏好调查"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "microsoft.com",
+          "dl.acm.org",
+          "ieeexplore.ieee.org",
+          "arxiv.org",
+          "jetbrains.com"
+        ],
+        "perspectives": [
+          {
+            "name": "实施工程师",
+            "questions": [
+              "哪些项目实测显示了缺陷变化？",
+              "指标如何定义和采集？"
+            ]
+          },
+          {
+            "name": "决策者",
+            "questions": [
+              "现有证据是否足以支撑引入 TypeScript 的决策？",
+              "主要分歧和风险在哪？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-eda71108e4795635:dim-4a3e113dcbf2140a",
+          "entity_label": "TypeScript 引入与线上缺陷率关系研究",
+          "column_label": "反对或不显著结论与来源",
+          "cell_status": "VERIFIED",
+          "candidate_value": "TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:702db4e80c66c9a5db3c0aa019773799007fa130427910b0",
+              "source_domain": "microsoft.com",
+              "claim_text": "TypeScript 在 null 处理上存在弱点，本可多检出 3 个缺陷，意味着漏检约 5%"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-eda71108e4795635:dim-4c381080eda6abfb",
+          "entity_label": "TypeScript 引入与线上缺陷率关系研究",
+          "column_label": "证据充分性与缺口",
+          "cell_status": "VERIFIED",
+          "candidate_value": "该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:cdcb68be2d148c7326fa67a9a5afc8751a8731cec5a4eabc",
+              "source_domain": "arxiv.org",
+              "claim_text": "该综述指出，关于动态类型与静态类型的研究结论尚不确定，且缺乏对 TypeScript 与 JavaScript 应用软件质量的大规模直接比较。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-eda71108e4795635:dim-92e6f5985f02baea",
+          "entity_label": "TypeScript 引入与线上缺陷率关系研究",
+          "column_label": "方法与条件差异",
+          "cell_status": "VERIFIED",
+          "candidate_value": "因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f81fb6479e2580c74c233f34df4bf6262010d711f031fcaa",
+              "source_domain": "arxiv.org",
+              "claim_text": "因项目指标与各类缺陷计数高度偏斜非正态，采用 Spearman 秩相关与 Kruskal–Wallis 检验"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-eda71108e4795635:dim-dc0e819e0bfbe528",
+          "entity_label": "TypeScript 引入与线上缺陷率关系研究",
+          "column_label": "关键定量结果",
+          "cell_status": "VERIFIED",
+          "candidate_value": "实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:cbf648d025452d995a9ac2cc1df1625a78ce62d9289a2d01",
+              "source_domain": "sciencedirect.com",
+              "claim_text": "实证研究收集了 49,375 个已关闭 issue，识别出 9032 个与缺陷报告相关的 issue"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-eda71108e4795635:dim-e7977631a1503747",
+          "entity_label": "TypeScript 引入与线上缺陷率关系研究",
+          "column_label": "支持结论与来源",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-eda71108e4795635:dim-92e6f5985f02baea",
+            "entity-eda71108e4795635:dim-e7977631a1503747"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 4,
+          "created_at": "2026-10-17T14:28:45Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-eda71108e4795635:dim-e7977631a1503747"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 0,
+          "created_at": "2026-10-17T14:29:56Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -1,0 +1,2051 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-vite-webpack-hmr",
+  "run_id": "57bebe87-06e3-4a60-afd9-ee634ceb9666",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T13:41:07.642387+00:00",
+  "finished_at": "2026-10-17T13:45:59.233074+00:00",
+  "wall_seconds": 291.6,
+  "run_detail": {
+    "research_run_id": "57bebe87-06e3-4a60-afd9-ee634ceb9666",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "2af548fb-455d-4f5b-bf9d-780c1e916587",
+    "question": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+    "final_report_markdown": "# Vite 与 webpack 的开发服务器与热更新机制比较\n\n本次核验的资料显示，两者在热更新机制上都采用模块级更新边界：webpack 通过 check 请求更新清单并用 apply 将更新模块标记为 invalid、向上冒泡查找 accept 处理器，Vite 则用 import.meta.hot.accept 定义 HMR 边界。在开发服务器上，webpack-dev-server 编译后不写入输出文件，而是把 bundle 保存在内存中并按真实文件路径提供；Vite 开发服务器可通过 warmup 在启动前预转换并缓存文件，以改善初次页面加载并防止转换瀑布。更新无法被接受时，webpack 中止该次更新并让应用继续运行旧代码，dev server 会将其转为整页刷新；Vite 则允许自接受模块调用 hot.invalidate() 将更新强制传播给导入方。\n\n## 直接回答\n\n在热更新机制上，webpack 的运行时通过 check 请求更新清单，再由 apply 将更新模块标记为 invalid，并逐层向上冒泡查找 accept 处理器；更新只下载变更部分，且会与当前已加载的 chunk 列表进行比对。Vite 一侧则以模块是否“接受”热更新来划分边界，接受更新的模块称为 HMR 边界，自接受模块使用 import.meta.hot.accept 并提供回调，且该调用在源码中须以 import.meta.hot.accept( 的形式出现才能生效。 [evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1] [evidence:5805d58ba0ed172cfb640b12cb5bf814d27c4b2a4b11b58f] [evidence:7085865ccf3f6b6778b0cdf751f099c486100726dc5ed59c] [evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161] [evidence:89c89225037133664357c672145c486d31e9e88e56940403]\n\n在开发服务器架构上，webpack-dev-server 编译后不会写出任何输出文件，而是将 bundle 文件保存在内存中，并像挂载在服务器根路径下的真实文件一样提供访问，其内部借助 webpack-dev-middleware 将 webpack 处理的文件发送给服务器。Vite 方面，本次核验的资料显示其开发服务器支持 warmup，提前转换并缓存文件，从而改善服务器启动期间的初始页面加载并防止转换瀑布。 [evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b] [evidence:5635347d38b0e57e225a599dbdb950513f760fed6c158bb2] [evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea]\n\n当更新无法被接受时，webpack 的流程会中止：若冒泡到达入口仍未找到接受者，更新会附带指出无人接受的文件名而失败，应用继续运行旧代码，dev server 会将其转化为整页刷新；构建过旧、没有匹配更新文件的客户端会收到失败请求并回退到整页刷新。Vite 则提供不同的失效路径：自接受模块若在运行时发现无法处理某次 HMR 更新，可调用 hot.invalidate() 让更新被强制传播给导入方。 [evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15] [evidence:e1019b8a6df1ee77d6467cc3f7e5e3d31956065e87990027] [evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59]\n\n## 配置方式与生态支撑\n\nwebpack 的热更新配置需要注意开关的使用：dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不能与 webpack.config.js 中的同一插件同时使用，否则插件会被添加两次而破坏配置。资料还列出了热替换需要的几项要素，包括 records、全局启用热替换插件、代码中的 module.hot.accept 以及 module.hot.check、module.hot.apply 等管理代码，并指出模块系统运行时会额外生成跟踪父子关系的代码。 [evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4] [evidence:70ec0650ab497967a361d93f50bed7267bbb1fcc59eb817f] [evidence:e52b470206fb42e7f2e3a8cccc6b884541345886bc53c683] [evidence:68a91ca9455e5495a406c13b3d7348e28a86311b05d31dbf]\n\nVite 的 HMR 事件由开发服务器自动派发，模块可以通过 hot.on(event, cb) 监听事件，例如在更新即将应用时的 'vite:beforeUpdate'；此外，开发服务器还支持将浏览器运行时事件转发到 Vite 服务器控制台等能力。 [evidence:037311c8c579de365bf21c094b53e71e532011be7915f092] [evidence:d600248c6b1a61a1c2b767218140fe2315e79084346d89aa] [evidence:5c208ec51a4a5f96139c06100b3d8258819f7a0a9a6e1647] [evidence:09880e36d917d21299122662fdcc5fb69f7edf601e17a1e5]\n\n## 性能相关说明\n\n关于更新成本，webpack 文档指出增量编译允许编译器只重建发生变化的代码，因此热重载的重构建耗时并不等同于完整构建。Vite 的资料则强调 warmup 的作用在于提前转换并缓存，以改善服务器启动期间的首次页面加载，同时提醒只添加频繁使用的文件，以免在启动时给开发服务器带来过大负担。 [evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040] [evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55] [evidence:7c1c9dc48d71ea4c00fc711885062bb07ed10a26ae2a6361]\n\n## 对比表\n\n| 对比维度 | webpack | Vite |\n| --- | --- | --- |\n| 热更新机制 | 运行时通过 check 请求更新清单，apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器，更新与已加载 chunk 比对 | 以“接受”更新的模块作为 HMR 边界，自接受模块通过 import.meta.hot.accept 提供回调，源码须以 import.meta.hot.accept( 形式出现 [evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1] [evidence:5805d58ba0ed172cfb640b12cb5bf814d27c4b2a4b11b58f] [evidence:7085865ccf3f6b6778b0cdf751f099c486100726dc5ed59c] [evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161] [evidence:89c89225037133664357c672145c486d31e9e88e56940403] |\n| 开发服务器架构 | 不写出输出文件，将 bundle 保存在内存中并按真实文件路径提供，内部使用 webpack-dev-middleware | 开发服务器支持 warmup，启动前预转换并缓存文件，改善初始加载并防止转换瀑布 [evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b] [evidence:5635347d38b0e57e225a599dbdb950513f760fed6c158bb2] [evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea] |\n| 更新失败与回退 | 冒泡至入口仍未接受则中止更新并保留旧代码，dev server 转为整页刷新 | 自接受模块可通过 hot.invalidate() 将无法处理的更新强制传播给导入方 [evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15] [evidence:e1019b8a6df1ee77d6467cc3f7e5e3d31956065e87990027] [evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59] |\n| 配置与生态 | --hot 会添加 HotModuleReplacementPlugin，不可与配置文件中同一插件同时使用，否则插件被添加两次 | 服务器自动派发 HMR 事件，模块可用 hot.on(event, cb) 监听，如 'vite:beforeUpdate' [evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4] [evidence:70ec0650ab497967a361d93f50bed7267bbb1fcc59eb817f] [evidence:037311c8c579de365bf21c094b53e71e532011be7915f092] [evidence:d600248c6b1a61a1c2b767218140fe2315e79084346d89aa] |\n| 启动与更新性能 | 增量编译允许只重建变化代码，热重载重构建耗时不等于完整构建 | warmup 提前转换并缓存以改善启动期间初始加载，需仅添加频繁使用的文件 [evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040] [evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55] [evidence:7c1c9dc48d71ea4c00fc711885062bb07ed10a26ae2a6361] |\n\n## Citation audit\n\n### webpack · HMR mechanism\n\n- Evidence: `evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1`\n- Exact quote: “The `apply` method flags all updated modules as invalid. For each invalid module, there needs to be an update handler in the module or in its parent(s).”\n- Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n- URL: https://webpack.js.org/concepts/hot-module-replacement/\n\n### webpack · Startup and update performance\n\n- Evidence: `evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040`\n- Exact quote: “Incremental compilation is a different technique that allows the compiler to rebuild only the code that has changed.”\n- Snapshot: `research/external/1f54543a-489e-47fd-bf27-4bec7cfde899/b9c3e58ac700ad0e7e4ab351f4f2d36d9707621bcc3925c2b4058bd40b744022`\n- URL: https://dev.to/yakovlev_alexey/webpack-on-demand-compilation-how-to-speed-up-dev-mode-of-legacy-webpack-applications-1ec0\n\n### webpack · Configuration and ecosystem\n\n- Evidence: `evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4`\n- Exact quote: “The `--hot` switch enables hot code replacement.<br><br>> This adds the `HotModuleReplacementPlugin`. Make sure to use either the `--hot` flag, or the `HotModuleReplacementPlugin` in your `webpack.config.js`, but never both at the same time as in that case, the HMR plugin will actually be added twice, breaking the setup.”\n- Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9`\n- URL: https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack\n\n### webpack · Failure and fallback behaviour\n\n- Evidence: `evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15`\n- Exact quote: “If it bubbles up from an entry point, the process fails — the update is aborted with a message naming the file that nobody accepted, and the application is left running its old code. This is what a dev server turns into a full page reload.”\n- Snapshot: `research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n- URL: https://webpack.js.org/concepts/hot-module-replacement/\n\n### webpack · Dev server architecture\n\n- Evidence: `evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b`\n- Exact quote: “webpack-dev-server doesn't write any output files after compiling. Instead, it keeps bundle files in memory and serves them as if they were real files mounted at the server's root path.”\n- Snapshot: `research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/88dc6056e8962ab37fb5c072b8ecef721910a0d22460759ef130e89b1e0e2be6`\n- URL: https://webpack.js.org/guides/development/\n\n### Vite · HMR mechanism\n\n- Evidence: `evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161`\n- Exact quote: “A module that \"accepts\" hot updates is considered an **HMR boundary**.”\n- Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n- URL: https://vite.dev/guide/api-hmr\n\n### Vite · Startup and update performance\n\n- Evidence: `evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55`\n- Exact quote: “Warm up files to transform and cache the results in advance. This improves the initial page load during server starts and prevents transform waterfalls.”\n- Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad`\n- URL: https://vite.dev/config/server-options\n\n### Vite · Configuration and ecosystem\n\n- Evidence: `evidence:037311c8c579de365bf21c094b53e71e532011be7915f092`\n- Exact quote: “## `hot.on(event, cb)` [​](#hot-on-event-cb)<br><br>Listen to an HMR event.”\n- Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n- URL: https://vite.dev/guide/api-hmr\n\n### Vite · Failure and fallback behaviour\n\n- Evidence: `evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59`\n- Exact quote: “A self-accepting module may realize during runtime that it can't handle a HMR update, and so the update needs to be forcefully propagated to importers.”\n- Snapshot: `research/external/4f7db9d1-e68b-4120-b4cd-1b788b5acba7/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n- URL: https://vite.dev/guide/api-hmr\n\n### Vite · Dev server architecture\n\n- Evidence: `evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea`\n- Exact quote: “Warm up files to transform and cache the results in advance. This improves the initial page load during server starts and prevents transform waterfalls.”\n- Snapshot: `research/external/4f7db9d1-e68b-4120-b4cd-1b788b5acba7/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad`\n- URL: https://vite.dev/config/server-options\n\n## 补充引用\n\n- Evidence: `evidence:5805d58ba0ed172cfb640b12cb5bf814d27c4b2a4b11b58f`\n  - Exact quote: “If it bubbles up from an entry point, the process fails — the update is aborted with a message naming the file that nobody accepted, and the application is left running its old code. This is what a dev server turns into a full page reload.”\n  - Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n  - URL: https://webpack.js.org/concepts/hot-module-replacement/\n- Evidence: `evidence:7085865ccf3f6b6778b0cdf751f099c486100726dc5ed59c`\n  - Exact quote: “If it succeeds, the list of updated chunks is compared to the list of currently loaded chunks.”\n  - Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n  - URL: https://webpack.js.org/concepts/hot-module-replacement/\n- Evidence: `evidence:89c89225037133664357c672145c486d31e9e88e56940403`\n  - Exact quote: “Vite requires that the call to this function appears as `import.meta.hot.accept(` (whitespace-sensitive) in the source code in order for the module to accept update.”\n  - Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n  - URL: https://vite.dev/guide/api-hmr\n- Evidence: `evidence:5635347d38b0e57e225a599dbdb950513f760fed6c158bb2`\n  - Exact quote: “`webpack-dev-middleware` is a wrapper that will emit files processed by webpack to a server. This is used in `webpack-dev-server` internally”\n  - Snapshot: `research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/88dc6056e8962ab37fb5c072b8ecef721910a0d22460759ef130e89b1e0e2be6`\n  - URL: https://webpack.js.org/guides/development/\n- Evidence: `evidence:e1019b8a6df1ee77d6467cc3f7e5e3d31956065e87990027`\n  - Exact quote: “A client whose build is too old to have a matching update file gets a failed request, falls back to a full reload, and picks up the current bundle.”\n  - Snapshot: `research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n  - URL: https://webpack.js.org/concepts/hot-module-replacement/\n- Evidence: `evidence:70ec0650ab497967a361d93f50bed7267bbb1fcc59eb817f`\n  - Exact quote: “To use hot code replacement with webpack you need four things:  * records (`--records-path`, `recordsPath: ...`) * globally enable hot code replacement (`HotModuleReplacementPlugin`) * hot replacement code in your code `module.hot.accept` * hot replacement management code in your code `module.hot.check`, `module.hot.apply`”\n  - Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9`\n  - URL: https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack\n- Evidence: `evidence:e52b470206fb42e7f2e3a8cccc6b884541345886bc53c683`\n  - Exact quote: “See the [HMR API page](/api/hot-module-replacement) for details on the `module.hot` interface, and the [HMR guide](/guides/hot-module-replacement) for worked examples.”\n  - Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n  - URL: https://webpack.js.org/concepts/hot-module-replacement/\n- Evidence: `evidence:68a91ca9455e5495a406c13b3d7348e28a86311b05d31dbf`\n  - Exact quote: “For the module system runtime, additional code is emitted to track module `parents` and `children`. On the management side, the runtime supports two methods: `check` and `apply`.”\n  - Snapshot: `research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812`\n  - URL: https://webpack.js.org/concepts/hot-module-replacement/\n- Evidence: `evidence:d600248c6b1a61a1c2b767218140fe2315e79084346d89aa`\n  - Exact quote: “* `'vite:beforeUpdate'` when an update is about to be applied (e.g. a module will be replaced)”\n  - Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n  - URL: https://vite.dev/guide/api-hmr\n- Evidence: `evidence:5c208ec51a4a5f96139c06100b3d8258819f7a0a9a6e1647`\n  - Exact quote: “Warm up files to transform and cache the results in advance.”\n  - Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad`\n  - URL: https://vite.dev/config/server-options\n- Evidence: `evidence:09880e36d917d21299122662fdcc5fb69f7edf601e17a1e5`\n  - Exact quote: “Forward browser runtime events to the Vite server console during development.”\n  - Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad`\n  - URL: https://vite.dev/config/server-options\n- Evidence: `evidence:7c1c9dc48d71ea4c00fc711885062bb07ed10a26ae2a6361`\n  - Exact quote: “Make sure to only add files that are frequently used to not overload the Vite dev server on startup.”\n  - Snapshot: `research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad`\n  - URL: https://vite.dev/config/server-options\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/57bebe87-06e3-4a60-afd9-ee634ceb9666/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 17495,
+      "sha256": "1c2796c8a396ca8e4d7bddc65326af9172d15f59ba3232c3320428481070aec1"
+    },
+    "research_artifact": {
+      "artifact_id": "57bebe87-06e3-4a60-afd9-ee634ceb9666",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "57bebe87-06e3-4a60-afd9-ee634ceb9666",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/57bebe87-06e3-4a60-afd9-ee634ceb9666/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 17495,
+        "sha256": "1c2796c8a396ca8e4d7bddc65326af9172d15f59ba3232c3320428481070aec1"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "webpack Hot Module Replacement concept implementation official docs",
+          "Vite HMR development server official documentation",
+          "Vite HMR native ESM module graph hot update official docs",
+          "webpack dev server hot module replacement",
+          "webpack-dev-server in-memory compilation bundle official docs",
+          "webpack HMR not accepted full page reload errors official docs",
+          "webpack-dev-server in-memory bundle compilation HMR full reload",
+          "Vite dev server HMR documentation",
+          "Vite HMR full reload fallback error overlay",
+          "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "webpack hot module replacement",
+          "webpack dev server cold start build time performance",
+          "webpack Vite instant server start on-demand compilation official docs primary research limitations",
+          "webpack Vite instant server start on-demand compilation official docs 官方说明 适用条件"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "webpack",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "read_focus": "Produce a citation-backed comparison of Vite and webpack development servers and HMR mechanisms using official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Vite",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "read_focus": "Produce a citation-backed comparison of Vite and webpack development servers and HMR mechanisms using official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-b5bc4c93bda3e259",
+            "column_label": "Failure and fallback behaviour",
+            "candidate_value": "当 HMR 更新无法被接受时，流程中止，应用继续运行旧代码，dev server 会将其转为整页刷新。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-009b907cd16ed671",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-009b907cd16ed671",
+            "column_label": "HMR mechanism",
+            "candidate_value": "自接受模块使用 import.meta.hot.accept 并提供接收更新模块的回调；接受热更新的模块称为 HMR 边界。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-032922743e1cb373",
+            "column_label": "Startup and update performance",
+            "candidate_value": "Webpack 默认支持增量编译，热重载的重构建耗时不等于完整构建。",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-ccfb2d97babf20ba",
+            "column_label": "Dev server architecture",
+            "candidate_value": "webpack-dev-server 编译后不写入输出文件，而是将 bundle 文件保存在内存中并像真实文件一样提供访问。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-032922743e1cb373",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-032922743e1cb373",
+            "column_label": "Startup and update performance",
+            "candidate_value": "warmup 预转换并缓存文件，提升服务器启动期间的初始页面加载",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-280cae009e723a26",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-280cae009e723a26",
+            "column_label": "Configuration and ecosystem",
+            "candidate_value": "Vite 自动派发 HMR 事件，模块可通过 hot.on(event, cb) 监听",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:037311c8c579de365bf21c094b53e71e532011be7915f092"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-280cae009e723a26",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-280cae009e723a26",
+            "column_label": "Configuration and ecosystem",
+            "candidate_value": "dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不要与 webpack.config.js 中的该插件同时使用，否则插件会被添加两次。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-b5bc4c93bda3e259",
+            "column_label": "Failure and fallback behaviour",
+            "candidate_value": "无法处理 HMR 更新的自接受模块可调用 hot.invalidate() 将更新强制传播给导入方",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-ccfb2d97babf20ba",
+            "column_label": "Dev server architecture",
+            "candidate_value": "Vite 开发服务器在启动时预热文件以提前转换并缓存结果，从而改善初次页面加载并防止转换瀑布。",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-009b907cd16ed671",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-009b907cd16ed671",
+            "column_label": "HMR mechanism",
+            "candidate_value": "webpack 运行时通过 check 请求更新清单，用 apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "read_focus": "Produce a citation-backed comparison of Vite and webpack development servers and HMR mechanisms using official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Vite",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "read_focus": "Produce a citation-backed comparison of Vite and webpack development servers and HMR mechanisms using official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-b5bc4c93bda3e259",
+          "column_label": "Failure and fallback behaviour",
+          "candidate_value": "当 HMR 更新无法被接受时，流程中止，应用继续运行旧代码，dev server 会将其转为整页刷新。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-009b907cd16ed671",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-009b907cd16ed671",
+          "column_label": "HMR mechanism",
+          "candidate_value": "自接受模块使用 import.meta.hot.accept 并提供接收更新模块的回调；接受热更新的模块称为 HMR 边界。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-032922743e1cb373",
+          "column_label": "Startup and update performance",
+          "candidate_value": "Webpack 默认支持增量编译，热重载的重构建耗时不等于完整构建。",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-ccfb2d97babf20ba",
+          "column_label": "Dev server architecture",
+          "candidate_value": "webpack-dev-server 编译后不写入输出文件，而是将 bundle 文件保存在内存中并像真实文件一样提供访问。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-032922743e1cb373",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-032922743e1cb373",
+          "column_label": "Startup and update performance",
+          "candidate_value": "warmup 预转换并缓存文件，提升服务器启动期间的初始页面加载",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-280cae009e723a26",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-280cae009e723a26",
+          "column_label": "Configuration and ecosystem",
+          "candidate_value": "Vite 自动派发 HMR 事件，模块可通过 hot.on(event, cb) 监听",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:037311c8c579de365bf21c094b53e71e532011be7915f092"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-280cae009e723a26",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-280cae009e723a26",
+          "column_label": "Configuration and ecosystem",
+          "candidate_value": "dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不要与 webpack.config.js 中的该插件同时使用，否则插件会被添加两次。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-b5bc4c93bda3e259",
+          "column_label": "Failure and fallback behaviour",
+          "candidate_value": "无法处理 HMR 更新的自接受模块可调用 hot.invalidate() 将更新强制传播给导入方",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-ccfb2d97babf20ba",
+          "column_label": "Dev server architecture",
+          "candidate_value": "Vite 开发服务器在启动时预热文件以提前转换并缓存结果，从而改善初次页面加载并防止转换瀑布。",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-009b907cd16ed671",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-009b907cd16ed671",
+          "column_label": "HMR mechanism",
+          "candidate_value": "webpack 运行时通过 check 请求更新清单，用 apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T13:45:04Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:7c1c9dc48d71ea4c00fc711885062bb07ed10a26ae2a6361",
+          "window_id": "window-1",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL Server Options for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Make sure to only add files that are frequently used to not overload the Vite dev server on startup.",
+          "claim_text": "只添加频繁使用的文件，避免拖慢 Vite 开发服务器启动",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad"
+        },
+        {
+          "evidence_id": "evidence:037311c8c579de365bf21c094b53e71e532011be7915f092",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "## `hot.on(event, cb)` [​](#hot-on-event-cb)\n\nListen to an HMR event.",
+          "claim_text": "Vite 自动派发 HMR 事件，模块可通过 hot.on(event, cb) 监听",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:d600248c6b1a61a1c2b767218140fe2315e79084346d89aa",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* `'vite:beforeUpdate'` when an update is about to be applied (e.g. a module will be replaced)",
+          "claim_text": "Vite 自动派发 'vite:beforeUpdate' 事件，在更新即将应用时触发",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:38727515fada6567e5eb79c1a7eb978b5efb2ec8afed5b9b",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Vite's HMR does not actually swap the originally imported module: if an HMR boundary module re-exports imports from a dep, then it is responsible for updating those re-exports",
+          "claim_text": "Vite 的 HMR 并不真正替换最初导入的模块，边界模块需自行更新其再导出的依赖；边界之上的导入者不会被通知变更。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A module that \"accepts\" hot updates is considered an **HMR boundary**.",
+          "claim_text": "自接受模块使用 import.meta.hot.accept 并提供接收更新模块的回调；接受热更新的模块称为 HMR 边界。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55",
+          "window_id": "window-1",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL Server Options for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Warm up files to transform and cache the results in advance. This improves the initial page load during server starts and prevents transform waterfalls.",
+          "claim_text": "warmup 预转换并缓存文件，提升服务器启动期间的初始页面加载",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad"
+        },
+        {
+          "evidence_id": "evidence:5c208ec51a4a5f96139c06100b3d8258819f7a0a9a6e1647",
+          "window_id": "window-1",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL Server Options for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Warm up files to transform and cache the results in advance.",
+          "claim_text": "Vite 提供 server.warmup 配置，预转换并缓存常用文件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad"
+        },
+        {
+          "evidence_id": "evidence:09880e36d917d21299122662fdcc5fb69f7edf601e17a1e5",
+          "window_id": "window-1",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL Server Options for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Forward browser runtime events to the Vite server console during development.",
+          "claim_text": "Vite 的 server.forwardConsole 可在开发期间把浏览器运行时事件转发到服务器控制台",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad"
+        },
+        {
+          "evidence_id": "evidence:89c89225037133664357c672145c486d31e9e88e56940403",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR development server official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Vite requires that the call to this function appears as `import.meta.hot.accept(` (whitespace-sensitive) in the source code in order for the module to accept update.",
+          "claim_text": "Vite 通过静态分析识别 HMR，要求源码中必须以 import.meta.hot.accept( 形式出现（对空白敏感）。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e5fdb7c6-81d4-4a91-ba18-79435bd26342/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:5635347d38b0e57e225a599dbdb950513f760fed6c158bb2",
+          "window_id": "window-3",
+          "source_id": "web-76ae5120d6fa15c7",
+          "source_title": "Development",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/development/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack-dev-server in-memory compilation bundle official docs",
+          "read_focus": "Read external URL Development for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`webpack-dev-middleware` is a wrapper that will emit files processed by webpack to a server. This is used in `webpack-dev-server` internally",
+          "claim_text": "webpack-dev-middleware 是一个将 webpack 处理后的文件发送到服务器的包装器，webpack-dev-server 内部使用它。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/88dc6056e8962ab37fb5c072b8ecef721910a0d22460759ef130e89b1e0e2be6"
+        },
+        {
+          "evidence_id": "evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b",
+          "window_id": "window-3",
+          "source_id": "web-76ae5120d6fa15c7",
+          "source_title": "Development",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/development/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack-dev-server in-memory compilation bundle official docs",
+          "read_focus": "Read external URL Development for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "webpack-dev-server doesn't write any output files after compiling. Instead, it keeps bundle files in memory and serves them as if they were real files mounted at the server's root path.",
+          "claim_text": "webpack-dev-server 编译后不写入输出文件，而是将 bundle 文件保存在内存中并像真实文件一样提供访问。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/88dc6056e8962ab37fb5c072b8ecef721910a0d22460759ef130e89b1e0e2be6"
+        },
+        {
+          "evidence_id": "evidence:e1019b8a6df1ee77d6467cc3f7e5e3d31956065e87990027",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server hot module replacement",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A client whose build is too old to have a matching update file gets a failed request, falls back to a full reload, and picks up the current bundle.",
+          "claim_text": "客户端构建过旧、没有匹配的更新文件时会请求失败，回退到整页刷新并获取当前 bundle。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.93,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server hot module replacement",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If it bubbles up from an entry point, the process fails — the update is aborted with a message naming the file that nobody accepted, and the application is left running its old code. This is what a dev server turns into a full page reload.",
+          "claim_text": "当 HMR 更新无法被接受时，流程中止，应用继续运行旧代码，dev server 会将其转为整页刷新。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:71c02e0fb32381b16863636838bf79b6a12e9a60421f301e",
+          "window_id": "window-2",
+          "source_id": "web-20c52b6b8a6281d5",
+          "source_title": "DevServer",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/configuration/dev-server/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server hot module replacement",
+          "read_focus": "Read external URL DevServer for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Shows a full-screen overlay in the browser when there are compiler errors or warnings.",
+          "claim_text": "overlay 选项在出现编译错误或警告时于浏览器显示全屏覆盖层。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a1c8ff2-3f52-4b2b-909a-a538db95f39b/eb0707b71e808ff18f51d5f8a2123aae73f770f9976885ec0a5816b1dcec09fb"
+        },
+        {
+          "evidence_id": "evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59",
+          "window_id": "window-3",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite dev server HMR documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A self-accepting module may realize during runtime that it can't handle a HMR update, and so the update needs to be forcefully propagated to importers.",
+          "claim_text": "无法处理 HMR 更新的自接受模块可调用 hot.invalidate() 将更新强制传播给导入方",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4f7db9d1-e68b-4120-b4cd-1b788b5acba7/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea",
+          "window_id": "window-1",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite dev server HMR documentation",
+          "read_focus": "Read external URL Server Options for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Warm up files to transform and cache the results in advance. This improves the initial page load during server starts and prevents transform waterfalls.",
+          "claim_text": "Vite 开发服务器在启动时预热文件以提前转换并缓存结果，从而改善初次页面加载并防止转换瀑布。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4f7db9d1-e68b-4120-b4cd-1b788b5acba7/f8fc496e813d92cff9fb6482cab8c0320e82194474cf769f4763262d0f8de2ad"
+        },
+        {
+          "evidence_id": "evidence:982cd72752969ec7a828859ac0f2b4167269b59c865f8421",
+          "window_id": "window-5",
+          "source_id": "web-13e6db269d8abad8",
+          "source_title": "How We Reduced Startup Time by 80% With Webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rudderstack.com/blog/how-we-reduced-startup-time-by-80-with-webpack/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server cold start build time performance",
+          "read_focus": "Read external URL How We Reduced Startup Time by 80% With Webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| Server ready | Same as cold start | 1 | 97 to 98 |",
+          "claim_text": "服务器就绪时间与冷启动相同，经优化后为 1 秒，提升 97% 到 98%",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/5b7157695958315d2590c624d29bd68671b61b6e57ec7b5de95f5723a685471d"
+        },
+        {
+          "evidence_id": "evidence:e52b470206fb42e7f2e3a8cccc6b884541345886bc53c683",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "See the [HMR API page](/api/hot-module-replacement) for details on the `module.hot` interface, and the [HMR guide](/guides/hot-module-replacement) for worked examples.",
+          "claim_text": "webpack HMR 通过 module.hot 接口（含 accept）配置 HMR 边界，运行时用 check 和 apply 方法管理更新。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:68a91ca9455e5495a406c13b3d7348e28a86311b05d31dbf",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For the module system runtime, additional code is emitted to track module `parents` and `children`. On the management side, the runtime supports two methods: `check` and `apply`.",
+          "claim_text": "webpack 运行时为支持 HMR 额外生成跟踪模块 parents 和 children 的代码，并提供 check 和 apply 管理方法。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:7085865ccf3f6b6778b0cdf751f099c486100726dc5ed59c",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If it succeeds, the list of updated chunks is compared to the list of currently loaded chunks.",
+          "claim_text": "运行时跟踪模块的 parents 和 children，check 成功后比较更新的 chunk 列表与已加载 chunk 列表。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:5cf202ce7edbec923c36ef2070cba531a236a337089c8ea6",
+          "window_id": "window-3",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The updates respect your Code Splitting and only download updates for the changed parts of your app.",
+          "claim_text": "HMR 更新尊重代码分割，只下载发生变化部分的更新。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9"
+        },
+        {
+          "evidence_id": "evidence:1c4bf924b5858f712ca2bed9217efc2eecdc0c71b72b7102",
+          "window_id": "window-5",
+          "source_id": "web-13e6db269d8abad8",
+          "source_title": "How We Reduced Startup Time by 80% With Webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rudderstack.com/blog/how-we-reduced-startup-time-by-80-with-webpack/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server cold start build time performance",
+          "read_focus": "Read external URL How We Reduced Startup Time by 80% With Webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "With efficient caching, subsequent builds are faster, resulting in better DX and shorter deployment windows.",
+          "claim_text": "借助高效缓存，后续构建更快，带来更好的开发体验和更短的部署窗口",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/5b7157695958315d2590c624d29bd68671b61b6e57ec7b5de95f5723a685471d"
+        },
+        {
+          "evidence_id": "evidence:3073a2d18cfbb356db69f3163432bab74e273439e6c0db92",
+          "window_id": "window-5",
+          "source_id": "web-13e6db269d8abad8",
+          "source_title": "How We Reduced Startup Time by 80% With Webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rudderstack.com/blog/how-we-reduced-startup-time-by-80-with-webpack/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server cold start build time performance",
+          "read_focus": "Read external URL How We Reduced Startup Time by 80% With Webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| Cold start build time | 40 to 90 | 9 to 13 | 77 to 85 |",
+          "claim_text": "冷启动构建时间从 40 到 90 秒降至 9 到 13 秒，提升 77% 到 85%",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/5b7157695958315d2590c624d29bd68671b61b6e57ec7b5de95f5723a685471d"
+        },
+        {
+          "evidence_id": "evidence:5805d58ba0ed172cfb640b12cb5bf814d27c4b2a4b11b58f",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If it bubbles up from an entry point, the process fails — the update is aborted with a message naming the file that nobody accepted, and the application is left running its old code. This is what a dev server turns into a full page reload.",
+          "claim_text": "更新冒泡到入口点且无人 accept 时，更新被中止，开发服务器将其转为整页刷新。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1",
+          "window_id": "window-1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL Hot Module Replacement for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The `apply` method flags all updated modules as invalid. For each invalid module, there needs to be an update handler in the module or in its parent(s).",
+          "claim_text": "webpack 运行时通过 check 请求更新清单，用 apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/44b055c0d1669caed94350915da58efa9cff5da7c1580dbd493fc1ab2d104812"
+        },
+        {
+          "evidence_id": "evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4",
+          "window_id": "window-3",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The `--hot` switch enables hot code replacement.\n\n> This adds the `HotModuleReplacementPlugin`. Make sure to use either the `--hot` flag, or the `HotModuleReplacementPlugin` in your `webpack.config.js`, but never both at the same time as in that case, the HMR plugin will actually be added twice, breaking the setup.",
+          "claim_text": "dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不要与 webpack.config.js 中的该插件同时使用，否则插件会被添加两次。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9"
+        },
+        {
+          "evidence_id": "evidence:7fb79d1acd5db1bef16ad6a3aa79ee68983e27bab20e1632",
+          "window_id": "window-5",
+          "source_id": "web-13e6db269d8abad8",
+          "source_title": "How We Reduced Startup Time by 80% With Webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rudderstack.com/blog/how-we-reduced-startup-time-by-80-with-webpack/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack dev server cold start build time performance",
+          "read_focus": "Read external URL How We Reduced Startup Time by 80% With Webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| Hot restart time | Impossible | 0,5 to 0,9 | ∞ |",
+          "claim_text": "| Hot restart time | Impossible | 0,5 to 0,9 | ∞ |",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/5b7157695958315d2590c624d29bd68671b61b6e57ec7b5de95f5723a685471d"
+        },
+        {
+          "evidence_id": "evidence:70ec0650ab497967a361d93f50bed7267bbb1fcc59eb817f",
+          "window_id": "window-3",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Hot Module Replacement concepts HMR runtime module.hot accept",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To use hot code replacement with webpack you need four things:\n\n* records (`--records-path`, `recordsPath: ...`)\n* globally enable hot code replacement (`HotModuleReplacementPlugin`)\n* hot replacement code in your code `module.hot.accept`\n* hot replacement management code in your code `module.hot.check`, `module.hot.apply`",
+          "claim_text": "使用 webpack HMR 需全局启用 HotModuleReplacementPlugin，并在代码中写 module.hot.accept 以及 module.hot.check、module.hot.apply。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/115ae8ca-54d5-45d1-b12b-c5780a960488/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9"
+        },
+        {
+          "evidence_id": "evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040",
+          "window_id": "window-5",
+          "source_id": "web-f303e3703214cbe4",
+          "source_title": "Webpack On-Demand Compilation: How to Speed up ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dev.to/yakovlev_alexey/webpack-on-demand-compilation-how-to-speed-up-dev-mode-of-legacy-webpack-applications-1ec0",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack Vite instant server start on-demand compilation official docs 官方说明 适用条件",
+          "read_focus": "Read external URL Webpack On-Demand Compilation: How to Speed up ... for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Incremental compilation is a different technique that allows the compiler to rebuild only the code that has changed.",
+          "claim_text": "Webpack 默认支持增量编译，热重载的重构建耗时不等于完整构建。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/1f54543a-489e-47fd-bf27-4bec7cfde899/b9c3e58ac700ad0e7e4ab351f4f2d36d9707621bcc3925c2b4058bd40b744022"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-032922743e1cb373",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-280cae009e723a26",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:037311c8c579de365bf21c094b53e71e532011be7915f092",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-009b907cd16ed671",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b",
+          "source_id": "web-76ae5120d6fa15c7",
+          "source_title": "Development",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/development/"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea",
+          "source_id": "web-ae9dd90908fcc4f1",
+          "source_title": "Server Options",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/config/server-options"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-280cae009e723a26",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-009b907cd16ed671",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1",
+          "source_id": "web-8920e3386bcae518",
+          "source_title": "Hot Module Replacement",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/hot-module-replacement/"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040",
+          "source_id": "web-f303e3703214cbe4",
+          "source_title": "Webpack On-Demand Compilation: How to Speed up ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dev.to/yakovlev_alexey/webpack-on-demand-compilation-how-to-speed-up-dev-mode-of-legacy-webpack-applications-1ec0"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "ab2ea7d7-d764-4d60-992c-51ed582ad818",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T13:41:07Z"
+      },
+      {
+        "trace_id": "2f3d00c4-0012-4595-910f-dd4cea6850cc",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 5
+        },
+        "created_at": "2026-10-17T13:41:20Z"
+      },
+      {
+        "trace_id": "5dcfdb69-0f25-4b56-a63a-1ed53b0f8c31",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+        "payload": {
+          "cell_count": 10
+        },
+        "created_at": "2026-10-17T13:45:55Z"
+      }
+    ],
+    "created_at": "2026-10-17T13:41:07Z",
+    "updated_at": "2026-10-17T13:45:55Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:42:08Z",
+          "lease_epoch": 1,
+          "task_id": "cedfb8ec-fc3f-48a0-8b87-f599b453ad14",
+          "task_key": "planning:57bebe87-06e3-4a60-afd9-ee634ceb9666",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:45:56Z",
+          "lease_epoch": 1,
+          "task_id": "115ae8ca-54d5-45d1-b12b-c5780a960488",
+          "task_key": "deep-cell:9658575c06be98ef0e69fb6339d6dcf8",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:44:09Z",
+          "lease_epoch": 1,
+          "task_id": "2a1c8ff2-3f52-4b2b-909a-a538db95f39b",
+          "task_key": "deep-cell:167a5bafafe524208cdda8cb36b5ebf5",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:44:05Z",
+          "lease_epoch": 1,
+          "task_id": "4f7db9d1-e68b-4120-b4cd-1b788b5acba7",
+          "task_key": "deep-cell:1987d248a029d1bccde891ed65ca13bf",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:43:07Z",
+          "lease_epoch": 1,
+          "task_id": "e5fdb7c6-81d4-4a91-ba18-79435bd26342",
+          "task_key": "deep-cell:8a88ff26296f052351e6391381c7522f",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:46:35Z",
+          "lease_epoch": 1,
+          "task_id": "1f54543a-489e-47fd-bf27-4bec7cfde899",
+          "task_key": "counterfactual:77c1a8391f07099a3fa5a517b43427fc",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:46:41Z",
+          "lease_epoch": 1,
+          "task_id": "5a0dcbb3-64a7-4190-b0f9-4a0377f62b63",
+          "task_key": "synthesis:99bd31219f305eb13b5baebb0137b05d",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "0adcc066-c95f-4d66-a36c-1150edafc9ad",
+          "cell_key": "entity-b16efac145e9242c:dim-280cae009e723a26",
+          "task_id": "e5fdb7c6-81d4-4a91-ba18-79435bd26342"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "70439039-b450-49d2-a260-65c76d354f50",
+          "cell_key": "entity-b16efac145e9242c:dim-009b907cd16ed671",
+          "task_id": "e5fdb7c6-81d4-4a91-ba18-79435bd26342"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "c9e84462-afdc-46a9-aee0-873f47c854e3",
+          "cell_key": "entity-b16efac145e9242c:dim-032922743e1cb373",
+          "task_id": "e5fdb7c6-81d4-4a91-ba18-79435bd26342"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "42533378-655a-4ffd-af90-106b9b5f8096",
+          "cell_key": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba",
+          "task_id": "2a1c8ff2-3f52-4b2b-909a-a538db95f39b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "536178b9-c7ab-4c88-8830-9607cc3d322a",
+          "cell_key": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259",
+          "task_id": "2a1c8ff2-3f52-4b2b-909a-a538db95f39b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "1a35291b-d6c5-41c7-97d5-6e16d16ed293",
+          "cell_key": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259",
+          "task_id": "4f7db9d1-e68b-4120-b4cd-1b788b5acba7"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "c4f7d819-cd33-468b-92ea-275b4eafa00b",
+          "cell_key": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba",
+          "task_id": "4f7db9d1-e68b-4120-b4cd-1b788b5acba7"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "42401000-f1f3-443d-a6af-cc6707c975fa",
+          "cell_key": "entity-2575ee3a445c5783:dim-280cae009e723a26",
+          "task_id": "115ae8ca-54d5-45d1-b12b-c5780a960488"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "54e416fd-0622-48d5-8c18-e3a99504357f",
+          "cell_key": "entity-2575ee3a445c5783:dim-009b907cd16ed671",
+          "task_id": "115ae8ca-54d5-45d1-b12b-c5780a960488"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "e3fd3ec4-81fe-4141-978f-b86bb1c7e2d4",
+          "cell_key": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+          "task_id": "115ae8ca-54d5-45d1-b12b-c5780a960488"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "185955fe-7495-44e2-845b-3a3b994e3d04",
+          "cell_key": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+          "task_id": "1f54543a-489e-47fd-bf27-4bec7cfde899"
+        }
+      ],
+      "candidate_count": 11,
+      "task_count": 7,
+      "merge_count": 11,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:0593606363d18566574dc3b362317a4f09fa47d1e14b2a86cb673955e8f092e8",
+          "candidate_id": "0adcc066-c95f-4d66-a36c-1150edafc9ad",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-280cae009e723a26"
+        },
+        {
+          "merge_id": "merge:019a4702cbf5d36b40278b49700f70d7aa7ec07ff8aaccf509f907f9962231a4",
+          "candidate_id": "70439039-b450-49d2-a260-65c76d354f50",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-009b907cd16ed671"
+        },
+        {
+          "merge_id": "merge:ba3147050af3effe97e6bacbae226f36111dde1cb0a55e8aac4d76fae93691bf",
+          "candidate_id": "c9e84462-afdc-46a9-aee0-873f47c854e3",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-032922743e1cb373"
+        },
+        {
+          "merge_id": "merge:aefbd540ca860f459de54365d17b3bf2a08e70b1e28a78c8847170b23bb81e49",
+          "candidate_id": "42533378-655a-4ffd-af90-106b9b5f8096",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba"
+        },
+        {
+          "merge_id": "merge:1d54ea239d37a58a27f0e3922c6d8603b6e1bdb974ace2a8e216acbef2d09a51",
+          "candidate_id": "536178b9-c7ab-4c88-8830-9607cc3d322a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259"
+        },
+        {
+          "merge_id": "merge:a3b8e8e5d5d5fc80c701350653700570068e54d206ce3a9addc39e620e91929a",
+          "candidate_id": "c4f7d819-cd33-468b-92ea-275b4eafa00b",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba"
+        },
+        {
+          "merge_id": "merge:f01db6cdbe57bce19785af2ad0353e9e1a96cf37e63fba5ddaa6bd83eaf2a6fc",
+          "candidate_id": "1a35291b-d6c5-41c7-97d5-6e16d16ed293",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259"
+        },
+        {
+          "merge_id": "merge:fa03b49ff405499d05ff16945b44ee98f655cdc412b19b42603d13f797f773db",
+          "candidate_id": "54e416fd-0622-48d5-8c18-e3a99504357f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-009b907cd16ed671"
+        },
+        {
+          "merge_id": "merge:ecab8b10bf49b6de9b896e0217d83858612ad072d69fcaa5cac4061a6cac0090",
+          "candidate_id": "42401000-f1f3-443d-a6af-cc6707c975fa",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-280cae009e723a26"
+        },
+        {
+          "merge_id": "merge:3939e8bc2362bc6a26208210cf805c9ca958fcb03e94c58d00bdd9d70582faac",
+          "candidate_id": "e3fd3ec4-81fe-4141-978f-b86bb1c7e2d4",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-2575ee3a445c5783:dim-032922743e1cb373"
+        },
+        {
+          "merge_id": "merge:153e0de03f05e858b1dbbef218b5513d4565628cf8c17e4ae1bca9483035087c",
+          "candidate_id": "185955fe-7495-44e2-845b-3a3b994e3d04",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-032922743e1cb373"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 10,
+          "candidate_high_water_mark": 10
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-2575ee3a445c5783",
+            "label": "webpack"
+          },
+          {
+            "entity_key": "entity-b16efac145e9242c",
+            "label": "Vite"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-009b907cd16ed671",
+            "label": "HMR mechanism",
+            "description": "How hot module replacement updates are detected, propagated and applied in each tool, and which module graph or boundaries are used.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-032922743e1cb373",
+            "label": "Startup and update performance",
+            "description": "What official docs state about dev server startup time and module update speed, including conditions such as project size or cold start.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-280cae009e723a26",
+            "label": "Configuration and ecosystem",
+            "description": "How HMR and dev server are configured or extended in each tool, including plugin hooks used for HMR boundaries.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b5bc4c93bda3e259",
+            "label": "Failure and fallback behaviour",
+            "description": "What happens when HMR cannot apply an update or when an error occurs during transform or HMR, such as full reload fallback or error overlay.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-ccfb2d97babf20ba",
+            "label": "Dev server architecture",
+            "description": "How each tool's development server serves and transforms modules on request versus bundling, per official documentation.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Dev server architecture, HMR mechanism, startup/update performance, failure fallback behaviour, and configuration/extension points for Vite and webpack.",
+          "objective": "Produce a citation-backed comparison of Vite and webpack development servers and HMR mechanisms using official documentation.",
+          "exclusions": [
+            "Production build comparison beyond dev server context",
+            "Third-party benchmark claims without official documentation support"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with per-cell exact quotes, snapshots and URLs plus a citation audit."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "vite.dev",
+          "cn.vite.dev",
+          "webpack.js.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "How does each server serve modules and detect changes?",
+              "How are HMR boundaries and fallbacks implemented?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Which has documented startup and update performance characteristics?",
+              "How much configuration effort does HMR require?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-009b907cd16ed671",
+          "entity_label": "webpack",
+          "column_label": "HMR mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "webpack 运行时通过 check 请求更新清单，用 apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0799ed76dc379d8295ae8a3e21276f66d49c940bec5757f1",
+              "source_domain": "webpack.js.org",
+              "claim_text": "webpack 运行时通过 check 请求更新清单，用 apply 将更新模块标记为 invalid 并向上冒泡查找 accept 处理器。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-032922743e1cb373",
+          "entity_label": "webpack",
+          "column_label": "Startup and update performance",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Webpack 默认支持增量编译，热重载的重构建耗时不等于完整构建。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:20df81d46403b0856307dece79aed33b7293c0eb4a401040",
+              "source_domain": "dev.to",
+              "claim_text": "Webpack 默认支持增量编译，热重载的重构建耗时不等于完整构建。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-280cae009e723a26",
+          "entity_label": "webpack",
+          "column_label": "Configuration and ecosystem",
+          "cell_status": "VERIFIED",
+          "candidate_value": "dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不要与 webpack.config.js 中的该插件同时使用，否则插件会被添加两次。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3cc598fbecfb70e3d256d4d670273890322777755a07a6d4",
+              "source_domain": "github.com",
+              "claim_text": "dev-server 的 --hot 开关会添加 HotModuleReplacementPlugin，但不要与 webpack.config.js 中的该插件同时使用，否则插件会被添加两次。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-b5bc4c93bda3e259",
+          "entity_label": "webpack",
+          "column_label": "Failure and fallback behaviour",
+          "cell_status": "VERIFIED",
+          "candidate_value": "当 HMR 更新无法被接受时，流程中止，应用继续运行旧代码，dev server 会将其转为整页刷新。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f91c4be7c4dd6c0ead210cfc97375e8d4780eced8720bf15",
+              "source_domain": "webpack.js.org",
+              "claim_text": "当 HMR 更新无法被接受时，流程中止，应用继续运行旧代码，dev server 会将其转为整页刷新。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-ccfb2d97babf20ba",
+          "entity_label": "webpack",
+          "column_label": "Dev server architecture",
+          "cell_status": "VERIFIED",
+          "candidate_value": "webpack-dev-server 编译后不写入输出文件，而是将 bundle 文件保存在内存中并像真实文件一样提供访问。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f46044ce823d3b7b93734e4a4dc53aa9efae17e6702eb52b",
+              "source_domain": "webpack.js.org",
+              "claim_text": "webpack-dev-server 编译后不写入输出文件，而是将 bundle 文件保存在内存中并像真实文件一样提供访问。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-009b907cd16ed671",
+          "entity_label": "Vite",
+          "column_label": "HMR mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "自接受模块使用 import.meta.hot.accept 并提供接收更新模块的回调；接受热更新的模块称为 HMR 边界。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7c80d633844aae56ecca65b31a94118856fd3102b0d47161",
+              "source_domain": "vite.dev",
+              "claim_text": "自接受模块使用 import.meta.hot.accept 并提供接收更新模块的回调；接受热更新的模块称为 HMR 边界。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-032922743e1cb373",
+          "entity_label": "Vite",
+          "column_label": "Startup and update performance",
+          "cell_status": "VERIFIED",
+          "candidate_value": "warmup 预转换并缓存文件，提升服务器启动期间的初始页面加载",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:69cc65e298109643318f031fd91438929a73b3adbcdeba55",
+              "source_domain": "vite.dev",
+              "claim_text": "warmup 预转换并缓存文件，提升服务器启动期间的初始页面加载"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-280cae009e723a26",
+          "entity_label": "Vite",
+          "column_label": "Configuration and ecosystem",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 自动派发 HMR 事件，模块可通过 hot.on(event, cb) 监听",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:037311c8c579de365bf21c094b53e71e532011be7915f092",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 自动派发 HMR 事件，模块可通过 hot.on(event, cb) 监听"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-b5bc4c93bda3e259",
+          "entity_label": "Vite",
+          "column_label": "Failure and fallback behaviour",
+          "cell_status": "VERIFIED",
+          "candidate_value": "无法处理 HMR 更新的自接受模块可调用 hot.invalidate() 将更新强制传播给导入方",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3efe4cecb30c1bd487653845d6938eba1975f5a81dddff59",
+              "source_domain": "vite.dev",
+              "claim_text": "无法处理 HMR 更新的自接受模块可调用 hot.invalidate() 将更新强制传播给导入方"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-ccfb2d97babf20ba",
+          "entity_label": "Vite",
+          "column_label": "Dev server architecture",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 开发服务器在启动时预热文件以提前转换并缓存结果，从而改善初次页面加载并防止转换瀑布。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3decbe61813f9b12128f57b25ce6b17930aa15db6b8dc5ea",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 开发服务器在启动时预热文件以提前转换并缓存结果，从而改善初次页面加载并防止转换瀑布。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2575ee3a445c5783:dim-032922743e1cb373"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T13:45:04Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

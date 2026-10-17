@@ -1,0 +1,1355 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-pg-17-incremental-backup",
+  "run_id": "9f066769-6718-48bd-ba45-bff7265ae677",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:21:37.342024+00:00",
+  "finished_at": "2026-10-17T14:24:28.208420+00:00",
+  "wall_seconds": 170.9,
+  "run_detail": {
+    "research_run_id": "9f066769-6718-48bd-ba45-bff7265ae677",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "2d0cf7c0-dedf-4277-a278-bf29367c2f71",
+    "question": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+    "final_report_markdown": "# PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\n以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。\n\n## PostgreSQL 17 增量备份 · 功能概述与组件\n\npg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份 [evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578] [evidence:77b54a83cbb65a2fc13c4d5b69af0dbc16c6478de0330d79] [evidence:a97b6a338434a69a8a2a0853e5f6c6ca36e66e62629873ae] [evidence:496c1fa7888850b0413e3551811009109fc84f0eb2592b3a]\n\n## PostgreSQL 17 增量备份 · 合并为完整备份的步骤\n\npg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份 [evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f] [evidence:3b10a95784767b7688dff98bbd8343e27abed018a512fce6] [evidence:41a53a7aed4e31ff0efadd43ae014301adc2ded2b4da5dd2]\n\n## PostgreSQL 17 增量备份 · 恢复与失败场景注意事项\n\n若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。 [evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1] [evidence:53e50cedf81da7063d6c8231c8d936856429cfe259dae723] [evidence:f891d914e306325010a93535b379256d324ee08e146bd384]\n\n## PostgreSQL 17 增量备份 · 使用前提与配置要求\n\npg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考 [evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8] [evidence:ba93b95306098df2ef4378d1e979792508dc691d045c5e91] [evidence:b8e51a4e5ef4cb7c93669be962bed062f9c4ea2d77dd6099]\n\n## PostgreSQL 17 增量备份 · 创建增量备份的步骤与命令\n\n使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份 [evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7] [evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993] [evidence:14dd66939b612506f4e96ce3e8f4be8758bb153bfdb78581]\n\n## PostgreSQL 17 增量备份 · 限制与版本差异\n\n--incremental 选项不存在于 PostgreSQL 17 之前的版本 [evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed] [evidence:44efe8deac8f42916d169354b079d878df52ddeb24e696c1]\n\n## Citation audit\n\n### PostgreSQL 17 增量备份 · 功能概述与组件\n\n- Evidence: `evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578`\n- Exact quote: “pg\\\\_combinebackup is used to reconstruct a synthetic full backup from an [incremental backup](continuous-archiving.html#BACKUP-INCREMENTAL-BACKUP \"25.3.3. Making an Incremental Backup\") and the earlier backups upon which it depends.”\n- Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n- URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n\n### PostgreSQL 17 增量备份 · 合并为完整备份的步骤\n\n- Evidence: `evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f`\n- Exact quote: “pg\\\\_combinebackup is used to reconstruct a synthetic full backup from an [incremental backup](continuous-archiving.html#BACKUP-INCREMENTAL-BACKUP \"25.3.3. Making an Incremental Backup\") and the earlier backups upon which it depends.”\n- Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n- URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n\n### PostgreSQL 17 增量备份 · 恢复与失败场景注意事项\n\n- Evidence: `evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1`\n- Exact quote: “If you remove one or more of the previous backups upon which your incremental backup relies, you will not be able to restore it.”\n- Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n- URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n\n### PostgreSQL 17 增量备份 · 使用前提与配置要求\n\n- Evidence: `evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8`\n- Exact quote: “This basebackup by default creates a manifest file unless `--no-manifest`is supplied.”\n- Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9`\n- URL: https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql\n\n### PostgreSQL 17 增量备份 · 创建增量备份的步骤与命令\n\n- Evidence: `evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7`\n- Exact quote: “use `pg_basebackup` with the new `-i, --incremental=OLDMANIFEST` option”\n- Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/821648a36ead11df91ccc544517c500c57c8ced950547679d32f3ed6961cf143`\n- URL: https://pgdash.io/blog/incremental-backup-in-postgresql-17.html\n\n### PostgreSQL 17 增量备份 · 创建增量备份的步骤与命令\n\n- Evidence: `evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993`\n- Exact quote: “$ pg_basebackup -D backup2_incr -i backup1/backup_manifest -c fast -p 7000 -v”\n- Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/821648a36ead11df91ccc544517c500c57c8ced950547679d32f3ed6961cf143`\n- URL: https://pgdash.io/blog/incremental-backup-in-postgresql-17.html\n\n### PostgreSQL 17 增量备份 · 限制与版本差异\n\n- Evidence: `evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed`\n- Exact quote: “option to take incremental backups which is not present in versions before PostgreSQL 17”\n- Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9`\n- URL: https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql\n\n## 补充引用\n\n- Evidence: `evidence:77b54a83cbb65a2fc13c4d5b69af0dbc16c6478de0330d79`\n  - Exact quote: “Moreover, pg_combinebackup only attempts to verify that the backups have the correct relationship to each other, not that each individual backup is intact; for that, use pg_verifybackup .”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/d08f3e0ea0e386cd638054ff7ee04f60aebe2572df0f403d08e7ac06e41c6806`\n  - URL: https://docs.tantorlabs.ru/tdb/en/17_11/certified/app-pgcombinebackup.html\n- Evidence: `evidence:a97b6a338434a69a8a2a0853e5f6c6ca36e66e62629873ae`\n  - Exact quote: “The reconstructed backup will be written to the output directory specified by the `-o` option.”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:496c1fa7888850b0413e3551811009109fc84f0eb2592b3a`\n  - Exact quote: “Specify all of the required backups on the command line from oldest to newest. That is, the first backup directory should be the path to the full backup, and the last should be the path to the final incremental backup that you wish to restore.”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:3b10a95784767b7688dff98bbd8343e27abed018a512fce6`\n  - Exact quote: “The reconstructed backup will be written to the output directory specified by the `-o` option.”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:41a53a7aed4e31ff0efadd43ae014301adc2ded2b4da5dd2`\n  - Exact quote: “Specify all of the required backups on the command line from oldest to newest. That is, the first backup directory should be the path to the full backup, and the last should be the path to the final incremental backup that you wish to restore.”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:53e50cedf81da7063d6c8231c8d936856429cfe259dae723`\n  - Exact quote: “pg\\_combinebackup only attempts to verify that the backups have the correct relationship to each other, not that each individual backup is intact; for that, use [pg\\_verifybackup](app-pgverifybackup.html \"pg_verifybackup\").”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:f891d914e306325010a93535b379256d324ee08e146bd384`\n  - Exact quote: “pg\\_combinebackup will attempt to verify that the backups you specify form a legal backup chain from which a correct full backup can be reconstructed. However, it is not designed to help you keep track of which backups depend on which other backups.”\n  - Snapshot: `research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a`\n  - URL: https://www.postgresql.org/docs/current/app-pgcombinebackup.html\n- Evidence: `evidence:ba93b95306098df2ef4378d1e979792508dc691d045c5e91`\n  - Exact quote: “The incremental backup needs a `backup_manifest` to create a incremental backup so that it identifies which blocks have changed since last full back.”\n  - Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9`\n  - URL: https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql\n- Evidence: `evidence:b8e51a4e5ef4cb7c93669be962bed062f9c4ea2d77dd6099`\n  - Exact quote: “Option -i / --incremental needs to be used to take an incremental backup. Input to this option is the path of the backup\\_manifest file of the previous full/incremental backup.”\n  - Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/c049373ac09859e5474149323e96a6bfd4cdcac5a57efd4745b3e2e8e1ba133e`\n  - URL: https://www.mydbops.com/blog/postgresql-17-incremental-backup-pg-basebackup-pg-combinebackup\n- Evidence: `evidence:14dd66939b612506f4e96ce3e8f4be8758bb153bfdb78581`\n  - Exact quote: “Option -i / --incremental needs to be used to take an incremental backup. Input to this option is the path of the backup\\_manifest file of the previous full/incremental backup.”\n  - Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/c049373ac09859e5474149323e96a6bfd4cdcac5a57efd4745b3e2e8e1ba133e`\n  - URL: https://www.mydbops.com/blog/postgresql-17-incremental-backup-pg-basebackup-pg-combinebackup\n- Evidence: `evidence:44efe8deac8f42916d169354b079d878df52ddeb24e696c1`\n  - Exact quote: “`pg_basebackup` doesn't register each incremental backup with a numbered subsequent backup.”\n  - Snapshot: `research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9`\n  - URL: https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/9f066769-6718-48bd-ba45-bff7265ae677/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 11271,
+      "sha256": "b0e764977fc01e601ab896ad27d984517c2d7b9b6125e303de6c8d55f1c62329"
+    },
+    "research_artifact": {
+      "artifact_id": "9f066769-6718-48bd-ba45-bff7265ae677",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "9f066769-6718-48bd-ba45-bff7265ae677",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/9f066769-6718-48bd-ba45-bff7265ae677/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 11271,
+        "sha256": "b0e764977fc01e601ab896ad27d984517c2d7b9b6125e303de6c8d55f1c62329"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "PostgreSQL 17 incremental backup",
+          "pg_basebackup --incremental example command",
+          "pg_basebackup incremental backup prerequisites settings",
+          "pg_combinebackup usage official documentation syntax options",
+          "PostgreSQL 17 release notes incremental backup",
+          "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "PostgreSQL 17 增量备份",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "read_focus": "依据 PostgreSQL 官方文档，说明 PostgreSQL 17 增量备份的使用方法及所需前提。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-c98905a2534475ea",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-c98905a2534475ea",
+            "column_label": "使用前提与配置要求",
+            "candidate_value": "pg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-4bb3c1755a57fa34",
+            "column_label": "合并为完整备份的步骤",
+            "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-88edd3dd67da340f",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-88edd3dd67da340f",
+            "column_label": "恢复与失败场景注意事项",
+            "candidate_value": "若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-d8fda42dbf8098cf",
+            "column_label": "创建增量备份的步骤与命令",
+            "candidate_value": "使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7",
+              "evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-f751f95f8f18b9aa",
+            "column_label": "限制与版本差异",
+            "candidate_value": "--incremental 选项不存在于 PostgreSQL 17 之前的版本",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-127c0ff390667c61:dim-18df85cb362d57bc",
+            "row_id": "entity-127c0ff390667c61",
+            "branch_id": "branch-main",
+            "column_key": "dim-18df85cb362d57bc",
+            "column_label": "功能概述与组件",
+            "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "PostgreSQL 17 增量备份",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "read_focus": "依据 PostgreSQL 官方文档，说明 PostgreSQL 17 增量备份的使用方法及所需前提。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-c98905a2534475ea",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-c98905a2534475ea",
+          "column_label": "使用前提与配置要求",
+          "candidate_value": "pg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-4bb3c1755a57fa34",
+          "column_label": "合并为完整备份的步骤",
+          "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-88edd3dd67da340f",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-88edd3dd67da340f",
+          "column_label": "恢复与失败场景注意事项",
+          "candidate_value": "若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-d8fda42dbf8098cf",
+          "column_label": "创建增量备份的步骤与命令",
+          "candidate_value": "使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7",
+            "evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-f751f95f8f18b9aa",
+          "column_label": "限制与版本差异",
+          "candidate_value": "--incremental 选项不存在于 PostgreSQL 17 之前的版本",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-18df85cb362d57bc",
+          "row_id": "entity-127c0ff390667c61",
+          "branch_id": "branch-main",
+          "column_key": "dim-18df85cb362d57bc",
+          "column_label": "功能概述与组件",
+          "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:14dd66939b612506f4e96ce3e8f4be8758bb153bfdb78581",
+          "window_id": "window-4",
+          "source_id": "web-f10d47bbba3a0f2c",
+          "source_title": "PostgreSQL 17: Incremental Backup with pg_baseb...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.mydbops.com/blog/postgresql-17-incremental-backup-pg-basebackup-pg-combinebackup",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL PostgreSQL 17: Incremental Backup with pg_baseb... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Option -i / --incremental needs to be used to take an incremental backup. Input to this option is the path of the backup\\_manifest file of the previous full/incremental backup.",
+          "claim_text": "选项 -i / --incremental 的输入是前一次全量或增量备份的 backup_manifest 文件路径",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/c049373ac09859e5474149323e96a6bfd4cdcac5a57efd4745b3e2e8e1ba133e"
+        },
+        {
+          "evidence_id": "evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993",
+          "window_id": "window-2",
+          "source_id": "web-540841b4a5b3701c",
+          "source_title": "Incremental Backup In PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pgdash.io/blog/incremental-backup-in-postgresql-17.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup",
+          "read_focus": "Read external URL Incremental Backup In PostgreSQL 17 for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "$ pg_basebackup -D backup2_incr -i backup1/backup_manifest -c fast -p 7000 -v",
+          "claim_text": "创建增量备份时通过 -i 参数传入前次全量备份的 backup_manifest 路径",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/821648a36ead11df91ccc544517c500c57c8ced950547679d32f3ed6961cf143"
+        },
+        {
+          "evidence_id": "evidence:b8e51a4e5ef4cb7c93669be962bed062f9c4ea2d77dd6099",
+          "window_id": "window-4",
+          "source_id": "web-f10d47bbba3a0f2c",
+          "source_title": "PostgreSQL 17: Incremental Backup with pg_baseb...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.mydbops.com/blog/postgresql-17-incremental-backup-pg-basebackup-pg-combinebackup",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL PostgreSQL 17: Incremental Backup with pg_baseb... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Option -i / --incremental needs to be used to take an incremental backup. Input to this option is the path of the backup\\_manifest file of the previous full/incremental backup.",
+          "claim_text": "使用 -i / --incremental 选项时，其输入是上一次全量或增量备份的 backup_manifest 文件路径",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/c049373ac09859e5474149323e96a6bfd4cdcac5a57efd4745b3e2e8e1ba133e"
+        },
+        {
+          "evidence_id": "evidence:ba93b95306098df2ef4378d1e979792508dc691d045c5e91",
+          "window_id": "window-5",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL Full and Incremental Backup using pg_basebackup ... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The incremental backup needs a `backup_manifest` to create a incremental backup so that it identifies which blocks have changed since last full back.",
+          "claim_text": "增量备份需要 backup_manifest 来识别自上次全量备份以来哪些块发生了变化",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9"
+        },
+        {
+          "evidence_id": "evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7",
+          "window_id": "window-2",
+          "source_id": "web-540841b4a5b3701c",
+          "source_title": "Incremental Backup In PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pgdash.io/blog/incremental-backup-in-postgresql-17.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup",
+          "read_focus": "Read external URL Incremental Backup In PostgreSQL 17 for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "use `pg_basebackup` with the new `-i, --incremental=OLDMANIFEST` option",
+          "claim_text": "使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/821648a36ead11df91ccc544517c500c57c8ced950547679d32f3ed6961cf143"
+        },
+        {
+          "evidence_id": "evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed",
+          "window_id": "window-5",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL Full and Incremental Backup using pg_basebackup ... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "option to take incremental backups which is not present in versions before PostgreSQL 17",
+          "claim_text": "--incremental 选项不存在于 PostgreSQL 17 之前的版本",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9"
+        },
+        {
+          "evidence_id": "evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8",
+          "window_id": "window-5",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL Full and Incremental Backup using pg_basebackup ... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This basebackup by default creates a manifest file unless `--no-manifest`is supplied.",
+          "claim_text": "pg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9"
+        },
+        {
+          "evidence_id": "evidence:44efe8deac8f42916d169354b079d878df52ddeb24e696c1",
+          "window_id": "window-5",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_basebackup incremental backup prerequisites settings",
+          "read_focus": "Read external URL Full and Incremental Backup using pg_basebackup ... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`pg_basebackup` doesn't register each incremental backup with a numbered subsequent backup.",
+          "claim_text": "pg_basebackup 不会为每个增量备份编号注册后续备份，需自行按时间顺序记录",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bda7fb10-b45d-424e-bdc7-0b24175d718a/666b64451c91b0dfaeff9203b865b37ec1a291c5aa4bbefbe389766c77156da9"
+        },
+        {
+          "evidence_id": "evidence:f891d914e306325010a93535b379256d324ee08e146bd384",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "pg\\_combinebackup will attempt to verify that the backups you specify form a legal backup chain from which a correct full backup can be reconstructed. However, it is not designed to help you keep track of which backups depend on which other backups.",
+          "claim_text": "pg_combinebackup 会尝试验证指定备份构成合法备份链，但不负责跟踪备份之间的依赖关系。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:41a53a7aed4e31ff0efadd43ae014301adc2ded2b4da5dd2",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Specify all of the required backups on the command line from oldest to newest. That is, the first backup directory should be the path to the full backup, and the last should be the path to the final incremental backup that you wish to restore.",
+          "claim_text": "命令行按从旧到新指定所有必需备份：第一个为完整备份路径，最后一个为要恢复的最终增量备份",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:3b10a95784767b7688dff98bbd8343e27abed018a512fce6",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The reconstructed backup will be written to the output directory specified by the `-o` option.",
+          "claim_text": "重建的备份写入由 -o 选项指定的输出目录",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If you remove one or more of the previous backups upon which your incremental backup relies, you will not be able to restore it.",
+          "claim_text": "若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:77b54a83cbb65a2fc13c4d5b69af0dbc16c6478de0330d79",
+          "window_id": "window-6",
+          "source_id": "web-4146dbc2f96cb395",
+          "source_title": "pg_combinebackup — Tantor Certified Edition 17.11 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.tantorlabs.ru/tdb/en/17_11/certified/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "pg_combinebackup usage official documentation syntax options",
+          "read_focus": "Read external URL pg_combinebackup — Tantor Certified Edition 17.11 ... for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Moreover, pg_combinebackup only attempts to verify that the backups have the correct relationship to each other, not that each individual backup is intact; for that, use pg_verifybackup .",
+          "claim_text": "pg_combinebackup 仅验证备份间的正确关系，不验证每个备份是否完整，完整性需用 pg_verifybackup",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/d08f3e0ea0e386cd638054ff7ee04f60aebe2572df0f403d08e7ac06e41c6806"
+        },
+        {
+          "evidence_id": "evidence:a97b6a338434a69a8a2a0853e5f6c6ca36e66e62629873ae",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The reconstructed backup will be written to the output directory specified by the `-o` option.",
+          "claim_text": "重建的备份写入由 -o 选项指定的输出目录",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:496c1fa7888850b0413e3551811009109fc84f0eb2592b3a",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Specify all of the required backups on the command line from oldest to newest. That is, the first backup directory should be the path to the full backup, and the last should be the path to the final incremental backup that you wish to restore.",
+          "claim_text": "组合备份时需在命令行按从旧到新的顺序列出所有必需备份，第一个是全量备份",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "pg\\_combinebackup is used to reconstruct a synthetic full backup from an [incremental backup](continuous-archiving.html#BACKUP-INCREMENTAL-BACKUP \"25.3.3. Making an Incremental Backup\") and the earlier backups upon which it depends.",
+          "claim_text": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "pg\\_combinebackup is used to reconstruct a synthetic full backup from an [incremental backup](continuous-archiving.html#BACKUP-INCREMENTAL-BACKUP \"25.3.3. Making an Incremental Backup\") and the earlier backups upon which it depends.",
+          "claim_text": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        },
+        {
+          "evidence_id": "evidence:53e50cedf81da7063d6c8231c8d936856429cfe259dae723",
+          "window_id": "window-2",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup pg_basebackup pg_combinebackup",
+          "read_focus": "Read external URL Documentation: 18: pg_combinebackup for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17 增量备份. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "pg\\_combinebackup only attempts to verify that the backups have the correct relationship to each other, not that each individual backup is intact; for that, use [pg\\_verifybackup](app-pgverifybackup.html \"pg_verifybackup\").",
+          "claim_text": "pg_combinebackup 只验证备份之间的关系正确，不验证每个单独备份是否完好，需用 pg_verifybackup 检查完整性。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50ed0df5-3027-4324-9ac4-96899293151b/71eb219605d290817769abf35d939a81ac22b4f1327ffaaab5673fed1f2c119a"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-c98905a2534475ea",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed",
+          "source_id": "web-15700bb4f46def88",
+          "source_title": "Full and Incremental Backup using pg_basebackup ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://hexacluster.ai/blog/full-and-incremental-backup-using-pg-basebackup-and-pg-combinebackup-in-postgresql"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7",
+          "source_id": "web-540841b4a5b3701c",
+          "source_title": "Incremental Backup In PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pgdash.io/blog/incremental-backup-in-postgresql-17.html"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993",
+          "source_id": "web-540841b4a5b3701c",
+          "source_title": "Incremental Backup In PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pgdash.io/blog/incremental-backup-in-postgresql-17.html"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-18df85cb362d57bc",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html"
+        },
+        {
+          "cell_id": "entity-127c0ff390667c61:dim-88edd3dd67da340f",
+          "row_id": "entity-127c0ff390667c61",
+          "evidence_id": "evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1",
+          "source_id": "web-e042cc1110640319",
+          "source_title": "Documentation: 18: pg_combinebackup",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/app-pgcombinebackup.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "c9d35ded-a964-4950-b6d0-2d3ce6f3ba41",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:21:37Z"
+      },
+      {
+        "trace_id": "56ff8d26-2e4d-42ac-b323-8afadf03cf2e",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 6
+        },
+        "created_at": "2026-10-17T14:21:50Z"
+      },
+      {
+        "trace_id": "c072397c-62ef-44ad-aebb-cba553bee2b8",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+        "payload": {
+          "cell_count": 6
+        },
+        "created_at": "2026-10-17T14:24:23Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:21:37Z",
+    "updated_at": "2026-10-17T14:24:23Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:22:38Z",
+          "lease_epoch": 1,
+          "task_id": "0b93c125-1244-4784-9892-70d5e67b2bf1",
+          "task_key": "planning:9f066769-6718-48bd-ba45-bff7265ae677",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:25:04Z",
+          "lease_epoch": 1,
+          "task_id": "50ed0df5-3027-4324-9ac4-96899293151b",
+          "task_key": "deep-cell:3b162ccaf4f52d73ccce2b2fe9107181",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:23:37Z",
+          "lease_epoch": 1,
+          "task_id": "bda7fb10-b45d-424e-bdc7-0b24175d718a",
+          "task_key": "deep-cell:3b23919ee96c0c2333587ec60579361c",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:25:21Z",
+          "lease_epoch": 1,
+          "task_id": "f7b11e8a-f67d-40a1-a296-a5b6911b532a",
+          "task_key": "synthesis:eeb2db0bc88ccc4878567239faaa5269",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "0feb499e-bc62-4087-86e2-1a80831a5d96",
+          "cell_key": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+          "task_id": "bda7fb10-b45d-424e-bdc7-0b24175d718a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "32c43de9-ed69-435b-843c-ea0b4409d7f8",
+          "cell_key": "entity-127c0ff390667c61:dim-c98905a2534475ea",
+          "task_id": "bda7fb10-b45d-424e-bdc7-0b24175d718a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "c6fc671c-ffe5-40ec-8d6a-049627f45413",
+          "cell_key": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa",
+          "task_id": "bda7fb10-b45d-424e-bdc7-0b24175d718a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "15870e0c-6374-4121-84ea-2d30297a99e1",
+          "cell_key": "entity-127c0ff390667c61:dim-88edd3dd67da340f",
+          "task_id": "50ed0df5-3027-4324-9ac4-96899293151b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "1ff4efa5-4598-40e3-adca-1bcbb1ac607d",
+          "cell_key": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34",
+          "task_id": "50ed0df5-3027-4324-9ac4-96899293151b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "20efaca6-3c52-417f-9cd9-efa81705bc9a",
+          "cell_key": "entity-127c0ff390667c61:dim-18df85cb362d57bc",
+          "task_id": "50ed0df5-3027-4324-9ac4-96899293151b"
+        }
+      ],
+      "candidate_count": 6,
+      "task_count": 4,
+      "merge_count": 6,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:52e9326a8a000079c27c8f2942c35932c58900bfd78d48f5a187fd500f57abad",
+          "candidate_id": "0feb499e-bc62-4087-86e2-1a80831a5d96",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf"
+        },
+        {
+          "merge_id": "merge:1d2165cca604f222f6a161e8f664533ece4ae0218c20b535a38c1d770683ff72",
+          "candidate_id": "32c43de9-ed69-435b-843c-ea0b4409d7f8",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-c98905a2534475ea"
+        },
+        {
+          "merge_id": "merge:4005933bfb7ae21f7a8d38f891525600c05394438d87ebafb0fa0eafe964fe86",
+          "candidate_id": "c6fc671c-ffe5-40ec-8d6a-049627f45413",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa"
+        },
+        {
+          "merge_id": "merge:a28a7c169ebe233342176f04c21ef50067ac60b6367a89f7f8e994f9bfb62546",
+          "candidate_id": "20efaca6-3c52-417f-9cd9-efa81705bc9a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-18df85cb362d57bc"
+        },
+        {
+          "merge_id": "merge:f65a5a32269ac383ea8571f20b7e9d34e15117d95ca334c1b8728080ef494e51",
+          "candidate_id": "1ff4efa5-4598-40e3-adca-1bcbb1ac607d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34"
+        },
+        {
+          "merge_id": "merge:ec216efb47c838472e3abe80cf97f4a8e2e321762057045d70beda791b1d58ee",
+          "candidate_id": "15870e0c-6374-4121-84ea-2d30297a99e1",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-127c0ff390667c61:dim-88edd3dd67da340f"
+        }
+      ],
+      "checkpoints": []
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-127c0ff390667c61",
+            "label": "PostgreSQL 17 增量备份"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-18df85cb362d57bc",
+            "label": "功能概述与组件",
+            "description": "官方文档如何描述 PostgreSQL 17 增量备份与 pg_basebackup、pg_combinebackup 的关系和大致流程。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-4bb3c1755a57fa34",
+            "label": "合并为完整备份的步骤",
+            "description": "官方文档中如何使用 pg_combinebackup 将基础备份与增量备份合并为可恢复完整备份的步骤与参数。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-88edd3dd67da340f",
+            "label": "恢复与失败场景注意事项",
+            "description": "官方文档关于增量备份链、恢复流程以及链断裂或备份缺失时的行为与限制说明。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-c98905a2534475ea",
+            "label": "使用前提与配置要求",
+            "description": "官方文档列出的启用增量备份所需的前提条件，例如 WAL 相关设置、备份清单文件、数据目录要求等。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-d8fda42dbf8098cf",
+            "label": "创建增量备份的步骤与命令",
+            "description": "官方文档中 pg_basebackup 生成增量备份的具体命令与参数（如 --incremental、引用前次备份的方式）。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-f751f95f8f18b9aa",
+            "label": "限制与版本差异",
+            "description": "官方文档指出的增量备份限制（如仅物理备份、不适用于逻辑复制等）及其与旧版本行为的差异。",
+            "answer_format": "LIST",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "PostgreSQL 17 中 pg_basebackup 增量备份与 pg_combinebackup 的官方说明。",
+          "objective": "依据 PostgreSQL 官方文档，说明 PostgreSQL 17 增量备份的使用方法及所需前提。",
+          "exclusions": [
+            "云厂商托管的增量备份功能",
+            "第三方备份工具"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "postgresql.org"
+        ],
+        "perspectives": [
+          {
+            "name": "DBA/实施者",
+            "questions": [
+              "如何配置前提并生成增量备份？",
+              "如何合并与恢复？"
+            ]
+          },
+          {
+            "name": "决策者",
+            "questions": [
+              "这项功能有哪些限制，是否适合我们的备份策略？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-18df85cb362d57bc",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "功能概述与组件",
+          "cell_status": "VERIFIED",
+          "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:78b82be6a218408d950fd29245e61f9bad79a62b3d068578",
+              "source_domain": "postgresql.org",
+              "claim_text": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成全量备份"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-4bb3c1755a57fa34",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "合并为完整备份的步骤",
+          "cell_status": "VERIFIED",
+          "candidate_value": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b9ea7dfdf0d3788db410ce34ef07298c2dbb9c37a12d610f",
+              "source_domain": "postgresql.org",
+              "claim_text": "pg_combinebackup 用于从增量备份及其依赖的早期备份重建合成完整备份"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-88edd3dd67da340f",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "恢复与失败场景注意事项",
+          "cell_status": "VERIFIED",
+          "candidate_value": "若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:e5568e69dd648959dddd20430a8fc87a5a968a7f928cb5e1",
+              "source_domain": "postgresql.org",
+              "claim_text": "若删除了增量备份所依赖的一个或多个先前备份，将无法恢复该增量备份。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-c98905a2534475ea",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "使用前提与配置要求",
+          "cell_status": "VERIFIED",
+          "candidate_value": "pg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:2e4be75d5ca9744b2674c0287baf59f01252bfd14f9f88d8",
+              "source_domain": "hexacluster.ai",
+              "claim_text": "pg_basebackup 默认生成 manifest 文件（除非使用 --no-manifest），该文件是增量备份所需的参考"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-d8fda42dbf8098cf",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "创建增量备份的步骤与命令",
+          "cell_status": "VERIFIED",
+          "candidate_value": "使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:05fb491a3b2115cc20cf195c8842326bed7c6dae2f8f6bd7",
+              "source_domain": "pgdash.io",
+              "claim_text": "使用 pg_basebackup 的新选项 -i, --incremental=OLDMANIFEST 即可创建增量备份"
+            },
+            {
+              "evidence_key": "evidence:df51e9457e1daa0bacba79560ca1df5a62dbaec786609993",
+              "source_domain": "pgdash.io",
+              "claim_text": "创建增量备份时通过 -i 参数传入前次全量备份的 backup_manifest 路径"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-127c0ff390667c61:dim-f751f95f8f18b9aa",
+          "entity_label": "PostgreSQL 17 增量备份",
+          "column_label": "限制与版本差异",
+          "cell_status": "VERIFIED",
+          "candidate_value": "--incremental 选项不存在于 PostgreSQL 17 之前的版本",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:6508cd4142ba0591c65d6f4f8d8fca88b98ea7586cc6f1ed",
+              "source_domain": "hexacluster.ai",
+              "claim_text": "--incremental 选项不存在于 PostgreSQL 17 之前的版本"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -1,0 +1,1399 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-terraform-pulumi-state",
+  "run_id": "38eeb20c-0591-48dc-ab87-7dfd7747163b",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T13:34:05.076041+00:00",
+  "finished_at": "2026-10-17T13:35:55.579970+00:00",
+  "wall_seconds": 110.5,
+  "run_detail": {
+    "research_run_id": "38eeb20c-0591-48dc-ab87-7dfd7747163b",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "8ebd77e4-bb76-4f13-8c73-03c833fb9b3f",
+    "question": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+    "final_report_markdown": "# Terraform 与 Pulumi 的状态存储、加锁与并发修改控制比较\n\n本次核验的官方资料显示，Terraform 默认由 local 后端把状态存到本地磁盘的 JSON 文件，也可通过 backend 块或 HCP Terraform 将状态存放在远端；是否加锁取决于后端，支持锁定后端的场景下，Terraform 会对所有可能写状态的操作自动加锁，若加锁失败则不会继续。Pulumi 的 filesystem 与云存储后端既可在本地也可在云对象存储中保存状态，DIY 后端默认启用基于文件的锁定，状态存储在 locks/ 目录下保存锁文件。\n\n## 直接回答\n\n在状态存储方面，Terraform 的 local 后端（默认后端）把状态保存为本地磁盘上的 JSON 文件，同时也可以通过集成 HCP Terraform 或定义 backend 块把状态存放到远端对象；使用非本地后端时，除写入后端失败这类不可恢复错误外，Terraform 不会在磁盘上持久化状态。Pulumi 的 filesystem 与云存储后端则允许把状态保存在本机或云对象存储中，DIY 后端通过 pulumi login 指定 s3://、azblob://、gs:// 或 file:// 等存储端点。 [evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7] [evidence:172dab1d1f228815dbdf2cf3bb9d8dd87389a254fcdacc1c] [evidence:de481c62892df18caa82088dd8abb1d70ad2ee635b993f27] [evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b] [evidence:0708d32226e790e7d12cb000657b164fa4a5c42c820f7bbe] [evidence:e06e10be6c5aa9ee407e4db9d2a1480a97c82b71c2b0320b] [evidence:fa00e7e064fa9c97b6727cdee1c9d2da2ebc1d2fb6dadca4]\n\n在加锁与并发修改控制方面，Terraform 把状态锁定的支持交给后端：后端在可能时负责支持状态锁定，并非所有后端都支持锁定，具体需查看各后端文档。对于支持锁定的后端，Terraform 会在所有可能写状态的操作上自动加锁，以防止他人获取锁并损坏状态；这一过程不显示提示信息，而一旦状态锁定失败，Terraform 不会继续执行。解锁时 force-unlock 命令要求提供唯一的锁 ID，该 ID 在解锁失败时由 Terraform 输出，充当 nonce 以确保锁与解锁指向正确的锁。Pulumi 方面，DIY 后端内置状态锁定和变更历史跟踪，对所有 DIY 后端默认启用基本的基于文件的锁定，locks/ 目录下保存每个堆栈在当前被 Pulumi 操作时的锁文件。 [evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747] [evidence:b554a6e010a79561f7aecede303b6d2d1be9d3e97aee37d2] [evidence:890d444540a5b3647d8a55ae929ed95695f4511e661f06b9] [evidence:d7f7d456551a47ac26bf51bc0cb187bbe0c1002379f45d2f] [evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf] [evidence:9fd68972e63da9b39bd31264e2cb8d753980c734deec8855] [evidence:10478f6347733f122d8d1f23bdb07b0e6e9bdc65f5b46a47] [evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39] [evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf] [evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5] [evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c]\n\n## 存储方式：默认本地与多种后端的取舍\n\nTerraform 文档以 local 后端为默认示例：它把状态存储在本地磁盘的 JSON 文件中。若希望集中管理状态，可以集成 HCP Terraform 存储状态数据，或定义 backend 块将状态存入远端对象。文档还说明，使用非本地后端时，Terraform 不会在磁盘上保存状态，唯一例外是写入后端失败这类不可恢复错误发生时。 [evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7] [evidence:172dab1d1f228815dbdf2cf3bb9d8dd87389a254fcdacc1c] [evidence:de481c62892df18caa82088dd8abb1d70ad2ee635b993f27]\n\nPulumi 的 filesystem 和云存储后端同样提供本地与远端两种落点：既可以把状态保存在本机，也可以保存在云对象存储中。使用 DIY 后端时，需要在 pulumi login 中指定存储端点 URL，可选前缀包括 s3://、azblob://、gs:// 或 file://。此外，Pulumi 现在也支持以 PostgreSQL 作为 DIY 状态存储选项，但这会带来额外的运维开销；而 Pulumi Cloud 则自动处理备份与恢复、团队协作、RBAC 和审计日志等运维事项。 [evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b] [evidence:0708d32226e790e7d12cb000657b164fa4a5c42c820f7bbe] [evidence:e06e10be6c5aa9ee407e4db9d2a1480a97c82b71c2b0320b] [evidence:fa00e7e064fa9c97b6727cdee1c9d2da2ebc1d2fb6dadca4]\n\n## 加锁机制与并发修改控制\n\nTerraform 的状态锁定由后端承担：后端在可能的情况下负责支持状态锁定，而并非所有后端都支持锁定，各后端是否支持可在其后端文档中查到。对于支持锁定的后端，所有可能写状态的操作都会自动加锁，以防止其他操作获取锁并损坏状态；锁定过程不产生任何提示信息，但如果状态锁定失败，Terraform 不会继续执行。当需要强制解锁时，force-unlock 命令要求提供唯一的锁 ID，该 ID 会在解锁失败时由 Terraform 输出，并作为 nonce 确保锁与解锁作用于正确的锁。 [evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747] [evidence:b554a6e010a79561f7aecede303b6d2d1be9d3e97aee37d2] [evidence:890d444540a5b3647d8a55ae929ed95695f4511e661f06b9] [evidence:d7f7d456551a47ac26bf51bc0cb187bbe0c1002379f45d2f] [evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf] [evidence:9fd68972e63da9b39bd31264e2cb8d753980c734deec8855] [evidence:10478f6347733f122d8d1f23bdb07b0e6e9bdc65f5b46a47]\n\nPulumi 的 DIY 后端内置状态锁定与变更历史跟踪，并且对所有 DIY 后端默认启用基本的基于文件的锁定系统。其锁文件存放在 locks/ 目录下，对应每个堆栈在当前正被 Pulumi 操作时的锁定状态。 [evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39] [evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf] [evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5] [evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c]\n\n## 对比表\n\n| 比较维度 | Terraform | Pulumi |\n| --- | --- | --- |\n| 状态存储方式 | 默认 local 后端将状态存为本地磁盘 JSON 文件；可集成 HCP Terraform 或用 backend 块存至远端；非本地后端除写入失败外不在磁盘持久化 | filesystem 与云存储后端可存于本机或云对象存储；DIY 后端用 s3://、azblob://、gs:// 或 file:// 端点；支持 PostgreSQL 作为 DIY 选项；Pulumi Cloud 自动处理运维事项 [evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7] [evidence:172dab1d1f228815dbdf2cf3bb9d8dd87389a254fcdacc1c] [evidence:de481c62892df18caa82088dd8abb1d70ad2ee635b993f27] [evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b] [evidence:0708d32226e790e7d12cb000657b164fa4a5c42c820f7bbe] [evidence:e06e10be6c5aa9ee407e4db9d2a1480a97c82b71c2b0320b] [evidence:fa00e7e064fa9c97b6727cdee1c9d2da2ebc1d2fb6dadca4] |\n| 状态锁定机制 | 由后端负责在可能时支持锁定；并非所有后端都支持，需查各后端文档 | DIY 后端内置状态锁定与变更历史跟踪；所有 DIY 后端默认启用基本文件锁；锁文件位于 locks/ 目录 [evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747] [evidence:b554a6e010a79561f7aecede303b6d2d1be9d3e97aee37d2] [evidence:890d444540a5b3647d8a55ae929ed95695f4511e661f06b9] [evidence:d7f7d456551a47ac26bf51bc0cb187bbe0c1002379f45d2f] [evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c] [evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39] [evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf] [evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5] |\n| 并发修改控制行为 | 支持锁定的后端上，所有可能写状态的操作自动加锁；锁定不提示；锁定失败则不继续；force-unlock 需唯一锁 ID 作为 nonce | DIY 后端默认启用基本文件锁，以 locks/ 下的堆栈锁文件控制并发操作 [evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf] [evidence:9fd68972e63da9b39bd31264e2cb8d753980c734deec8855] [evidence:10478f6347733f122d8d1f23bdb07b0e6e9bdc65f5b46a47] [evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39] [evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf] [evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5] |\n\n## Citation audit\n\n### Terraform · 并发修改控制\n\n- Evidence: `evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf`\n- Exact quote: “Terraform will lock your<br>state for all operations that could write state. This prevents<br>others from acquiring the lock and potentially corrupting your state.”\n- Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3`\n- URL: https://developer.hashicorp.com/terraform/language/state/locking\n\n### Terraform · 状态存储方式\n\n- Evidence: `evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7`\n- Exact quote: “For example, the local (default) backend stores state in a local JSON file on disk.”\n- Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde`\n- URL: https://developer.hashicorp.com/terraform/language/state/backends\n\n### Terraform · 状态锁定机制\n\n- Evidence: `evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747`\n- Exact quote: “Backends are responsible for supporting [state locking](/terraform/language/state/locking) if possible.”\n- Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde`\n- URL: https://developer.hashicorp.com/terraform/language/state/backends\n\n### Pulumi · 并发修改控制\n\n- Evidence: `evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39`\n- Exact quote: “`locks/`: Lock files for each stack if the stack is currently being operated on by a Pulumi operation”\n- Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n- URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n\n### Pulumi · 并发修改控制\n\n- Evidence: `evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf`\n- Exact quote: “DIY backends include built-in state locking and history tracking.”\n- Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n- URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n\n### Pulumi · 状态存储方式\n\n- Evidence: `evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b`\n- Exact quote: “The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.”\n- Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n- URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n\n### Pulumi · 状态锁定机制\n\n- Evidence: `evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c`\n- Exact quote: “A basic file-based locking system is enabled by default for all DIY backends.”\n- Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n- URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n\n## 补充引用\n\n- Evidence: `evidence:172dab1d1f228815dbdf2cf3bb9d8dd87389a254fcdacc1c`\n  - Exact quote: “You can either [integrate with HCP Terraform](/terraform/language/terraform#terraform-cloud) to store state data or define a `backend` block to store state in a remote object.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/12853670154f225e40fd6809e8974777a1a319a862bf48332f2044eb3bf91914`\n  - URL: https://developer.hashicorp.com/terraform/language/backend\n- Evidence: `evidence:de481c62892df18caa82088dd8abb1d70ad2ee635b993f27`\n  - Exact quote: “When using a non-local backend, Terraform will not persist the state anywhere on disk except in the case of a non-recoverable error where writing the state to the backend failed.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde`\n  - URL: https://developer.hashicorp.com/terraform/language/state/backends\n- Evidence: `evidence:0708d32226e790e7d12cb000657b164fa4a5c42c820f7bbe`\n  - Exact quote: “Pulumi now offers support for PostgreSQL as a DIY state storage option—though this requires additional operational overhead”\n  - Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/82375659dd7f5a0e11e47b72322d362b29cdffbe4c399bb973782b6eb0c227c3`\n  - URL: https://www.pulumi.com/blog/postgres-diy-backend/\n- Evidence: `evidence:e06e10be6c5aa9ee407e4db9d2a1480a97c82b71c2b0320b`\n  - Exact quote: “Pulumi Cloud handles operational concerns automatically, including backup and recovery, team collaboration, RBAC, and audit logging.”\n  - Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n  - URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n- Evidence: `evidence:fa00e7e064fa9c97b6727cdee1c9d2da2ebc1d2fb6dadca4`\n  - Exact quote: “To use a DIY backend, specify a storage endpoint URL as `pulumi login`’s  argument: `s3://`, `azblob://`, `gs://`, or `file://`.”\n  - Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n  - URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n- Evidence: `evidence:b554a6e010a79561f7aecede303b6d2d1be9d3e97aee37d2`\n  - Exact quote: “If supported by your [backend](/terraform/language/backend), Terraform will lock your state for all operations that could write state. This prevents others from acquiring the lock and potentially corrupting your state.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3`\n  - URL: https://developer.hashicorp.com/terraform/language/state/locking\n- Evidence: `evidence:890d444540a5b3647d8a55ae929ed95695f4511e661f06b9`\n  - Exact quote: “State locking happens automatically on all operations that could write state. You do not see any message that it happens. If state locking fails, Terraform does not continue.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3`\n  - URL: https://developer.hashicorp.com/terraform/language/state/locking\n- Evidence: `evidence:d7f7d456551a47ac26bf51bc0cb187bbe0c1002379f45d2f`\n  - Exact quote: “Not all backends support locking. The [documentation for each backend](/terraform/language/backend#available-backends) includes details about whether it supports locking or not.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde`\n  - URL: https://developer.hashicorp.com/terraform/language/state/backends\n- Evidence: `evidence:9fd68972e63da9b39bd31264e2cb8d753980c734deec8855`\n  - Exact quote: “To protect you, the `force-unlock` command requires a unique lock ID. Terraform will output this lock ID if unlocking fails. This lock ID acts as a [nonce](https://en.wikipedia.org/wiki/Cryptographic_nonce), ensuring that locks and unlocks target the correct lock.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3`\n  - URL: https://developer.hashicorp.com/terraform/language/state/locking\n- Evidence: `evidence:10478f6347733f122d8d1f23bdb07b0e6e9bdc65f5b46a47`\n  - Exact quote: “If state locking fails, Terraform does not continue.”\n  - Snapshot: `research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3`\n  - URL: https://developer.hashicorp.com/terraform/language/state/locking\n- Evidence: `evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5`\n  - Exact quote: “A basic file-based locking system is enabled by default for all DIY backends.”\n  - Snapshot: `research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635`\n  - URL: https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/38eeb20c-0591-48dc-ab87-7dfd7747163b/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 16530,
+      "sha256": "85b60c573de2bd2fb824ddcf7e7c26a6efc90eb596cb11fd570983a076381a90"
+    },
+    "research_artifact": {
+      "artifact_id": "38eeb20c-0591-48dc-ab87-7dfd7747163b",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "38eeb20c-0591-48dc-ab87-7dfd7747163b",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/38eeb20c-0591-48dc-ab87-7dfd7747163b/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 16530,
+        "sha256": "85b60c573de2bd2fb824ddcf7e7c26a6efc90eb596cb11fd570983a076381a90"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Terraform state locking backends site:developer.hashicorp.com",
+          "Terraform force-unlock error acquiring the state lock concurrent operation",
+          "Terraform state locking backend official documentation",
+          "site:pulumi.com Pulumi Cloud backend state locking concurrent update",
+          "Pulumi state backends storage options",
+          "Pulumi state locking concurrency"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-fbe2a04069387628",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Pulumi",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+            "read_focus": "Compare Terraform and Pulumi on state storage, locking, and concurrent modification control, citing official documentation with exact quotes, snapshots, and URLs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-94dc3ea57721d541",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Terraform",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+            "read_focus": "Compare Terraform and Pulumi on state storage, locking, and concurrent modification control, citing official documentation with exact quotes, snapshots, and URLs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+            "row_id": "entity-fbe2a04069387628",
+            "branch_id": "branch-main",
+            "column_key": "dim-1178b4764778dc5b",
+            "column_label": "并发修改控制",
+            "candidate_value": "Pulumi DIY 后端内置状态锁定，锁文件位于 locks/ 目录下",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39",
+              "evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-94dc3ea57721d541:dim-20907b81675bcb81",
+            "row_id": "entity-94dc3ea57721d541",
+            "branch_id": "branch-main",
+            "column_key": "dim-20907b81675bcb81",
+            "column_label": "状态存储方式",
+            "candidate_value": "默认的 local 后端把状态存储在本地磁盘的 JSON 文件中",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-94dc3ea57721d541:dim-1178b4764778dc5b",
+            "row_id": "entity-94dc3ea57721d541",
+            "branch_id": "branch-main",
+            "column_key": "dim-1178b4764778dc5b",
+            "column_label": "并发修改控制",
+            "candidate_value": "Terraform 在 backend 支持时对所有可能写状态的操作自动加锁，防止他人获取锁并损坏状态。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-94dc3ea57721d541:dim-79664b1cca7a0053",
+            "row_id": "entity-94dc3ea57721d541",
+            "branch_id": "branch-main",
+            "column_key": "dim-79664b1cca7a0053",
+            "column_label": "状态锁定机制",
+            "candidate_value": "后端（backend）负责在可能的情况下支持状态锁定。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fbe2a04069387628:dim-79664b1cca7a0053",
+            "row_id": "entity-fbe2a04069387628",
+            "branch_id": "branch-main",
+            "column_key": "dim-79664b1cca7a0053",
+            "column_label": "状态锁定机制",
+            "candidate_value": "对 DIY 后端，Pulumi 默认启用基本文件锁",
+            "status": "VERIFIED",
+            "confidence": 0.93,
+            "evidence_refs": [
+              "evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fbe2a04069387628:dim-20907b81675bcb81",
+            "row_id": "entity-fbe2a04069387628",
+            "branch_id": "branch-main",
+            "column_key": "dim-20907b81675bcb81",
+            "column_label": "状态存储方式",
+            "candidate_value": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-fbe2a04069387628",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Pulumi",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+          "read_focus": "Compare Terraform and Pulumi on state storage, locking, and concurrent modification control, citing official documentation with exact quotes, snapshots, and URLs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-94dc3ea57721d541",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+          "read_focus": "Compare Terraform and Pulumi on state storage, locking, and concurrent modification control, citing official documentation with exact quotes, snapshots, and URLs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+          "row_id": "entity-fbe2a04069387628",
+          "branch_id": "branch-main",
+          "column_key": "dim-1178b4764778dc5b",
+          "column_label": "并发修改控制",
+          "candidate_value": "Pulumi DIY 后端内置状态锁定，锁文件位于 locks/ 目录下",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39",
+            "evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-20907b81675bcb81",
+          "row_id": "entity-94dc3ea57721d541",
+          "branch_id": "branch-main",
+          "column_key": "dim-20907b81675bcb81",
+          "column_label": "状态存储方式",
+          "candidate_value": "默认的 local 后端把状态存储在本地磁盘的 JSON 文件中",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-1178b4764778dc5b",
+          "row_id": "entity-94dc3ea57721d541",
+          "branch_id": "branch-main",
+          "column_key": "dim-1178b4764778dc5b",
+          "column_label": "并发修改控制",
+          "candidate_value": "Terraform 在 backend 支持时对所有可能写状态的操作自动加锁，防止他人获取锁并损坏状态。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-79664b1cca7a0053",
+          "row_id": "entity-94dc3ea57721d541",
+          "branch_id": "branch-main",
+          "column_key": "dim-79664b1cca7a0053",
+          "column_label": "状态锁定机制",
+          "candidate_value": "后端（backend）负责在可能的情况下支持状态锁定。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-79664b1cca7a0053",
+          "row_id": "entity-fbe2a04069387628",
+          "branch_id": "branch-main",
+          "column_key": "dim-79664b1cca7a0053",
+          "column_label": "状态锁定机制",
+          "candidate_value": "对 DIY 后端，Pulumi 默认启用基本文件锁",
+          "status": "VERIFIED",
+          "confidence": 0.93,
+          "evidence_refs": [
+            "evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-20907b81675bcb81",
+          "row_id": "entity-fbe2a04069387628",
+          "branch_id": "branch-main",
+          "column_key": "dim-20907b81675bcb81",
+          "column_label": "状态存储方式",
+          "candidate_value": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:890d444540a5b3647d8a55ae929ed95695f4511e661f06b9",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "State locking happens automatically on all operations that could write\nstate. You do not see any message that it happens. If state locking fails,\nTerraform does not continue.",
+          "claim_text": "状态锁定在所有可能写入状态的操作上自动发生，如果锁定失败 Terraform 不会继续。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:172dab1d1f228815dbdf2cf3bb9d8dd87389a254fcdacc1c",
+          "window_id": "window-4",
+          "source_id": "web-28593827ecee303e",
+          "source_title": "Backend block configuration overview | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/backend",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL Backend block configuration overview | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "You can either [integrate with HCP Terraform](/terraform/language/terraform#terraform-cloud) to store state data or define a `backend` block to store state in a remote object.",
+          "claim_text": "可通过集成 HCP Terraform 存储状态数据，或定义 backend 块把状态存到远程对象中",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/12853670154f225e40fd6809e8974777a1a319a862bf48332f2044eb3bf91914"
+        },
+        {
+          "evidence_id": "evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7",
+          "window_id": "window-2",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL Backends: State Storage and Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For example, the local (default) backend stores state in a local JSON file on disk.",
+          "claim_text": "默认的 local 后端把状态存储在本地磁盘的 JSON 文件中",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde"
+        },
+        {
+          "evidence_id": "evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747",
+          "window_id": "window-2",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL Backends: State Storage and Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Backends are responsible for supporting [state locking](/terraform/language/state/locking) if possible.",
+          "claim_text": "后端（backend）负责在可能的情况下支持状态锁定。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde"
+        },
+        {
+          "evidence_id": "evidence:10478f6347733f122d8d1f23bdb07b0e6e9bdc65f5b46a47",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If state locking fails,\nTerraform does not continue.",
+          "claim_text": "状态加锁失败时 Terraform 不会继续执行。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:9fd68972e63da9b39bd31264e2cb8d753980c734deec8855",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To protect you, the `force-unlock` command requires a unique lock ID. Terraform\nwill output this lock ID if unlocking fails. This lock ID acts as a\n[nonce](https://en.wikipedia.org/wiki/Cryptographic_nonce), ensuring\nthat locks and unlocks target the correct lock.",
+          "claim_text": "force-unlock 命令要求唯一的锁 ID，作为 nonce 确保锁与解锁针对正确的锁。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Terraform will lock your\nstate for all operations that could write state. This prevents\nothers from acquiring the lock and potentially corrupting your state.",
+          "claim_text": "Terraform 在 backend 支持时对所有可能写状态的操作自动加锁，防止他人获取锁并损坏状态。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:de481c62892df18caa82088dd8abb1d70ad2ee635b993f27",
+          "window_id": "window-2",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL Backends: State Storage and Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "When using a non-local backend, Terraform will not persist the state anywhere on disk except in the case of a non-recoverable error where writing the state to the backend failed.",
+          "claim_text": "使用非本地后端时，Terraform 不会在磁盘上持久化状态，除非写状态到后端失败",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.92,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde"
+        },
+        {
+          "evidence_id": "evidence:b554a6e010a79561f7aecede303b6d2d1be9d3e97aee37d2",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If supported by your [backend](/terraform/language/backend), Terraform will lock your\nstate for all operations that could write state. This prevents\nothers from acquiring the lock and potentially corrupting your state.",
+          "claim_text": "如果后端支持，Terraform 会对所有可能写入状态的操作锁定状态，以防止他人获取锁并损坏状态。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:a242085a94d8353dea1cc4dd1d3325a27b808058facedaf7",
+          "window_id": "window-3",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL State: Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Not all backends support locking.",
+          "claim_text": "并非所有 backend 都支持加锁，需查看各 backend 文档确认。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/a1f93e548ef142b755afb35f427ff0da51b25e6a3f2666479df46833479431e3"
+        },
+        {
+          "evidence_id": "evidence:d7f7d456551a47ac26bf51bc0cb187bbe0c1002379f45d2f",
+          "window_id": "window-2",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Terraform state locking backends site:developer.hashicorp.com",
+          "read_focus": "Read external URL Backends: State Storage and Locking | Terraform for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Terraform. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Not all backends support locking. The [documentation for each backend](/terraform/language/backend#available-backends) includes details about whether it supports locking or not.",
+          "claim_text": "并非所有后端都支持锁定，各后端文档中会说明是否支持。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/070cd72e-2e41-4d9b-883c-dfa8358f4b7b/0ae05540746eb25d5c3f1ed4f54e082c7790d0b18fe50398d8e6958f55bbccde"
+        },
+        {
+          "evidence_id": "evidence:0708d32226e790e7d12cb000657b164fa4a5c42c820f7bbe",
+          "window_id": "window-4",
+          "source_id": "web-8689aeeff3c932c0",
+          "source_title": "Adding PostgreSQL State Backend Support to Pulumi",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/blog/postgres-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Adding PostgreSQL State Backend Support to Pulumi for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Pulumi now offers support for PostgreSQL as a DIY state storage option—though this requires additional operational overhead",
+          "claim_text": "Pulumi 还支持 PostgreSQL 作为 DIY 状态存储选项。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/82375659dd7f5a0e11e47b72322d362b29cdffbe4c399bb973782b6eb0c227c3"
+        },
+        {
+          "evidence_id": "evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "DIY backends include built-in state locking and history tracking.",
+          "claim_text": "Pulumi DIY 后端内置状态锁定，锁文件位于 locks/ 目录下",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:e06e10be6c5aa9ee407e4db9d2a1480a97c82b71c2b0320b",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Pulumi Cloud handles operational concerns automatically, including backup and recovery, team collaboration, RBAC, and audit logging.",
+          "claim_text": "Pulumi Cloud 自动处理备份恢复、团队协作、RBAC 和审计日志等运维事项，并提供比 blob 存储协议更强保证的事务性 API。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:fa00e7e064fa9c97b6727cdee1c9d2da2ebc1d2fb6dadca4",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To use a DIY backend, specify a storage endpoint URL as `pulumi login`’s  argument: `s3://`, `azblob://`, `gs://`, or `file://`.",
+          "claim_text": "使用 DIY 后端时，通过 s3://、azblob://、gs:// 或 file:// 指定存储端点，检查点文件存放在相对 .pulumi 目录。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.92,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:46336099ebceb046c3cca3109e77cdf6875a7c936231e4c5",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A basic file-based locking system is enabled by default for all DIY backends.",
+          "claim_text": "Pulumi 的 DIY 后端默认启用基本的基于文件的锁定系统",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`locks/`: Lock files for each stack if the stack is currently being operated on by a Pulumi operation",
+          "claim_text": "Pulumi 的 locks/ 子目录存放正在被操作栈的锁文件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A basic file-based locking system is enabled by default for all DIY backends.",
+          "claim_text": "对 DIY 后端，Pulumi 默认启用基本文件锁",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.93,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        },
+        {
+          "evidence_id": "evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b",
+          "window_id": "window-5",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulumi state backends storage options",
+          "read_focus": "Read external URL Using a DIY Backend for claims that answer: 比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。\n\nCurrent Table-as-State entity: Pulumi. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.",
+          "claim_text": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5/f493823546646be0bf510cefbf7e38414e40342517052ce508a44de1fa7bb635"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-79664b1cca7a0053",
+          "row_id": "entity-94dc3ea57721d541",
+          "evidence_id": "evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends"
+        },
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-20907b81675bcb81",
+          "row_id": "entity-94dc3ea57721d541",
+          "evidence_id": "evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7",
+          "source_id": "web-0d80e835df935557",
+          "source_title": "Backends: State Storage and Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/backends"
+        },
+        {
+          "cell_id": "entity-94dc3ea57721d541:dim-1178b4764778dc5b",
+          "row_id": "entity-94dc3ea57721d541",
+          "evidence_id": "evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf",
+          "source_id": "web-bff0c1d87d14554e",
+          "source_title": "State: Locking | Terraform",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.hashicorp.com/terraform/language/state/locking"
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-79664b1cca7a0053",
+          "row_id": "entity-fbe2a04069387628",
+          "evidence_id": "evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/"
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+          "row_id": "entity-fbe2a04069387628",
+          "evidence_id": "evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/"
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-20907b81675bcb81",
+          "row_id": "entity-fbe2a04069387628",
+          "evidence_id": "evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/"
+        },
+        {
+          "cell_id": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+          "row_id": "entity-fbe2a04069387628",
+          "evidence_id": "evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf",
+          "source_id": "web-e5bdc6ea88500d1b",
+          "source_title": "Using a DIY Backend",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.pulumi.com/docs/iac/operations/stack-management/using-a-diy-backend/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "2f6af4dc-72c1-47dc-8596-753727875c34",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T13:34:04Z"
+      },
+      {
+        "trace_id": "ccbeec12-6252-4e9f-9522-527efb4c7854",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T13:34:16Z"
+      },
+      {
+        "trace_id": "507bb7d2-7939-41bf-9eeb-8920bfd941b2",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 Terraform 与 Pulumi 的状态存储、加锁和并发修改控制方式，引用官方文档。",
+        "payload": {
+          "cell_count": 6
+        },
+        "created_at": "2026-10-17T13:35:53Z"
+      }
+    ],
+    "created_at": "2026-10-17T13:34:04Z",
+    "updated_at": "2026-10-17T13:35:53Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:35:05Z",
+          "lease_epoch": 1,
+          "task_id": "0fcb5ea9-29b7-49c9-b6c7-ee30ff3a9dcb",
+          "task_key": "planning:38eeb20c-0591-48dc-ab87-7dfd7747163b",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:36:02Z",
+          "lease_epoch": 1,
+          "task_id": "070cd72e-2e41-4d9b-883c-dfa8358f4b7b",
+          "task_key": "deep-cell:91bc29558e8547480f2edbca863ea34e",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:36:33Z",
+          "lease_epoch": 1,
+          "task_id": "73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5",
+          "task_key": "deep-cell:c0e7eb63b73036cd345ba8498d9fc127",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:36:39Z",
+          "lease_epoch": 1,
+          "task_id": "97203a64-f16a-4f5a-abe8-934ab40a0b34",
+          "task_key": "synthesis:15a7a8305c1a0417a77d8dc9c4d11c06",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "4f0134a1-9de0-41ad-a86a-8ae9534ec981",
+          "cell_key": "entity-94dc3ea57721d541:dim-20907b81675bcb81",
+          "task_id": "070cd72e-2e41-4d9b-883c-dfa8358f4b7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "829fe8a9-b3eb-480b-b4c6-1da3f61e5404",
+          "cell_key": "entity-94dc3ea57721d541:dim-1178b4764778dc5b",
+          "task_id": "070cd72e-2e41-4d9b-883c-dfa8358f4b7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "a1e7617f-4324-4e57-b9d2-1f75b4d6d0e4",
+          "cell_key": "entity-94dc3ea57721d541:dim-79664b1cca7a0053",
+          "task_id": "070cd72e-2e41-4d9b-883c-dfa8358f4b7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "210d6a54-c162-4dac-afed-7eefb3eea248",
+          "cell_key": "entity-fbe2a04069387628:dim-20907b81675bcb81",
+          "task_id": "73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.93,
+          "candidate_id": "b5653cd5-1334-4900-85a5-1c5e44e9bb38",
+          "cell_key": "entity-fbe2a04069387628:dim-79664b1cca7a0053",
+          "task_id": "73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "e3252a4e-099c-4d97-aad6-05697b0584a5",
+          "cell_key": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+          "task_id": "73481cb9-1a7c-40e8-a8eb-d3c7762b0ca5"
+        }
+      ],
+      "candidate_count": 6,
+      "task_count": 4,
+      "merge_count": 6,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:41b11934b083da8f7ec69a83bd14dbd92f3eea27e9f9702814a34387c84884ad",
+          "candidate_id": "a1e7617f-4324-4e57-b9d2-1f75b4d6d0e4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-94dc3ea57721d541:dim-79664b1cca7a0053"
+        },
+        {
+          "merge_id": "merge:9bff7eeb54824123425d77bf74de1178c551ed8777c318e38a06b0822f1fe7e3",
+          "candidate_id": "829fe8a9-b3eb-480b-b4c6-1da3f61e5404",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-94dc3ea57721d541:dim-1178b4764778dc5b"
+        },
+        {
+          "merge_id": "merge:60c7befc05c2a2848b282405624808eeea3b23d1d38396da48599d7df81f3110",
+          "candidate_id": "4f0134a1-9de0-41ad-a86a-8ae9534ec981",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-94dc3ea57721d541:dim-20907b81675bcb81"
+        },
+        {
+          "merge_id": "merge:130daab027ffc0a97cec24eeaf33c37ad127532cc563eb6e5eaa4b64b2469feb",
+          "candidate_id": "210d6a54-c162-4dac-afed-7eefb3eea248",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fbe2a04069387628:dim-20907b81675bcb81"
+        },
+        {
+          "merge_id": "merge:a22f1b5fce4d1f1f22dda9fe1e2aaae9cb8b9de0377ff0d1e6fa25b132b8ec48",
+          "candidate_id": "e3252a4e-099c-4d97-aad6-05697b0584a5",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fbe2a04069387628:dim-1178b4764778dc5b"
+        },
+        {
+          "merge_id": "merge:996fb016a64db6842c3814e077514b4b3d6b036689ea6ccb417d0f116b3dba17",
+          "candidate_id": "b5653cd5-1334-4900-85a5-1c5e44e9bb38",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fbe2a04069387628:dim-79664b1cca7a0053"
+        }
+      ],
+      "checkpoints": []
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-94dc3ea57721d541",
+            "label": "Terraform"
+          },
+          {
+            "entity_key": "entity-fbe2a04069387628",
+            "label": "Pulumi"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-1178b4764778dc5b",
+            "label": "并发修改控制",
+            "description": "What mechanism each tool uses to detect or prevent concurrent modifications to the same stack/state (e.g., lock acquisition failure, conflict errors, force-unlock), per official docs.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-20907b81675bcb81",
+            "label": "状态存储方式",
+            "description": "How each tool stores infrastructure state: local file, remote backend, managed service, and default behavior, with what the official docs state.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-79664b1cca7a0053",
+            "label": "状态锁定机制",
+            "description": "How each tool acquires and releases locks on state (or equivalent) to prevent concurrent operations, including which backends support locking, with official documentation references.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "State storage options (backend/service), locking mechanisms, and concurrency control behavior for each tool as described in their official documentation.",
+          "objective": "Compare Terraform and Pulumi on state storage, locking, and concurrent modification control, citing official documentation with exact quotes, snapshots, and URLs.",
+          "exclusions": [
+            "General feature comparisons beyond state, locking, and concurrency",
+            "Migration guidance",
+            "Pricing"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with a citation audit table mapping each claim to quote, snapshot, and URL."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "developer.hashicorp.com",
+          "pulumi.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which backends does each tool support for state and locking?",
+              "How does each behave when a lock is already held?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Which tool offers stronger built-in concurrency safety by default?",
+              "What operational setup is needed for safe concurrent use?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-94dc3ea57721d541:dim-1178b4764778dc5b",
+          "entity_label": "Terraform",
+          "column_label": "并发修改控制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Terraform 在 backend 支持时对所有可能写状态的操作自动加锁，防止他人获取锁并损坏状态。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:711e0e68ce2d2abf0281b051adfdeb91b4fe229680f509cf",
+              "source_domain": "hashicorp.com",
+              "claim_text": "Terraform 在 backend 支持时对所有可能写状态的操作自动加锁，防止他人获取锁并损坏状态。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-94dc3ea57721d541:dim-20907b81675bcb81",
+          "entity_label": "Terraform",
+          "column_label": "状态存储方式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "默认的 local 后端把状态存储在本地磁盘的 JSON 文件中",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3cac2f01297008a6d06016ce03c206f42bcaaacebc744ff7",
+              "source_domain": "hashicorp.com",
+              "claim_text": "默认的 local 后端把状态存储在本地磁盘的 JSON 文件中"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-94dc3ea57721d541:dim-79664b1cca7a0053",
+          "entity_label": "Terraform",
+          "column_label": "状态锁定机制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "后端（backend）负责在可能的情况下支持状态锁定。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f2155b0a46ee39442c47cb9265e5ea0a6aca9208bd6da747",
+              "source_domain": "hashicorp.com",
+              "claim_text": "后端（backend）负责在可能的情况下支持状态锁定。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fbe2a04069387628:dim-1178b4764778dc5b",
+          "entity_label": "Pulumi",
+          "column_label": "并发修改控制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Pulumi DIY 后端内置状态锁定，锁文件位于 locks/ 目录下",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:78d5c8c3c4c99450dbeba6340c641946556d4b1118931a39",
+              "source_domain": "pulumi.com",
+              "claim_text": "Pulumi 的 locks/ 子目录存放正在被操作栈的锁文件"
+            },
+            {
+              "evidence_key": "evidence:7cf51ec48ee6af590747768a8dad2bef8237adb5d91ec8bf",
+              "source_domain": "pulumi.com",
+              "claim_text": "Pulumi DIY 后端内置状态锁定，锁文件位于 locks/ 目录下"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fbe2a04069387628:dim-20907b81675bcb81",
+          "entity_label": "Pulumi",
+          "column_label": "状态存储方式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:a0bcaf760ba2d59474791145fb84353af7a844e278cfd81b",
+              "source_domain": "pulumi.com",
+              "claim_text": "The filesystem and cloud storage backends allow you to store state locally on your machine or remotely within a cloud object store."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fbe2a04069387628:dim-79664b1cca7a0053",
+          "entity_label": "Pulumi",
+          "column_label": "状态锁定机制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "对 DIY 后端，Pulumi 默认启用基本文件锁",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3530672769e3f752f5b5ed432311521b7b45ad6b8681562c",
+              "source_domain": "pulumi.com",
+              "claim_text": "对 DIY 后端，Pulumi 默认启用基本文件锁"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 930000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

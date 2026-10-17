@@ -1,0 +1,1030 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-microservice-speed",
+  "run_id": "e42cf03f-5abf-4958-9f2d-013cae106008",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:24:28.350460+00:00",
+  "finished_at": "2026-10-17T14:26:33.965498+00:00",
+  "wall_seconds": 125.6,
+  "run_detail": {
+    "research_run_id": "e42cf03f-5abf-4958-9f2d-013cae106008",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "75330f37-6035-4e1b-8581-8caa6bf46ec7",
+    "question": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+    "final_report_markdown": "# 微服务架构是否提高中型团队的长期交付速度：支持与反对证据的比较\n\n本次核验的资料显示，具备微服务专长的组织能够更快地构建和发布数字产品，但同时在采用微服务架构之前必须先确保其优势大于成本，因此微服务的收益并非无条件成立；此外，有研究指出团队整体表现与单个系统的表现并不相关，且各系统之间差异显著，因此用汇总的交付指标来衡量交付速度存在方法上的混淆。针对中型团队长期交付速度这一具体问题，所核验的资料尚未给出直接对应的结论。\n\n## 直接回答\n\n对于微服务架构是否提高长期交付速度，本次核验的资料给出了倾向于正面的证据：具备微服务专长的组织能够更快地构建和发布数字产品，说明专业能力与更快的构建、发布节奏相关。与此同时，另一份资料强调，在采用微服务架构之前，需要先确保其优势大于成本，这意味着收益并非无条件成立，是否提高交付速度取决于优势能否覆盖成本。 [evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d] [evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d]\n\n在衡量方法方面，一项基于自动化 DORA 指标的研究指出，团队整体的表现与单个系统的表现并不相关，而且各系统之间存在显著差异，因此用汇总指标衡量交付速度会带来方法上的混淆。这一发现提醒我们，在评估微服务架构对交付速度的影响时，需要区分团队层面与系统层面的表现。 [evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54]\n\n## 支持证据及其来源\n\n支持微服务架构与更快交付之间存在关联的资料表明，具备微服务专长的组织能够更快地构建和发布数字产品。该表述把更快的构建与发布节奏同组织在微服务方面的专长联系起来，从方向上看为微服务可能提高交付速度提供了正面依据。需要注意的是，该结论的适用范围是“具备微服务专长的组织”，而并未直接针对中型团队或长期时间跨度。 [evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d]\n\n## 反对或不够确定的证据及其来源\n\n另一份资料则从成本与收益的角度提出保留意见：需要先确保微服务架构的优势大于成本。这一表述暗示微服务带来的收益并非无条件成立，只有在优势超过成本的前提下，架构选择才具有正当性。该证据并未断言微服务会拖慢交付，但它构成了对“微服务必然提高交付速度”这一说法的约束条件。 [evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d]\n\n## 证据差异的成因与衡量方法\n\n上述两种立场之间的差异，部分可以用适用条件来解释：支持性的表述以组织具备微服务专长为前提，而保留性的表述则强调优势必须大于成本。也就是说，微服务能否加快交付，取决于组织的专长水平以及成本能否被收益覆盖，而不是架构本身单方面决定的。 [evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d] [evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d]\n\n在衡量层面，基于自动化 DORA 指标的研究显示，团队整体表现与单个系统的表现并不相关，各系统之间差异显著，因此用汇总指标衡量交付速度存在方法上的混淆。这意味着，即便观察到微服务与某一系统的交付节奏变化，也不能简单地把它推广到团队整体的长期交付速度上；比较不同证据时，必须留意它们所处的分析层次。 [evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54]\n\n## 对比表\n\n| 立场 | 核心主张 | 适用条件或范围 |\n| --- | --- | --- |\n| 支持微服务有利于交付速度 | 具备微服务专长的组织能更快构建和发布数字产品 | 以组织具备微服务专长为前提 [evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d] |\n| 对微服务收益持保留态度 | 需先确保微服务架构的优势大于成本 | 以优势能够覆盖成本为前提 [evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d] |\n| 衡量方法上的提醒 | 团队整体表现与单个系统表现不相关，各系统差异显著，汇总指标存在方法混淆 | 适用于用汇总指标衡量交付速度的情形 [evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54] |\n\n## Citation audit\n\n### 微服务架构对中型团队长期交付速度的影响 · 差异条件、方法与混淆因素\n\n- Evidence: `evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54`\n- Exact quote: “**Team performance does not correlate to individual system performance.**”\n- Snapshot: `research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/b08016f18bd0e8342606148b03d7448fd7092b502c465ec05d11e72e9335f3cd`\n- URL: https://dl.acm.org/doi/fullHtml/10.1145/3666015.3666020\n\n### 微服务架构对中型团队长期交付速度的影响 · 反对或不 conclusive 证据与来源\n\n- Evidence: `evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d`\n- Exact quote: “确保微服务架构的优势大于成本。”\n- Snapshot: `research/external/0d519c6b-cb2d-4623-b192-dc047a1fced9/81bcf059e06a69302b56d1e4faa33a2c8571ff28b227492bd1770d3f16bd7d22`\n- URL: https://docs.oracle.com/zh-cn/solutions/learn-architect-microservice/index.html\n\n### 微服务架构对中型团队长期交付速度的影响 · 支持证据与来源\n\n- Evidence: `evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d`\n- Exact quote: “Conversely, organizations with microservices expertise can build and release digital products faster.”\n- Snapshot: `research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/0138171b3666369ec387619babf05774d131cb0f89da8089b91defa4e7788f78`\n- URL: https://aws.amazon.com/compare/the-difference-between-monolithic-and-microservices-architecture/\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/e42cf03f-5abf-4958-9f2d-013cae106008/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 5940,
+      "sha256": "3036920355df75aa0f38167de670c065e0a95e1ffc7f60fd37f629e4d6f5b600"
+    },
+    "research_artifact": {
+      "artifact_id": "e42cf03f-5abf-4958-9f2d-013cae106008",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "e42cf03f-5abf-4958-9f2d-013cae106008",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/e42cf03f-5abf-4958-9f2d-013cae106008/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 5940,
+        "sha256": "3036920355df75aa0f38167de670c065e0a95e1ffc7f60fd37f629e4d6f5b600"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "empirical study microservices developer velocity monolith comparison productivity",
+          "microservices team delivery speed long-term evidence",
+          "DORA metrics microservices adoption team size delivery performance research methodology",
+          "微服务架构对中型团队长期交付速度的影响 微服务 交付速度 下降 挑战 研究 primary research limitations",
+          "微服务架构对中型团队长期交付速度的影响 微服务 交付速度 下降 挑战 研究 官方说明 适用条件"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-82574b2bf5ae67b3",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "微服务架构对中型团队长期交付速度的影响",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+            "read_focus": "比较支持与反对微服务架构提高中型团队长期交付速度的证据，并说明证据来源。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa",
+            "row_id": "entity-82574b2bf5ae67b3",
+            "branch_id": "branch-main",
+            "column_key": "dim-1abefefe37aaf8aa",
+            "column_label": "差异条件、方法与混淆因素",
+            "candidate_value": "基于自动化 DORA 指标的研究指出：团队整体表现与单个系统的表现并不相关，各系统之间差异显著，说明用汇总指标衡量交付速度存在方法上的混淆。",
+            "status": "VERIFIED",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+            "row_id": "entity-82574b2bf5ae67b3",
+            "branch_id": "branch-main",
+            "column_key": "dim-a4efe8f99a0b7f2f",
+            "column_label": "反对或不 conclusive 证据与来源",
+            "candidate_value": "需先确保微服务架构的优势大于成本，暗示其收益并非无条件成立",
+            "status": "VERIFIED",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5",
+            "row_id": "entity-82574b2bf5ae67b3",
+            "branch_id": "branch-main",
+            "column_key": "dim-b0377e05f822b2c5",
+            "column_label": "支持证据与来源",
+            "candidate_value": "具备微服务专长的组织能更快构建和发布数字产品",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-82574b2bf5ae67b3",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "微服务架构对中型团队长期交付速度的影响",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+          "read_focus": "比较支持与反对微服务架构提高中型团队长期交付速度的证据，并说明证据来源。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "branch_id": "branch-main",
+          "column_key": "dim-1abefefe37aaf8aa",
+          "column_label": "差异条件、方法与混淆因素",
+          "candidate_value": "基于自动化 DORA 指标的研究指出：团队整体表现与单个系统的表现并不相关，各系统之间差异显著，说明用汇总指标衡量交付速度存在方法上的混淆。",
+          "status": "VERIFIED",
+          "confidence": 0.6,
+          "evidence_refs": [
+            "evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "branch_id": "branch-main",
+          "column_key": "dim-a4efe8f99a0b7f2f",
+          "column_label": "反对或不 conclusive 证据与来源",
+          "candidate_value": "需先确保微服务架构的优势大于成本，暗示其收益并非无条件成立",
+          "status": "VERIFIED",
+          "confidence": 0.6,
+          "evidence_refs": [
+            "evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "branch_id": "branch-main",
+          "column_key": "dim-b0377e05f822b2c5",
+          "column_label": "支持证据与来源",
+          "candidate_value": "具备微服务专长的组织能更快构建和发布数字产品",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:25:43Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:70a071db501a945fd0d029730ecb13a6ada614fdd266590e",
+          "window_id": "window-1",
+          "source_id": "web-d3a96d6007304be0",
+          "source_title": "Microservices vs. monolithic architecture",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.atlassian.com/microservices/microservices-architecture/microservices-vs-monolith",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "empirical study microservices developer velocity monolith comparison productivity",
+          "read_focus": "Read external URL Microservices vs. monolithic architecture for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Microservices are by no means a silver bullet, but they solve a number of problems for growing software and companies.",
+          "claim_text": "Atlassian 承认微服务并非灵丹妙药（并非万能药），暗示其益处并非普遍成立。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/24bb3144ee7e8b5565f33e4ecf66727cbe8025f3d36b6311429a61325b4c402c"
+        },
+        {
+          "evidence_id": "evidence:8e3efa918039f74ea2d5d1fca9a783d2d6983217a3e1e15a",
+          "window_id": "window-5",
+          "source_id": "web-afb87c78d52c2a23",
+          "source_title": "Premature Microservices - MinimumCD Practice Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://beyond.minimumcd.org/docs/anti-patterns/architecture/premature-microservices/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "microservices team delivery speed long-term evidence",
+          "read_focus": "Read external URL Premature Microservices - MinimumCD Practice Guide for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A team of ten does not have that problem.",
+          "claim_text": "该实践指南以团队规模为前提提出反对证据：Netflix 和 Spotify 因拥有数千名开发者而采用微服务，十人团队不存在同样的问题，因此中型或小型团队引入微服务可能负担超过收益。",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.7,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/6784fcccd4219145f8369ca574c1e0cf090a29d59b5693cb83b6a7b45eaad8ba"
+        },
+        {
+          "evidence_id": "evidence:927229f785527649cb9cc863f1e24eeb110934a0f7c2322f",
+          "window_id": "window-2",
+          "source_id": "web-c0614f1d103de02f",
+          "source_title": "Monolithic vs Microservices - Difference Between Software ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://aws.amazon.com/compare/the-difference-between-monolithic-and-microservices-architecture/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "empirical study microservices developer velocity monolith comparison productivity",
+          "read_focus": "Read external URL Monolithic vs Microservices - Difference Between Software ... for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A microservice architecture requires more planning and design before starting.",
+          "claim_text": "微服务架构在开始前需要更多规划与设计，且微服务并不会降低应用复杂度（反而是揭示底层复杂度）。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.65,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/0138171b3666369ec387619babf05774d131cb0f89da8089b91defa4e7788f78"
+        },
+        {
+          "evidence_id": "evidence:9bc7de2fbea26ee2d4c5677b4a2f832c9ebf4c167f82dd1c",
+          "window_id": "window-5",
+          "source_id": "web-afb87c78d52c2a23",
+          "source_title": "Premature Microservices - MinimumCD Practice Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://beyond.minimumcd.org/docs/anti-patterns/architecture/premature-microservices/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "microservices team delivery speed long-term evidence",
+          "read_focus": "Read external URL Premature Microservices - MinimumCD Practice Guide for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Teams that adopt microservices before building this operational foundation end up in a worse position than they were with the monolith.",
+          "claim_text": "过早采用微服务（在缺乏必要问题与运维基础时）会使团队处境比单体更糟，运营成本远超收益。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/6784fcccd4219145f8369ca574c1e0cf090a29d59b5693cb83b6a7b45eaad8ba"
+        },
+        {
+          "evidence_id": "evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d",
+          "window_id": "window-2",
+          "source_id": "web-c0614f1d103de02f",
+          "source_title": "Monolithic vs Microservices - Difference Between Software ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://aws.amazon.com/compare/the-difference-between-monolithic-and-microservices-architecture/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "empirical study microservices developer velocity monolith comparison productivity",
+          "read_focus": "Read external URL Monolithic vs Microservices - Difference Between Software ... for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Conversely, organizations with microservices expertise can build and release digital products faster.",
+          "claim_text": "具备微服务专长的组织能更快构建和发布数字产品",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/0138171b3666369ec387619babf05774d131cb0f89da8089b91defa4e7788f78"
+        },
+        {
+          "evidence_id": "evidence:454e196d384b942d6f83ebbd449506d3b7ed4d9eed98596d",
+          "window_id": "window-2",
+          "source_id": "web-c0614f1d103de02f",
+          "source_title": "Monolithic vs Microservices - Difference Between Software ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://aws.amazon.com/compare/the-difference-between-monolithic-and-microservices-architecture/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "empirical study microservices developer velocity monolith comparison productivity",
+          "read_focus": "Read external URL Monolithic vs Microservices - Difference Between Software ... for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "It's important to understand that microservices don't reduce the complexity of an application.",
+          "claim_text": "微服务并不降低应用复杂度，只是暴露底层复杂性。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/0138171b3666369ec387619babf05774d131cb0f89da8089b91defa4e7788f78"
+        },
+        {
+          "evidence_id": "evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54",
+          "window_id": "window-4",
+          "source_id": "web-525375ceda1a50d0",
+          "source_title": "Fully Automated DORA Metrics Measurement for ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dl.acm.org/doi/fullHtml/10.1145/3666015.3666020",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "DORA metrics microservices adoption team size delivery performance research methodology",
+          "read_focus": "Read external URL Fully Automated DORA Metrics Measurement for ... for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "**Team performance does not correlate to individual system performance.**",
+          "claim_text": "基于自动化 DORA 指标的研究指出：团队整体表现与单个系统的表现并不相关，各系统之间差异显著，说明用汇总指标衡量交付速度存在方法上的混淆。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0ed6b182-52a4-42b6-b5cd-06b033bd6178/b08016f18bd0e8342606148b03d7448fd7092b502c465ec05d11e72e9335f3cd"
+        },
+        {
+          "evidence_id": "evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d",
+          "window_id": "window-3",
+          "source_id": "web-7d2c0916afb504bf",
+          "source_title": "了解微服务架构",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.oracle.com/zh-cn/solutions/learn-architect-microservice/index.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "微服务架构对中型团队长期交付速度的影响 微服务 交付速度 下降 挑战 研究 primary research limitations",
+          "read_focus": "Read external URL 了解微服务架构 for claims that answer: 微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。\n\nCurrent Table-as-State entity: 微服务架构对中型团队长期交付速度的影响. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "确保微服务架构的优势大于成本。",
+          "claim_text": "需先确保微服务架构的优势大于成本，暗示其收益并非无条件成立",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0d519c6b-cb2d-4623-b192-dc047a1fced9/81bcf059e06a69302b56d1e4faa33a2c8571ff28b227492bd1770d3f16bd7d22"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "evidence_id": "evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d",
+          "source_id": "web-c0614f1d103de02f",
+          "source_title": "Monolithic vs Microservices - Difference Between Software ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://aws.amazon.com/compare/the-difference-between-monolithic-and-microservices-architecture/"
+        },
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "evidence_id": "evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54",
+          "source_id": "web-525375ceda1a50d0",
+          "source_title": "Fully Automated DORA Metrics Measurement for ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dl.acm.org/doi/fullHtml/10.1145/3666015.3666020"
+        },
+        {
+          "cell_id": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+          "row_id": "entity-82574b2bf5ae67b3",
+          "evidence_id": "evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d",
+          "source_id": "web-7d2c0916afb504bf",
+          "source_title": "了解微服务架构",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.oracle.com/zh-cn/solutions/learn-architect-microservice/index.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "40dc7296-d37a-41af-b5d0-39a4ed04f213",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:24:28Z"
+      },
+      {
+        "trace_id": "1ba2a7af-e70d-4afb-80e7-b5ed26ea87c3",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T14:24:40Z"
+      },
+      {
+        "trace_id": "f840d922-d780-4281-a335-1e87ed0e3d07",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：微服务架构是否提高了中型团队的长期交付速度？请比较支持和反对的证据并说明证据来源。",
+        "payload": {
+          "cell_count": 3
+        },
+        "created_at": "2026-10-17T14:26:31Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:24:28Z",
+    "updated_at": "2026-10-17T14:26:31Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:25:29Z",
+          "lease_epoch": 1,
+          "task_id": "f489f102-dd49-49e5-8204-3244c7915493",
+          "task_key": "planning:e42cf03f-5abf-4958-9f2d-013cae106008",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:26:43Z",
+          "lease_epoch": 1,
+          "task_id": "0ed6b182-52a4-42b6-b5cd-06b033bd6178",
+          "task_key": "deep-cell:84175942d04b19a8dcbb30a1bb92d4d4",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:27:14Z",
+          "lease_epoch": 1,
+          "task_id": "0d519c6b-cb2d-4623-b192-dc047a1fced9",
+          "task_key": "counterfactual:f92e8c1cb20c891c4e56527fecccc8a3",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:27:23Z",
+          "lease_epoch": 1,
+          "task_id": "0403b882-3f53-4356-89f4-e32b72affd64",
+          "task_key": "synthesis:6df0c857ed3fbd171e708d5edafd9c31",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "0a2f1c39-8461-46bd-8446-f5842c5395aa",
+          "cell_key": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+          "task_id": "0ed6b182-52a4-42b6-b5cd-06b033bd6178"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.6,
+          "candidate_id": "8d654dca-f946-4b04-8070-58bbfd5f34f4",
+          "cell_key": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa",
+          "task_id": "0ed6b182-52a4-42b6-b5cd-06b033bd6178"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "f8996ad1-1956-4471-880f-dcb83c4f9926",
+          "cell_key": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5",
+          "task_id": "0ed6b182-52a4-42b6-b5cd-06b033bd6178"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.6,
+          "candidate_id": "3b6d7cec-d4a3-4d9b-96c2-053c3fae5e50",
+          "cell_key": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+          "task_id": "0d519c6b-cb2d-4623-b192-dc047a1fced9"
+        }
+      ],
+      "candidate_count": 4,
+      "task_count": 4,
+      "merge_count": 4,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:b1fca6602fc0975784fb72b5b23afa4b8e4f7843c79aba8447b91f24d39d86cb",
+          "candidate_id": "8d654dca-f946-4b04-8070-58bbfd5f34f4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa"
+        },
+        {
+          "merge_id": "merge:1531342366110934aa0199186413e74e4526280d80cfbef6201aafc56425ddc6",
+          "candidate_id": "0a2f1c39-8461-46bd-8446-f5842c5395aa",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f"
+        },
+        {
+          "merge_id": "merge:85c32602bac8fc44c88c8afe257a56dff906787983b11ff9e350843c3f374a94",
+          "candidate_id": "f8996ad1-1956-4471-880f-dcb83c4f9926",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5"
+        },
+        {
+          "merge_id": "merge:b7a64e1a85106b0f1bd9cfc1f5246f71ed2d7897d2cb80a1e617768b73506a78",
+          "candidate_id": "3b6d7cec-d4a3-4d9b-96c2-053c3fae5e50",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 2,
+          "merge_high_water_mark": 3,
+          "candidate_high_water_mark": 3
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-82574b2bf5ae67b3",
+            "label": "微服务架构对中型团队长期交付速度的影响"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-1abefefe37aaf8aa",
+            "label": "差异条件、方法与混淆因素",
+            "description": "解释支持与反对证据差异的条件（团队规模、组织成熟度、领域复杂度）、研究方法差异（案例、调查、DORA 指标）及潜在混淆因素。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-a4efe8f99a0b7f2f",
+            "label": "反对或不 conclusive 证据与来源",
+            "description": "反对或未能证实微服务提高长期交付速度的研究、案例或权威论述，需注明证据来源（组织、年份、研究类型）。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b0377e05f822b2c5",
+            "label": "支持证据与来源",
+            "description": "支持微服务架构提高中型团队长期交付速度的研究、案例或权威论述，需注明证据来源（组织、年份、研究类型）。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "聚焦中型团队（约 10–100 名工程师）的长期交付速度，涵盖实证研究、行业报告与权威厂商论述；不扩展到小型初创或超大型组织，除非作为对照条件。",
+          "objective": "比较支持与反对微服务架构提高中型团队长期交付速度的证据，并说明证据来源。",
+          "exclusions": [
+            "不讨论微服务的技术实现细节",
+            "不评估具体厂商产品",
+            "不将单次访谈或未发表博客作为主要证据"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "martinfowler.com",
+          "dora.dev",
+          "ieeexplore.ieee.org",
+          "dl.acm.org",
+          "aws.amazon.com",
+          "redhat.com",
+          "atlassian.com"
+        ],
+        "perspectives": [
+          {
+            "name": "工程实施者",
+            "questions": [
+              "我们的团队规模下，哪些实证研究直接测量了交付速度？",
+              "研究方法（指标、样本、时间跨度）是否足以支持因果结论？"
+            ]
+          },
+          {
+            "name": "技术决策者",
+            "questions": [
+              "支持和反对的证据分别来自哪些可信组织？",
+              "在什么条件下微服务更可能提升或拖慢长期交付速度？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-82574b2bf5ae67b3:dim-1abefefe37aaf8aa",
+          "entity_label": "微服务架构对中型团队长期交付速度的影响",
+          "column_label": "差异条件、方法与混淆因素",
+          "cell_status": "VERIFIED",
+          "candidate_value": "基于自动化 DORA 指标的研究指出：团队整体表现与单个系统的表现并不相关，各系统之间差异显著，说明用汇总指标衡量交付速度存在方法上的混淆。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4c30c4d27b3cdd17b8e650cf169bbef69b6095882a439b54",
+              "source_domain": "acm.org",
+              "claim_text": "基于自动化 DORA 指标的研究指出：团队整体表现与单个系统的表现并不相关，各系统之间差异显著，说明用汇总指标衡量交付速度存在方法上的混淆。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 600000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f",
+          "entity_label": "微服务架构对中型团队长期交付速度的影响",
+          "column_label": "反对或不 conclusive 证据与来源",
+          "cell_status": "VERIFIED",
+          "candidate_value": "需先确保微服务架构的优势大于成本，暗示其收益并非无条件成立",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:277596a4aee37fbd65d6d4abb0cd3f286eaedeee19be061d",
+              "source_domain": "oracle.com",
+              "claim_text": "需先确保微服务架构的优势大于成本，暗示其收益并非无条件成立"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 600000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-82574b2bf5ae67b3:dim-b0377e05f822b2c5",
+          "entity_label": "微服务架构对中型团队长期交付速度的影响",
+          "column_label": "支持证据与来源",
+          "cell_status": "VERIFIED",
+          "candidate_value": "具备微服务专长的组织能更快构建和发布数字产品",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7b3dce0cb5411474fe37c7a1b7597b31eb6b9b68a451882d",
+              "source_domain": "amazon.com",
+              "claim_text": "具备微服务专长的组织能更快构建和发布数字产品"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-82574b2bf5ae67b3:dim-a4efe8f99a0b7f2f"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T14:25:43Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

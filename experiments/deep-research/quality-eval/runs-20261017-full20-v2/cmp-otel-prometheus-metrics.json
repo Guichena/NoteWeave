@@ -1,0 +1,2354 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-otel-prometheus-metrics",
+  "run_id": "39235faf-f9e4-40ec-a74c-0fec4d1b2296",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T13:49:00.504877+00:00",
+  "finished_at": "2026-10-17T13:52:51.918969+00:00",
+  "wall_seconds": 231.4,
+  "run_detail": {
+    "research_run_id": "39235faf-f9e4-40ec-a74c-0fec4d1b2296",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "f9c5123b-29d6-4705-a3b1-08a4177aa937",
+    "question": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+    "final_report_markdown": "# OpenTelemetry 与 Prometheus 指标数据模型比较\n\n本次核验的资料显示，两者在时间性上存在关键差异：OpenTelemetry 的 Sum 指标可标记为累积性 AGGREGATION_TEMPORALITY_CUMULATIVE，且 OpenTelemetry 可将指标表示为 delta；而 Prometheus 要求将累积且单调的求和必须转换为 Prometheus Counter，对 delta 求和则可能先转为累积再成为 Counter。两者在命名与单位上的取向明确相反：OpenTelemetry 的单位应遵循 UCUM，惯例指标不应在名称中重复单位；Prometheus 则强烈建议在指标名中包含单位和类型。\n\n## 直接回答\n\n在时间性与累计方式上，本次核验的资料显示 OpenTelemetry 的 Sum 指标可带有累积性（AGGREGATION_TEMPORALITY_CUMULATIVE），同时 OpenTelemetry 也能把指标表示为 delta；Prometheus 一侧则规定，若聚合时间性为 cumulative 且 sum 单调，必须转换为 Prometheus Counter，若为 delta 且 sum 单调，可先转换为累积时间性再成为 Prometheus Counter。在互操作层面，OpenTelemetry 可通过 Prometheus Exporter 被抓取或通过 Prometheus Remote Write Exporter 推送，但时间性为 DELTA 的指标会被 Prometheus Exporter 转换回 CUMULATIVE，并被 Remote Write Exporter 拒绝。 [evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a] [evidence:851cbb4daec736955899ce78bba11579f53317889fec12ca] [evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b] [evidence:db793cd833fc990d65b1a5ace3df736e0d3be42ed860182c] [evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2] [evidence:071f95fad777359f5d26bed799a5466cee51103de283f090] [evidence:d03f0afcb58d7d2b0ce3102e8f349f36b1366c1c79a36eae] [evidence:3f2b794428249b8ac9a81fae40bf047ab0c347b83593b89d]\n\n在命名与单位规范上，OpenTelemetry 的单位应遵循 UCUM，利用率类指标为无量纲并应使用默认单位 1，单位已包含在元数据中的惯例指标不应再把单位写进指标名，仅在能增加含义时才可在名称中包含单位；Prometheus 则出于实用原因强烈建议在指标名中包含单位和类型，即使这些信息另存他处。 [evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f] [evidence:b637f84f75a7343d6553d3e5150602daca2370fbebe8c106] [evidence:07e5ab3c6dc2a72c35bea4a3f4b0a3064904c27838cc5f4e] [evidence:19ec5d32e4d260bc972323ce08894868774cfcd0dd5e7ba9] [evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f] [evidence:b2fcdd27dedb8156dabcf3cf3316a1b7f173e3da52c784d5] [evidence:6b4c195e250e81afa52b09bd71b852b5f23c7d10b142156d] [evidence:d4cec90acda91ae27904bc6f36ebb52e6c6a7fd5d761bb69]\n\n在标签与属性模型上，Prometheus 的“维度数据模型”用标签捕获同名指标的不同实例，任一标签值变化（包括增删标签）都会创建新的时间序列，并规定以双下划线开头的标签名保留给内部使用、标签名宜匹配特定正则；OpenTelemetry 的语义约定则规定了属性名称、类型、含义与有效值，并指出常用属性应保持一致命名。 [evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5] [evidence:b39363bcc1f493d14cd774a73de36616c93e42ecdd375683] [evidence:0a2de9b423ade0ff848178bdb73e972f2ec99f5f0bc2ac7f] [evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4] [evidence:67c018ae5ff6ea25b76e4fbe9966de07eb1f1777b3731418] [evidence:f303224da0f14007cbadf5432428a45b2dc455c970c40614]\n\n## 时间性、互操作与指标类型语义\n\n时间性是两者衔接时的核心差异。本次核验的资料显示，OpenTelemetry 的 Sum 指标可显式携带累积时间性，并同时支持把指标表示为 delta；Prometheus 侧则给出转换规则：累积且单调的求和必须转换成 Counter，delta 且单调的求和可以先转为累积时间性再成为 Counter。在 OpenTelemetry 向 Prometheus 传输指标的路径上，既可以用 Prometheus Exporter 允许抓取，也可以用 Prometheus Remote Write Exporter 直接推送到另一个 Prometheus 实例；其中 DELTA 时间性的指标会被 Prometheus Exporter 转回 CUMULATIVE，而 Remote Write Exporter 会拒绝它们。资料还指出，OTel SDK 可以从 Prometheus 数据模型采集指标，Prometheus 也支持 OpenTelemetry 指标；此外，为 Prometheus 集成显式创建的是 OpenTelemetry 的 Summary 指标类型，且该类型不应用于其他场合。 [evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a] [evidence:851cbb4daec736955899ce78bba11579f53317889fec12ca] [evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b] [evidence:db793cd833fc990d65b1a5ace3df736e0d3be42ed860182c] [evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2] [evidence:071f95fad777359f5d26bed799a5466cee51103de283f090] [evidence:d03f0afcb58d7d2b0ce3102e8f349f36b1366c1c79a36eae] [evidence:3f2b794428249b8ac9a81fae40bf047ab0c347b83593b89d] [evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93]\n\n指标类型语义方面，OpenTelemetry 将 Histogram 定义为同步 Instrument，用于报告可能具有统计意义的任意值；Prometheus 的直方图是所有观测值之和，本质上是一个分桶计数器，但也可以表示分布的当前状态，即 gauge histogram，而经典直方图由多个简单浮点样本的时间序列组成，直方图允许把请求耗时存入各个桶而不是逐条保存。Prometheus 的 gauge histogram 在新版本的 protobuf exposition 格式和 OpenMetrics 中有所表示。 [evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118] [evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b] [evidence:6294ad5b639cdd2fbd128bcae8996af4ffe2120a0f666159] [evidence:1756c605fe522a18398a4ca883c4b89f70c2a02d20ac1d63] [evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93]\n\n## 采集与暴露格式\n\n在采集与暴露上，OpenTelemetry Collector 被设计为接收多种格式的指标数据，使用 OpenTelemetry 数据模型传输，然后导出到现有系统；Prometheus 抓取时会构造 Accept 头以表明自身支持哪些格式，并可通过配置中的 scrape_protocols 手动设定偏好，同时同样的自包含 exposition 必须提供给既有的和新的接入方，OpenMetrics 定义的线上格式在多次 exposition 之间是无状态的，此前暴露过的信息不得影响后续 exposition。 [evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8] [evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69] [evidence:c125129de54e45bedb09bf1a87ea3f802879d7a1f07ba0d6] [evidence:9a050f052c50033f42e7cc2705f601d273d22cc4b020c034] [evidence:f667debff54b54bf0ff5ec9b99d6c132c0baaed0a186cfb7] [evidence:c11a190aba67ced466a597fd867612ffe2e667bb27fe3f11]\n\n## 对比表\n\n| 比较维度 | OpenTelemetry | Prometheus |\n| --- | --- | --- |\n| 时间性与累计方式 | Sum 指标可带有累积性 AGGREGATION_TEMPORALITY_CUMULATIVE，也支持把指标表示为 delta | 累积且单调的求和必须转换为 Counter；delta 且单调的求和可先转为累积再成为 Counter [evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a] [evidence:851cbb4daec736955899ce78bba11579f53317889fec12ca] [evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b] [evidence:db793cd833fc990d65b1a5ace3df736e0d3be42ed860182c] |\n| 互操作性 | 可通过 Prometheus Exporter 被抓取，或通过 Prometheus Remote Write Exporter 推送；DELTA 会被前者转为 CUMULATIVE、被后者拒绝 | gauge histogram 在新版本 protobuf exposition 格式和 OpenMetrics 中有所表示 [evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2] [evidence:071f95fad777359f5d26bed799a5466cee51103de283f090] [evidence:d03f0afcb58d7d2b0ce3102e8f349f36b1366c1c79a36eae] [evidence:3f2b794428249b8ac9a81fae40bf047ab0c347b83593b89d] [evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93] |\n| 指标类型与语义 | Histogram 为同步 Instrument，用于报告可能具有统计意义的任意值 | 直方图是分桶计数器，也可表示分布当前状态（gauge histogram）；经典直方图由多个浮点样本时间序列组成 [evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118] [evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b] [evidence:6294ad5b639cdd2fbd128bcae8996af4ffe2120a0f666159] [evidence:1756c605fe522a18398a4ca883c4b89f70c2a02d20ac1d63] |\n| 标签与属性模型 | 语义约定规定属性名称、类型、含义与有效值；常用属性应保持一致命名 | 维度数据模型用标签区分同指标不同实例，任一标签值变化都会创建新时间序列 [evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4] [evidence:67c018ae5ff6ea25b76e4fbe9966de07eb1f1777b3731418] [evidence:f303224da0f14007cbadf5432428a45b2dc455c970c40614] [evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5] [evidence:b39363bcc1f493d14cd774a73de36616c93e42ecdd375683] [evidence:0a2de9b423ade0ff848178bdb73e972f2ec99f5f0bc2ac7f] |\n| 采集与暴露格式 | Collector 接收多种格式，以 OpenTelemetry 数据模型传输后导出到现有系统 | 抓取时构造 Accept 头表明支持的格式，可通过 scrape_protocols 手动设定偏好；OpenMetrics 线上格式在多次 exposition 间无状态 [evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8] [evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69] [evidence:c125129de54e45bedb09bf1a87ea3f802879d7a1f07ba0d6] [evidence:9a050f052c50033f42e7cc2705f601d273d22cc4b020c034] [evidence:f667debff54b54bf0ff5ec9b99d6c132c0baaed0a186cfb7] [evidence:c11a190aba67ced466a597fd867612ffe2e667bb27fe3f11] |\n| 命名与单位规范 | 单位应遵循 UCUM；利用率类指标无量纲用默认单位 1；元数据已含单位的惯例指标不应在名称中重复单位 | 强烈建议在指标名中包含单位和类型，即使信息另存他处 [evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f] [evidence:b637f84f75a7343d6553d3e5150602daca2370fbebe8c106] [evidence:07e5ab3c6dc2a72c35bea4a3f4b0a3064904c27838cc5f4e] [evidence:19ec5d32e4d260bc972323ce08894868774cfcd0dd5e7ba9] [evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f] [evidence:b2fcdd27dedb8156dabcf3cf3316a1b7f173e3da52c784d5] [evidence:6b4c195e250e81afa52b09bd71b852b5f23c7d10b142156d] [evidence:d4cec90acda91ae27904bc6f36ebb52e6c6a7fd5d761bb69] |\n\n## Citation audit\n\n### OpenTelemetry · 时间性与累计方式\n\n- Evidence: `evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a`\n- Exact quote: “-> DataType: Sum -> IsMonotonic: true -> AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE”\n- Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2`\n- URL: https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide\n\n### OpenTelemetry · 互操作性\n\n- Evidence: `evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2`\n- Exact quote: “Using either the Prometheus Exporter to allow scraping or the Prometheus Remote Write Exporter to push directly to another Prometheus instance, we can transmit metrics from OpenTelemetry to Prometheus.”\n- Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2`\n- URL: https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide\n\n### OpenTelemetry · 指标类型与语义\n\n- Evidence: `evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118`\n- Exact quote: “`Histogram` is a [synchronous Instrument](#synchronous-instrument-api) which can be used to report arbitrary values that are likely to be statistically meaningful.”\n- Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/f110face558e87129abb02f271e17fe407274ac9b8e0f475117d87c8d4046e2a`\n- URL: https://opentelemetry.io/docs/specs/otel/metrics/api/\n\n### OpenTelemetry · 标签与属性模型\n\n- Evidence: `evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4`\n- Exact quote: “metric instruments and units as well as attribute names, types, meaning and valid values”\n- Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/f06ff9a99fe0d9e17ded37e8a3b33f0a53298056d9eebd29f2f5005f73664ca2`\n- URL: https://opentelemetry.io/docs/specs/semconv/\n\n### OpenTelemetry · 集合与暴露格式\n\n- Evidence: `evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8`\n- Exact quote: “The OpenTelemetry Collector is designed to accept metrics data in a number of formats, transport data using the OpenTelemetry data model, and then export into existing systems.”\n- Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/cf45ece614e14e9e49948178f905549093d2015354c1adf85fef2d7bdc81f550`\n- URL: https://opentelemetry.io/docs/specs/otel/metrics/data-model/\n\n### OpenTelemetry · 命名与单位规范\n\n- Evidence: `evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f`\n- Exact quote: “Units should follow the [Unified Code for Units of Measure](https://ucum.org/ucum).”\n- Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598`\n- URL: https://opentelemetry.io/docs/specs/semconv/general/metrics/\n\n### Prometheus · 时间性与累计方式\n\n- Evidence: `evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b`\n- Exact quote: “If the aggregation temporality is cumulative and the sum is monotonic, it MUST be converted to a Prometheus Counter.”\n- Snapshot: `research/external/92c34708-d003-47cb-8cda-79145852f257/69ed266b7843bed3f380861de8c3bc46975f4919fbdf68c029ab2cf8181f925d`\n- URL: https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/\n\n### Prometheus · 互操作性\n\n- Evidence: `evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93`\n- Exact quote: “but they are represented in newer versions of the protobuf exposition format and in [OpenMetrics](https://openmetrics.io/)”\n- Snapshot: `research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721`\n- URL: https://prometheus.io/docs/concepts/metric_types/\n\n### Prometheus · 指标类型与语义\n\n- Evidence: `evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b`\n- Exact quote: “provides a sum of all observed values. As such, a histogram is essentially a bucketed counter. However, a histogram can also represent the current state of a distribution, in which case it is called a *gauge histogram*.”\n- Snapshot: `research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721`\n- URL: https://prometheus.io/docs/concepts/metric_types/\n\n### Prometheus · 标签与属性模型\n\n- Evidence: `evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5`\n- Exact quote: “We refer to this as Prometheus's \"dimensional data model\". The query language allows filtering and aggregation based on these dimensions. The change of any label's value, including adding or removing labels, will create a new time series.”\n- Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n- URL: https://prometheus.io/docs/concepts/data_model/\n\n### Prometheus · 集合与暴露格式\n\n- Evidence: `evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69`\n- Exact quote: “The Accept header is constructed by Prometheus to indicate what formats it supports.”\n- Snapshot: `research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/609b2896db7dcd5d2e64ff0a34f898af6bd308a1f0a8faaed6f10195291e69ba`\n- URL: https://prometheus.io/docs/instrumenting/content_negotiation/\n\n### Prometheus · 命名与单位规范\n\n- Evidence: `evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f`\n- Exact quote: “Prometheus strongly recommends including unit and type in a metric name, even if you store that information elsewhere, because of the following practical reasons:”\n- Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/64a1100c56cab2ceb847127511a67f2567ca4837c5213f08b27ca215332bd3a1`\n- URL: https://prometheus.io/docs/practices/naming/\n\n## 补充引用\n\n- Evidence: `evidence:851cbb4daec736955899ce78bba11579f53317889fec12ca`\n  - Exact quote: “Prometheus can measure cumulative metrics, giving you a sum, while OpenTelemetry can represent metrics as deltas.”\n  - Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/5c60a8c6bd9fdee15abdb91e7ed9675cea5e72baf528de76e32c354e56348a3f`\n  - URL: https://www.ibm.com/think/topics/opentelemetry-vs-prometheus\n- Evidence: `evidence:db793cd833fc990d65b1a5ace3df736e0d3be42ed860182c`\n  - Exact quote: “If the aggregation temporality is delta and the sum is monotonic, it MAY be converted to a cumulative temporality and become a Prometheus Counter.”\n  - Snapshot: `research/external/92c34708-d003-47cb-8cda-79145852f257/69ed266b7843bed3f380861de8c3bc46975f4919fbdf68c029ab2cf8181f925d`\n  - URL: https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/\n- Evidence: `evidence:071f95fad777359f5d26bed799a5466cee51103de283f090`\n  - Exact quote: “We can see that the OpenTelemetry `Summary` metric type has been selected here—remember that this was explicitly created for Prometheus integration and should not be used anywhere else.”\n  - Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2`\n  - URL: https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide\n- Evidence: `evidence:d03f0afcb58d7d2b0ce3102e8f349f36b1366c1c79a36eae`\n  - Exact quote: “OTel SDKs can collect metrics from Prometheus data models and Prometheus supports OpenTelemetry metrics.”\n  - Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/5c60a8c6bd9fdee15abdb91e7ed9675cea5e72baf528de76e32c354e56348a3f`\n  - URL: https://www.ibm.com/think/topics/opentelemetry-vs-prometheus\n- Evidence: `evidence:3f2b794428249b8ac9a81fae40bf047ab0c347b83593b89d`\n  - Exact quote: “Any metrics with an `AggregationTemporality` of `DELTA` will be converted back into `CUMULATIVE` by the Prometheus Exporter (and will be rejected by the Prometheus Remote Write Exporter).”\n  - Snapshot: `research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2`\n  - URL: https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide\n- Evidence: `evidence:b637f84f75a7343d6553d3e5150602daca2370fbebe8c106`\n  - Exact quote: “Instruments for **utilization** metrics (that measure the fraction out of a total) are dimensionless and SHOULD use the default unit `1` (the unity).”\n  - Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598`\n  - URL: https://opentelemetry.io/docs/specs/semconv/general/metrics/\n- Evidence: `evidence:07e5ab3c6dc2a72c35bea4a3f4b0a3064904c27838cc5f4e`\n  - Exact quote: “Conventional metrics or metrics that have their units included in OpenTelemetry metadata (e.g. `metric.WithUnit` in Go) SHOULD NOT include the units in the metric name.”\n  - Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598`\n  - URL: https://opentelemetry.io/docs/specs/semconv/general/metrics/\n- Evidence: `evidence:19ec5d32e4d260bc972323ce08894868774cfcd0dd5e7ba9`\n  - Exact quote: “Units may be included when it provides additional meaning to the metric name.”\n  - Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598`\n  - URL: https://opentelemetry.io/docs/specs/semconv/general/metrics/\n- Evidence: `evidence:b2fcdd27dedb8156dabcf3cf3316a1b7f173e3da52c784d5`\n  - Exact quote: “> **NOTE**: Colons (':') are reserved for user-defined recording rules. They SHOULD NOT be used by exporters or direct instrumentation.”\n  - Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n  - URL: https://prometheus.io/docs/concepts/data_model/\n- Evidence: `evidence:6b4c195e250e81afa52b09bd71b852b5f23c7d10b142156d`\n  - Exact quote: “* Metric names SHOULD match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*` for the best experience and compatibility (see the warning below).”\n  - Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n  - URL: https://prometheus.io/docs/concepts/data_model/\n- Evidence: `evidence:d4cec90acda91ae27904bc6f36ebb52e6c6a7fd5d761bb69`\n  - Exact quote: “* Metric names MAY use any UTF-8 characters.”\n  - Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n  - URL: https://prometheus.io/docs/concepts/data_model/\n- Evidence: `evidence:b39363bcc1f493d14cd774a73de36616c93e42ecdd375683`\n  - Exact quote: “* Label names beginning with `__` (two underscores) MUST be reserved for internal Prometheus use.”\n  - Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n  - URL: https://prometheus.io/docs/concepts/data_model/\n- Evidence: `evidence:0a2de9b423ade0ff848178bdb73e972f2ec99f5f0bc2ac7f`\n  - Exact quote: “* Label names SHOULD match the regex `[a-zA-Z_][a-zA-Z0-9_]*` for the best experience and compatibility (see the warning below).”\n  - Snapshot: `research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf`\n  - URL: https://prometheus.io/docs/concepts/data_model/\n- Evidence: `evidence:67c018ae5ff6ea25b76e4fbe9966de07eb1f1777b3731418`\n  - Exact quote: “Common attributes SHOULD be consistently named.”\n  - Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598`\n  - URL: https://opentelemetry.io/docs/specs/semconv/general/metrics/\n- Evidence: `evidence:f303224da0f14007cbadf5432428a45b2dc455c970c40614`\n  - Exact quote: “including the ability to automatically remove attributes and lower histogram resolution”\n  - Snapshot: `research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/cf45ece614e14e9e49948178f905549093d2015354c1adf85fef2d7bdc81f550`\n  - URL: https://opentelemetry.io/docs/specs/otel/metrics/data-model/\n- Evidence: `evidence:6294ad5b639cdd2fbd128bcae8996af4ffe2120a0f666159`\n  - Exact quote: “A classic histogram, however, consists of multiple time series of simple float samples.”\n  - Snapshot: `research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721`\n  - URL: https://prometheus.io/docs/concepts/metric_types/\n- Evidence: `evidence:1756c605fe522a18398a4ca883c4b89f70c2a02d20ac1d63`\n  - Exact quote: “Instead of storing the request time for each request, histograms allow us to store them in buckets.”\n  - Snapshot: `research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/db7696ea2a5978b6c0e20da11f9ad843affdd8718566197f764ac9d0a4301780`\n  - URL: https://prometheus.io/docs/tutorials/understanding_metric_types/\n- Evidence: `evidence:c125129de54e45bedb09bf1a87ea3f802879d7a1f07ba0d6`\n  - Exact quote: “* Manual preference settings via `scrape_protocols` setting in Prometheus configuration.”\n  - Snapshot: `research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/6b0a377c187f89d8c772288ed5372055c478736166e3358f1f2a9bbec95005a9`\n  - URL: https://prometheus.io/docs/instrumenting/exposition_formats/\n- Evidence: `evidence:9a050f052c50033f42e7cc2705f601d273d22cc4b020c034`\n  - Exact quote: “The same self-contained exposition MUST be provided to existing and new ingestors.”\n  - Snapshot: `research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/94a55d08363c40b3041438c776558b7d9f8da978f6c87d9c3da5793ee6d55093`\n  - URL: https://prometheus.io/docs/specs/om/open_metrics_spec/\n- Evidence: `evidence:f667debff54b54bf0ff5ec9b99d6c132c0baaed0a186cfb7`\n  - Exact quote: “The wire format defined by OpenMetrics is stateless across expositions. What information has been exposed before MUST have no impact on future expositions.”\n  - Snapshot: `research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/94a55d08363c40b3041438c776558b7d9f8da978f6c87d9c3da5793ee6d55093`\n  - URL: https://prometheus.io/docs/specs/om/open_metrics_spec/\n- Evidence: `evidence:c11a190aba67ced466a597fd867612ffe2e667bb27fe3f11`\n  - Exact quote: “* `gzip` if compression is enabled * `identity` if compression is disabled”\n  - Snapshot: `research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/609b2896db7dcd5d2e64ff0a34f898af6bd308a1f0a8faaed6f10195291e69ba`\n  - URL: https://prometheus.io/docs/instrumenting/content_negotiation/\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/39235faf-f9e4-40ec-a74c-0fec4d1b2296/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 24776,
+      "sha256": "6f3ee8030f840865fdf87ef76a2f870162699b451eea737686768ac97ee4a29c"
+    },
+    "research_artifact": {
+      "artifact_id": "39235faf-f9e4-40ec-a74c-0fec4d1b2296",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "39235faf-f9e4-40ec-a74c-0fec4d1b2296",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/39235faf-f9e4-40ec-a74c-0fec4d1b2296/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 24776,
+        "sha256": "6f3ee8030f840865fdf87ef76a2f870162699b451eea737686768ac97ee4a29c"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "OpenTelemetry metric instrument types counter updowncounter histogram specification",
+          "OpenTelemetry vs Prometheus metrics data model",
+          "Prometheus metric types counter gauge histogram summary documentation",
+          "prometheus.io docs labels naming cardinality best practices",
+          "Prometheus metrics data model documentation",
+          "Prometheus text exposition format metric name unit suffix naming conventions",
+          "Prometheus label naming cardinality data model best practices",
+          "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "OpenTelemetry Prometheus metrics data model comparison",
+          "OpenTelemetry metric instrument types specification counter updowncounter gauge histogram",
+          "Prometheus OpenTelemetry cumulative delta temporality specification primary research limitations",
+          "Prometheus OpenTelemetry cumulative delta temporality specification 官方说明 适用条件",
+          "Prometheus Prometheus exposition format and scraping docs 官方说明 适用条件",
+          "Prometheus Prometheus exposition format and scraping docs primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "OpenTelemetry",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+            "read_focus": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，并基于官方文档提供可逐项引用的结论。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Prometheus",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+            "read_focus": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，并基于官方文档提供可逐项引用的结论。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-82e89f67e4faa7f9",
+            "column_label": "标签与属性模型",
+            "candidate_value": "Prometheus 的“维度数据模型”通过标签捕获同一指标名的不同实例，任一标签值变化（含增删标签）都会创建新时间序列",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-5ba576d5150422d8",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-5ba576d5150422d8",
+            "column_label": "指标类型与语义",
+            "candidate_value": "Histogram 是同步 Instrument，用于报告具有统计意义的任意值，适用于 histograms、summaries 和 percentile 等统计",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-00ce77e5c1775ddb",
+            "column_label": "时间性与累计方式",
+            "candidate_value": "聚合时间性为 cumulative 且 sum 单调时，必须转换为 Prometheus Counter",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-b8c1268c3afd3273",
+            "column_label": "集合与暴露格式",
+            "candidate_value": "Prometheus 抓取时会构造 Accept 头，用来表明它支持哪些格式",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-00ce77e5c1775ddb",
+            "column_label": "时间性与累计方式",
+            "candidate_value": "OpenTelemetry 的 Sum 指标可带有累计性 AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-0f6806b4143ae3fd",
+            "column_label": "互操作性",
+            "candidate_value": "OpenTelemetry 可通过 Prometheus Exporter 抓取或 Prometheus Remote Write Exporter 推送将指标传给 Prometheus",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-f08a98d5a41aa45a",
+            "column_label": "命名与单位规范",
+            "candidate_value": "OpenTelemetry 单位应遵循 UCUM（Unified Code for Units of Measure）。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-b8c1268c3afd3273",
+            "column_label": "集合与暴露格式",
+            "candidate_value": "OpenTelemetry Collector 接受多种格式的指标数据，以 OpenTelemetry 数据模型传输，再导出到现有系统。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-0f6806b4143ae3fd",
+            "column_label": "互操作性",
+            "candidate_value": "Prometheus 的 gauge histogram 在 OpenMetrics 和较新版本的 protobuf exposition 格式中有所表示",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-5ba576d5150422d8",
+            "column_label": "指标类型与语义",
+            "candidate_value": "直方图的观测值之和是一个 bucketed counter；gauge histogram 表示分布的当前状态",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a",
+            "row_id": "entity-1809f7cd0c75acf3",
+            "branch_id": "branch-main",
+            "column_key": "dim-f08a98d5a41aa45a",
+            "column_label": "命名与单位规范",
+            "candidate_value": "Prometheus 强烈建议在指标名中包含单位和类型，即使这些信息存储在其他地方。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9",
+            "row_id": "entity-15646ccfc4230c22",
+            "branch_id": "branch-main",
+            "column_key": "dim-82e89f67e4faa7f9",
+            "column_label": "标签与属性模型",
+            "candidate_value": "OpenTelemetry 语义约定规定了属性的名称、类型、含义与有效值。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "OpenTelemetry",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+          "read_focus": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，并基于官方文档提供可逐项引用的结论。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Prometheus",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+          "read_focus": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，并基于官方文档提供可逐项引用的结论。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-82e89f67e4faa7f9",
+          "column_label": "标签与属性模型",
+          "candidate_value": "Prometheus 的“维度数据模型”通过标签捕获同一指标名的不同实例，任一标签值变化（含增删标签）都会创建新时间序列",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-5ba576d5150422d8",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-5ba576d5150422d8",
+          "column_label": "指标类型与语义",
+          "candidate_value": "Histogram 是同步 Instrument，用于报告具有统计意义的任意值，适用于 histograms、summaries 和 percentile 等统计",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-00ce77e5c1775ddb",
+          "column_label": "时间性与累计方式",
+          "candidate_value": "聚合时间性为 cumulative 且 sum 单调时，必须转换为 Prometheus Counter",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-b8c1268c3afd3273",
+          "column_label": "集合与暴露格式",
+          "candidate_value": "Prometheus 抓取时会构造 Accept 头，用来表明它支持哪些格式",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-00ce77e5c1775ddb",
+          "column_label": "时间性与累计方式",
+          "candidate_value": "OpenTelemetry 的 Sum 指标可带有累计性 AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-0f6806b4143ae3fd",
+          "column_label": "互操作性",
+          "candidate_value": "OpenTelemetry 可通过 Prometheus Exporter 抓取或 Prometheus Remote Write Exporter 推送将指标传给 Prometheus",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-f08a98d5a41aa45a",
+          "column_label": "命名与单位规范",
+          "candidate_value": "OpenTelemetry 单位应遵循 UCUM（Unified Code for Units of Measure）。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-b8c1268c3afd3273",
+          "column_label": "集合与暴露格式",
+          "candidate_value": "OpenTelemetry Collector 接受多种格式的指标数据，以 OpenTelemetry 数据模型传输，再导出到现有系统。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-0f6806b4143ae3fd",
+          "column_label": "互操作性",
+          "candidate_value": "Prometheus 的 gauge histogram 在 OpenMetrics 和较新版本的 protobuf exposition 格式中有所表示",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-5ba576d5150422d8",
+          "column_label": "指标类型与语义",
+          "candidate_value": "直方图的观测值之和是一个 bucketed counter；gauge histogram 表示分布的当前状态",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "branch_id": "branch-main",
+          "column_key": "dim-f08a98d5a41aa45a",
+          "column_label": "命名与单位规范",
+          "candidate_value": "Prometheus 强烈建议在指标名中包含单位和类型，即使这些信息存储在其他地方。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9",
+          "row_id": "entity-15646ccfc4230c22",
+          "branch_id": "branch-main",
+          "column_key": "dim-82e89f67e4faa7f9",
+          "column_label": "标签与属性模型",
+          "candidate_value": "OpenTelemetry 语义约定规定了属性的名称、类型、含义与有效值。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T13:51:15Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:071f95fad777359f5d26bed799a5466cee51103de283f090",
+          "window_id": "window-7",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL Prometheus vs. OpenTelemetry Metrics: A Complete Guide for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "We can see that the OpenTelemetry `Summary` metric type has been selected here—remember that this was explicitly created for Prometheus integration and should not be used anywhere else.",
+          "claim_text": "OpenTelemetry 的 Summary 指标类型专为 Prometheus 集成创建",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2"
+        },
+        {
+          "evidence_id": "evidence:851cbb4daec736955899ce78bba11579f53317889fec12ca",
+          "window_id": "window-6",
+          "source_id": "web-e9f8c10037a36fcd",
+          "source_title": "OpenTelemetry vs. Prometheus: You ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.ibm.com/think/topics/opentelemetry-vs-prometheus",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL OpenTelemetry vs. Prometheus: You ... for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Prometheus can measure cumulative metrics, giving you a sum, while OpenTelemetry can represent metrics as deltas.",
+          "claim_text": "OpenTelemetry 可将指标表示为 delta",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/5c60a8c6bd9fdee15abdb91e7ed9675cea5e72baf528de76e32c354e56348a3f"
+        },
+        {
+          "evidence_id": "evidence:d03f0afcb58d7d2b0ce3102e8f349f36b1366c1c79a36eae",
+          "window_id": "window-6",
+          "source_id": "web-e9f8c10037a36fcd",
+          "source_title": "OpenTelemetry vs. Prometheus: You ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.ibm.com/think/topics/opentelemetry-vs-prometheus",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL OpenTelemetry vs. Prometheus: You ... for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "OTel SDKs can collect metrics from Prometheus data models and Prometheus supports OpenTelemetry metrics.",
+          "claim_text": "OTel SDK 可采集 Prometheus 数据模型的指标，Prometheus 也支持 OpenTelemetry 指标",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/5c60a8c6bd9fdee15abdb91e7ed9675cea5e72baf528de76e32c354e56348a3f"
+        },
+        {
+          "evidence_id": "evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118",
+          "window_id": "window-3",
+          "source_id": "web-9d2ce7c5a421648b",
+          "source_title": "Metrics API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/metrics/api/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry metric instrument types counter updowncounter histogram specification",
+          "read_focus": "Read external URL Metrics API for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`Histogram` is a [synchronous Instrument](#synchronous-instrument-api) which can be used to report arbitrary values that are likely to be statistically meaningful.",
+          "claim_text": "Histogram 是同步 Instrument，用于报告具有统计意义的任意值，适用于 histograms、summaries 和 percentile 等统计",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/f110face558e87129abb02f271e17fe407274ac9b8e0f475117d87c8d4046e2a"
+        },
+        {
+          "evidence_id": "evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2",
+          "window_id": "window-7",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL Prometheus vs. OpenTelemetry Metrics: A Complete Guide for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Using either the Prometheus Exporter to allow scraping or the Prometheus Remote Write Exporter to push directly to another Prometheus instance, we can transmit metrics from OpenTelemetry to Prometheus.",
+          "claim_text": "OpenTelemetry 可通过 Prometheus Exporter 抓取或 Prometheus Remote Write Exporter 推送将指标传给 Prometheus",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2"
+        },
+        {
+          "evidence_id": "evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a",
+          "window_id": "window-7",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL Prometheus vs. OpenTelemetry Metrics: A Complete Guide for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "-> DataType: Sum -> IsMonotonic: true -> AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE",
+          "claim_text": "OpenTelemetry 的 Sum 指标可带有累计性 AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2"
+        },
+        {
+          "evidence_id": "evidence:3f2b794428249b8ac9a81fae40bf047ab0c347b83593b89d",
+          "window_id": "window-7",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry vs Prometheus metrics data model",
+          "read_focus": "Read external URL Prometheus vs. OpenTelemetry Metrics: A Complete Guide for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Any metrics with an `AggregationTemporality` of `DELTA` will be converted back into `CUMULATIVE` by the Prometheus Exporter (and will be rejected by the Prometheus Remote Write Exporter).",
+          "claim_text": "AggregationTemporality 为 DELTA 的指标会被 Prometheus Exporter 转回 CUMULATIVE",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6440771a-8611-4769-94b4-5ff5cd3236e6/9d47f426ec08a188099e21ce0681de4788ac995cdaca3ed9a2b66d9ed42fb2d2"
+        },
+        {
+          "evidence_id": "evidence:b2fcdd27dedb8156dabcf3cf3316a1b7f173e3da52c784d5",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "> **NOTE**: Colons (':') are reserved for user-defined recording rules. They SHOULD NOT be used by exporters or direct instrumentation.",
+          "claim_text": "冒号（':'）保留给用户自定义的记录规则，导出器或直接插桩不应使用。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:b39363bcc1f493d14cd774a73de36616c93e42ecdd375683",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Label names beginning with `__` (two underscores) MUST be reserved for internal Prometheus use.",
+          "claim_text": "Prometheus 标签名以 `__` 开头必须保留给 Prometheus 内部使用",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:0a2de9b423ade0ff848178bdb73e972f2ec99f5f0bc2ac7f",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Label names SHOULD match the regex `[a-zA-Z_][a-zA-Z0-9_]*` for the best experience and compatibility (see the warning below).",
+          "claim_text": "* Label names SHOULD match the regex `[a-zA-Z_][a-zA-Z0-9_]*` for the best experience and compatibility (see the warning below).",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "We refer to this as Prometheus's \"dimensional data model\". The query language allows filtering and aggregation based on these dimensions. The change of any label's value, including adding or removing labels, will create a new time series.",
+          "claim_text": "Prometheus 的“维度数据模型”通过标签捕获同一指标名的不同实例，任一标签值变化（含增删标签）都会创建新时间序列",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:d4cec90acda91ae27904bc6f36ebb52e6c6a7fd5d761bb69",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Metric names MAY use any UTF-8 characters.",
+          "claim_text": "指标名可以使用任意 UTF-8 字符。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:c85d9cf5b3122cf73c43f259bfa587005573fc2efb095ece",
+          "window_id": "window-5",
+          "source_id": "web-a203c7c703b1e52d",
+          "source_title": "OpenMetrics 1.0",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/specs/om/open_metrics_spec/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus text exposition format metric name unit suffix naming conventions",
+          "read_focus": "Read external URL OpenMetrics 1.0 for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For label names no explicit namespacing by company or library is recommended, namespacing from the metric name is sufficient for this when considered against the length increase of the label name.",
+          "claim_text": "OpenMetrics 建议标签名不做公司或库的显式命名空间，指标名的命名空间已足够",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.45,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/063d539b5a486799de75b57a221991c18aba600f4f4175040170a45ea7b98f94"
+        },
+        {
+          "evidence_id": "evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f",
+          "window_id": "window-4",
+          "source_id": "web-5723a2773a413847",
+          "source_title": "Metric and label naming",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/practices/naming/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Metric and label naming for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Prometheus strongly recommends including unit and type in a metric name, even if you store that information elsewhere, because of the following practical reasons:",
+          "claim_text": "Prometheus 强烈建议在指标名中包含单位和类型，即使这些信息存储在其他地方。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/64a1100c56cab2ceb847127511a67f2567ca4837c5213f08b27ca215332bd3a1"
+        },
+        {
+          "evidence_id": "evidence:6b4c195e250e81afa52b09bd71b852b5f23c7d10b142156d",
+          "window_id": "window-1",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "prometheus.io docs labels naming cardinality best practices",
+          "read_focus": "Read external URL Data model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Metric names SHOULD match the regex `[a-zA-Z_:][a-zA-Z0-9_:]*` for the best experience and compatibility (see the warning below).",
+          "claim_text": "指标名应匹配正则 `[a-zA-Z_:][a-zA-Z0-9_:]*` 以获得最佳体验和兼容性，冒号保留给用户自定义记录规则。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2383eab2-9dc7-4756-b31b-0912b695efd1/bac666b4723392719c88352cd6fd10eb75e954a702b6ab9e2f91d00b997b90bf"
+        },
+        {
+          "evidence_id": "evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4",
+          "window_id": "window-6",
+          "source_id": "web-5e36eebf9907b8ee",
+          "source_title": "OpenTelemetry semantic conventions 1.44.0",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL OpenTelemetry semantic conventions 1.44.0 for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "metric instruments and units as well as attribute names, types, meaning and valid values",
+          "claim_text": "OpenTelemetry 语义约定规定了属性的名称、类型、含义与有效值。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/f06ff9a99fe0d9e17ded37e8a3b33f0a53298056d9eebd29f2f5005f73664ca2"
+        },
+        {
+          "evidence_id": "evidence:f303224da0f14007cbadf5432428a45b2dc455c970c40614",
+          "window_id": "window-1",
+          "source_id": "web-8b621dfe51c16938",
+          "source_title": "Metrics Data Model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/metrics/data-model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry Prometheus metrics data model comparison",
+          "read_focus": "Read external URL Metrics Data Model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "including the ability to automatically remove attributes and lower histogram resolution",
+          "claim_text": "OpenTelemetry 数据模型支持在导出到 Prometheus Remote Write 时自动移除属性。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/cf45ece614e14e9e49948178f905549093d2015354c1adf85fef2d7bdc81f550"
+        },
+        {
+          "evidence_id": "evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8",
+          "window_id": "window-1",
+          "source_id": "web-8b621dfe51c16938",
+          "source_title": "Metrics Data Model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/metrics/data-model/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry Prometheus metrics data model comparison",
+          "read_focus": "Read external URL Metrics Data Model for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The OpenTelemetry Collector is designed to accept metrics data in a number of formats, transport data using the OpenTelemetry data model, and then export into existing systems.",
+          "claim_text": "OpenTelemetry Collector 接受多种格式的指标数据，以 OpenTelemetry 数据模型传输，再导出到现有系统。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/cf45ece614e14e9e49948178f905549093d2015354c1adf85fef2d7bdc81f550"
+        },
+        {
+          "evidence_id": "evidence:67c018ae5ff6ea25b76e4fbe9966de07eb1f1777b3731418",
+          "window_id": "window-4",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL Metrics semantic conventions for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Common attributes SHOULD be consistently named.",
+          "claim_text": "OpenTelemetry 建议对通用属性保持一致命名。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598"
+        },
+        {
+          "evidence_id": "evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f",
+          "window_id": "window-4",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL Metrics semantic conventions for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Units should follow the [Unified Code for Units of Measure](https://ucum.org/ucum).",
+          "claim_text": "OpenTelemetry 单位应遵循 UCUM（Unified Code for Units of Measure）。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598"
+        },
+        {
+          "evidence_id": "evidence:b637f84f75a7343d6553d3e5150602daca2370fbebe8c106",
+          "window_id": "window-4",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL Metrics semantic conventions for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Instruments for **utilization** metrics (that measure the fraction out of a total) are dimensionless and SHOULD use the default unit `1` (the unity).",
+          "claim_text": "利用率类指标无量纲，应使用默认单位 1。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598"
+        },
+        {
+          "evidence_id": "evidence:07e5ab3c6dc2a72c35bea4a3f4b0a3064904c27838cc5f4e",
+          "window_id": "window-4",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL Metrics semantic conventions for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Conventional metrics or metrics that have their units included in OpenTelemetry metadata (e.g. `metric.WithUnit` in Go) SHOULD NOT include the units in the metric name.",
+          "claim_text": "常规指标或单位已在 OpenTelemetry 元数据中的指标不应在指标名中包含单位。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598"
+        },
+        {
+          "evidence_id": "evidence:19ec5d32e4d260bc972323ce08894868774cfcd0dd5e7ba9",
+          "window_id": "window-4",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenTelemetry attributes metric dimensions semantic conventions specification",
+          "read_focus": "Read external URL Metrics semantic conventions for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: OpenTelemetry. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Units may be included when it provides additional meaning to the metric name.",
+          "claim_text": "当单位能为指标名提供额外含义时，可在指标名中包含单位。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5a413567-a96b-4de8-afd4-f44f089c24b2/c4b612892aff06de6f8b7b13f59080c86ef1ec81eaf9ac36a91d0bbabd9a3598"
+        },
+        {
+          "evidence_id": "evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93",
+          "window_id": "window-5",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "but they are represented in newer versions of the protobuf exposition format and in [OpenMetrics](https://openmetrics.io/)",
+          "claim_text": "Prometheus 的 gauge histogram 在 OpenMetrics 和较新版本的 protobuf exposition 格式中有所表示",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721"
+        },
+        {
+          "evidence_id": "evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b",
+          "window_id": "window-5",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "provides a sum of all observed values. As such, a histogram is essentially a bucketed counter. However, a histogram can also represent the current state of a distribution, in which case it is called a *gauge histogram*.",
+          "claim_text": "直方图的观测值之和是一个 bucketed counter；gauge histogram 表示分布的当前状态",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721"
+        },
+        {
+          "evidence_id": "evidence:ef6c5b37539051e072b6bab368faa8fa7837ce67d9d2c859",
+          "window_id": "window-6",
+          "source_id": "web-c1669efd0a65e131",
+          "source_title": "Understanding metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/tutorials/understanding_metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Understanding metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "(Since the histogram is a cumulative frequency 1 is added to all the buckets that are greater than the value)",
+          "claim_text": "Prometheus 直方图桶按累计频率计数：每个观测值会加到所有上限大于该值的桶中",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/db7696ea2a5978b6c0e20da11f9ad843affdd8718566197f764ac9d0a4301780"
+        },
+        {
+          "evidence_id": "evidence:e44d1e371ae37c218492281a374692addfa343ec26163634",
+          "window_id": "window-5",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* cumulative counters for the observation buckets, exposed as `_bucket{le=\"\"}`",
+          "claim_text": "经典 Prometheus 直方图以 _bucket、_sum 和 _count 时间序列暴露观测桶的累计计数器",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721"
+        },
+        {
+          "evidence_id": "evidence:1756c605fe522a18398a4ca883c4b89f70c2a02d20ac1d63",
+          "window_id": "window-6",
+          "source_id": "web-c1669efd0a65e131",
+          "source_title": "Understanding metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/tutorials/understanding_metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Understanding metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Instead of storing the request time for each request, histograms allow us to store them in buckets.",
+          "claim_text": "直方图以桶（bucket）存储观测结果，而非存储每次请求的耗时；+Inf 桶默认添加",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/db7696ea2a5978b6c0e20da11f9ad843affdd8718566197f764ac9d0a4301780"
+        },
+        {
+          "evidence_id": "evidence:6294ad5b639cdd2fbd128bcae8996af4ffe2120a0f666159",
+          "window_id": "window-5",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus metric types counter gauge histogram summary documentation",
+          "read_focus": "Read external URL Metric types for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A classic histogram, however, consists of multiple time series of simple float samples.",
+          "claim_text": "classic histogram 由多个简单 float 样本的 time series 组成，包含 `_bucket`、`_sum` 与 `_count`",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/484e3b3a-f329-466b-b99a-3a36323fd3bf/a04bd7505cbe270e4898e566014fa8528a136830ab0bbadc37b2ba0d3afcb721"
+        },
+        {
+          "evidence_id": "evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b",
+          "window_id": "window-3",
+          "source_id": "web-d9822e221ebc4416",
+          "source_title": "Prometheus and OpenMetrics Compatibility",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus OpenTelemetry cumulative delta temporality specification 官方说明 适用条件",
+          "read_focus": "Read external URL Prometheus and OpenMetrics Compatibility for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If the aggregation temporality is cumulative and the sum is monotonic, it MUST be converted to a Prometheus Counter.",
+          "claim_text": "聚合时间性为 cumulative 且 sum 单调时，必须转换为 Prometheus Counter",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/92c34708-d003-47cb-8cda-79145852f257/69ed266b7843bed3f380861de8c3bc46975f4919fbdf68c029ab2cf8181f925d"
+        },
+        {
+          "evidence_id": "evidence:db793cd833fc990d65b1a5ace3df736e0d3be42ed860182c",
+          "window_id": "window-3",
+          "source_id": "web-d9822e221ebc4416",
+          "source_title": "Prometheus and OpenMetrics Compatibility",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus OpenTelemetry cumulative delta temporality specification 官方说明 适用条件",
+          "read_focus": "Read external URL Prometheus and OpenMetrics Compatibility for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If the aggregation temporality is delta and the sum is monotonic, it MAY be converted to a cumulative temporality and become a Prometheus Counter.",
+          "claim_text": "聚合时间性为 delta 的单调 sum 可以转换为 cumulative 时间性并成为 Prometheus Counter",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/92c34708-d003-47cb-8cda-79145852f257/69ed266b7843bed3f380861de8c3bc46975f4919fbdf68c029ab2cf8181f925d"
+        },
+        {
+          "evidence_id": "evidence:c125129de54e45bedb09bf1a87ea3f802879d7a1f07ba0d6",
+          "window_id": "window-5",
+          "source_id": "web-b876ddabb132bb36",
+          "source_title": "Exposition formats - Prometheus",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/instrumenting/exposition_formats/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus Prometheus exposition format and scraping docs primary research limitations",
+          "read_focus": "Read external URL Exposition formats - Prometheus for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* Manual preference settings via `scrape_protocols` setting in Prometheus configuration.",
+          "claim_text": "Prometheus 可通过 scrape_protocols 配置项手动设置格式偏好",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/6b0a377c187f89d8c772288ed5372055c478736166e3358f1f2a9bbec95005a9"
+        },
+        {
+          "evidence_id": "evidence:c11a190aba67ced466a597fd867612ffe2e667bb27fe3f11",
+          "window_id": "window-2",
+          "source_id": "web-bd5da4f5eb04ae49",
+          "source_title": "Scrape protocol content negotiation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/instrumenting/content_negotiation/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus Prometheus exposition format and scraping docs 官方说明 适用条件",
+          "read_focus": "Read external URL Scrape protocol content negotiation for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* `gzip` if compression is enabled\n* `identity` if compression is disabled",
+          "claim_text": "Accept-Encoding 在启用压缩时应设为 gzip，在禁用压缩时应设为 identity",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/609b2896db7dcd5d2e64ff0a34f898af6bd308a1f0a8faaed6f10195291e69ba"
+        },
+        {
+          "evidence_id": "evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69",
+          "window_id": "window-2",
+          "source_id": "web-bd5da4f5eb04ae49",
+          "source_title": "Scrape protocol content negotiation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/instrumenting/content_negotiation/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus Prometheus exposition format and scraping docs 官方说明 适用条件",
+          "read_focus": "Read external URL Scrape protocol content negotiation for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The Accept header is constructed by Prometheus to indicate what formats it supports.",
+          "claim_text": "Prometheus 抓取时会构造 Accept 头，用来表明它支持哪些格式",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/609b2896db7dcd5d2e64ff0a34f898af6bd308a1f0a8faaed6f10195291e69ba"
+        },
+        {
+          "evidence_id": "evidence:f667debff54b54bf0ff5ec9b99d6c132c0baaed0a186cfb7",
+          "window_id": "window-1",
+          "source_id": "web-a203c7c703b1e52d",
+          "source_title": "OpenMetrics 1.0",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/specs/om/open_metrics_spec/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus Prometheus exposition format and scraping docs 官方说明 适用条件",
+          "read_focus": "Read external URL OpenMetrics 1.0 for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The wire format defined by OpenMetrics is stateless across expositions. What information has been exposed before MUST have no impact on future expositions.",
+          "claim_text": "OpenMetrics 线格式在有状态性上是每次暴露彼此独立的，每次暴露都是暴露方当前状态的完整快照",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/94a55d08363c40b3041438c776558b7d9f8da978f6c87d9c3da5793ee6d55093"
+        },
+        {
+          "evidence_id": "evidence:9a050f052c50033f42e7cc2705f601d273d22cc4b020c034",
+          "window_id": "window-1",
+          "source_id": "web-a203c7c703b1e52d",
+          "source_title": "OpenMetrics 1.0",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/specs/om/open_metrics_spec/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Prometheus Prometheus exposition format and scraping docs 官方说明 适用条件",
+          "read_focus": "Read external URL OpenMetrics 1.0 for claims that answer: 比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。\n\nCurrent Table-as-State entity: Prometheus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The same self-contained exposition MUST be provided to existing and new ingestors.",
+          "claim_text": "同一份自包含的暴露内容必须同时提供给已有的和新的摄取方",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7/94a55d08363c40b3041438c776558b7d9f8da978f6c87d9c3da5793ee6d55093"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide"
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-5ba576d5150422d8",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118",
+          "source_id": "web-9d2ce7c5a421648b",
+          "source_title": "Metrics API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/metrics/api/"
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a",
+          "source_id": "web-5ae0ce27e4778e13",
+          "source_title": "Prometheus vs. OpenTelemetry Metrics: A Complete Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.tigerdata.com/blog/prometheus-vs-opentelemetry-metrics-a-complete-guide"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5",
+          "source_id": "web-188e8427a04f19f8",
+          "source_title": "Data model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/data_model/"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f",
+          "source_id": "web-5723a2773a413847",
+          "source_title": "Metric and label naming",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/practices/naming/"
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8",
+          "source_id": "web-8b621dfe51c16938",
+          "source_title": "Metrics Data Model",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/metrics/data-model/"
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4",
+          "source_id": "web-5e36eebf9907b8ee",
+          "source_title": "OpenTelemetry semantic conventions 1.44.0",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/"
+        },
+        {
+          "cell_id": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a",
+          "row_id": "entity-15646ccfc4230c22",
+          "evidence_id": "evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f",
+          "source_id": "web-2f9943d30554557a",
+          "source_title": "Metrics semantic conventions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/semconv/general/metrics/"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b",
+          "source_id": "web-d5319765b148abed",
+          "source_title": "Metric types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/concepts/metric_types/"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b",
+          "source_id": "web-d9822e221ebc4416",
+          "source_title": "Prometheus and OpenMetrics Compatibility",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/"
+        },
+        {
+          "cell_id": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273",
+          "row_id": "entity-1809f7cd0c75acf3",
+          "evidence_id": "evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69",
+          "source_id": "web-bd5da4f5eb04ae49",
+          "source_title": "Scrape protocol content negotiation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://prometheus.io/docs/instrumenting/content_negotiation/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "9d6d9716-320d-441b-8b55-ed93a6807956",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T13:49:00Z"
+      },
+      {
+        "trace_id": "8ef61c21-e23e-4330-8bb6-8548f41d766b",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 6
+        },
+        "created_at": "2026-10-17T13:49:13Z"
+      },
+      {
+        "trace_id": "1465456c-8524-42a9-8860-aa4c1e4da4e4",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 OpenTelemetry 与 Prometheus 的指标数据模型，引用官方文档。",
+        "payload": {
+          "cell_count": 12
+        },
+        "created_at": "2026-10-17T13:52:47Z"
+      }
+    ],
+    "created_at": "2026-10-17T13:49:00Z",
+    "updated_at": "2026-10-17T13:52:47Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:50:01Z",
+          "lease_epoch": 1,
+          "task_id": "fbf4b8ec-01a0-4fcd-8bfa-c032b1f62b85",
+          "task_key": "planning:39235faf-f9e4-40ec-a74c-0fec4d1b2296",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:51:16Z",
+          "lease_epoch": 1,
+          "task_id": "2383eab2-9dc7-4756-b31b-0912b695efd1",
+          "task_key": "deep-cell:b3b3760e14442f9469feb2c9b1be3c89",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:52:04Z",
+          "lease_epoch": 1,
+          "task_id": "484e3b3a-f329-466b-b99a-3a36323fd3bf",
+          "task_key": "deep-cell:cad5ae8a4c53241b4404dbda98e1ccfa",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:51:52Z",
+          "lease_epoch": 1,
+          "task_id": "5a413567-a96b-4de8-afd4-f44f089c24b2",
+          "task_key": "deep-cell:77c09ad75ec4d0b3c597af40bee9ee9a",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:51:00Z",
+          "lease_epoch": 1,
+          "task_id": "6440771a-8611-4769-94b4-5ff5cd3236e6",
+          "task_key": "deep-cell:8a79ed89fd33122ec62a248099ed8483",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:52:47Z",
+          "lease_epoch": 1,
+          "task_id": "92c34708-d003-47cb-8cda-79145852f257",
+          "task_key": "counterfactual:756861bd32b6d8ffde2c515714e7d0d6",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:53:24Z",
+          "lease_epoch": 1,
+          "task_id": "b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7",
+          "task_key": "counterfactual:355b23586e6d9e8a81b0dbd39907bc88",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:53:44Z",
+          "lease_epoch": 1,
+          "task_id": "401aa7e8-8dd8-4ec1-a64a-b90875ec4b53",
+          "task_key": "synthesis:23a2100dc902474da4ab04a4287da4d7",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "57ffd505-3dbe-4e42-a292-55ca8bc8ec85",
+          "cell_key": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb",
+          "task_id": "6440771a-8611-4769-94b4-5ff5cd3236e6"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "8088debf-3b26-471e-a9ab-f66340211979",
+          "cell_key": "entity-15646ccfc4230c22:dim-5ba576d5150422d8",
+          "task_id": "6440771a-8611-4769-94b4-5ff5cd3236e6"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "8716bb68-bc95-4784-964d-c85c1b209fbc",
+          "cell_key": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd",
+          "task_id": "6440771a-8611-4769-94b4-5ff5cd3236e6"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "0e05c684-40be-407e-9e49-1c53e8e383c1",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a",
+          "task_id": "2383eab2-9dc7-4756-b31b-0912b695efd1"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "4cc5d1ac-634f-442d-87fb-88b7d20dd483",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9",
+          "task_id": "2383eab2-9dc7-4756-b31b-0912b695efd1"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "0097d097-ab8d-4b2a-92f6-d5dcc0982837",
+          "cell_key": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273",
+          "task_id": "5a413567-a96b-4de8-afd4-f44f089c24b2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "95399452-2058-471c-a81b-d6be63cd1899",
+          "cell_key": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9",
+          "task_id": "5a413567-a96b-4de8-afd4-f44f089c24b2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "fef71808-86c2-4b6b-b253-0294fb8b2e7f",
+          "cell_key": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a",
+          "task_id": "5a413567-a96b-4de8-afd4-f44f089c24b2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "21d9d0b1-37cf-4e73-a03a-c1756d0e200d",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd",
+          "task_id": "484e3b3a-f329-466b-b99a-3a36323fd3bf"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "75932362-5262-4f20-ba33-99079e841245",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+          "task_id": "484e3b3a-f329-466b-b99a-3a36323fd3bf"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "c9d50cc4-a7dd-4b82-a63f-8b85c5671a5c",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8",
+          "task_id": "484e3b3a-f329-466b-b99a-3a36323fd3bf"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "eeda8446-9448-4620-850f-bf2a82a525d1",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+          "task_id": "92c34708-d003-47cb-8cda-79145852f257"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "2cb017ee-1dfa-4a36-a9c5-c5a5e63e26ea",
+          "cell_key": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273",
+          "task_id": "b2d082c8-56df-40b2-96fd-b2fc8ecfbdc7"
+        }
+      ],
+      "candidate_count": 13,
+      "task_count": 8,
+      "merge_count": 13,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:f4575d4ae8b48981a1c223c9fab09e647b8f292c773ec47317e15726bc299a57",
+          "candidate_id": "8716bb68-bc95-4784-964d-c85c1b209fbc",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd"
+        },
+        {
+          "merge_id": "merge:ef824abc8a20d7487c6f36c00b4e4d01b741329bc5bcd6b0d4a82516be6ba000",
+          "candidate_id": "57ffd505-3dbe-4e42-a292-55ca8bc8ec85",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb"
+        },
+        {
+          "merge_id": "merge:38906e5235f7d4a3e876430d27b6ebc20452f77d4bb59a9e0487be67e1f9571f",
+          "candidate_id": "8088debf-3b26-471e-a9ab-f66340211979",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-5ba576d5150422d8"
+        },
+        {
+          "merge_id": "merge:6edfd0e4f130790012e52383a4158657ef6f2cd4c1612891bcd1bcbda3558914",
+          "candidate_id": "4cc5d1ac-634f-442d-87fb-88b7d20dd483",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9"
+        },
+        {
+          "merge_id": "merge:e8b007d9655c744040b1eb1cd85cfb87a15d2d6c0203f76f7a7d064e72ced40e",
+          "candidate_id": "0e05c684-40be-407e-9e49-1c53e8e383c1",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a"
+        },
+        {
+          "merge_id": "merge:21c4d716065d43d6904c031b1553ce60b4af38b069c8d9cec1b5ece39b5fe629",
+          "candidate_id": "95399452-2058-471c-a81b-d6be63cd1899",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9"
+        },
+        {
+          "merge_id": "merge:fff36222103237a1cdb0ebea2e1b787b202dcf113e4516eebd99954344529435",
+          "candidate_id": "0097d097-ab8d-4b2a-92f6-d5dcc0982837",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273"
+        },
+        {
+          "merge_id": "merge:e29a759bc8e46e03b574173932fc7256b2c6667d6175db7d52cb4e046dff26c2",
+          "candidate_id": "fef71808-86c2-4b6b-b253-0294fb8b2e7f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a"
+        },
+        {
+          "merge_id": "merge:fe9af9cc00f339c4a62c2c0f6e3c170fd893637d12347ed6f99ef3c83d4cdf26",
+          "candidate_id": "c9d50cc4-a7dd-4b82-a63f-8b85c5671a5c",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8"
+        },
+        {
+          "merge_id": "merge:313c18ada8af66f408df41f48334a6ad9049222ba906560e252b599bcc837e82",
+          "candidate_id": "21d9d0b1-37cf-4e73-a03a-c1756d0e200d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd"
+        },
+        {
+          "merge_id": "merge:050e555db1f6b5ccccc2ffad8e1094600d1e4a34339e2cf4c5384617aea0a1da",
+          "candidate_id": "75932362-5262-4f20-ba33-99079e841245",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb"
+        },
+        {
+          "merge_id": "merge:f1e39c6be919423979a617f5bd6b80ed3da6142ab72e36fc7297510f3138ccae",
+          "candidate_id": "eeda8446-9448-4620-850f-bf2a82a525d1",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb"
+        },
+        {
+          "merge_id": "merge:fd2a1c63ce63a5dd139887614171bd550f0d31ff8a45d5ae913989bc961f0089",
+          "candidate_id": "2cb017ee-1dfa-4a36-a9c5-c5a5e63e26ea",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 11,
+          "candidate_high_water_mark": 11
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-15646ccfc4230c22",
+            "label": "OpenTelemetry"
+          },
+          {
+            "entity_key": "entity-1809f7cd0c75acf3",
+            "label": "Prometheus"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-00ce77e5c1775ddb",
+            "label": "时间性与累计方式",
+            "description": "每种模型如何表达累计值随时间的变化（cumulative 与 delta temporality、Prometheus scrape 累计序列），引用官方文档。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-0f6806b4143ae3fd",
+            "label": "互操作性",
+            "description": "OpenTelemetry 与 Prometheus 格式之间的兼容与转换（如 OTel Prometheus exporter、OpenMetrics 兼容），引用官方文档。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-5ba576d5150422d8",
+            "label": "指标类型与语义",
+            "description": "每种技术定义的指标类型（如 counter、gauge、histogram、summary、updowncounter）及其累加/瞬时语义，引用官方文档原文。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-82e89f67e4faa7f9",
+            "label": "标签与属性模型",
+            "description": "指标标识的键值维度机制（Prometheus labels 与 OTel attributes/dimensions）及其基数与命名约束，引用官方文档。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b8c1268c3afd3273",
+            "label": "集合与暴露格式",
+            "description": "指标如何被采集与暴露（Prometheus pull/scrape text exposition 与 OTel push OTLP/Collector），引用官方文档。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-f08a98d5a41aa45a",
+            "label": "命名与单位规范",
+            "description": "指标名、单位与后缀的官方约定（Prometheus naming/units，OTel instrument name 与 unit），引用文档。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "两种技术的指标类型、标签模型、时间性、命名规范、采集暴露与互操作性。",
+          "objective": "比较 OpenTelemetry 与 Prometheus 的指标数据模型，并基于官方文档提供可逐项引用的结论。",
+          "exclusions": [
+            "非指标信号（traces、logs）",
+            "第三方存储实现细节"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "opentelemetry.io",
+          "prometheus.io"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "如何在代码中表达指标类型与标签？",
+              "如何采集与导出指标？"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "两种模型之间如何兼容与迁移？",
+              "选择时语义差异有哪些影响？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-00ce77e5c1775ddb",
+          "entity_label": "OpenTelemetry",
+          "column_label": "时间性与累计方式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenTelemetry 的 Sum 指标可带有累计性 AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3eee522d3d81902bc6e23ad33926ad9c2d0cd9d8eadd026a",
+              "source_domain": "tigerdata.com",
+              "claim_text": "OpenTelemetry 的 Sum 指标可带有累计性 AggregationTemporality: AGGREGATION_TEMPORALITY_CUMULATIVE"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-0f6806b4143ae3fd",
+          "entity_label": "OpenTelemetry",
+          "column_label": "互操作性",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenTelemetry 可通过 Prometheus Exporter 抓取或 Prometheus Remote Write Exporter 推送将指标传给 Prometheus",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c7dc7985f927b0b65361b6e4a3ec5eb85e459c096a614cb2",
+              "source_domain": "tigerdata.com",
+              "claim_text": "OpenTelemetry 可通过 Prometheus Exporter 抓取或 Prometheus Remote Write Exporter 推送将指标传给 Prometheus"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-5ba576d5150422d8",
+          "entity_label": "OpenTelemetry",
+          "column_label": "指标类型与语义",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Histogram 是同步 Instrument，用于报告具有统计意义的任意值，适用于 histograms、summaries 和 percentile 等统计",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:deaf81d3ea2ebbb8aa22519523b473bc4608539dc71c9118",
+              "source_domain": "opentelemetry.io",
+              "claim_text": "Histogram 是同步 Instrument，用于报告具有统计意义的任意值，适用于 histograms、summaries 和 percentile 等统计"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-82e89f67e4faa7f9",
+          "entity_label": "OpenTelemetry",
+          "column_label": "标签与属性模型",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenTelemetry 语义约定规定了属性的名称、类型、含义与有效值。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ceac43a2d082601fe240b7bf5307b75fc2e3d708310e08f4",
+              "source_domain": "opentelemetry.io",
+              "claim_text": "OpenTelemetry 语义约定规定了属性的名称、类型、含义与有效值。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-b8c1268c3afd3273",
+          "entity_label": "OpenTelemetry",
+          "column_label": "集合与暴露格式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenTelemetry Collector 接受多种格式的指标数据，以 OpenTelemetry 数据模型传输，再导出到现有系统。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:57677ce8397c130e44b8605b7265d7984a00c972e64519f8",
+              "source_domain": "opentelemetry.io",
+              "claim_text": "OpenTelemetry Collector 接受多种格式的指标数据，以 OpenTelemetry 数据模型传输，再导出到现有系统。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-15646ccfc4230c22:dim-f08a98d5a41aa45a",
+          "entity_label": "OpenTelemetry",
+          "column_label": "命名与单位规范",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OpenTelemetry 单位应遵循 UCUM（Unified Code for Units of Measure）。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f5c9a1ac9001905ea8db00dbbbc494801c8d9c5a84fb106f",
+              "source_domain": "opentelemetry.io",
+              "claim_text": "OpenTelemetry 单位应遵循 UCUM（Unified Code for Units of Measure）。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+          "entity_label": "Prometheus",
+          "column_label": "时间性与累计方式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "聚合时间性为 cumulative 且 sum 单调时，必须转换为 Prometheus Counter",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:503d703a7ce7107a3e5b5354c1587d8c47a6e24fb2e8046b",
+              "source_domain": "opentelemetry.io",
+              "claim_text": "聚合时间性为 cumulative 且 sum 单调时，必须转换为 Prometheus Counter"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-0f6806b4143ae3fd",
+          "entity_label": "Prometheus",
+          "column_label": "互操作性",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Prometheus 的 gauge histogram 在 OpenMetrics 和较新版本的 protobuf exposition 格式中有所表示",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:5125fa58890307fd672d1594b3e4eb281038774f272f0a93",
+              "source_domain": "prometheus.io",
+              "claim_text": "Prometheus 的 gauge histogram 在 OpenMetrics 和较新版本的 protobuf exposition 格式中有所表示"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-5ba576d5150422d8",
+          "entity_label": "Prometheus",
+          "column_label": "指标类型与语义",
+          "cell_status": "VERIFIED",
+          "candidate_value": "直方图的观测值之和是一个 bucketed counter；gauge histogram 表示分布的当前状态",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d7408f05870f63002e320a2e7dd4f9470cac472332e9187b",
+              "source_domain": "prometheus.io",
+              "claim_text": "直方图的观测值之和是一个 bucketed counter；gauge histogram 表示分布的当前状态"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-82e89f67e4faa7f9",
+          "entity_label": "Prometheus",
+          "column_label": "标签与属性模型",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Prometheus 的“维度数据模型”通过标签捕获同一指标名的不同实例，任一标签值变化（含增删标签）都会创建新时间序列",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4bb4c65d0138d473c488f9fccb1f30edfdc3021a37c5c3b5",
+              "source_domain": "prometheus.io",
+              "claim_text": "Prometheus 的“维度数据模型”通过标签捕获同一指标名的不同实例，任一标签值变化（含增删标签）都会创建新时间序列"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273",
+          "entity_label": "Prometheus",
+          "column_label": "集合与暴露格式",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Prometheus 抓取时会构造 Accept 头，用来表明它支持哪些格式",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b7cf2f8bfdb875e75b780813660b323883fdad40d6f8cf69",
+              "source_domain": "prometheus.io",
+              "claim_text": "Prometheus 抓取时会构造 Accept 头，用来表明它支持哪些格式"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-1809f7cd0c75acf3:dim-f08a98d5a41aa45a",
+          "entity_label": "Prometheus",
+          "column_label": "命名与单位规范",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Prometheus 强烈建议在指标名中包含单位和类型，即使这些信息存储在其他地方。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:90786eabc2b19216fd6fbdbdb73f59e8f3b5c5defad7e11f",
+              "source_domain": "prometheus.io",
+              "claim_text": "Prometheus 强烈建议在指标名中包含单位和类型，即使这些信息存储在其他地方。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-1809f7cd0c75acf3:dim-00ce77e5c1775ddb",
+            "entity-1809f7cd0c75acf3:dim-b8c1268c3afd3273"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 4,
+          "created_at": "2026-10-17T13:51:15Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -1,0 +1,1063 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-rust-edition-2024",
+  "run_id": "6797bd5d-ec08-4140-88cc-f5552553640f",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:01:35.073467+00:00",
+  "finished_at": "2026-10-17T14:05:56.340392+00:00",
+  "wall_seconds": 261.3,
+  "run_detail": {
+    "research_run_id": "6797bd5d-ec08-4140-88cc-f5552553640f",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "071163e7-72bf-4a97-ba71-db6e08b5de07",
+    "question": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+    "final_report_title": "研究报告：Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+    "final_report_markdown": "# Rust 2024 edition 相对 2021 edition 的变更：证据范围说明\n\n本次核验的资料仅确认 Rust 2024 edition 对应 RFC #3501（官方 edition 指南链接），未提供任何关于其相对 2021 edition 具体不兼容变更的条目或对比内容，因此无法据此回答问题所列的不兼容变更清单和与 2021 edition 的对比部分。\n\n## 直接回答\n\n关于 Rust 2024 edition 相对 2021 edition 存在哪些不兼容变更，本次核验的资料未能给出具体的变更条目或对比结论。现有可核验的资料仅指向 Rust 2024 edition 的官方 RFC #3501 及其 edition 指南链接，可作为进一步查阅变更清单的入口，但其中并未在本次核验范围内展开任何不兼容项。 [evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a]\n\n**核验情况：** 已核验 1 项，未找到足够证据 2 项。\n\n## 结论汇总\n\n| 研究对象 | Incompatible changes list | Compare with 2021 edition | Official quote and source |\n|---|---|---|---|\n| Rust 2024 edition | 未找到证据 | 未找到证据 | \\| RFC \\| [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) \\| |\n\n## 引用核对\n\n### Rust 2024 edition · Official quote and source\n\n| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |\n\n- Evidence: `evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a`\n  - Exact quote: “| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |”\n  - Snapshot: `research/external/a909397c-4241-4b3d-910b-aba62b19effd/005750325ef3bade8522e084b89502f07acdd4a8ed69047b116c4b0b3d2381d9`\n  - URL: https://doc.rust-lang.org/edition-guide/rust-2024/index.html\n\n## 局限与未解决项\n\n- **Rust 2024 edition · Incompatible changes list**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Rust 2024 edition · Compare with 2021 edition**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n\n## 完成判定原因\n\n- 完成状态：`INSUFFICIENT_EVIDENCE`\n- INSUFFICIENT_EVIDENCE",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/6797bd5d-ec08-4140-88cc-f5552553640f/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 2052,
+      "sha256": "5cd01663c310abdebbdde94e71053e8c06f53274de938ad4b3655a0eb96f6804"
+    },
+    "research_artifact": {
+      "artifact_id": "6797bd5d-ec08-4140-88cc-f5552553640f",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "6797bd5d-ec08-4140-88cc-f5552553640f",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/6797bd5d-ec08-4140-88cc-f5552553640f/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 2052,
+        "sha256": "5cd01663c310abdebbdde94e71053e8c06f53274de938ad4b3655a0eb96f6804"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "rust edition guide 2024 \"incompatible changes\" chapter",
+          "site:doc.rust-lang.org edition-guide 2024 edition breaking changes list",
+          "Rust 2024 edition Rust 2024 vs 2021 edition incompatible changes comparison implementation requirements",
+          "Rust 2024 edition Rust 2024 vs 2021 edition incompatible changes comparison documented limitations",
+          "Rust 2024 edition Rust 2024 edition incompatible changes list official documented limitations",
+          "Rust 2024 edition Rust 2024 edition incompatible changes list official implementation requirements"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-8e46954cce57f960",
+            "source_id": "",
+            "source_title": "Rust 2024 edition",
+            "evidence_id": "",
+            "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-8e46954cce57f960",
+            "source_id": "",
+            "source_title": "Rust 2024 edition",
+            "evidence_id": "",
+            "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Rust 2024 edition",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "read_focus": "Identify and document the backward-incompatible changes in Rust 2024 edition relative to Rust 2021 edition, with exact quotes from the official Rust edition guide.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-7000e2dd09325f50",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-7000e2dd09325f50",
+            "column_label": "Compare with 2021 edition",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-d1881bb163bb9c5c",
+            "column_label": "Official quote and source",
+            "candidate_value": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-39d8a221f496d320",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-39d8a221f496d320",
+            "column_label": "Incompatible changes list",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Rust 2024 edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "read_focus": "Identify and document the backward-incompatible changes in Rust 2024 edition relative to Rust 2021 edition, with exact quotes from the official Rust edition guide.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-7000e2dd09325f50",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-7000e2dd09325f50",
+          "column_label": "Compare with 2021 edition",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-d1881bb163bb9c5c",
+          "column_label": "Official quote and source",
+          "candidate_value": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-39d8a221f496d320",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-39d8a221f496d320",
+          "column_label": "Incompatible changes list",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:03:49Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:05:20Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:05:50Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a",
+          "window_id": "window-2",
+          "source_id": "web-fe304a62e57456b1",
+          "source_title": "Rust 2024 - The Rust Edition Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/rust-2024/index.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "read_focus": "archive-reuse:dim-39d8a221f496d320/dim-7000e2dd09325f50/dim-d1881bb163bb9c5c",
+          "quote_text": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |",
+          "claim_text": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a909397c-4241-4b3d-910b-aba62b19effd/005750325ef3bade8522e084b89502f07acdd4a8ed69047b116c4b0b3d2381d9"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c",
+          "row_id": "entity-8e46954cce57f960",
+          "evidence_id": "evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a",
+          "source_id": "web-fe304a62e57456b1",
+          "source_title": "Rust 2024 - The Rust Edition Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/rust-2024/index.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "9076bc02-7216-4954-8f3f-81864587c3b3",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:01:34Z"
+      },
+      {
+        "trace_id": "484693b4-ce41-4718-932a-de41e62fd6ab",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T14:01:47Z"
+      },
+      {
+        "trace_id": "e66019e8-bcbb-4986-843f-ca1a6a5acbb2",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
+        "payload": {},
+        "created_at": "2026-10-17T14:05:53Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:01:34Z",
+    "updated_at": "2026-10-17T14:05:53Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:02:35Z",
+          "lease_epoch": 1,
+          "task_id": "f2cbaddc-e24c-423e-b3fa-bc2899756f27",
+          "task_key": "planning:6797bd5d-ec08-4140-88cc-f5552553640f",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:04:35Z",
+          "lease_epoch": 2,
+          "task_id": "a909397c-4241-4b3d-910b-aba62b19effd",
+          "task_key": "deep-cell:ccd11a79a659cb8709167068b9654d7f",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 2,
+          "attempt_count": 2
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:06:05Z",
+          "lease_epoch": 1,
+          "task_id": "404c4593-c0b5-4490-8aa9-49dcffc1237a",
+          "task_key": "counterfactual:b3515bd18076e808ab21ebd669ef67de",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:05:36Z",
+          "lease_epoch": 1,
+          "task_id": "9e542efe-e99d-456b-a6b1-164f71fc0cd5",
+          "task_key": "counterfactual:15b089bc29c993b0a1ea022570dbab3d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:06:35Z",
+          "lease_epoch": 1,
+          "task_id": "8d65217b-cb95-45b0-84b8-67acd6c9f3e5",
+          "task_key": "counterfactual:2501af535d91cb8e95f1e9d9e05ff8cd",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T14:06:20Z",
+          "lease_epoch": 1,
+          "task_id": "9c36f6cb-7d80-4993-97f3-7f1c26026b80",
+          "task_key": "counterfactual:753369dcc08c7eba3d25e7ed90c5c54c",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:06:50Z",
+          "lease_epoch": 1,
+          "task_id": "9c6c75c8-5cdb-4da3-8076-d284bd5d66b2",
+          "task_key": "synthesis:af33c6d96f4d95cc78827ff4fb185c83",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "a121ad11-c219-46a6-bd46-ceb54baf513f",
+          "cell_key": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c",
+          "task_id": "a909397c-4241-4b3d-910b-aba62b19effd"
+        }
+      ],
+      "candidate_count": 1,
+      "task_count": 7,
+      "merge_count": 1,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:c98d8e1296d2585332802b04f26d51a06fe2f7dd324189eac71fa7226d7694d4",
+          "candidate_id": "a121ad11-c219-46a6-bd46-ceb54baf513f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 2,
+          "merge_high_water_mark": 1,
+          "candidate_high_water_mark": 1
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 4,
+          "merge_high_water_mark": 1,
+          "candidate_high_water_mark": 1
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 6,
+          "merge_high_water_mark": 1,
+          "candidate_high_water_mark": 1
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-8e46954cce57f960",
+            "label": "Rust 2024 edition"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-39d8a221f496d320",
+            "label": "Incompatible changes list",
+            "description": "The official enumeration of backward-incompatible changes introduced by the Rust 2024 edition, as documented in the Rust Edition Guide, with exact quoted items.",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-7000e2dd09325f50",
+            "label": "Compare with 2021 edition",
+            "description": "A per-item comparison stating which incompatible changes are new in 2024 versus already present in 2021, referencing the official edition guide's transition notes.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-d1881bb163bb9c5c",
+            "label": "Official quote and source",
+            "description": "For each incompatible change, the exact quote from the Rust official edition guide along with its URL, to support citation.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Focus on officially documented incompatible changes in the Rust 2024 edition guide; include comparison to 2021 edition where relevant.",
+          "objective": "Identify and document the backward-incompatible changes in Rust 2024 edition relative to Rust 2021 edition, with exact quotes from the official Rust edition guide.",
+          "exclusions": [
+            "Non-official sources as primary evidence",
+            "Changes not classified as incompatible/breaking",
+            "Detailed migration tutorials beyond listing changes"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit, including exact quotes, snapshots, and URLs for each incompatible change."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "doc.rust-lang.org",
+          "blog.rust-lang.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which code patterns will stop compiling under Rust 2024?",
+              "What exact syntax or semantics changed?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "What is the full list of breaking changes to plan migration?",
+              "How do these differ from 2021 edition?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-39d8a221f496d320",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Incompatible changes list",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-7000e2dd09325f50",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Compare with 2021 edition",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-d1881bb163bb9c5c",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Official quote and source",
+          "cell_status": "VERIFIED",
+          "candidate_value": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:40fe1fa940966c87b3e31256afb469a24830c0054e599c9a",
+              "source_domain": "rust-lang.org",
+              "claim_text": "| RFC | [#3501](https://rust-lang.github.io/rfcs/3501-edition-2024.html) |"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-8e46954cce57f960:dim-39d8a221f496d320",
+            "entity-8e46954cce57f960:dim-7000e2dd09325f50"
+          ],
+          "strategy": "NARROW",
+          "query_count": 4,
+          "created_at": "2026-10-17T14:03:49Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-8e46954cce57f960:dim-39d8a221f496d320",
+            "entity-8e46954cce57f960:dim-7000e2dd09325f50"
+          ],
+          "strategy": "NARROW",
+          "query_count": 2,
+          "created_at": "2026-10-17T14:05:20Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

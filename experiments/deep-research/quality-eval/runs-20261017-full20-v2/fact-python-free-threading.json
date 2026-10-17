@@ -1,0 +1,1059 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-python-free-threading",
+  "run_id": "5b6654d6-e927-48c6-b6d9-7d4baa7af61f",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T14:18:21.038112+00:00",
+  "finished_at": "2026-10-17T14:19:56.498890+00:00",
+  "wall_seconds": 95.5,
+  "run_detail": {
+    "research_run_id": "5b6654d6-e927-48c6-b6d9-7d4baa7af61f",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "04ab0e3a-38d9-4107-9e2c-2b213abd4567",
+    "question": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+    "final_report_markdown": "# Python 自由线程（无 GIL）构建的引入版本与当前状态\n\n本次核验的资料显示，自由线程构建在 Python 3.13 中处于实验性阶段，自 Python 3.14 起不再被视为实验性，但尚不是默认解释器构建，其支持状态由 PEP 779 确立，技术细节另见 PEP 703。运行时可选择启用 GIL。\n\n## 直接回答\n\n关于引入版本，本次核验的资料显示，自由线程构建在 Python 3.13 中属于实验性特性，并可能在未来版本中演化为可选（或可能默认禁用）的特性。 [evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309]\n\n## PEP 引用与运行时行为\n\n官方文档将自由线程构建的解释性引用指向 PEP 703，用于了解额外细节。 [evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022]\n\n在运行时，自由线程版本的 CPython 支持通过环境变量选择启用 GIL。 [evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25]\n\n## 对比表\n\n| 维度 | 事实 |\n| --- | --- |\n| 引入版本 | Python 3.13 中为实验性 [evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309] |\n| 当前状态 | 自 Python 3.14 起不再实验性，尚非默认构建，经 PEP 779 确立官方支持 [evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83] [evidence:980ddaea5e72ba81ffac81f54eb07d7602978b3be85e825b] [evidence:19d264aabeb1590f62a3cf9b89588b6934037d821cea8741] |\n| PEP 引用 | PEP 703 提供额外细节 [evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022] |\n| 运行时 GIL | 可通过环境变量在运行时选择启用 GIL [evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25] |\n\n## Citation audit\n\n### CPython free-threaded build · introduction version\n\n- Evidence: `evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309`\n- Exact quote: “It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.”\n- Snapshot: `research/external/230fdc16-2b32-4344-8734-2b298aa933c9/9dc8ca6a1fb002e0754d0c1bb7d2e0c6788d3fe26a22f233d3220f26c8a8db55`\n- URL: https://www.linkedin.com/pulse/goodbye-gil-exploring-free-threaded-mode-python-314-adarsh-divakaran-a93ac\n\n### CPython free-threaded build · current status\n\n- Evidence: `evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83`\n- Exact quote: “the free-threaded interpreter is no longer considered experimental starting in Python 3.14, although it is not yet the default interpreter build.”\n- Snapshot: `research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/afa3f505ec4ddddc44a7408e9988a8e9d7540894de8b676bf5727e89b71a5900`\n- URL: https://py-free-threading.github.io/\n\n### CPython free-threaded build · official documentation\n\n- Evidence: `evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25`\n- Exact quote: “Free-threaded builds of CPython support optionally running with the GIL enabled at runtime using the environment variable”\n- Snapshot: `research/external/230fdc16-2b32-4344-8734-2b298aa933c9/543a59a459a0149d2e73a9c99d062252b469d21baf0407b3a664b642792e4570`\n- URL: https://docs.python.org/3/howto/free-threading-python.html\n\n### CPython free-threaded build · PEP reference\n\n- Evidence: `evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022`\n- Exact quote: “See [**PEP 703**](https://peps.python.org/pep-0703/) for additional details.”\n- Snapshot: `research/external/51a43041-7f98-42fa-9c32-d657270aeebd/543a59a459a0149d2e73a9c99d062252b469d21baf0407b3a664b642792e4570`\n- URL: https://docs.python.org/3/howto/free-threading-python.html\n\n## 补充引用\n\n- Evidence: `evidence:980ddaea5e72ba81ffac81f54eb07d7602978b3be85e825b`\n  - Exact quote: “Python 3.14, released in October 2025, graduated that build from experimental to officially supported via PEP 779. It’s not the default yet.”\n  - Snapshot: `research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/733039f0031b3dbb7ee2300ae4117f010b5b7d82e9f682f60849a0a6fa30f08c`\n  - URL: https://medium.com/@yogeshkrishnanseeniraj/free-threaded-python-what-it-actually-means-for-your-code-c8c4023fce2a\n- Evidence: `evidence:19d264aabeb1590f62a3cf9b89588b6934037d821cea8741`\n  - Exact quote: “With [the acceptance](https://discuss.python.org/t/pep-779-criteria-for-supported-status-for-free-threaded-python/84319/123) of [PEP 779 - Criteria for supported status for free-threaded Python](https://peps.python.org/pep-0779/), the free-threaded interpreter is no longer considered experimental”\n  - Snapshot: `research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/afa3f505ec4ddddc44a7408e9988a8e9d7540894de8b676bf5727e89b71a5900`\n  - URL: https://py-free-threading.github.io/\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/5b6654d6-e927-48c6-b6d9-7d4baa7af61f/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 4640,
+      "sha256": "91c78d80f7fcaf657a789f6fbcf8ec0a412da052269e5072a947cb3ed042bd77"
+    },
+    "research_artifact": {
+      "artifact_id": "5b6654d6-e927-48c6-b6d9-7d4baa7af61f",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "5b6654d6-e927-48c6-b6d9-7d4baa7af61f",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/5b6654d6-e927-48c6-b6d9-7d4baa7af61f/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 4640,
+        "sha256": "91c78d80f7fcaf657a789f6fbcf8ec0a412da052269e5072a947cb3ed042bd77"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "CPython free-threaded build version status",
+          "PEP 703 free-threading CPython no-GIL",
+          "free-threaded Python 3.13 first release",
+          "PEP 703 making the global interpreter lock optional",
+          "CPython free-threaded no-GIL build",
+          "CPython free-threaded build free-threaded Python status experimental 3.14 primary research limitations",
+          "CPython free-threaded build free-threaded Python status experimental 3.14 官方说明 适用条件"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-11a7b62399f9710f",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "CPython free-threaded build",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+            "read_focus": "Determine which CPython version first offers a free-threaded no-GIL build and its current status, citing PEP and official docs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7",
+            "row_id": "entity-11a7b62399f9710f",
+            "branch_id": "branch-main",
+            "column_key": "dim-ff2b62dac6276cb7",
+            "column_label": "PEP reference",
+            "candidate_value": "文档将自由线程构建的解释性引用指向 PEP 703",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa",
+            "row_id": "entity-11a7b62399f9710f",
+            "branch_id": "branch-main",
+            "column_key": "dim-5eed740f3b3f4bfa",
+            "column_label": "introduction version",
+            "candidate_value": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c",
+            "row_id": "entity-11a7b62399f9710f",
+            "branch_id": "branch-main",
+            "column_key": "dim-b06947670bc7fe7c",
+            "column_label": "official documentation",
+            "candidate_value": "自由线程构建在运行时可通过环境变量选择启用 GIL",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f",
+            "row_id": "entity-11a7b62399f9710f",
+            "branch_id": "branch-main",
+            "column_key": "dim-72940e796c7d3f6f",
+            "column_label": "current status",
+            "candidate_value": "自 Python 3.14 起，自由线程解释器不再被视为实验性，但尚不是默认解释器构建。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-11a7b62399f9710f",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "CPython free-threaded build",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "read_focus": "Determine which CPython version first offers a free-threaded no-GIL build and its current status, citing PEP and official docs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7",
+          "row_id": "entity-11a7b62399f9710f",
+          "branch_id": "branch-main",
+          "column_key": "dim-ff2b62dac6276cb7",
+          "column_label": "PEP reference",
+          "candidate_value": "文档将自由线程构建的解释性引用指向 PEP 703",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa",
+          "row_id": "entity-11a7b62399f9710f",
+          "branch_id": "branch-main",
+          "column_key": "dim-5eed740f3b3f4bfa",
+          "column_label": "introduction version",
+          "candidate_value": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c",
+          "row_id": "entity-11a7b62399f9710f",
+          "branch_id": "branch-main",
+          "column_key": "dim-b06947670bc7fe7c",
+          "column_label": "official documentation",
+          "candidate_value": "自由线程构建在运行时可通过环境变量选择启用 GIL",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f",
+          "row_id": "entity-11a7b62399f9710f",
+          "branch_id": "branch-main",
+          "column_key": "dim-72940e796c7d3f6f",
+          "column_label": "current status",
+          "candidate_value": "自 Python 3.14 起，自由线程解释器不再被视为实验性，但尚不是默认解释器构建。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T14:19:22Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022",
+          "window_id": "window-1",
+          "source_id": "web-4cfe02dc67d39cc2",
+          "source_title": "Python support for free threading — Python 3.15.0 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/howto/free-threading-python.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded build version status",
+          "read_focus": "Read external URL Python support for free threading — Python 3.15.0 ... for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "See [**PEP 703**](https://peps.python.org/pep-0703/) for additional details.",
+          "claim_text": "文档将自由线程构建的解释性引用指向 PEP 703",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/51a43041-7f98-42fa-9c32-d657270aeebd/543a59a459a0149d2e73a9c99d062252b469d21baf0407b3a664b642792e4570"
+        },
+        {
+          "evidence_id": "evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25",
+          "window_id": "window-1",
+          "source_id": "web-4cfe02dc67d39cc2",
+          "source_title": "Python support for free threading — Python 3.15.0 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/howto/free-threading-python.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded no-GIL build",
+          "read_focus": "Read external URL Python support for free threading — Python 3.15.0 ... for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Free-threaded builds of CPython support optionally running with the GIL enabled at runtime using the environment variable",
+          "claim_text": "自由线程构建在运行时可通过环境变量选择启用 GIL",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/230fdc16-2b32-4344-8734-2b298aa933c9/543a59a459a0149d2e73a9c99d062252b469d21baf0407b3a664b642792e4570"
+        },
+        {
+          "evidence_id": "evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309",
+          "window_id": "window-4",
+          "source_id": "web-10aa94cc6633ea2c",
+          "source_title": "Goodbye GIL: Exploring free-threaded mode in Python 3.14",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.linkedin.com/pulse/goodbye-gil-exploring-free-threaded-mode-python-314-adarsh-divakaran-a93ac",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded no-GIL build",
+          "read_focus": "Read external URL Goodbye GIL: Exploring free-threaded mode in Python 3.14 for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.",
+          "claim_text": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/230fdc16-2b32-4344-8734-2b298aa933c9/9dc8ca6a1fb002e0754d0c1bb7d2e0c6788d3fe26a22f233d3220f26c8a8db55"
+        },
+        {
+          "evidence_id": "evidence:980ddaea5e72ba81ffac81f54eb07d7602978b3be85e825b",
+          "window_id": "window-2",
+          "source_id": "web-bd29545dee98fd7e",
+          "source_title": "Free-Threaded Python — What It Actually Means for Your ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@yogeshkrishnanseeniraj/free-threaded-python-what-it-actually-means-for-your-code-c8c4023fce2a",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded build free-threaded Python status experimental 3.14 官方说明 适用条件",
+          "read_focus": "Read external URL Free-Threaded Python — What It Actually Means for Your ... for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Python 3.14, released in October 2025, graduated that build from experimental to officially supported via PEP 779. It’s not the default yet.",
+          "claim_text": "Python 3.14 通过 PEP 779 将该构建从实验性毕业为正式支持，但还不是默认构建。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/733039f0031b3dbb7ee2300ae4117f010b5b7d82e9f682f60849a0a6fa30f08c"
+        },
+        {
+          "evidence_id": "evidence:19d264aabeb1590f62a3cf9b89588b6934037d821cea8741",
+          "window_id": "window-4",
+          "source_id": "web-2a9d171c34235431",
+          "source_title": "Python Free-Threading Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://py-free-threading.github.io/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded build free-threaded Python status experimental 3.14 官方说明 适用条件",
+          "read_focus": "Read external URL Python Free-Threading Guide for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "With [the acceptance](https://discuss.python.org/t/pep-779-criteria-for-supported-status-for-free-threaded-python/84319/123) of [PEP 779 - Criteria for supported status for free-threaded Python](https://peps.python.org/pep-0779/), the free-threaded interpreter is no longer considered experimental",
+          "claim_text": "随着 PEP 779 被接受，自由线程状态由实验性转为受支持。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/afa3f505ec4ddddc44a7408e9988a8e9d7540894de8b676bf5727e89b71a5900"
+        },
+        {
+          "evidence_id": "evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83",
+          "window_id": "window-4",
+          "source_id": "web-2a9d171c34235431",
+          "source_title": "Python Free-Threading Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://py-free-threading.github.io/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "CPython free-threaded build free-threaded Python status experimental 3.14 官方说明 适用条件",
+          "read_focus": "Read external URL Python Free-Threading Guide for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython free-threaded build. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "the free-threaded interpreter is no longer considered experimental starting in Python 3.14, although it is not yet the default interpreter build.",
+          "claim_text": "自 Python 3.14 起，自由线程解释器不再被视为实验性，但尚不是默认解释器构建。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3a4d915f-d645-4580-a7b9-2fedae54309c/afa3f505ec4ddddc44a7408e9988a8e9d7540894de8b676bf5727e89b71a5900"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7",
+          "row_id": "entity-11a7b62399f9710f",
+          "evidence_id": "evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022",
+          "source_id": "web-4cfe02dc67d39cc2",
+          "source_title": "Python support for free threading — Python 3.15.0 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/howto/free-threading-python.html"
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c",
+          "row_id": "entity-11a7b62399f9710f",
+          "evidence_id": "evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25",
+          "source_id": "web-4cfe02dc67d39cc2",
+          "source_title": "Python support for free threading — Python 3.15.0 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/howto/free-threading-python.html"
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa",
+          "row_id": "entity-11a7b62399f9710f",
+          "evidence_id": "evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309",
+          "source_id": "web-10aa94cc6633ea2c",
+          "source_title": "Goodbye GIL: Exploring free-threaded mode in Python 3.14",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.linkedin.com/pulse/goodbye-gil-exploring-free-threaded-mode-python-314-adarsh-divakaran-a93ac"
+        },
+        {
+          "cell_id": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f",
+          "row_id": "entity-11a7b62399f9710f",
+          "evidence_id": "evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83",
+          "source_id": "web-2a9d171c34235431",
+          "source_title": "Python Free-Threading Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://py-free-threading.github.io/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "546b0502-eb17-4af8-8c3f-570062aedc03",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T14:18:21Z"
+      },
+      {
+        "trace_id": "55681a31-7f85-4e42-8974-4e9a7483b9ba",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4
+        },
+        "created_at": "2026-10-17T14:18:31Z"
+      },
+      {
+        "trace_id": "a559cdf3-1e35-4abd-966e-9ca7237354f5",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+        "payload": {
+          "cell_count": 4
+        },
+        "created_at": "2026-10-17T14:19:55Z"
+      }
+    ],
+    "created_at": "2026-10-17T14:18:21Z",
+    "updated_at": "2026-10-17T14:19:55Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:19:22Z",
+          "lease_epoch": 1,
+          "task_id": "dba78b96-2e1c-4dbc-a1a3-9f8f5d5205a8",
+          "task_key": "planning:5b6654d6-e927-48c6-b6d9-7d4baa7af61f",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:20:18Z",
+          "lease_epoch": 1,
+          "task_id": "230fdc16-2b32-4344-8734-2b298aa933c9",
+          "task_key": "deep-cell:c0d3b78097d2d43efbae3f15b99d3b3f",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:19:47Z",
+          "lease_epoch": 1,
+          "task_id": "51a43041-7f98-42fa-9c32-d657270aeebd",
+          "task_key": "deep-cell:0fc14cd3af2d947e21595a38864fb6a9",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:20:38Z",
+          "lease_epoch": 1,
+          "task_id": "3a4d915f-d645-4580-a7b9-2fedae54309c",
+          "task_key": "counterfactual:f0b6cea5aa8010f26adb51032a4a34cf",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T14:20:51Z",
+          "lease_epoch": 1,
+          "task_id": "cc4ff4c9-917f-4aa5-bbab-24fde2269ac1",
+          "task_key": "synthesis:c5bd9e994dd440583bfe4c0e06b6c4b9",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "a5fb4ce8-7da5-4156-b41f-ccef53238335",
+          "cell_key": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7",
+          "task_id": "51a43041-7f98-42fa-9c32-d657270aeebd"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.7,
+          "candidate_id": "d1a3a383-3aab-4770-9d79-18e3fd0ba38d",
+          "cell_key": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c",
+          "task_id": "230fdc16-2b32-4344-8734-2b298aa933c9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "ebd5af7e-fe87-42f5-aa1d-15b510c37fb7",
+          "cell_key": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa",
+          "task_id": "230fdc16-2b32-4344-8734-2b298aa933c9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "b6f5033a-1825-4c3e-bbbc-67724f819914",
+          "cell_key": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f",
+          "task_id": "3a4d915f-d645-4580-a7b9-2fedae54309c"
+        }
+      ],
+      "candidate_count": 4,
+      "task_count": 5,
+      "merge_count": 4,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:deead45da0f3f18d3560fcfc30aa426a74fe0d56c149b45543757411d705e3d1",
+          "candidate_id": "a5fb4ce8-7da5-4156-b41f-ccef53238335",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7"
+        },
+        {
+          "merge_id": "merge:9f3ab8c1a2cccafa6b2dbe1433ffc9092feb5e0e0c9483e88dd9db322f3d2f72",
+          "candidate_id": "ebd5af7e-fe87-42f5-aa1d-15b510c37fb7",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa"
+        },
+        {
+          "merge_id": "merge:793baae2f42f0d9ee6d0ffd9b8f088d0614c2ac14d984fd2fcbe1379fe9ce980",
+          "candidate_id": "d1a3a383-3aab-4770-9d79-18e3fd0ba38d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c"
+        },
+        {
+          "merge_id": "merge:bc861c94f74a9d0420ca50568fe7208341211390d35a18f0d0e0566594de32d3",
+          "candidate_id": "b6f5033a-1825-4c3e-bbbc-67724f819914",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "candidate_high_water_mark": 3
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-11a7b62399f9710f",
+            "label": "CPython free-threaded build"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-5eed740f3b3f4bfa",
+            "label": "introduction version",
+            "description": "Which CPython release first ships a free-threaded (no-GIL) build, per official docs or PEP.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-72940e796c7d3f6f",
+            "label": "current status",
+            "description": "Whether the free-threaded build is experimental, non-experimental or default at present, with official wording.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b06947670bc7fe7c",
+            "label": "official documentation",
+            "description": "URL and exact quote from docs.python.org describing free-threading availability and status.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-ff2b62dac6276cb7",
+            "label": "PEP reference",
+            "description": "The PEP number and title that specifies free-threading, with quoted text.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "CPython free-threaded builds from introduction through current documented status.",
+          "objective": "Determine which CPython version first offers a free-threaded no-GIL build and its current status, citing PEP and official docs.",
+          "exclusions": [
+            "Performance benchmarks beyond status confirmation",
+            "Third-party reimplementations such as PyPy"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "docs.python.org",
+          "peps.python.org"
+        ],
+        "perspectives": [
+          {
+            "name": "implementer",
+            "questions": [
+              "Which release first shipped the free-threaded option and how is it enabled?",
+              "What PEP defines the mechanism?"
+            ]
+          },
+          {
+            "name": "decision maker",
+            "questions": [
+              "Is the free-threaded build production-ready or still experimental/default-off?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-11a7b62399f9710f:dim-5eed740f3b3f4bfa",
+          "entity_label": "CPython free-threaded build",
+          "column_label": "introduction version",
+          "cell_status": "VERIFIED",
+          "candidate_value": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d6e03e995956b9ee3291a67877f6250bb91ffc0fa17fa309",
+              "source_domain": "linkedin.com",
+              "claim_text": "It was experimental in Python 3.13, eventually evolving into an optional (or possibly default-disabled) feature in future releases."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-11a7b62399f9710f:dim-72940e796c7d3f6f",
+          "entity_label": "CPython free-threaded build",
+          "column_label": "current status",
+          "cell_status": "VERIFIED",
+          "candidate_value": "自 Python 3.14 起，自由线程解释器不再被视为实验性，但尚不是默认解释器构建。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ef1805b9e634b0a223ef75e462fd410d7343e5f0b06abd83",
+              "source_domain": "py-free-threading.github.io",
+              "claim_text": "自 Python 3.14 起，自由线程解释器不再被视为实验性，但尚不是默认解释器构建。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-11a7b62399f9710f:dim-b06947670bc7fe7c",
+          "entity_label": "CPython free-threaded build",
+          "column_label": "official documentation",
+          "cell_status": "VERIFIED",
+          "candidate_value": "自由线程构建在运行时可通过环境变量选择启用 GIL",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:bb3c44d05437670e7a2afc3eb522f9330b7820b5e4e76c25",
+              "source_domain": "python.org",
+              "claim_text": "自由线程构建在运行时可通过环境变量选择启用 GIL"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-11a7b62399f9710f:dim-ff2b62dac6276cb7",
+          "entity_label": "CPython free-threaded build",
+          "column_label": "PEP reference",
+          "cell_status": "VERIFIED",
+          "candidate_value": "文档将自由线程构建的解释性引用指向 PEP 703",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:871d005ff473620d28ebbc70f6e08499547d3ceb69d05022",
+              "source_domain": "python.org",
+              "claim_text": "文档将自由线程构建的解释性引用指向 PEP 703"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-11a7b62399f9710f:dim-72940e796c7d3f6f"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T14:19:22Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

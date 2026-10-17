@@ -1,0 +1,2405 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-openai-anthropic-tools",
+  "run_id": "67725c68-1343-4374-91a4-1e85fb9dc756",
+  "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+  "started_at": "2026-10-17T13:23:25.999526+00:00",
+  "finished_at": "2026-10-17T13:29:07.988625+00:00",
+  "wall_seconds": 342.0,
+  "run_detail": {
+    "research_run_id": "67725c68-1343-4374-91a4-1e85fb9dc756",
+    "workspace_id": "5d59cc26-6d46-4dea-a4d1-7b0b08e42eef",
+    "task_id": "4866b043-7564-4cd7-b600-0ec25d654804",
+    "question": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+    "final_report_markdown": "# OpenAI Responses API 与 Anthropic Messages API：工具调用与流式事件设计比较\n\n本次核验的资料显示，两者都支持流式传输与工具调用，但设计路径不同：Responses API 采用带预定义 schema 类型的语义化事件，工具参数以 response.function_call_arguments.delta 增量到达并按 output_index 区分与重组，工具结果通过 function_call_output 项和 call_id 回传；Anthropic Messages API 采用 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成的事件序列，工具参数以 content_block_delta 中的 input_json_delta 到达，并通过 tool_use 与 tool_result 内容块及 tool_use_id 完成往返。在并行工具调用上，Responses API 以 output_index 区分各工具调用；Anthropic 侧资料则指出，当同一组并行调用中同时包含 web search 与客户端工具时，API 返回 stop_reason: \"tool_use\" 且暂不运行搜索。\n\n## 直接回答\n\n在流式事件设计上，Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型，便于消费者只监听关心的事件；事件类型中包括 ResponseCreatedEvent、ResponseInProgressEvent、ResponseCompletedEvent、ResponseOutputItemAdded、ResponseOutputItemDone、ResponseContentPartAdded 与 ResponseContentPartDone 等。Anthropic Messages API 的流式响应则由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 这一序列组成，其间还可能存在 ping 事件。 [evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f] [evidence:a627afe00b13c66978a0ba72c6e8b4d3879ae3b2ee45634b] [evidence:072ae03f130e656d5be85025c9cc04f10364c14fa3ab4516] [evidence:abdc3370ccb3518e9e6b98088f35eee59aee398adc2f4b54] [evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d] [evidence:1c9d095a953bb9cb55c4e6fb7876bb6b59117d04d1d35a2c] [evidence:49eb8f16f199b7f3dbb432007842660c61f918a86c7d4310] [evidence:d401f34037c8e7431a11b9e413d0c8de8b4ce89771445ae8]\n\n在工具调用参数的结构与流式投递上，Responses API 的进行中函数调用项包含 name、arguments 与 id 字段，arguments 以 response.function_call_arguments.delta 事件的 delta 字段增量发送；消费者侧按 OutputIndex 将 Delta 追加到对应调用的 Arguments 上，以重组完整参数。Anthropic Messages API 则以 content_block_start 中的 tool_use 内容块发起调用，部分参数以 content_block_delta 事件中的 input_json_delta 形式到达。 [evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b] [evidence:35a77ba3c8c0ec72468d257e7dc6ac1b221d9c98202ec376] [evidence:fd5467837cea84fa379217169f606a00a0009bd315dc6744] [evidence:151681b64fae6cea1a8f234a14bcacc062b6151d1e7345b1] [evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b] [evidence:b9682f26128d6777ed1a2de0249428757dbac45778c0d085] [evidence:261d4404d9e5c652460f746c56244346bba84f634e3404fd] [evidence:9a4d1d761f3af6bd3b9b51668f45488c8d9f47fed52075ba] [evidence:57568447c551ca4313635b430292df17864b99548e5d21b4] [evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68]\n\n在工具定义与结果回传上，Responses API 的 tools 数组使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\"；工具结果以 function_call_output 项提交，并通过 call_id 与对应的工具调用项配对。Anthropic Messages API 的 tools 参数是用于 function calling 的工具定义数组，结果以 tool_result 内容块提交，并用 tool_use_id 字段关联到对应的工具调用。 [evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90] [evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c] [evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80] [evidence:f1e574e62e515493f7bb71b58af686837b260643f0b4f21a] [evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347] [evidence:3954e1dc76f808f5fcaa892ff933aa94ebf8d61cdab9d8df] [evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab] [evidence:24f802c733bcb1b55eae1fb761b054f8c0c594aa62b39363] [evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019]\n\n## 流式事件模型的结构差异\n\nResponses API 把流式事件组织成有明确类型的语义化事件，每个事件携带预定义 schema，调用方可以按事件类型过滤。本次资料中列出的事件包括 ResponseCreatedEvent、ResponseInProgressEvent、ResponseFailedEvent、ResponseCompletedEvent，以及围绕输出项与内容部件粒度的 ResponseOutputItemAdded、ResponseOutputItemDone、ResponseContentPartAdded、ResponseContentPartDone 等，示例代码以 response.output_text.delta 监听文本增量。 [evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f] [evidence:a627afe00b13c66978a0ba72c6e8b4d3879ae3b2ee45634b] [evidence:072ae03f130e656d5be85025c9cc04f10364c14fa3ab4516] [evidence:abdc3370ccb3518e9e6b98088f35eee59aee398adc2f4b54]\n\nAnthropic Messages API 的流式事件以消息与内容块的生命周期为骨架，固定序列为 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop，其间可能插入 ping 事件。内容块内部还有更细的增量类型，例如 thinking 块以 content_block_delta 中的 thinking_delta 事件流式输出，并在块结束前发出一次 signature_delta 事件。 [evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d] [evidence:1c9d095a953bb9cb55c4e6fb7876bb6b59117d04d1d35a2c] [evidence:49eb8f16f199b7f3dbb432007842660c61f918a86c7d4310] [evidence:d401f34037c8e7431a11b9e413d0c8de8b4ce89771445ae8]\n\n## 工具参数的流式投递方式\n\nResponses API 在流式期间先通过 response.output_item.added 事件揭示类型为 function_call 的输出项，随后以一系列 response.function_call_arguments.delta 事件携带 arguments 字段的增量。资料中的示例显示，消费者以 finalToolCalls := map[int64]responses.ResponseFunctionToolCall{} 维护进行中的调用，通过 finalToolCall.Arguments += event.Delta 追加增量，从而重组参数。 [evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b] [evidence:b9682f26128d6777ed1a2de0249428757dbac45778c0d085] [evidence:261d4404d9e5c652460f746c56244346bba84f634e3404fd] [evidence:9a4d1d761f3af6bd3b9b51668f45488c8d9f47fed52075ba] [evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b] [evidence:35a77ba3c8c0ec72468d257e7dc6ac1b221d9c98202ec376] [evidence:fd5467837cea84fa379217169f606a00a0009bd315dc6744] [evidence:151681b64fae6cea1a8f234a14bcacc062b6151d1e7345b1]\n\nAnthropic Messages API 的工具参数同样走增量通道，但落在 content_block_delta 事件里：content_block_start 先给出 type 为 tool_use、带 id、name 与空 input 的内容块，随后的 content_block_delta 以 input_json_delta 携带 partial_json 片段。对于思考块等特殊内容，资料说明 content_block_delta 中的 input_json_delta 是工具输入，处理时被忽略。 [evidence:57568447c551ca4313635b430292df17864b99548e5d21b4] [evidence:ad19b4e0a2fb02f2f469078a1505903cfe874a89ed5ee320] [evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68]\n\n## 工具定义与结果回传的配对机制\n\nResponses API 的函数工具声明方式是在 tools 数组里写入 \"type\": \"function\"，并在同一对象上直接给出 \"name\"、\"description\" 与 \"parameters\"，资料示例中的工具名为 get_horoscope。工具执行完成后，调用方以 function_call_output 类型的项提交结果，并用 call_id 指向对应的工具调用，示例中 call_id 为 call_123。 [evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90] [evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c] [evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80] [evidence:f1e574e62e515493f7bb71b58af686837b260643f0b4f21a]\n\nAnthropic Messages API 中，tools 参数是用于 function calling 的工具定义数组；资料还提及浏览器工具集作为单个 tools[] 条目声明且不携带 name 的情形。结果回传也在内容块层面完成：模型通过 tool_use 内容块发起调用，用户消息中以 type 为 tool_result 的内容块返回结果，并用 tool_use_id 关联，示例值为 toolu_01A09q90qw90lq917835lq9。 [evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347] [evidence:3954e1dc76f808f5fcaa892ff933aa94ebf8d61cdab9d8df] [evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab] [evidence:24f802c733bcb1b55eae1fb761b054f8c0c594aa62b39363] [evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019]\n\n## 并行工具调用的区分与一项特殊约束\n\nResponses API 用 output_index 区分不同的工具调用，并分别拼接各自的 arguments 增量；这说明并行调用在流式通道中是可分辨的独立单元。Anthropic Messages API 的资料则给出并行调用的一种特殊情形：若模型在同一组并行工具调用中同时调用 web search 与客户端工具，API 会返回 stop_reason: \"tool_use\"，且不会立即运行搜索，需要先返回客户端工具结果，再在下一个请求中运行搜索。 [evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939] [evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705] [evidence:ad19b4e0a2fb02f2f469078a1505903cfe874a89ed5ee320] [evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68]\n\n## 对比表\n\n| 比较维度 | OpenAI Responses API | Anthropic Messages API |\n| --- | --- | --- |\n| 流式事件模型 | 语义化事件，每个事件带预定义 schema 类型（如 ResponseCreatedEvent、ResponseOutputItemAdded、ResponseContentPartDone 等） | message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 序列，可能含 ping [evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f] [evidence:a627afe00b13c66978a0ba72c6e8b4d3879ae3b2ee45634b] [evidence:072ae03f130e656d5be85025c9cc04f10364c14fa3ab4516] [evidence:abdc3370ccb3518e9e6b98088f35eee59aee398adc2f4b54] [evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d] [evidence:1c9d095a953bb9cb55c4e6fb7876bb6b59117d04d1d35a2c] [evidence:49eb8f16f199b7f3dbb432007842660c61f918a86c7d4310] [evidence:d401f34037c8e7431a11b9e413d0c8de8b4ce89771445ae8] |\n| 工具参数流式投递 | response.function_call_arguments.delta 携带 arguments 增量，按 OutputIndex 追加重组（finalToolCall.Arguments += event.Delta） | content_block_delta 中 input_json_delta 携带 partial_json 片段 [evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b] [evidence:35a77ba3c8c0ec72468d257e7dc6ac1b221d9c98202ec376] [evidence:fd5467837cea84fa379217169f606a00a0009bd315dc6744] [evidence:151681b64fae6cea1a8f234a14bcacc062b6151d1e7345b1] [evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b] [evidence:b9682f26128d6777ed1a2de0249428757dbac45778c0d085] [evidence:57568447c551ca4313635b430292df17864b99548e5d21b4] |\n| 工具定义方式 | tools 数组中以 \"type\": \"function\" 声明，并在同一对象上给出 \"name\"（如 get_horoscope） | tools 参数为用于 function calling 的工具定义数组；浏览器工具集作为单个 tools[] 条目且不携带 name [evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90] [evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c] [evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347] [evidence:3954e1dc76f808f5fcaa892ff933aa94ebf8d61cdab9d8df] |\n| 工具结果回传与配对 | 提交 function_call_output 项，以 call_id 与对应调用配对 | 返回 tool_result 内容块，以 tool_use_id 关联对应工具调用 [evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80] [evidence:f1e574e62e515493f7bb71b58af686837b260643f0b4f21a] [evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab] [evidence:24f802c733bcb1b55eae1fb761b054f8c0c594aa62b39363] [evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019] |\n| 并行工具调用处理 | 通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量 | 同一组并行调用同时含 web search 与客户端工具时，返回 stop_reason: \"tool_use\" 且暂不运行搜索，需先回传客户端工具结果 [evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939] [evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705] [evidence:ad19b4e0a2fb02f2f469078a1505903cfe874a89ed5ee320] [evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68] |\n\n## Citation audit\n\n### The vendor Responses API · Parallel tool calls handling\n\n- Evidence: `evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939`\n- Exact quote: “if event.Type == \"response.output_item.added\" && event.Item.Type == \"function_call\" {”\n- Snapshot: `research/external/ec1cb505-b63d-49a0-96e1-bd10690bb1f2/78f4dc39a69ac3e29b1513189be07ce2d97c709d6bc63dbed0712e0dbc99756e`\n- URL: https://developers.openai.com/api/docs/guides/function-calling\n\n### The vendor Responses API · Streaming event model\n\n- Evidence: `evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f`\n- Exact quote: “The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about.”\n- Snapshot: `research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/0ccf494f94505f4a982cfea35e6b01763143b2da1df512a32021b25b7042c5cd`\n- URL: https://openai-hd4n6.mintlify.app/docs/guides/streaming-response\n\n### The vendor Responses API · Tool definition schema\n\n- Evidence: `evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90`\n- Exact quote: “\"tools\": [ { \"type\": \"function\", \"name\":”\n- Snapshot: `research/external/74ed5dcc-53aa-4216-9363-839879ac0af2/af7c6d573e86455e1fa8e79d255cfdb3eef390c8e7b19f42d2464736e387a6b4`\n- URL: https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses\n\n### The vendor Responses API · Tool definition schema\n\n- Evidence: `evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c`\n- Exact quote: “\"type\": \"function\",  <br> \"name\": \"get_horoscope\",  <br> \"description\": \"Get today's horoscope for an astrological sign.\",  <br> \"parameters\": {”\n- Snapshot: `research/external/74ed5dcc-53aa-4216-9363-839879ac0af2/f529f0f86edd911444645a9d050f6afee571e3c22aed39100e28a3ce7ecc45f4`\n- URL: https://medium.com/@laurentkubaski/openai-tool-schema-differences-between-the-response-api-and-the-chat-completion-api-8f99ce8a9371\n\n### The vendor Responses API · Tool result round-trip\n\n- Evidence: `evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80`\n- Exact quote: “'type': 'function_call_output',”\n- Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103`\n- URL: https://openrouter.ai/docs/api_reference/responses/tool-calling\n\n### The vendor Responses API · Streaming tool-call delivery\n\n- Evidence: `evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b`\n- Exact quote: “finalToolCall.Arguments += event.Delta”\n- Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n- URL: https://developers.openai.com/api/docs/guides/function-calling\n\n### The vendor Responses API · Tool call request structure\n\n- Evidence: `evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b`\n- Exact quote: “Afterwards you will receive a series of events of type `response.function_call_arguments.delta` which will contain the `delta` of the `arguments` field.”\n- Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n- URL: https://developers.openai.com/api/docs/guides/function-calling\n\n### Anthropic Messages API · Parallel tool calls handling\n\n- Evidence: `evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705`\n- Exact quote: “If Claude calls web search and one of your client tools in the same group of parallel tool calls, the API returns `stop_reason: \"tool_use\"` instead and does not run the search yet.”\n- Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/02adcf5df1678ddbdecc9e9a42ef1def7092859ad10aff8ff0f64ec2e4c5b570`\n- URL: https://docs.anthropic.com/en/docs/build-with-claude/tool-use/web-search-tool\n\n### Anthropic Messages API · Streaming event model\n\n- Evidence: `evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d`\n- Exact quote: “`message_start`<br>`content_block_start`<br>`content_block_delta`<br>`content_block_stop`<br>`message_delta`<br>`message_stop`”\n- Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78`\n- URL: https://docs.anthropic.com/en/api/messages-streaming\n\n### Anthropic Messages API · Tool definition schema\n\n- Evidence: `evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347`\n- Exact quote: “`tools` (array): Array of tool definitions for function calling”\n- Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/9fa78e6ab33e714ca3e45a3d189b2b0805c3e424cc4fd97f1fd80d443c22837e`\n- URL: https://vercel.com/docs/ai-gateway/sdks-and-apis/anthropic-messages-api\n\n### Anthropic Messages API · Tool result round-trip\n\n- Evidence: `evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab`\n- Exact quote: “\"tool_use_id\": \"toolu_01A09q90qw90lq917835lq9\"”\n- Snapshot: `research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6`\n- URL: https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls\n\n### Anthropic Messages API · Streaming tool-call delivery\n\n- Evidence: `evidence:57568447c551ca4313635b430292df17864b99548e5d21b4`\n- Exact quote: “\\| `content_block_delta` with `input_json_delta` \\| Ignored (tool input) \\|”\n- Snapshot: `research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/8509414e88920b9e0df391aa6f2d36169c36cd360fdefbeca08942a74d063d26`\n- URL: https://docs.nvidia.com/aiperf/tutorials/model-endpoint-guides/profile-the-anthropic-messages-api-with-ai-perf\n\n### Anthropic Messages API · Tool call request structure\n\n- Evidence: `evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019`\n- Exact quote: “\"tool_use_id\": \"toolu_01A09q90qw90lq917835lq9\"”\n- Snapshot: `research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6`\n- URL: https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls\n\n## 补充引用\n\n- Evidence: `evidence:a627afe00b13c66978a0ba72c6e8b4d3879ae3b2ee45634b`\n  - Exact quote: “Emitted when text content is finalized.”\n  - Snapshot: `research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/01e9b46ed6a28c1eed811068af346e4f122a7533bbacb66dff4ca7867f608c19`\n  - URL: https://developers.openai.com/api/reference/resources/beta/subresources/responses/streaming-events/\n- Evidence: `evidence:072ae03f130e656d5be85025c9cc04f10364c14fa3ab4516`\n  - Exact quote: “if (event.type === \"response.output_text.delta\") {”\n  - Snapshot: `research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/16d1db65de6115e3aa60e8589caeb8d850d34e35117a0df8f5b1ac24e80d2040`\n  - URL: https://developers.openai.com/api/docs/guides/streaming-responses\n- Evidence: `evidence:abdc3370ccb3518e9e6b98088f35eee59aee398adc2f4b54`\n  - Exact quote: “| ResponseCreatedEvent  |  ResponseCreatedEvent  | ResponseInProgressEvent  |  ResponseInProgressEvent  | ResponseFailedEvent  |  ResponseFailedEvent  | ResponseCompletedEvent  |  ResponseCompletedEvent  | ResponseOutputItemAdded  |  ResponseOutputItemAdded  | ResponseOutputItemDone  |  ResponseOutputItemDone  | ResponseContentPartAdded  |  ResponseContentPartAdded  | ResponseContentPartDone  |  ResponseContentPartDone  | ResponseOutputTextDelta”\n  - Snapshot: `research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/0ccf494f94505f4a982cfea35e6b01763143b2da1df512a32021b25b7042c5cd`\n  - URL: https://openai-hd4n6.mintlify.app/docs/guides/streaming-response\n- Evidence: `evidence:1c9d095a953bb9cb55c4e6fb7876bb6b59117d04d1d35a2c`\n  - Exact quote: “event: content_block_delta data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"location\\\":\"}}”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78`\n  - URL: https://docs.anthropic.com/en/api/messages-streaming\n- Evidence: `evidence:49eb8f16f199b7f3dbb432007842660c61f918a86c7d4310`\n  - Exact quote: “Thinking blocks stream as `thinking_delta` events inside `content_block_delta` events, followed by a single `signature_delta` event just before the block's `content_block_stop`.”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/368941434bce94ed0e1a25a6b767455a4161df2ac9e3b114c5db565c56fc99cc`\n  - URL: https://docs.anthropic.com/en/docs/about-claude/models/extended-thinking-models\n- Evidence: `evidence:d401f34037c8e7431a11b9e413d0c8de8b4ce89771445ae8`\n  - Exact quote: “There may be `ping` events ”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78`\n  - URL: https://docs.anthropic.com/en/api/messages-streaming\n- Evidence: `evidence:35a77ba3c8c0ec72468d257e7dc6ac1b221d9c98202ec376`\n  - Exact quote: “tool_call_item = ResponseFunctionToolCall( tool_call_item = ResponseFunctionToolCall( name=function_name, name = function_name, type=\"function_call\", type = \"function_call\", id=state.current_item_id, id = state. current_item_id, call_id=state.current_call_id, call_id = state. current_call_id, arguments=\"\", arguments = \"\", status=\"in_progress\", status = \"in_progress\", ) )”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/b40335c6dfba627097fb5a4313c688ad27e2433560555542d39505f8b98a72a4`\n  - URL: https://docs.vllm.ai/en/v0.22.1/api/vllm/entrypoints/openai/responses/streaming_events/\n- Evidence: `evidence:fd5467837cea84fa379217169f606a00a0009bd315dc6744`\n  - Exact quote: “'arguments': '{\"location\": \"Boston, MA\"}',”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103`\n  - URL: https://openrouter.ai/docs/api_reference/responses/tool-calling\n- Evidence: `evidence:151681b64fae6cea1a8f234a14bcacc062b6151d1e7345b1`\n  - Exact quote: “The in-progress function call item that includes a `name`, `arguments` and `id` field”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n  - URL: https://developers.openai.com/api/docs/guides/function-calling\n- Evidence: `evidence:b9682f26128d6777ed1a2de0249428757dbac45778c0d085`\n  - Exact quote: “finalToolCalls := map[int64]responses.ResponseFunctionToolCall{}”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n  - URL: https://developers.openai.com/api/docs/guides/function-calling\n- Evidence: `evidence:261d4404d9e5c652460f746c56244346bba84f634e3404fd`\n  - Exact quote: “{\"type\":\"response.output_item.done\",\"response_id\":\"resp_1234xyz\",\"output_index\":0,\"item\":{\"type\":\"function_call\"”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n  - URL: https://developers.openai.com/api/docs/guides/function-calling\n- Evidence: `evidence:9a4d1d761f3af6bd3b9b51668f45488c8d9f47fed52075ba`\n  - Exact quote: “if event.Type == \"response.output_item.added\" && event.Item.Type == \"function_call\" {”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12`\n  - URL: https://developers.openai.com/api/docs/guides/function-calling\n- Evidence: `evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68`\n  - Exact quote: “event: content_block_start data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01T1x1fJ34qAmk2tNTrN7Up6\",\"name\":\"get_weather\",\"input\":{}}}”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78`\n  - URL: https://docs.anthropic.com/en/api/messages-streaming\n- Evidence: `evidence:f1e574e62e515493f7bb71b58af686837b260643f0b4f21a`\n  - Exact quote: “'call_id': 'call_123',”\n  - Snapshot: `research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103`\n  - URL: https://openrouter.ai/docs/api_reference/responses/tool-calling\n- Evidence: `evidence:3954e1dc76f808f5fcaa892ff933aa94ebf8d61cdab9d8df`\n  - Exact quote: “The browser toolset: a single `tools[]` entry (carrying no `name`) that declares the browser tool family.”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/0ecf1fbc9cc7730ba4c6a84ce39dcd553809126667feffde3e365c3b1a873656`\n  - URL: https://docs.anthropic.com/en/api/messages\n- Evidence: `evidence:24f802c733bcb1b55eae1fb761b054f8c0c594aa62b39363`\n  - Exact quote: “\"role\": \"user\",  \"role\": \"user\", \"content\": [ \"content\": [ { { \"type\": \"tool_result\", ”\n  - Snapshot: `research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6`\n  - URL: https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls\n- Evidence: `evidence:ad19b4e0a2fb02f2f469078a1505903cfe874a89ed5ee320`\n  - Exact quote: “event: content_block_delta data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"location\\\":\"}}”\n  - Snapshot: `research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78`\n  - URL: https://docs.anthropic.com/en/api/messages-streaming\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/67725c68-1343-4374-91a4-1e85fb9dc756/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 25760,
+      "sha256": "1601a49ee423ed550dd98e1129b70064eac10c3045cc7ed617c5801fce2ae599"
+    },
+    "research_artifact": {
+      "artifact_id": "67725c68-1343-4374-91a4-1e85fb9dc756",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "67725c68-1343-4374-91a4-1e85fb9dc756",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/5d59cc26-6d46-4dea-a4d1-7b0b08e42eef/research/67725c68-1343-4374-91a4-1e85fb9dc756/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 25760,
+        "sha256": "1601a49ee423ed550dd98e1129b70064eac10c3045cc7ed617c5801fce2ae599"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Anthropic Messages API input_json_delta content_block_delta streaming",
+          "Anthropic Messages API tool use documentation",
+          "Anthropic Messages API tool_result content block tool_use_id",
+          "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "Anthropic Messages API multiple tool_use blocks parallel tool calls one turn",
+          "Anthropic Messages API tool use streaming",
+          "Responses API function_call_output call_id tool result",
+          "Responses API function_call arguments streamed output_item delta events",
+          "OpenAI Responses API function calling streaming events",
+          "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "Anthropic Messages API streaming event types message_start content_block_delta sequence order",
+          "The vendor Responses API Responses API parallel_tool_calls implementation requirements",
+          "The vendor Responses API Responses API parallel_tool_calls documented limitations",
+          "The vendor Responses API Responses API function tool definition schema implementation requirements",
+          "The vendor Responses API Responses API function tool definition schema documented limitations",
+          "OpenAI Responses API parallel_tool_calls parameter streaming response.output_item.added function_call events",
+          "Responses API stream multiple function_call output items single turn parallel tool calling"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 2,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Anthropic Messages API",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+            "read_focus": "Produce a citable, side-by-side comparison of how the vendor Responses API and the Anthropic Messages API design tool calling and streaming events, grounded in official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "The vendor Responses API",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+            "read_focus": "Produce a citable, side-by-side comparison of how the vendor Responses API and the Anthropic Messages API design tool calling and streaming events, grounded in official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-4d582bca763ed48a",
+            "column_label": "Streaming event model",
+            "candidate_value": "Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-ace09dc1ed6b4cad",
+            "column_label": "Tool call request structure",
+            "candidate_value": "Arguments 通过 `response.function_call_arguments.delta` 事件流式发送，`delta` 字段增量携带 `arguments` 内容",
+            "status": "VERIFIED",
+            "confidence": 0.93,
+            "evidence_refs": [
+              "evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-81626d75b93f7245",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-81626d75b93f7245",
+            "column_label": "Tool result round-trip",
+            "candidate_value": "调用方通过 function_call_output 项提交工具结果，并由 call_id 与对应的工具调用项配对",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-81626d75b93f7245",
+            "column_label": "Tool result round-trip",
+            "candidate_value": "调用方通过 tool_use_id 字段将 tool_result 内容块关联到对应的工具调用。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-4526590b2ef663d2",
+            "column_label": "Parallel tool calls handling",
+            "candidate_value": "同一组并行工具调用中若同时有 web search 与客户端工具，API 返回 stop_reason: \"tool_use\" 并不先运行搜索，需返回客户端工具结果后在下一个请求运行搜索",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-4526590b2ef663d2",
+            "column_label": "Parallel tool calls handling",
+            "candidate_value": "流式响应通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量",
+            "status": "VERIFIED",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-6a9da1a4a159cbea",
+            "column_label": "Tool definition schema",
+            "candidate_value": "Responses API 的 tools 数组中使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\"",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90",
+              "evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-8ad6b1db1feac585",
+            "column_label": "Streaming tool-call delivery",
+            "candidate_value": "流式传输时，工具调用的部分参数以 content_block_delta 事件中的 input_json_delta 形式到达",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:57568447c551ca4313635b430292df17864b99548e5d21b4"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-ace09dc1ed6b4cad",
+            "column_label": "Tool call request structure",
+            "candidate_value": "模型通过 tool_use 内容块发起工具调用，并经 tool_use_id 关联对应的 tool_result 结果块",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-4d582bca763ed48a",
+            "column_label": "Streaming event model",
+            "candidate_value": "流式响应由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea",
+            "row_id": "entity-fc9c3d0380c00f51",
+            "branch_id": "branch-main",
+            "column_key": "dim-6a9da1a4a159cbea",
+            "column_label": "Tool definition schema",
+            "candidate_value": "tools 参数为用于 function calling 的工具定义数组",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585",
+            "row_id": "entity-9737faade3a2d8b5",
+            "branch_id": "branch-main",
+            "column_key": "dim-8ad6b1db1feac585",
+            "column_label": "Streaming tool-call delivery",
+            "candidate_value": "流式期间，部分工具调用参数以 response.function_call_arguments.delta 事件到达，消费者按 OutputIndex 追加 Delta 重组参数。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Anthropic Messages API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+          "read_focus": "Produce a citable, side-by-side comparison of how the vendor Responses API and the Anthropic Messages API design tool calling and streaming events, grounded in official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "The vendor Responses API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+          "read_focus": "Produce a citable, side-by-side comparison of how the vendor Responses API and the Anthropic Messages API design tool calling and streaming events, grounded in official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-4d582bca763ed48a",
+          "column_label": "Streaming event model",
+          "candidate_value": "Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-ace09dc1ed6b4cad",
+          "column_label": "Tool call request structure",
+          "candidate_value": "Arguments 通过 `response.function_call_arguments.delta` 事件流式发送，`delta` 字段增量携带 `arguments` 内容",
+          "status": "VERIFIED",
+          "confidence": 0.93,
+          "evidence_refs": [
+            "evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-81626d75b93f7245",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-81626d75b93f7245",
+          "column_label": "Tool result round-trip",
+          "candidate_value": "调用方通过 function_call_output 项提交工具结果，并由 call_id 与对应的工具调用项配对",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-81626d75b93f7245",
+          "column_label": "Tool result round-trip",
+          "candidate_value": "调用方通过 tool_use_id 字段将 tool_result 内容块关联到对应的工具调用。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-4526590b2ef663d2",
+          "column_label": "Parallel tool calls handling",
+          "candidate_value": "同一组并行工具调用中若同时有 web search 与客户端工具，API 返回 stop_reason: \"tool_use\" 并不先运行搜索，需返回客户端工具结果后在下一个请求运行搜索",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-4526590b2ef663d2",
+          "column_label": "Parallel tool calls handling",
+          "candidate_value": "流式响应通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量",
+          "status": "VERIFIED",
+          "confidence": 0.6,
+          "evidence_refs": [
+            "evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-6a9da1a4a159cbea",
+          "column_label": "Tool definition schema",
+          "candidate_value": "Responses API 的 tools 数组中使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\"",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90",
+            "evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-8ad6b1db1feac585",
+          "column_label": "Streaming tool-call delivery",
+          "candidate_value": "流式传输时，工具调用的部分参数以 content_block_delta 事件中的 input_json_delta 形式到达",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:57568447c551ca4313635b430292df17864b99548e5d21b4"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-ace09dc1ed6b4cad",
+          "column_label": "Tool call request structure",
+          "candidate_value": "模型通过 tool_use 内容块发起工具调用，并经 tool_use_id 关联对应的 tool_result 结果块",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-4d582bca763ed48a",
+          "column_label": "Streaming event model",
+          "candidate_value": "流式响应由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "branch_id": "branch-main",
+          "column_key": "dim-6a9da1a4a159cbea",
+          "column_label": "Tool definition schema",
+          "candidate_value": "tools 参数为用于 function calling 的工具定义数组",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585",
+          "row_id": "entity-9737faade3a2d8b5",
+          "branch_id": "branch-main",
+          "column_key": "dim-8ad6b1db1feac585",
+          "column_label": "Streaming tool-call delivery",
+          "candidate_value": "流式期间，部分工具调用参数以 response.function_call_arguments.delta 事件到达，消费者按 OutputIndex 追加 Delta 重组参数。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T13:26:49Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T13:28:09Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019",
+          "window_id": "window-4",
+          "source_id": "web-42e907e2954469f0",
+          "source_title": "Handle tool calls - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool_result content block tool_use_id",
+          "read_focus": "Read external URL Handle tool calls - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "\"tool_use_id\": \"toolu_01A09q90qw90lq917835lq9\"",
+          "claim_text": "模型通过 tool_use 内容块发起工具调用，并经 tool_use_id 关联对应的 tool_result 结果块",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6"
+        },
+        {
+          "evidence_id": "evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab",
+          "window_id": "window-4",
+          "source_id": "web-42e907e2954469f0",
+          "source_title": "Handle tool calls - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool_result content block tool_use_id",
+          "read_focus": "Read external URL Handle tool calls - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "\"tool_use_id\": \"toolu_01A09q90qw90lq917835lq9\"",
+          "claim_text": "调用方通过 tool_use_id 字段将 tool_result 内容块关联到对应的工具调用。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6"
+        },
+        {
+          "evidence_id": "evidence:57568447c551ca4313635b430292df17864b99548e5d21b4",
+          "window_id": "window-5",
+          "source_id": "web-2c9a6de4035179c8",
+          "source_title": "Benchmarking the Anthropic Messages API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.nvidia.com/aiperf/tutorials/model-endpoint-guides/profile-the-anthropic-messages-api-with-ai-perf",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API input_json_delta content_block_delta streaming",
+          "read_focus": "Read external URL Benchmarking the Anthropic Messages API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| `content_block_delta` with `input_json_delta` | Ignored (tool input) |",
+          "claim_text": "流式传输时，工具调用的部分参数以 content_block_delta 事件中的 input_json_delta 形式到达",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/8509414e88920b9e0df391aa6f2d36169c36cd360fdefbeca08942a74d063d26"
+        },
+        {
+          "evidence_id": "evidence:24f802c733bcb1b55eae1fb761b054f8c0c594aa62b39363",
+          "window_id": "window-4",
+          "source_id": "web-42e907e2954469f0",
+          "source_title": "Handle tool calls - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool_result content block tool_use_id",
+          "read_focus": "Read external URL Handle tool calls - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "\"role\": \"user\",  \"role\": \"user\", \"content\": [ \"content\": [ { { \"type\": \"tool_result\", ",
+          "claim_text": "tool_result 以 user 角色消息内容块的形式提交回对话。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a/53b1a92e26bcca306051e0ebfc2261c675d40b0d1c6d242b701eeda0bad5dab6"
+        },
+        {
+          "evidence_id": "evidence:ad19b4e0a2fb02f2f469078a1505903cfe874a89ed5ee320",
+          "window_id": "window-1",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Streaming messages - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"location\\\":\"}}",
+          "claim_text": "工具调用参数通过 input_json_delta 流式分片传输，挂在对应 index 的 content_block_delta 上",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78"
+        },
+        {
+          "evidence_id": "evidence:d401f34037c8e7431a11b9e413d0c8de8b4ce89771445ae8",
+          "window_id": "window-1",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Streaming messages - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "There may be `ping` events ",
+          "claim_text": "流中可能出现 ping 事件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78"
+        },
+        {
+          "evidence_id": "evidence:49eb8f16f199b7f3dbb432007842660c61f918a86c7d4310",
+          "window_id": "window-2",
+          "source_id": "web-fc3ff10bc85e0079",
+          "source_title": "Thinking - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/about-claude/models/extended-thinking-models",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Thinking - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Thinking blocks stream as `thinking_delta` events inside `content_block_delta` events, followed by a single `signature_delta` event just before the block's `content_block_stop`.",
+          "claim_text": "thinking 块在 content_block_delta 事件中以 thinking_delta 流式传输，随后在 content_block_stop 前有一个 signature_delta",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/368941434bce94ed0e1a25a6b767455a4161df2ac9e3b114c5db565c56fc99cc"
+        },
+        {
+          "evidence_id": "evidence:1c9d095a953bb9cb55c4e6fb7876bb6b59117d04d1d35a2c",
+          "window_id": "window-1",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Streaming messages - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"location\\\":\"}}",
+          "claim_text": "工具调用输入以 content_block_delta 内的 input_json_delta 增量流式传输",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78"
+        },
+        {
+          "evidence_id": "evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705",
+          "window_id": "window-5",
+          "source_id": "web-4c4cc1c391f88f13",
+          "source_title": "Web search tool - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/web-search-tool",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Web search tool - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If Claude calls web search and one of your client tools in the same group of parallel tool calls, the API returns `stop_reason: \"tool_use\"` instead and does not run the search yet.",
+          "claim_text": "同一组并行工具调用中若同时有 web search 与客户端工具，API 返回 stop_reason: \"tool_use\" 并不先运行搜索，需返回客户端工具结果后在下一个请求运行搜索",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/02adcf5df1678ddbdecc9e9a42ef1def7092859ad10aff8ff0f64ec2e4c5b570"
+        },
+        {
+          "evidence_id": "evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347",
+          "window_id": "window-7",
+          "source_id": "web-699994ba1248c987",
+          "source_title": "Anthropic Messages API with AI Gateway",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vercel.com/docs/ai-gateway/sdks-and-apis/anthropic-messages-api",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Anthropic Messages API tool use streaming",
+          "read_focus": "Read external URL Anthropic Messages API with AI Gateway for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`tools` (array): Array of tool definitions for function calling",
+          "claim_text": "tools 参数为用于 function calling 的工具定义数组",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/9fa78e6ab33e714ca3e45a3d189b2b0805c3e424cc4fd97f1fd80d443c22837e"
+        },
+        {
+          "evidence_id": "evidence:491fe6890b033ab21f380952308b58f437f2197c6a8a9a68",
+          "window_id": "window-1",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Streaming messages - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_01T1x1fJ34qAmk2tNTrN7Up6\",\"name\":\"get_weather\",\"input\":{}}}",
+          "claim_text": "流式响应中每个工具调用以独立的 content_block_start 开始，并带有自己的 index 与 tool_use id（如 index:1 的 get_weather）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78"
+        },
+        {
+          "evidence_id": "evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d",
+          "window_id": "window-1",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Streaming messages - Claude Platform Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`message_start`\n`content_block_start`\n`content_block_delta`\n`content_block_stop`\n`message_delta`\n`message_stop`",
+          "claim_text": "流式响应由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/422f795a5f96c8686998bdf792544e94d5c5c956b9d44764700db6cd45432a78"
+        },
+        {
+          "evidence_id": "evidence:3954e1dc76f808f5fcaa892ff933aa94ebf8d61cdab9d8df",
+          "window_id": "window-4",
+          "source_id": "web-7df7ab794061a7a0",
+          "source_title": "Messages - Claude API Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:docs.anthropic.com Messages API streaming event types message_start content_block_delta",
+          "read_focus": "Read external URL Messages - Claude API Reference for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: Anthropic Messages API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The browser toolset: a single `tools[]` entry (carrying no `name`) that declares the browser tool family.",
+          "claim_text": "工具定义以 tools[] 条目形式声明，该 browser toolset 条目不携带 name",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/4a2f27f7-a270-471b-95aa-084888fc1a9f/0ecf1fbc9cc7730ba4c6a84ce39dcd553809126667feffde3e365c3b1a873656"
+        },
+        {
+          "evidence_id": "evidence:f1e574e62e515493f7bb71b58af686837b260643f0b4f21a",
+          "window_id": "window-2",
+          "source_id": "web-9bbbcde9ffa5bb31",
+          "source_title": "Responses API Tool Calling - Function Calling Integration",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openrouter.ai/docs/api_reference/responses/tool-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call_output call_id tool result",
+          "read_focus": "Read external URL Responses API Tool Calling - Function Calling Integration for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "'call_id': 'call_123',",
+          "claim_text": "function_call_output 的 call_id 与 function_call 的 call_id 相同（call_123），从而把输出与调用关联起来",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103"
+        },
+        {
+          "evidence_id": "evidence:b9682f26128d6777ed1a2de0249428757dbac45778c0d085",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "finalToolCalls := map[int64]responses.ResponseFunctionToolCall{}",
+          "claim_text": "重组后的参数保存在以 OutputIndex 为键的 map 中，参数按事件顺序逐段累加。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:fd5467837cea84fa379217169f606a00a0009bd315dc6744",
+          "window_id": "window-2",
+          "source_id": "web-9bbbcde9ffa5bb31",
+          "source_title": "Responses API Tool Calling - Function Calling Integration",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openrouter.ai/docs/api_reference/responses/tool-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call_output call_id tool result",
+          "read_focus": "Read external URL Responses API Tool Calling - Function Calling Integration for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "'arguments': '{\"location\": \"Boston, MA\"}',",
+          "claim_text": "Responses API 的 `function_call` 对象用 `arguments` 字段以 JSON 字符串形式编码参数，如 `{\"location\": \"Boston, MA\"}`",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103"
+        },
+        {
+          "evidence_id": "evidence:9a4d1d761f3af6bd3b9b51668f45488c8d9f47fed52075ba",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "if event.Type == \"response.output_item.added\" && event.Item.Type == \"function_call\" {",
+          "claim_text": "response.output_item.added 事件中 item 为 function_call 时，可按 OutputIndex 记录初始的 function call 项。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:261d4404d9e5c652460f746c56244346bba84f634e3404fd",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "{\"type\":\"response.output_item.done\",\"response_id\":\"resp_1234xyz\",\"output_index\":0,\"item\":{\"type\":\"function_call\"",
+          "claim_text": "流结束时以 response.output_item.done 事件交付完整的 function_call 项，含 call_id 与完整 arguments。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:35a77ba3c8c0ec72468d257e7dc6ac1b221d9c98202ec376",
+          "window_id": "window-3",
+          "source_id": "web-1ee88b95d43456a8",
+          "source_title": "vllm.entrypoints.openai.responses.streaming_events",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.vllm.ai/en/v0.22.1/api/vllm/entrypoints/openai/responses/streaming_events/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL vllm.entrypoints.openai.responses.streaming_events for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "tool_call_item = ResponseFunctionToolCall( tool_call_item = ResponseFunctionToolCall( name=function_name, name = function_name, type=\"function_call\", type = \"function_call\", id=state.current_item_id, id = state. current_item_id, call_id=state.current_call_id, call_id = state. current_call_id, arguments=\"\", arguments = \"\", status=\"in_progress\", status = \"in_progress\", ) )",
+          "claim_text": "首个 function call delta 会发出 `response.output_item.added`，其中 `ResponseFunctionToolCall` 的 `arguments` 初始为空字符串，随后发出 `ResponseFunctionCallArgumentsDeltaEvent` 携带 `delta`",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.78,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/b40335c6dfba627097fb5a4313c688ad27e2433560555542d39505f8b98a72a4"
+        },
+        {
+          "evidence_id": "evidence:151681b64fae6cea1a8f234a14bcacc062b6151d1e7345b1",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The in-progress function call item that includes a `name`, `arguments` and `id` field",
+          "claim_text": "Responses API 通过 `response.output_item.added` 事件发布 in-progress 的 function call item，该 item 包含 `name`、`arguments` 和 `id` 字段",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.92,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "finalToolCall.Arguments += event.Delta",
+          "claim_text": "流式期间，部分工具调用参数以 response.function_call_arguments.delta 事件到达，消费者按 OutputIndex 追加 Delta 重组参数。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80",
+          "window_id": "window-2",
+          "source_id": "web-9bbbcde9ffa5bb31",
+          "source_title": "Responses API Tool Calling - Function Calling Integration",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openrouter.ai/docs/api_reference/responses/tool-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call_output call_id tool result",
+          "read_focus": "Read external URL Responses API Tool Calling - Function Calling Integration for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "'type': 'function_call_output',",
+          "claim_text": "调用方通过 function_call_output 项提交工具结果，并由 call_id 与对应的工具调用项配对",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/d7e9357e723f856625de9cb2e5401a75bc472bc9f633e18530a83ea65d0e2103"
+        },
+        {
+          "evidence_id": "evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Responses API function_call arguments streamed output_item delta events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Afterwards you will receive a series of events of type `response.function_call_arguments.delta` which will contain the `delta` of the `arguments` field.",
+          "claim_text": "Arguments 通过 `response.function_call_arguments.delta` 事件流式发送，`delta` 字段增量携带 `arguments` 内容",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.93,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bc3d6e20-d594-42c5-a722-2bdd695c39f1/ab8a04cec686378a9adf05e5d204f7f8411037f3404036ca2c545dfc0ca76f12"
+        },
+        {
+          "evidence_id": "evidence:a627afe00b13c66978a0ba72c6e8b4d3879ae3b2ee45634b",
+          "window_id": "window-5",
+          "source_id": "web-dc36e7c5a056a6b7",
+          "source_title": "Beta Responses streaming events | OpenAI API Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/reference/resources/beta/subresources/responses/streaming-events/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "read_focus": "Read external URL Beta Responses streaming events | OpenAI API Reference for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Emitted when text content is finalized.",
+          "claim_text": "response.output_text.done 事件在文本内容最终确定时发出。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/01e9b46ed6a28c1eed811068af346e4f122a7533bbacb66dff4ca7867f608c19"
+        },
+        {
+          "evidence_id": "evidence:abdc3370ccb3518e9e6b98088f35eee59aee398adc2f4b54",
+          "window_id": "window-2",
+          "source_id": "web-5e71391e3bbf6c6f",
+          "source_title": "Streaming API responses - OpenAI",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openai-hd4n6.mintlify.app/docs/guides/streaming-response",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "read_focus": "Read external URL Streaming API responses - OpenAI for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| ResponseCreatedEvent  |  ResponseCreatedEvent  | ResponseInProgressEvent  |  ResponseInProgressEvent  | ResponseFailedEvent  |  ResponseFailedEvent  | ResponseCompletedEvent  |  ResponseCompletedEvent  | ResponseOutputItemAdded  |  ResponseOutputItemAdded  | ResponseOutputItemDone  |  ResponseOutputItemDone  | ResponseContentPartAdded  |  ResponseContentPartAdded  | ResponseContentPartDone  |  ResponseContentPartDone  | ResponseOutputTextDelta",
+          "claim_text": "Responses 流式事件类型示例包括 ResponseCreatedEvent、ResponseInProgressEvent、ResponseCompletedEvent、ResponseOutputItemAdded 与 ResponseOutputTextDelta。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/0ccf494f94505f4a982cfea35e6b01763143b2da1df512a32021b25b7042c5cd"
+        },
+        {
+          "evidence_id": "evidence:b3c554b444d8a4157a1bc4ba39069e1c0ac2ad79eba37e54",
+          "window_id": "window-1",
+          "source_id": "web-88c393c0cf1eb50b",
+          "source_title": "Responses streaming events | OpenAI API Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/reference/resources/responses/streaming-events/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "read_focus": "Read external URL Responses streaming events | OpenAI API Reference for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "sequence\\_number: number\n\nThe sequence number of the event that was emitted.",
+          "claim_text": "Responses 流式事件带有 sequence_number 字段表示该事件的序号。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/f32b61ae6469c6c58f14635b786505f7c399f43398ee01398fa6d583bacf80f6"
+        },
+        {
+          "evidence_id": "evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f",
+          "window_id": "window-2",
+          "source_id": "web-5e71391e3bbf6c6f",
+          "source_title": "Streaming API responses - OpenAI",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openai-hd4n6.mintlify.app/docs/guides/streaming-response",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "read_focus": "Read external URL Streaming API responses - OpenAI for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The Responses API uses semantic events for streaming. Each event is typed with a predefined schema, so you can listen for events you care about.",
+          "claim_text": "Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/0ccf494f94505f4a982cfea35e6b01763143b2da1df512a32021b25b7042c5cd"
+        },
+        {
+          "evidence_id": "evidence:072ae03f130e656d5be85025c9cc04f10364c14fa3ab4516",
+          "window_id": "window-4",
+          "source_id": "web-b16a4864709236a2",
+          "source_title": "Streaming API responses - OpenAI Developers",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/streaming-responses",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API streaming event types reference response.output_text.delta",
+          "read_focus": "Read external URL Streaming API responses - OpenAI Developers for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "if (event.type === \"response.output_text.delta\") {",
+          "claim_text": "客户端可按事件类型 response.output_text.delta 监听 Responses 流。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7786c3b7-ee2f-438b-9dfd-cfa6b381f76a/16d1db65de6115e3aa60e8589caeb8d850d34e35117a0df8f5b1ac24e80d2040"
+        },
+        {
+          "evidence_id": "evidence:40c591e273d27e262f44f406334912f0503b49c266adc369",
+          "window_id": "window-2",
+          "source_id": "web-35a8c3133e346c88",
+          "source_title": "OpenAI Responses Compatibility - Parallel Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.parallel.ai/responses-api/openai-compatibility",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "The vendor Responses API Responses API parallel_tool_calls documented limitations",
+          "read_focus": "Read external URL OpenAI Responses Compatibility - Parallel Docs for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`parallel_tool_calls`, `temperature`, `top_p`, `max_output_tokens`, `truncation`, `store`, `user`, `include`, any tool other than `web_search` and `mcp`",
+          "claim_text": "parallel_tool_calls 属于被后端忽略的字段之一，仅为了让标准 SDK 客户端载荷通过校验",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.2,
+          "conflict_score": 0.7,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/fd13bb65-05f2-446b-b818-d38c99d602c1/004ce6edd6683444f14015301559ca9a64aa8c15a7c75192f109a25d83be133d"
+        },
+        {
+          "evidence_id": "evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90",
+          "window_id": "window-3",
+          "source_id": "web-81e245f20fdcd34f",
+          "source_title": "Use the Azure OpenAI Responses API - Microsoft Foundry",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "The vendor Responses API Responses API function tool definition schema implementation requirements",
+          "read_focus": "Read external URL Use the Azure OpenAI Responses API - Microsoft Foundry for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "\"tools\": [ { \"type\": \"function\", \"name\":",
+          "claim_text": "Responses API 的 tools 数组中使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\"",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/74ed5dcc-53aa-4216-9363-839879ac0af2/af7c6d573e86455e1fa8e79d255cfdb3eef390c8e7b19f42d2464736e387a6b4"
+        },
+        {
+          "evidence_id": "evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c",
+          "window_id": "window-4",
+          "source_id": "web-9dbe7f16cb858576",
+          "source_title": "OpenAI Tool Schema: differences between the Response ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@laurentkubaski/openai-tool-schema-differences-between-the-response-api-and-the-chat-completion-api-8f99ce8a9371",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "The vendor Responses API Responses API function tool definition schema implementation requirements",
+          "read_focus": "Read external URL OpenAI Tool Schema: differences between the Response ... for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "\"type\": \"function\",  \n \"name\": \"get_horoscope\",  \n \"description\": \"Get today's horoscope for an astrological sign.\",  \n \"parameters\": {",
+          "claim_text": "Responses API 的工具定义是扁平结构：type、name、description、parameters 直接位于工具对象上，没有嵌套的 function 字段",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/74ed5dcc-53aa-4216-9363-839879ac0af2/f529f0f86edd911444645a9d050f6afee571e3c22aed39100e28a3ce7ecc45f4"
+        },
+        {
+          "evidence_id": "evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939",
+          "window_id": "window-1",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenAI Responses API parallel_tool_calls parameter streaming response.output_item.added function_call events",
+          "read_focus": "Read external URL Function calling | OpenAI API for claims that answer: 比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。\n\nCurrent Table-as-State entity: The vendor Responses API. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "if event.Type == \"response.output_item.added\" && event.Item.Type == \"function_call\" {",
+          "claim_text": "流式响应通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ec1cb505-b63d-49a0-96e1-bd10690bb1f2/78f4dc39a69ac3e29b1513189be07ce2d97c709d6bc63dbed0712e0dbc99756e"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:57568447c551ca4313635b430292df17864b99548e5d21b4",
+          "source_id": "web-2c9a6de4035179c8",
+          "source_title": "Benchmarking the Anthropic Messages API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.nvidia.com/aiperf/tutorials/model-endpoint-guides/profile-the-anthropic-messages-api-with-ai-perf"
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019",
+          "source_id": "web-42e907e2954469f0",
+          "source_title": "Handle tool calls - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab",
+          "source_id": "web-42e907e2954469f0",
+          "source_title": "Handle tool calls - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls"
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705",
+          "source_id": "web-4c4cc1c391f88f13",
+          "source_title": "Web search tool - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/docs/build-with-claude/tool-use/web-search-tool"
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d",
+          "source_id": "web-309fffffe3dd76f6",
+          "source_title": "Streaming messages - Claude Platform Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.anthropic.com/en/api/messages-streaming"
+        },
+        {
+          "cell_id": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea",
+          "row_id": "entity-fc9c3d0380c00f51",
+          "evidence_id": "evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347",
+          "source_id": "web-699994ba1248c987",
+          "source_title": "Anthropic Messages API with AI Gateway",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vercel.com/docs/ai-gateway/sdks-and-apis/anthropic-messages-api"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-81626d75b93f7245",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80",
+          "source_id": "web-9bbbcde9ffa5bb31",
+          "source_title": "Responses API Tool Calling - Function Calling Integration",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openrouter.ai/docs/api_reference/responses/tool-calling"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f",
+          "source_id": "web-5e71391e3bbf6c6f",
+          "source_title": "Streaming API responses - OpenAI",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openai-hd4n6.mintlify.app/docs/guides/streaming-response"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c",
+          "source_id": "web-9dbe7f16cb858576",
+          "source_title": "OpenAI Tool Schema: differences between the Response ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@laurentkubaski/openai-tool-schema-differences-between-the-response-api-and-the-chat-completion-api-8f99ce8a9371"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90",
+          "source_id": "web-81e245f20fdcd34f",
+          "source_title": "Use the Azure OpenAI Responses API - Microsoft Foundry",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses"
+        },
+        {
+          "cell_id": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+          "row_id": "entity-9737faade3a2d8b5",
+          "evidence_id": "evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939",
+          "source_id": "web-90f2bf11e4fb71c8",
+          "source_title": "Function calling | OpenAI API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developers.openai.com/api/docs/guides/function-calling"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "05396cd0-f0a5-44be-8bb2-a95156db0713",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T13:23:26Z"
+      },
+      {
+        "trace_id": "f7ac2507-5273-445c-b202-ea5ef8c8098b",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 6
+        },
+        "created_at": "2026-10-17T13:23:38Z"
+      },
+      {
+        "trace_id": "ba9e319d-4913-44c5-bb85-4413ed0c66c3",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+        "payload": {
+          "cell_count": 12
+        },
+        "created_at": "2026-10-17T13:29:07Z"
+      }
+    ],
+    "created_at": "2026-10-17T13:23:26Z",
+    "updated_at": "2026-10-17T13:29:07Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:24:27Z",
+          "lease_epoch": 1,
+          "task_id": "dbe3e9e2-f248-47d8-b616-cc02293c114d",
+          "task_key": "planning:67725c68-1343-4374-91a4-1e85fb9dc756",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T13:27:44Z",
+          "lease_epoch": 2,
+          "task_id": "68e7b447-292a-4b92-954a-66eceee2f442",
+          "task_key": "deep-cell:9a802971bd8971f8ab45b0233177b1fd",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 2,
+          "attempt_count": 2
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:25:25Z",
+          "lease_epoch": 1,
+          "task_id": "3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a",
+          "task_key": "deep-cell:5d1781a2fbc7e058a0b14ddd2208814f",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:25:56Z",
+          "lease_epoch": 1,
+          "task_id": "4a2f27f7-a270-471b-95aa-084888fc1a9f",
+          "task_key": "deep-cell:2cd3e1fa0a23217b8ad70fecaff2dadf",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:26:42Z",
+          "lease_epoch": 1,
+          "task_id": "bc3d6e20-d594-42c5-a722-2bdd695c39f1",
+          "task_key": "deep-cell:e1665f5d2b2825c56b5b14f0dd5aed77",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:28:58Z",
+          "lease_epoch": 1,
+          "task_id": "74ed5dcc-53aa-4216-9363-839879ac0af2",
+          "task_key": "counterfactual:b5af0f3d94858c57214742f4ed43e39d",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:28:20Z",
+          "lease_epoch": 1,
+          "task_id": "7786c3b7-ee2f-438b-9dfd-cfa6b381f76a",
+          "task_key": "counterfactual:296a6d4d316120f4a1f17f8fdbbe38a4",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T13:28:36Z",
+          "lease_epoch": 1,
+          "task_id": "fd13bb65-05f2-446b-b818-d38c99d602c1",
+          "task_key": "counterfactual:8b032832de2c063aec37e187fe668836",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:29:40Z",
+          "lease_epoch": 1,
+          "task_id": "ec1cb505-b63d-49a0-96e1-bd10690bb1f2",
+          "task_key": "counterfactual:800dc773498387160a5ee94a79598189",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T13:30:02Z",
+          "lease_epoch": 1,
+          "task_id": "f025d860-15c1-45e6-826e-d20b98aee25a",
+          "task_key": "synthesis:00f566bd2bf7c4b72fb240574d788d2d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "9c2f3270-e487-4201-88a3-390015439047",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245",
+          "task_id": "3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "ad150456-e478-494e-8697-efcd2324d1b4",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585",
+          "task_id": "3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "e7e1ae2e-3790-4a04-b32d-2e65fb8c244d",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad",
+          "task_id": "3eaf4ad6-9809-4ebd-9492-73c1c3b42c6a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "072d9dc8-8725-4dba-8ad9-1b030509ddd5",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a",
+          "task_id": "4a2f27f7-a270-471b-95aa-084888fc1a9f"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "447c3b08-8f60-47a8-af45-829c584467a1",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea",
+          "task_id": "4a2f27f7-a270-471b-95aa-084888fc1a9f"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "b4f18b06-2bc3-4b6e-9cf4-d5ff4f9345b3",
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2",
+          "task_id": "4a2f27f7-a270-471b-95aa-084888fc1a9f"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "63625e56-01d6-455c-becf-8d9f91c35c98",
+          "cell_key": "entity-9737faade3a2d8b5:dim-81626d75b93f7245",
+          "task_id": "bc3d6e20-d594-42c5-a722-2bdd695c39f1"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "a8da8664-269f-4dcb-83ef-b141263061dd",
+          "cell_key": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585",
+          "task_id": "bc3d6e20-d594-42c5-a722-2bdd695c39f1"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.93,
+          "candidate_id": "b9bba0d3-a09b-4d38-a44b-a7216d995ace",
+          "cell_key": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad",
+          "task_id": "bc3d6e20-d594-42c5-a722-2bdd695c39f1"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "03f29496-bc4a-442e-9383-b09a730fd4e6",
+          "cell_key": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+          "task_id": "7786c3b7-ee2f-438b-9dfd-cfa6b381f76a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "2c59c462-ee31-4232-9305-c33cfba45afd",
+          "cell_key": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+          "task_id": "74ed5dcc-53aa-4216-9363-839879ac0af2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.6,
+          "candidate_id": "539cfbd4-ed2d-476a-bd02-54143682bfcd",
+          "cell_key": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+          "task_id": "ec1cb505-b63d-49a0-96e1-bd10690bb1f2"
+        }
+      ],
+      "candidate_count": 12,
+      "task_count": 10,
+      "merge_count": 12,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:9cf9263db03cb5783fbb43c361b16acc3ea3f0cc78603aa22fd5531942ae80d6",
+          "candidate_id": "9c2f3270-e487-4201-88a3-390015439047",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245"
+        },
+        {
+          "merge_id": "merge:d283eb9147a8b1c7e58af75d20b8700b8db61c4df07fd3367e33aed823579b4e",
+          "candidate_id": "ad150456-e478-494e-8697-efcd2324d1b4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585"
+        },
+        {
+          "merge_id": "merge:e6ffb56f35659bbd74481265590db47c6e3061fb84f737b1f2d4943f2bae0cc6",
+          "candidate_id": "e7e1ae2e-3790-4a04-b32d-2e65fb8c244d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad"
+        },
+        {
+          "merge_id": "merge:1b40ea039cf3785860552acd459df119e8088dbf79eb00d7ffc1709df54f19d5",
+          "candidate_id": "072d9dc8-8725-4dba-8ad9-1b030509ddd5",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a"
+        },
+        {
+          "merge_id": "merge:ce95540d88eb94136053b3759b8150c00faf97fababe2db54aeb79075942356d",
+          "candidate_id": "447c3b08-8f60-47a8-af45-829c584467a1",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea"
+        },
+        {
+          "merge_id": "merge:a738195c3004618fe79c5c407fcc4bb82d4fa85659a50e7705741738231cd905",
+          "candidate_id": "b4f18b06-2bc3-4b6e-9cf4-d5ff4f9345b3",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2"
+        },
+        {
+          "merge_id": "merge:f9bb63fc180b97e30bea9f1465955e9dcccacb4c63dbb26c48c5ba1ab6d90de6",
+          "candidate_id": "b9bba0d3-a09b-4d38-a44b-a7216d995ace",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad"
+        },
+        {
+          "merge_id": "merge:e3aa53e751074e8447431d518e23860f5c386b519e98f0fb3ef23a37eeba7a92",
+          "candidate_id": "63625e56-01d6-455c-becf-8d9f91c35c98",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-81626d75b93f7245"
+        },
+        {
+          "merge_id": "merge:a8aea63852fc52ec9bb2de844dd2459d2f5bbac249b36a87606707959f4f49da",
+          "candidate_id": "a8da8664-269f-4dcb-83ef-b141263061dd",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585"
+        },
+        {
+          "merge_id": "merge:bad017b937da704813d090cd37a54cdcfa66b2e0608682e2e2af7920511a6851",
+          "candidate_id": "03f29496-bc4a-442e-9383-b09a730fd4e6",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a"
+        },
+        {
+          "merge_id": "merge:ddfe789ca5109193cac1e3cac9cdcd43a199fe43a41c8cb105fac8cfef8aabb6",
+          "candidate_id": "2c59c462-ee31-4232-9305-c33cfba45afd",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea"
+        },
+        {
+          "merge_id": "merge:f1463122ef147f557c3cf4124ec73803b26ebbb1320f6cb7029ad020be1fe6b4",
+          "candidate_id": "539cfbd4-ed2d-476a-bd02-54143682bfcd",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 9,
+          "candidate_high_water_mark": 9
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 8,
+          "merge_high_water_mark": 11,
+          "candidate_high_water_mark": 11
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-9737faade3a2d8b5",
+            "label": "The vendor Responses API"
+          },
+          {
+            "entity_key": "entity-fc9c3d0380c00f51",
+            "label": "Anthropic Messages API"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-4526590b2ef663d2",
+            "label": "Parallel tool calls handling",
+            "description": "Whether and how each API supports multiple simultaneous tool calls in one turn and how the streaming events reflect that.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-4d582bca763ed48a",
+            "label": "Streaming event model",
+            "description": "The set of streaming event types each API emits and how they are named and sequenced, as documented officially.",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-6a9da1a4a159cbea",
+            "label": "Tool definition schema",
+            "description": "How each API declares tools in a request, including the shape of the tool definition object and required fields.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-81626d75b93f7245",
+            "label": "Tool result round-trip",
+            "description": "How the caller submits a tool result back into the conversation and what linkage field ties it to the call.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-8ad6b1db1feac585",
+            "label": "Streaming tool-call delivery",
+            "description": "How partial tool call arguments arrive during streaming and how a consumer reassembles them.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-ace09dc1ed6b4cad",
+            "label": "Tool call request structure",
+            "description": "The event or object through which the model emits a tool call, and how arguments are encoded.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Official API reference and guides for tool definitions, tool call/result structures, streaming event types, streamed tool-call delivery, and parallel tool calls.",
+          "objective": "Produce a citable, side-by-side comparison of how the vendor Responses API and the Anthropic Messages API design tool calling and streaming events, grounded in official documentation.",
+          "exclusions": [
+            "Pricing comparisons",
+            "Third-party benchmark or opinion sources",
+            "Non-official blog posts used as primary evidence"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with a citation audit of exact quotes, snapshots and URLs."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "platform.openai.com",
+          "docs.anthropic.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "What object shapes and event types must my client parse to handle tool calls and streaming?",
+              "How do I reassemble streamed tool arguments and return results?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Which API design reduces integration and maintenance complexity for tool-using agents?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Parallel tool calls handling",
+          "cell_status": "VERIFIED",
+          "candidate_value": "流式响应通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:70b5038deaf978407c61612372c1cd2cccdb5dabe763f939",
+              "source_domain": "openai.com",
+              "claim_text": "流式响应通过 output_index 区分不同工具调用，并分别拼接各自的 arguments 增量"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 600000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Streaming event model",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:cbfee5edb4ab9b54333518a8ed7b77fa2d6829daea626f6f",
+              "source_domain": "mintlify.app",
+              "claim_text": "Responses API 使用语义化事件进行流式传输，每个事件都带有预定义 schema 类型。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Tool definition schema",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Responses API 的 tools 数组中使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\"",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:05c4193d25fb4cc1483efc2cce8462bd14a63656cc0a0b90",
+              "source_domain": "microsoft.com",
+              "claim_text": "Responses API 的 tools 数组中使用 \"type\": \"function\" 声明函数工具，并直接在同一对象上给出 \"name\""
+            },
+            {
+              "evidence_key": "evidence:8fb83c5edda5f3b44257e3f49809f480043a65386b745f1c",
+              "source_domain": "medium.com",
+              "claim_text": "Responses API 的工具定义是扁平结构：type、name、description、parameters 直接位于工具对象上，没有嵌套的 function 字段"
+            }
+          ],
+          "independent_source_count": 2,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-81626d75b93f7245",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Tool result round-trip",
+          "cell_status": "VERIFIED",
+          "candidate_value": "调用方通过 function_call_output 项提交工具结果，并由 call_id 与对应的工具调用项配对",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:eaaae5002cb332818d3996d510315d87d9c7409d482baa80",
+              "source_domain": "openrouter.ai",
+              "claim_text": "调用方通过 function_call_output 项提交工具结果，并由 call_id 与对应的工具调用项配对"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-8ad6b1db1feac585",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Streaming tool-call delivery",
+          "cell_status": "VERIFIED",
+          "candidate_value": "流式期间，部分工具调用参数以 response.function_call_arguments.delta 事件到达，消费者按 OutputIndex 追加 Delta 重组参数。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ae20a302fcd616a229e6e4b4796bbf68d75d9e9a60ddd65b",
+              "source_domain": "openai.com",
+              "claim_text": "流式期间，部分工具调用参数以 response.function_call_arguments.delta 事件到达，消费者按 OutputIndex 追加 Delta 重组参数。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-9737faade3a2d8b5:dim-ace09dc1ed6b4cad",
+          "entity_label": "The vendor Responses API",
+          "column_label": "Tool call request structure",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Arguments 通过 `response.function_call_arguments.delta` 事件流式发送，`delta` 字段增量携带 `arguments` 内容",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3ffbc73952b1ed3b5071137eb721818dce892ef80df4414b",
+              "source_domain": "openai.com",
+              "claim_text": "Arguments 通过 `response.function_call_arguments.delta` 事件流式发送，`delta` 字段增量携带 `arguments` 内容"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 930000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4526590b2ef663d2",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Parallel tool calls handling",
+          "cell_status": "VERIFIED",
+          "candidate_value": "同一组并行工具调用中若同时有 web search 与客户端工具，API 返回 stop_reason: \"tool_use\" 并不先运行搜索，需返回客户端工具结果后在下一个请求运行搜索",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b6ca830506333d09b2c57f5a74dccf0a13d74c85df84f705",
+              "source_domain": "anthropic.com",
+              "claim_text": "同一组并行工具调用中若同时有 web search 与客户端工具，API 返回 stop_reason: \"tool_use\" 并不先运行搜索，需返回客户端工具结果后在下一个请求运行搜索"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-4d582bca763ed48a",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Streaming event model",
+          "cell_status": "VERIFIED",
+          "candidate_value": "流式响应由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b5ddc07ca9e554c0c88c4c476c474d375ed51f8bf986a54d",
+              "source_domain": "anthropic.com",
+              "claim_text": "流式响应由 message_start、content_block_start、content_block_delta、content_block_stop、message_delta、message_stop 组成"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-6a9da1a4a159cbea",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Tool definition schema",
+          "cell_status": "VERIFIED",
+          "candidate_value": "tools 参数为用于 function calling 的工具定义数组",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:5bd76876afd719e82c2f545044b4197020973aa92ae53347",
+              "source_domain": "vercel.com",
+              "claim_text": "tools 参数为用于 function calling 的工具定义数组"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-81626d75b93f7245",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Tool result round-trip",
+          "cell_status": "VERIFIED",
+          "candidate_value": "调用方通过 tool_use_id 字段将 tool_result 内容块关联到对应的工具调用。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ddb31e16d0f0b944339c792211e33a3a6f9a82bd4ba38dab",
+              "source_domain": "claude.com",
+              "claim_text": "调用方通过 tool_use_id 字段将 tool_result 内容块关联到对应的工具调用。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-8ad6b1db1feac585",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Streaming tool-call delivery",
+          "cell_status": "VERIFIED",
+          "candidate_value": "流式传输时，工具调用的部分参数以 content_block_delta 事件中的 input_json_delta 形式到达",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:57568447c551ca4313635b430292df17864b99548e5d21b4",
+              "source_domain": "nvidia.com",
+              "claim_text": "流式传输时，工具调用的部分参数以 content_block_delta 事件中的 input_json_delta 形式到达"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-fc9c3d0380c00f51:dim-ace09dc1ed6b4cad",
+          "entity_label": "Anthropic Messages API",
+          "column_label": "Tool call request structure",
+          "cell_status": "VERIFIED",
+          "candidate_value": "模型通过 tool_use 内容块发起工具调用，并经 tool_use_id 关联对应的 tool_result 结果块",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:57846f3ce83d13384ec5c0ce4acf3851b255a83a3c9d8019",
+              "source_domain": "claude.com",
+              "claim_text": "模型通过 tool_use 内容块发起工具调用，并经 tool_use_id 关联对应的 tool_result 结果块"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-9737faade3a2d8b5:dim-4526590b2ef663d2",
+            "entity-9737faade3a2d8b5:dim-4d582bca763ed48a",
+            "entity-9737faade3a2d8b5:dim-6a9da1a4a159cbea"
+          ],
+          "strategy": "NARROW",
+          "query_count": 6,
+          "created_at": "2026-10-17T13:26:49Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-9737faade3a2d8b5:dim-4526590b2ef663d2"
+          ],
+          "strategy": "BROADEN",
+          "query_count": 2,
+          "created_at": "2026-10-17T13:28:09Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
