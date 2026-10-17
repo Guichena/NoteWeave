@@ -9,6 +9,7 @@ from app.json_repair import parse_json_payload
 from app.llm_client import LlmClient
 
 
+_INLINE_CITATION = re.compile(r"\[(evidence:[^\[\]\s]+)\]")
 _TYPED_TOKEN = re.compile(
     r"(?<![\w])(?:\d+(?:[.,]\d+)*(?:\s?(?:%|ms|s|MB|GB|TB|USD|EUR|CNY))?|v?\d+\.\d+(?:\.\d+)?)(?![\w])",
     re.IGNORECASE,
@@ -45,7 +46,7 @@ class NarrativeReportPolisher:
                 "sections": [{
                     "heading": "non-empty string",
                     "paragraphs": [{
-                        "text": "article-style prose",
+                        "text": "article-style prose with inline [evidence:...] markers after the sentences they support",
                         "cell_keys": ["frozen cell keys"],
                         "evidence_keys": ["evidence keys attached to those cells"],
                     }],
@@ -53,7 +54,7 @@ class NarrativeReportPolisher:
                 "comparison_table": {
                     "columns": ["comparison dimensions, only when useful"],
                     "rows": [{
-                        "cells": ["one value per column"],
+                        "cells": ["one value per column, with inline [evidence:...] markers in the cells they support"],
                         "cell_keys": ["frozen cell keys supporting the row"],
                         "evidence_keys": ["accepted evidence keys supporting the row"],
                     }],
@@ -69,8 +70,10 @@ class NarrativeReportPolisher:
                 "verified sources instead (for example '本次核验的资料显示').",
                 "When a cell's supporting_quotes contain several different facts or list items for its column, cover "
                 "each relevant one instead of only candidate_value.",
-                "Cite in each paragraph only the evidence_keys whose quotes directly support that paragraph's "
-                "statements, usually one to three; never list every key of a cell.",
+                "Cite inline like a research article: right after each sentence (or inside each table cell) write "
+                "the one or two evidence keys whose quotes directly support it, for example "
+                "'虚拟线程在 JDK 21 正式发布 [evidence:ab12]。'; never pile every key of a cell at the end. "
+                "evidence_keys must list exactly the keys cited inline.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary must directly answer research_question in one to three sentences using the "
@@ -161,7 +164,7 @@ def _normalize_narrative(
             text = str(raw_paragraph.get("text") or "").strip()
             cell_keys = _clean_strings(raw_paragraph.get("cell_keys"))
             evidence_keys = _clean_strings(raw_paragraph.get("evidence_keys"))
-            if not text or not cell_keys or not evidence_keys:
+            if not text or not cell_keys or not (evidence_keys or _INLINE_CITATION.search(text)):
                 raise ValueError("NARRATIVE_PARAGRAPH_UNBOUND")
             if any(key not in cells_by_key for key in cell_keys):
                 raise ValueError("NARRATIVE_UNKNOWN_CELL")
@@ -169,8 +172,14 @@ def _normalize_narrative(
             allowed_evidence = {
                 key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
             }
-            if any(key not in allowed_evidence for key in evidence_keys):
+            text, inline_keys = _bind_inline_citations(text, allowed_evidence)
+            if inline_keys:
+                evidence_keys = inline_keys
+            elif any(key not in allowed_evidence for key in evidence_keys):
                 raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
+            if not evidence_keys:
+                # 内联引用全部不属于本段的单元格时，这一段没有可用的引用，去掉即可
+                continue
             source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
             source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
             paragraph_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(text)}
@@ -239,8 +248,11 @@ def _render_markdown(narrative: dict[str, object]) -> str:
     for section in narrative["sections"]:  # type: ignore[union-attr]
         lines.extend([f"## {section['heading']}", ""])
         for paragraph in section["paragraphs"]:
-            citations = " ".join(f"[{key}]" for key in paragraph["evidence_keys"])
-            lines.extend([f"{paragraph['text']} {citations}".strip(), ""])
+            text = str(paragraph["text"])
+            # 已经逐句内联引用的段落原样输出，没有内联引用时才把证据附在段末
+            citations = "" if _INLINE_CITATION.search(text) else " ".join(
+                f"[{key}]" for key in paragraph["evidence_keys"])
+            lines.extend([f"{text} {citations}".strip(), ""])
     comparison_table = narrative.get("comparison_table")
     if isinstance(comparison_table, dict) and comparison_table:
         columns = comparison_table["columns"]
@@ -248,8 +260,9 @@ def _render_markdown(narrative: dict[str, object]) -> str:
         lines.append("| " + " | ".join("---" for _ in columns) + " |")
         for row in comparison_table["rows"]:
             cells = list(row["cells"])
-            citations = " ".join(f"[{key}]" for key in row["evidence_keys"])
-            cells[-1] = f"{cells[-1]} {citations}".strip()
+            if not any(_INLINE_CITATION.search(str(cell)) for cell in cells):
+                citations = " ".join(f"[{key}]" for key in row["evidence_keys"])
+                cells[-1] = f"{cells[-1]} {citations}".strip()
             lines.append("| " + " | ".join(_escape_table_cell(item) for item in cells) + " |")
         lines.append("")
     limitations = narrative.get("limitations")
@@ -258,6 +271,24 @@ def _render_markdown(narrative: dict[str, object]) -> str:
         lines.extend(f"- {item}" for item in limitations)
         lines.append("")
     return "\n".join(lines).strip() + "\n"
+
+
+def _bind_inline_citations(text: str, allowed: set[str]) -> tuple[str, list[str]]:
+    """取出文字里的内联引用：不属于绑定单元格的引用直接删掉，返回清理后的文字和按出现顺序排列的引用。"""
+    keys: list[str] = []
+
+    def keep(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in allowed:
+            return ""
+        if key not in keys:
+            keys.append(key)
+        return match.group(0)
+
+    cleaned = _INLINE_CITATION.sub(keep, text)
+    if len(cleaned) != len(text):
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).replace(" 。", "。").strip()
+    return cleaned, keys
 
 
 def _clean_strings(value: object) -> list[str]:
@@ -286,7 +317,8 @@ def _normalize_comparison_table(
         row_cells = _string_items(raw_row.get("cells"))
         cell_keys = _clean_strings(raw_row.get("cell_keys"))
         evidence_keys = _clean_strings(raw_row.get("evidence_keys"))
-        if len(row_cells) != len(columns) or not cell_keys or not evidence_keys:
+        cited_inline = any(_INLINE_CITATION.search(cell) for cell in row_cells)
+        if len(row_cells) != len(columns) or not cell_keys or not (evidence_keys or cited_inline):
             continue
         if any(key not in cells_by_key for key in cell_keys):
             raise ValueError("NARRATIVE_UNKNOWN_CELL")
@@ -294,8 +326,16 @@ def _normalize_comparison_table(
         allowed_evidence = {
             key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
         }
-        if any(key not in allowed_evidence for key in evidence_keys):
+        inline_keys: list[str] = []
+        for index, cell_text in enumerate(row_cells):
+            row_cells[index], keys = _bind_inline_citations(cell_text, allowed_evidence)
+            inline_keys.extend(key for key in keys if key not in inline_keys)
+        if inline_keys:
+            evidence_keys = inline_keys
+        elif any(key not in allowed_evidence for key in evidence_keys):
             raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
+        if not evidence_keys:
+            continue
         source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
         source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
         row_tokens = {

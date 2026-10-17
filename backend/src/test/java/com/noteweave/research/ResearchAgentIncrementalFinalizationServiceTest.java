@@ -99,8 +99,9 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 "## Citation audit",
                 "Evidence: `evidence-1`",
                 "Exact quote: “Verified citation excerpt”",
-                "research/external/finalization-test/snapshot-1",
                 "https://example.com/research");
+        // 内部快照路径只留在 adopted_sources 接口里，报告正文不再展示
+        assertThat(first.reportMarkdown()).doesNotContain("Snapshot:", "research/external/finalization-test/snapshot-1");
         assertThat(first.reportTitle()).startsWith("研究报告：");
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_report_artifact where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
@@ -291,9 +292,9 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 "候选：`" + candidateId + "`",
                 "Evidence: `evidence-1`",
                 "Exact quote: “Verified citation excerpt”",
-                "research/external/finalization-test/snapshot-1",
                 "https://example.com/research",
                 "OPTIONAL_CELL_UNRESOLVED");
+        assertThat(report).doesNotContain("research/external/finalization-test/snapshot-1");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_report_artifact where research_run_id = ?",
                 Integer.class, runId)).isEqualTo(1);

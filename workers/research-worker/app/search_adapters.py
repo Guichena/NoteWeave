@@ -238,14 +238,17 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
             return []
         results = super().search(query[:DEEPSEEK_MAX_QUERY_CHARS], limit, page)
         mapped: list[dict[str, object]] = []
+        seen: set[str] = set()
         for item in results:
             try:
                 score = round(max(0.0, min(1.0, float(item.get("rerank_score") or 0) / 3)), 4)
             except (TypeError, ValueError):
                 score = 0.0
             url = _safe_result_url(str(item.get("url") or ""))
-            if not url:
+            # 同一页面的不同分块去锚点后网址相同，只保留排在前面的一条；外语版本的文档与中英文版内容重复，直接跳过
+            if not url or url in seen or _foreign_locale(url):
                 continue
+            seen.add(url)
             title = " ".join(str(item.get("title") or "").split()) or (urllib.parse.urlsplit(url).hostname or url)
             mapped.append({
                 "title": title[:280],
@@ -264,9 +267,22 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
         return {"query": query, "count": max(1, min(limit, 50))}
 
 
+_LOCALE_SEGMENT = re.compile(r"^([a-z]{2})[_-][a-z]{2}$", re.IGNORECASE)
+
+
+def _foreign_locale(url: str) -> bool:
+    """路径中出现 fr_fr、ko-kr 这类语言代码且语言既不是中文也不是英文时返回 True。"""
+    for segment in urllib.parse.urlsplit(url).path.split("/"):
+        match = _LOCALE_SEGMENT.match(segment)
+        if match and match.group(1).lower() not in {"en", "zh"}:
+            return True
+    return False
+
+
 def _safe_result_url(url: str) -> str:
     """把结果网址里的中文、空格等字符做百分号编码；归档接口要求标准 URI，标题也不能为空。"""
-    url = url.strip()
+    # 去掉锚点：DeepSeek 会在网址后追加分块编号（如 #1、#870#758），出现两个 # 时 Java 的 URI 解析会失败，锚点对抓取也没有作用
+    url = url.strip().split("#", 1)[0]
     if not url.lower().startswith(("http://", "https://")):
         return ""
     # Java 的 URI 解析不接受路径里的方括号和不成对的百分号，这两类也一并编码

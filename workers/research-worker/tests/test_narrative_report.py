@@ -325,3 +325,59 @@ def test_only_the_paragraph_with_an_unsupported_number_is_dropped() -> None:
 
     assert result.mode == "LLM"
     assert "50 ms" in result.markdown and "3.0" not in result.markdown
+
+
+INLINE_INPUT = {
+    "question": "Kafka 和 Pulsar 的消息顺序保证有什么区别？",
+    "cells": [
+        {"cell_key": "kafka:ordering", "candidate_value": "Kafka 在单个分区内保证顺序。",
+         "evidence_keys": ["evidence:aa01", "evidence:aa02"], "guarded": False},
+        {"cell_key": "pulsar:ordering", "candidate_value": "Pulsar 的 Key_Shared 订阅按 key 保证顺序。",
+         "evidence_keys": ["evidence:bb01"], "guarded": False},
+    ],
+    "limitations": [],
+}
+
+
+def _inline_article(paragraph_text: str, row_cells: list[str]) -> str:
+    return json.dumps({
+        "title": "顺序保证比较",
+        "executive_summary": "Kafka 按分区保证顺序，Pulsar 的 Key_Shared 订阅按 key 保证顺序。",
+        "sections": [{"heading": "直接回答", "paragraphs": [{
+            "text": paragraph_text, "cell_keys": ["kafka:ordering", "pulsar:ordering"], "evidence_keys": []}]}],
+        "comparison_table": {"columns": ["维度", "Kafka", "Pulsar"], "rows": [{
+            "cells": row_cells, "cell_keys": ["kafka:ordering", "pulsar:ordering"],
+            "evidence_keys": ["evidence:aa01", "evidence:aa02", "evidence:bb01"]}]},
+        "limitations": [],
+    })
+
+
+def test_inline_citations_stay_next_to_their_sentences() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    assert paragraph["evidence_keys"] == ["evidence:aa01", "evidence:bb01"]
+    assert ("Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。\n"
+            in result.markdown)
+    assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
+    # 段末和表格最后一列都不再堆叠引用
+    assert "[evidence:aa02]" not in result.markdown
+    assert result.narrative["comparison_table"]["rows"][0]["evidence_keys"] == ["evidence:aa01", "evidence:bb01"]
+
+
+def test_inline_citation_outside_bound_cells_is_removed_instead_of_failing_the_article() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01] [evidence:zz99]。Pulsar 按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:zz99]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    assert "evidence:zz99" not in result.markdown
+    assert "Kafka 在单个分区内保证顺序 [evidence:aa01]。" in result.markdown
+    assert "| 顺序范围 | 单个分区 | 按 key [evidence:bb01] |" in result.markdown
