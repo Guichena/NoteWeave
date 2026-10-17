@@ -1117,8 +1117,31 @@ def _truncate_text(text: str, token_budget: int) -> str:
     return text[:max_chars].strip()
 
 
+# 页面开头通常是标题和元信息（规范编号、发布版本、状态等），按检索词挑段落时容易被截掉
+PAGE_HEAD_CHARS = 2000
+
+
 def _select_query_relevant_text(text: str, query: str, token_budget: int) -> str:
+    """保留页面开头加上与检索词最相关的一段；页面不长时整页保留。"""
     max_chars = max(500, token_budget * 6)
+    if len(text) <= max_chars:
+        return text.strip()
+    head_chars = min(PAGE_HEAD_CHARS, max_chars // 5)
+    if max_chars - head_chars < 500 or _boilerplate_head(text[:head_chars]):
+        return _best_query_window(text, query, max_chars)
+    window = _best_query_window(text[head_chars:], query, max_chars - head_chars)
+    return (text[:head_chars].rstrip() + "\n\n" + window).strip()
+
+
+def _boilerplate_head(head: str) -> bool:
+    """开头是 cookie 提示、导航或链接列表时不值得保留，否则会挤占正文。"""
+    folded = head.casefold()
+    if any(term in folded for term in ("cookie", "privacy", "manage preferences", "advertisement")):
+        return True
+    return folded.count("](") + folded.count("http://") + folded.count("https://") >= 5
+
+
+def _best_query_window(text: str, query: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text.strip()
     folded = text.casefold()
@@ -1150,7 +1173,7 @@ def _select_query_relevant_text(text: str, query: str, token_budget: int) -> str
             offset = index + len(term)
             term_matches += 1
     if len(starts) == 1:
-        return _truncate_text(text, token_budget)
+        return text[:max_chars].strip()
 
     boilerplate = ("cookie", "privacy", "advertisement", "manage preferences", "search articles")
 

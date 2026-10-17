@@ -1,0 +1,1241 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-postgres-mysql-json",
+  "run_id": "17a45709-9b90-4876-b766-9f4bdec22be4",
+  "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+  "started_at": "2026-10-17T10:08:22.191662+00:00",
+  "finished_at": "2026-10-17T10:11:53.772959+00:00",
+  "wall_seconds": 211.6,
+  "run_detail": {
+    "research_run_id": "17a45709-9b90-4876-b766-9f4bdec22be4",
+    "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+    "task_id": "e575d2fa-6b4c-4d86-8134-497948e287d3",
+    "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+    "final_report_markdown": "# PostgreSQL 17 与 MySQL 8.4 的 JSON 索引对比：索引类型、可加速运算符与索引代价\n\n本次核验的官方资料显示，PostgreSQL 17 的 jsonb 内置 GIN 操作符类有 jsonb_ops（默认）与 jsonb_path_ops 两种，jsonb_ops 可加速 @>、@?、@@、?、?|、?& 等运算符；MySQL 8.4 的多值索引可支持 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 三种 JSON 成员运算符。索引代价方面，PostgreSQL 17 的 jsonb_path_ops 索引通常比同数据的 jsonb_ops 索引小得多，但无法查找键是否存在；MySQL 8.4 的多值索引不索引空数组，用索引搜索空值不会返回匹配。\n\n## 直接回答\n\n在索引类型上，PostgreSQL 17 为 jsonb 类型提供两个内置 GIN 操作符类：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。 [evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a]\n\n在可加速的查询运算符上，PostgreSQL 17 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符。 [evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f]\n\n在索引代价上，PostgreSQL 17 的 jsonb_path_ops 索引通常比同数据的 jsonb_ops 索引小得多，但 jsonb_path_ops 无法查找键是否存在。 [evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd]\n\nMySQL 8.4 方面，JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化，且三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引。 [evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1] [evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be]\n\nMySQL 8.4 的多值索引会带来代价：建立索引时不考虑空数组，因此使用索引搜索空值不会得到任何匹配。 [evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9]\n\n## 索引类型与可加速的运算符\n\nPostgreSQL 17 的 jsonb 内置 GIN 操作符类为 jsonb_ops 与 jsonb_path_ops，默认使用 jsonb_ops。该默认算子类可加速的运算符涵盖包含类（@>）与 jsonpath 匹配类（@?、@@）以及键存在类（?、?|、?&）。 [evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a] [evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f]\n\nMySQL 8.4 的 InnoDB 表可使用多值索引优化 JSON_CONTAINS()，并且 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 三种 JSON 成员运算符均可利用多值索引。 [evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1] [evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be]\n\n## 索引代价的差异\n\nPostgreSQL 17 的两个 jsonb GIN 操作符类在索引体积与查询能力之间存在权衡：jsonb_path_ops 索引通常比同数据的 jsonb_ops 索引小得多，但无法查找键是否存在。 [evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd]\n\nMySQL 8.4 多值索引的代价体现在空数组处理上：索引时不考虑空数组，因此通过索引搜索空值不会返回匹配结果。 [evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9]\n\n## 对比表\n\n| 数据库 | JSON 索引类型 | 可加速的查询运算符 | 索引代价 |\n| --- | --- | --- | --- |\n| PostgreSQL 17 | jsonb 的内置 GIN 操作符类为 jsonb_ops（默认）与 jsonb_path_ops | jsonb_ops 可加速 @>、@?、@@、?、?\\|、?& | jsonb_path_ops 索引通常比同数据的 jsonb_ops 索引小得多，但无法查找键是否存在 [evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a] [evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f] [evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd] |\n| MySQL 8.4 | 多值索引，可在 InnoDB 表上优化 JSON_CONTAINS() | MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引 | 不索引空数组，用索引搜索空值不会返回匹配 [evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1] [evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be] [evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9] |\n\n## Citation audit\n\n### MySQL 8.4 · 可加速的查询运算符\n\n- Evidence: `evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be`\n- Exact quote: “All three JSON membership operators can leverage multi-valued indexes:”\n- Snapshot: `research/external/033d1f12-f514-4a05-ba22-49d37701765f/ad780af557d354f5df16985be00fbe638eaf1a2842e61db5d0b3d3ec5953a427`\n- URL: https://oneuptime.com/blog/post/2026-03-31-mysql-multi-valued-indexes-json-arrays/view\n\n### MySQL 8.4 · 索引代价\n\n- Evidence: `evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9`\n- Exact quote: “When indexing data, the multi-valued index does not consider empty arrays, so searching for empty values using the index will not yield any matches.”\n- Snapshot: `research/external/033d1f12-f514-4a05-ba22-49d37701765f/4d29a7919cb7729047c71eecf03fbc99c07bd6eb98d907ffd2af1a0645acc914`\n- URL: https://www.mydbops.com/blog/improving-query-performance-with-multi-valued-indexing-in-mysql-80\n\n### MySQL 8.4 · JSON 索引类型\n\n- Evidence: `evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1`\n- Exact quote: “tables can be optimized<br>using multi-valued indexes; see<br>[Multi-Valued Indexes](create-index.html#create-index-multi-valued \"Multi-Valued Indexes\"), for more<br>information.”\n- Snapshot: `research/external/033d1f12-f514-4a05-ba22-49d37701765f/edb90823b090654246d1fd381d681dfc6cc482539c39946eeb1badf2dc33862b`\n- URL: https://dev.mysql.com/doc/refman/8.4/en/json-search-functions.html\n\n### PostgreSQL 17 · 可加速的查询运算符\n\n- Evidence: `evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f`\n- Exact quote: “jsonb_ops @> (jsonb,jsonb) @? (jsonb,jsonpath) @@ (jsonb,jsonpath) ? (jsonb,text) ?\\| (jsonb,text[]) ?& (jsonb,text[])”\n- Snapshot: `research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933`\n- URL: https://www.postgresql.org/docs/current/gin.html\n\n### PostgreSQL 17 · 索引代价\n\n- Evidence: `evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd`\n- Exact quote: “A `jsonb_path_ops` index is usually much smaller than a `jsonb_ops` index over the same data”\n- Snapshot: `research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/78eed30b3b315674aed46d85f4ffc86860696b207372cb4e39644e4b0921a32a`\n- URL: https://www.postgresql.org/docs/current/datatype-json.html\n\n### PostgreSQL 17 · JSON 索引类型\n\n- Evidence: `evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a`\n- Exact quote: “Of the two operator classes for type jsonb , jsonb_ops is the default.”\n- Snapshot: `research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933`\n- URL: https://www.postgresql.org/docs/current/gin.html\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/93d4583a-9509-4dab-807c-348402e0c15d/research/17a45709-9b90-4876-b766-9f4bdec22be4/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 6700,
+      "sha256": "60d13b7aae1d93298899c39fee1df00f04eaa5382b0a4ea14e3734d33bf2f635"
+    },
+    "research_artifact": {
+      "artifact_id": "17a45709-9b90-4876-b766-9f4bdec22be4",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "17a45709-9b90-4876-b766-9f4bdec22be4",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/93d4583a-9509-4dab-807c-348402e0c15d/research/17a45709-9b90-4876-b766-9f4bdec22be4/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 6700,
+        "sha256": "60d13b7aae1d93298899c39fee1df00f04eaa5382b0a4ea14e3734d33bf2f635"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "MySQL 8.4 multi-valued index JSON array documentation",
+          "MySQL 8.4 JSON indexes",
+          "MEMBER OF JSON_CONTAINS multi-valued index dev.mysql.com",
+          "PostgreSQL 17 GIN index jsonb operators supported",
+          "PostgreSQL 17 JSON indexing",
+          "PostgreSQL 17 jsonb GIN index jsonb_ops jsonb_path_ops"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "PostgreSQL 17",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+            "read_focus": "逐项引用官方文档比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-327763f6d15ee7bf",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "MySQL 8.4",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+            "read_focus": "逐项引用官方文档比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-f57c6be0ae69394f",
+            "column_label": "JSON 索引类型",
+            "candidate_value": "jsonb 的 GIN 内置操作符类有两个：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-7f450d4434023ed1",
+            "column_label": "索引代价",
+            "candidate_value": "`jsonb_path_ops` 索引通常比同数据的 `jsonb_ops` 索引小得多，但 `jsonb_path_ops` 无法查找键是否存在",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+            "row_id": "entity-327763f6d15ee7bf",
+            "branch_id": "branch-main",
+            "column_key": "dim-00835a8d8c184165",
+            "column_label": "可加速的查询运算符",
+            "candidate_value": "三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-00835a8d8c184165",
+            "column_label": "可加速的查询运算符",
+            "candidate_value": "GIN 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+            "row_id": "entity-327763f6d15ee7bf",
+            "branch_id": "branch-main",
+            "column_key": "dim-7f450d4434023ed1",
+            "column_label": "索引代价",
+            "candidate_value": "多值索引不索引空数组，使用索引搜索空值不会返回匹配。",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+            "row_id": "entity-327763f6d15ee7bf",
+            "branch_id": "branch-main",
+            "column_key": "dim-f57c6be0ae69394f",
+            "column_label": "JSON 索引类型",
+            "candidate_value": "JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+          "read_focus": "逐项引用官方文档比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-327763f6d15ee7bf",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "MySQL 8.4",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+          "read_focus": "逐项引用官方文档比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-f57c6be0ae69394f",
+          "column_label": "JSON 索引类型",
+          "candidate_value": "jsonb 的 GIN 内置操作符类有两个：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-7f450d4434023ed1",
+          "column_label": "索引代价",
+          "candidate_value": "`jsonb_path_ops` 索引通常比同数据的 `jsonb_ops` 索引小得多，但 `jsonb_path_ops` 无法查找键是否存在",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+          "row_id": "entity-327763f6d15ee7bf",
+          "branch_id": "branch-main",
+          "column_key": "dim-00835a8d8c184165",
+          "column_label": "可加速的查询运算符",
+          "candidate_value": "三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-00835a8d8c184165",
+          "column_label": "可加速的查询运算符",
+          "candidate_value": "GIN 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+          "row_id": "entity-327763f6d15ee7bf",
+          "branch_id": "branch-main",
+          "column_key": "dim-7f450d4434023ed1",
+          "column_label": "索引代价",
+          "candidate_value": "多值索引不索引空数组，使用索引搜索空值不会返回匹配。",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+          "row_id": "entity-327763f6d15ee7bf",
+          "branch_id": "branch-main",
+          "column_key": "dim-f57c6be0ae69394f",
+          "column_label": "JSON 索引类型",
+          "candidate_value": "JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:bcff8bb109bf822b2df67c256d9582e3171b2b3396c89569",
+          "window_id": "window-5",
+          "source_id": "web-bddbca4079223916",
+          "source_title": "Multi-Valued Indexes in MySQL 8.0 for Better",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.mydbops.com/blog/improving-query-performance-with-multi-valued-indexing-in-mysql-80",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "MySQL 8.4 multi-valued index JSON array documentation",
+          "read_focus": "Read external URL Multi-Valued Indexes in MySQL 8.0 for Better for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: MySQL 8.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "It’s important to note that JSON null values are not allowed within multi-valued indexed arrays.",
+          "claim_text": "多值索引数组中不允许 JSON null 值，若数组元素为 null 会导致无效 JSON 值错误。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033d1f12-f514-4a05-ba22-49d37701765f/4d29a7919cb7729047c71eecf03fbc99c07bd6eb98d907ffd2af1a0645acc914"
+        },
+        {
+          "evidence_id": "evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9",
+          "window_id": "window-5",
+          "source_id": "web-bddbca4079223916",
+          "source_title": "Multi-Valued Indexes in MySQL 8.0 for Better",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.mydbops.com/blog/improving-query-performance-with-multi-valued-indexing-in-mysql-80",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "MySQL 8.4 multi-valued index JSON array documentation",
+          "read_focus": "Read external URL Multi-Valued Indexes in MySQL 8.0 for Better for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: MySQL 8.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "When indexing data, the multi-valued index does not consider empty arrays, so searching for empty values using the index will not yield any matches.",
+          "claim_text": "多值索引不索引空数组，使用索引搜索空值不会返回匹配。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033d1f12-f514-4a05-ba22-49d37701765f/4d29a7919cb7729047c71eecf03fbc99c07bd6eb98d907ffd2af1a0645acc914"
+        },
+        {
+          "evidence_id": "evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1",
+          "window_id": "window-2",
+          "source_id": "web-8b1dba10eb5195b9",
+          "source_title": "14.17.3 Functions That Search JSON Values",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dev.mysql.com/doc/refman/8.4/en/json-search-functions.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "MEMBER OF JSON_CONTAINS multi-valued index dev.mysql.com",
+          "read_focus": "Read external URL 14.17.3 Functions That Search JSON Values for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: MySQL 8.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "tables can be optimized\nusing multi-valued indexes; see\n[Multi-Valued Indexes](create-index.html#create-index-multi-valued \"Multi-Valued Indexes\"), for more\ninformation.",
+          "claim_text": "JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033d1f12-f514-4a05-ba22-49d37701765f/edb90823b090654246d1fd381d681dfc6cc482539c39946eeb1badf2dc33862b"
+        },
+        {
+          "evidence_id": "evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be",
+          "window_id": "window-6",
+          "source_id": "web-58f02671065e4a32",
+          "source_title": "How to Create Multi-Valued Indexes on JSON Arrays in ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://oneuptime.com/blog/post/2026-03-31-mysql-multi-valued-indexes-json-arrays/view",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "MEMBER OF JSON_CONTAINS multi-valued index dev.mysql.com",
+          "read_focus": "Read external URL How to Create Multi-Valued Indexes on JSON Arrays in ... for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: MySQL 8.4. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "All three JSON membership operators can leverage multi-valued indexes:",
+          "claim_text": "三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033d1f12-f514-4a05-ba22-49d37701765f/ad780af557d354f5df16985be00fbe638eaf1a2842e61db5d0b3d3ec5953a427"
+        },
+        {
+          "evidence_id": "evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 JSON indexing",
+          "read_focus": "Read external URL Documentation: 18: 8.14. JSON Types for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A `jsonb_path_ops` index is usually much smaller than a `jsonb_ops` index over the same data",
+          "claim_text": "`jsonb_path_ops` 索引通常比同数据的 `jsonb_ops` 索引小得多，但 `jsonb_path_ops` 无法查找键是否存在",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/78eed30b3b315674aed46d85f4ffc86860696b207372cb4e39644e4b0921a32a"
+        },
+        {
+          "evidence_id": "evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f",
+          "window_id": "window-3",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 jsonb GIN index jsonb_ops jsonb_path_ops",
+          "read_focus": "Read external URL Documentation: 18: 65.4. GIN Indexes for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "jsonb_ops @> (jsonb,jsonb) @? (jsonb,jsonpath) @@ (jsonb,jsonpath) ? (jsonb,text) ?| (jsonb,text[]) ?& (jsonb,text[])",
+          "claim_text": "GIN 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933"
+        },
+        {
+          "evidence_id": "evidence:c5722f40d3a87c9abb19dfd2b4ad3d51946211f2adece61f",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 JSON indexing",
+          "read_focus": "Read external URL Documentation: 18: 8.14. JSON Types for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Although the `jsonb_path_ops` operator class supports only queries with the `@>`, `@?` and `@@` operators, it has notable performance advantages over the default operator class `jsonb_ops`.",
+          "claim_text": "jsonb_path_ops 算子类只支持 @>、@? 和 @@ 运算符的查询",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/78eed30b3b315674aed46d85f4ffc86860696b207372cb4e39644e4b0921a32a"
+        },
+        {
+          "evidence_id": "evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a",
+          "window_id": "window-3",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 jsonb GIN index jsonb_ops jsonb_path_ops",
+          "read_focus": "Read external URL Documentation: 18: 65.4. GIN Indexes for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Of the two operator classes for type jsonb , jsonb_ops is the default.",
+          "claim_text": "jsonb 的 GIN 内置操作符类有两个：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933"
+        },
+        {
+          "evidence_id": "evidence:dd133313b358b7264df91bccc4e5f77d37df8ec191f4dc1d",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 JSON indexing",
+          "read_focus": "Read external URL Documentation: 18: 8.14. JSON Types for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "the former creates independent index items for each key and value in the data, while the latter creates index items only for each value in the data.",
+          "claim_text": "jsonb_ops 为数据中每个键和值分别创建独立索引项，jsonb_path_ops 仅针对每个值创建索引项。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/78eed30b3b315674aed46d85f4ffc86860696b207372cb4e39644e4b0921a32a"
+        },
+        {
+          "evidence_id": "evidence:71906c042a85f04c4b7126962f3b9b8692ea70879af00f3d",
+          "window_id": "window-3",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 jsonb GIN index jsonb_ops jsonb_path_ops",
+          "read_focus": "Read external URL Documentation: 18: 65.4. GIN Indexes for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "jsonb_path_ops supports fewer operators but offers better performance for those operators",
+          "claim_text": "两种 jsonb 运算符类中，`jsonb_path_ops` 支持的运算符更少，但对这些运算符性能更好",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933"
+        },
+        {
+          "evidence_id": "evidence:85702e92b9f76d6b41798edbe6eb0bc504c62b896b21fa15",
+          "window_id": "window-3",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 jsonb GIN index jsonb_ops jsonb_path_ops",
+          "read_focus": "Read external URL Documentation: 18: 65.4. GIN Indexes for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "jsonb_path_ops supports fewer operators but offers better performance for those operators.",
+          "claim_text": "jsonb_path_ops 算子类仅支持 @>、@?、@@ 运算符",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/a840177dbea25f6dc74f03dffab5da5ce313561a734e1a990f9e01bb5b3e8933"
+        },
+        {
+          "evidence_id": "evidence:f33a15e6e709cc0eaaace14f5ecb41db37272d7a7e44dceb",
+          "window_id": "window-1",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 JSON indexing",
+          "read_focus": "Read external URL Documentation: 18: 8.14. JSON Types for claims that answer: 比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "GIN indexes also support the `@?` and `@@` operators, which perform `jsonpath` matching.",
+          "claim_text": "GIN 索引也支持执行 jsonpath 匹配的 @? 和 @@ 运算符",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2a273be7-2eda-49a3-a1d2-21da16032e1a/78eed30b3b315674aed46d85f4ffc86860696b207372cb4e39644e4b0921a32a"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+          "row_id": "entity-327763f6d15ee7bf",
+          "evidence_id": "evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9",
+          "source_id": "web-bddbca4079223916",
+          "source_title": "Multi-Valued Indexes in MySQL 8.0 for Better",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.mydbops.com/blog/improving-query-performance-with-multi-valued-indexing-in-mysql-80"
+        },
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+          "row_id": "entity-327763f6d15ee7bf",
+          "evidence_id": "evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be",
+          "source_id": "web-58f02671065e4a32",
+          "source_title": "How to Create Multi-Valued Indexes on JSON Arrays in ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://oneuptime.com/blog/post/2026-03-31-mysql-multi-valued-indexes-json-arrays/view"
+        },
+        {
+          "cell_id": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+          "row_id": "entity-327763f6d15ee7bf",
+          "evidence_id": "evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1",
+          "source_id": "web-8b1dba10eb5195b9",
+          "source_title": "14.17.3 Functions That Search JSON Values",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://dev.mysql.com/doc/refman/8.4/en/json-search-functions.html"
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+          "row_id": "entity-7039726e75a8087c",
+          "evidence_id": "evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html"
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+          "row_id": "entity-7039726e75a8087c",
+          "evidence_id": "evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a",
+          "source_id": "web-304a6aedd214b242",
+          "source_title": "Documentation: 18: 65.4. GIN Indexes",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/gin.html"
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+          "row_id": "entity-7039726e75a8087c",
+          "evidence_id": "evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd",
+          "source_id": "web-4fc539f4fb130a78",
+          "source_title": "Documentation: 18: 8.14. JSON Types",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.postgresql.org/docs/current/datatype-json.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "e59655b3-9bb5-4b71-8b1c-07412345fadb",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+          "profile_key": "DEFAULT",
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0
+        },
+        "created_at": "2026-10-17T10:08:21Z"
+      },
+      {
+        "trace_id": "0e518a5e-c7aa-4a2e-8996-f5af99f26d44",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "reason_codes": [],
+          "columns": 3,
+          "rows": 2,
+          "planner_version": "llm-matrix.v1"
+        },
+        "created_at": "2026-10-17T10:08:34Z"
+      },
+      {
+        "trace_id": "e10996bd-2f5a-40bd-ad2e-c250a10df915",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价，引用官方文档。",
+        "payload": {
+          "cell_count": 6
+        },
+        "created_at": "2026-10-17T10:11:53Z"
+      }
+    ],
+    "created_at": "2026-10-17T10:08:21Z",
+    "updated_at": "2026-10-17T10:11:53Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "merge_count": 6,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+          "merge_id": "merge:2dcd01970d824b81b995a0bfb4b075d63f1c6d434044849500c3ebd9750dc39b",
+          "candidate_id": "be94c34c-cccd-48c8-b923-471fadea9105",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+          "merge_id": "merge:b47372e3f16c50752a4038cbda4aba0c5c2b5ab94b78c8fa631bb3526078a337",
+          "candidate_id": "88c4f52f-378e-45fb-9357-835b9f12cbcd",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+          "merge_id": "merge:109b05dca70db13d4073a4af456e2ab6690b8ba68b0634f59ba1b2a6cf6e6d64",
+          "candidate_id": "d08c1719-1109-4fcc-863b-bd82637dfa8a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+          "merge_id": "merge:7c80ce4a1bbb9880db924358ab8eacfc1e16b8e137f9ec392d2c02b9460f8a6e",
+          "candidate_id": "ffca69b5-147b-42cd-8e03-c87c89255665",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+          "merge_id": "merge:6f787f8567dfbea310874b8868c3ede97e2a1c33cbeac91f1ec914e738dbcd32",
+          "candidate_id": "4a60fcbb-0137-4890-a531-7830ce3998e2",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        },
+        {
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+          "merge_id": "merge:2658e451fedf9f538ff5bc60e5beb40ccd067d645d014b9b4391b41213d890df",
+          "candidate_id": "768cc069-c23b-4a57-9090-ac0b3598bdf2",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED"
+        }
+      ],
+      "checkpoints": [],
+      "tasks": [
+        {
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:09:23Z",
+          "lease_epoch": 1,
+          "task_id": "53601e75-966a-4cd8-95af-080122b7accd",
+          "task_key": "planning:17a45709-9b90-4876-b766-9f4bdec22be4"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:10:21Z",
+          "lease_epoch": 1,
+          "task_id": "033d1f12-f514-4a05-ba22-49d37701765f",
+          "task_key": "deep-cell:5ffb3bed42bd352e6ec6e24295d95d42"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:12:35Z",
+          "lease_epoch": 1,
+          "task_id": "2a273be7-2eda-49a3-a1d2-21da16032e1a",
+          "task_key": "deep-cell:9cd256f58bc077ee361ad0327ce575c9"
+        },
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:12:44Z",
+          "lease_epoch": 1,
+          "task_id": "1d85fce7-516c-460e-8f28-9ca8fe841f86",
+          "task_key": "synthesis:ebd6ee9c004a30c4d82c0a437e07bed5"
+        }
+      ],
+      "candidates": [
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+          "task_id": "033d1f12-f514-4a05-ba22-49d37701765f",
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "88c4f52f-378e-45fb-9357-835b9f12cbcd"
+        },
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+          "task_id": "033d1f12-f514-4a05-ba22-49d37701765f",
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "be94c34c-cccd-48c8-b923-471fadea9105"
+        },
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+          "task_id": "033d1f12-f514-4a05-ba22-49d37701765f",
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "d08c1719-1109-4fcc-863b-bd82637dfa8a"
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+          "task_id": "2a273be7-2eda-49a3-a1d2-21da16032e1a",
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "4a60fcbb-0137-4890-a531-7830ce3998e2"
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+          "task_id": "2a273be7-2eda-49a3-a1d2-21da16032e1a",
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "768cc069-c23b-4a57-9090-ac0b3598bdf2"
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+          "task_id": "2a273be7-2eda-49a3-a1d2-21da16032e1a",
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "ffca69b5-147b-42cd-8e03-c87c89255665"
+        }
+      ],
+      "candidate_count": 6,
+      "task_count": 4
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-327763f6d15ee7bf",
+            "label": "MySQL 8.4"
+          },
+          {
+            "entity_key": "entity-7039726e75a8087c",
+            "label": "PostgreSQL 17"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-00835a8d8c184165",
+            "label": "可加速的查询运算符",
+            "description": "官方文档说明可通过 JSON 索引加速的 JSON 运算符与谓词（如包含、存在、路径匹配、比较等）。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-7f450d4434023ed1",
+            "label": "索引代价",
+            "description": "官方文档中关于 JSON 索引的建立与维护代价、存储开销或适用限制的说明。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-f57c6be0ae69394f",
+            "label": "JSON 索引类型",
+            "description": "官方文档中该数据库为 JSON 列提供的索引类型与结构（如 B-tree、GIN、表达式索引、多值索引、函数索引等）及可索引的 JSON 路径方式。",
+            "answer_format": "LIST",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅覆盖两个已命名版本的 JSON 索引能力与开销。",
+          "objective": "逐项引用官方文档比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引类型、可加速的查询运算符和索引代价。",
+          "exclusions": [
+            "未命名的其他版本或数据库",
+            "非 JSON 的通用性能基准",
+            "综合 OLTP 性能对比"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown 研究表加引用审计，每条结论附 exact quote、snapshot 与 URL。"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "postgresql.org",
+          "dev.mysql.com"
+        ],
+        "perspectives": [
+          {
+            "name": "实现者",
+            "questions": [
+              "如何为 JSON 列建立并让索引生效？",
+              "哪些运算符会命中索引？"
+            ]
+          },
+          {
+            "name": "决策者",
+            "questions": [
+              "索引的写入与存储代价是否可接受？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-00835a8d8c184165",
+          "entity_label": "MySQL 8.4",
+          "column_label": "可加速的查询运算符",
+          "cell_status": "VERIFIED",
+          "candidate_value": "三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引",
+          "equivalent_claims": [
+            {
+              "claim_text": "三种 JSON 成员运算符 MEMBER OF()、JSON_CONTAINS() 和 JSON_OVERLAPS() 均可利用多值索引",
+              "evidence_key": "evidence:c427261b59927693ac6981942cc9399d6b165d8c19c1f8be",
+              "source_domain": "oneuptime.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-7f450d4434023ed1",
+          "entity_label": "MySQL 8.4",
+          "column_label": "索引代价",
+          "cell_status": "VERIFIED",
+          "candidate_value": "多值索引不索引空数组，使用索引搜索空值不会返回匹配。",
+          "equivalent_claims": [
+            {
+              "claim_text": "多值索引不索引空数组，使用索引搜索空值不会返回匹配。",
+              "evidence_key": "evidence:af179d472936b2721c98cc6a0de681cc60c37e8867b642b9",
+              "source_domain": "mydbops.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-327763f6d15ee7bf:dim-f57c6be0ae69394f",
+          "entity_label": "MySQL 8.4",
+          "column_label": "JSON 索引类型",
+          "cell_status": "VERIFIED",
+          "candidate_value": "JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化",
+          "equivalent_claims": [
+            {
+              "claim_text": "JSON_CONTAINS() 在 InnoDB 表上可通过多值索引优化",
+              "evidence_key": "evidence:794c4296fa4cd57200c284e9622e7e86b667f8b780ae8ee1",
+              "source_domain": "mysql.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-00835a8d8c184165",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "可加速的查询运算符",
+          "cell_status": "VERIFIED",
+          "candidate_value": "GIN 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符",
+          "equivalent_claims": [
+            {
+              "claim_text": "GIN 的 jsonb_ops 算子类可加速 @>、@?、@@、?、?|、?& 运算符",
+              "evidence_key": "evidence:c39007017941cbb8908cdfe54b70f4ef7424f0a57999160f",
+              "source_domain": "postgresql.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-7f450d4434023ed1",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "索引代价",
+          "cell_status": "VERIFIED",
+          "candidate_value": "`jsonb_path_ops` 索引通常比同数据的 `jsonb_ops` 索引小得多，但 `jsonb_path_ops` 无法查找键是否存在",
+          "equivalent_claims": [
+            {
+              "claim_text": "`jsonb_path_ops` 索引通常比同数据的 `jsonb_ops` 索引小得多，但 `jsonb_path_ops` 无法查找键是否存在",
+              "evidence_key": "evidence:c0ea0f80a067630ef245138c49a575ebd9e6b5f3b55e43cd",
+              "source_domain": "postgresql.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-f57c6be0ae69394f",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "JSON 索引类型",
+          "cell_status": "VERIFIED",
+          "candidate_value": "jsonb 的 GIN 内置操作符类有两个：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。",
+          "equivalent_claims": [
+            {
+              "claim_text": "jsonb 的 GIN 内置操作符类有两个：jsonb_ops 与 jsonb_path_ops，其中 jsonb_ops 为默认。",
+              "evidence_key": "evidence:ffdcea711dae85a77bd3b6664fe04d015ae6e90c8a58578a",
+              "source_domain": "postgresql.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

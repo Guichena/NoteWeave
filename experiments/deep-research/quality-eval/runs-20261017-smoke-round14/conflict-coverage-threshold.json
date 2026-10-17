@@ -1,0 +1,974 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-coverage-threshold",
+  "run_id": "d9090f8f-9950-4bea-9d42-8845f3bbb471",
+  "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+  "started_at": "2026-10-17T10:12:59.732448+00:00",
+  "finished_at": "2026-10-17T10:13:29.908412+00:00",
+  "wall_seconds": 30.2,
+  "run_detail": {
+    "research_run_id": "d9090f8f-9950-4bea-9d42-8845f3bbb471",
+    "workspace_id": "93d4583a-9509-4dab-807c-348402e0c15d",
+    "task_id": "5215b816-cea1-4200-b006-b0cd3f63f858",
+    "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "FAILED",
+    "completion_terminal_state": "",
+    "final_report_title": "",
+    "final_report_markdown": "",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": null,
+    "research_artifact": null,
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 3,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 3,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 3,
+        "guardrailed_row_count": 3,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 3,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-193172163ad547ea",
+            "source_id": "",
+            "source_title": "Microsoft (test coverage gate research)",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-f2daf879d9197a7c",
+            "source_id": "",
+            "source_title": "CISQ / ITIF (coverage gate studies)",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-193172163ad547ea",
+            "source_id": "",
+            "source_title": "Microsoft (test coverage gate research)",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-f2daf879d9197a7c",
+            "source_id": "",
+            "source_title": "CISQ / ITIF (coverage gate studies)",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 3,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-193172163ad547ea",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Microsoft (test coverage gate research)",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-f2daf879d9197a7c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "CISQ / ITIF (coverage gate studies)",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-0bebbeaedcd498bb",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Google (test coverage gate research)",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-193172163ad547ea:dim-fc083feb962560fa",
+            "row_id": "entity-193172163ad547ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-fc083feb962560fa",
+            "column_label": "Defect escape rate impact",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-193172163ad547ea:dim-6fbcd1faef2c3dd1",
+            "row_id": "entity-193172163ad547ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-6fbcd1faef2c3dd1",
+            "column_label": "Evidence and study type",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-0bebbeaedcd498bb:dim-d4bb861deebdd8f8",
+            "row_id": "entity-0bebbeaedcd498bb",
+            "branch_id": "branch-main",
+            "column_key": "dim-d4bb861deebdd8f8",
+            "column_label": "Coverage gate studied",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-0bebbeaedcd498bb:dim-fc083feb962560fa",
+            "row_id": "entity-0bebbeaedcd498bb",
+            "branch_id": "branch-main",
+            "column_key": "dim-fc083feb962560fa",
+            "column_label": "Defect escape rate impact",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-f2daf879d9197a7c:dim-d4bb861deebdd8f8",
+            "row_id": "entity-f2daf879d9197a7c",
+            "branch_id": "branch-main",
+            "column_key": "dim-d4bb861deebdd8f8",
+            "column_label": "Coverage gate studied",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-f2daf879d9197a7c:dim-6fbcd1faef2c3dd1",
+            "row_id": "entity-f2daf879d9197a7c",
+            "branch_id": "branch-main",
+            "column_key": "dim-6fbcd1faef2c3dd1",
+            "column_label": "Evidence and study type",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-193172163ad547ea:dim-d4bb861deebdd8f8",
+            "row_id": "entity-193172163ad547ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-d4bb861deebdd8f8",
+            "column_label": "Coverage gate studied",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-0bebbeaedcd498bb:dim-6fbcd1faef2c3dd1",
+            "row_id": "entity-0bebbeaedcd498bb",
+            "branch_id": "branch-main",
+            "column_key": "dim-6fbcd1faef2c3dd1",
+            "column_label": "Evidence and study type",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-f2daf879d9197a7c:dim-fc083feb962560fa",
+            "row_id": "entity-f2daf879d9197a7c",
+            "branch_id": "branch-main",
+            "column_key": "dim-fc083feb962560fa",
+            "column_label": "Defect escape rate impact",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-193172163ad547ea",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Microsoft (test coverage gate research)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-f2daf879d9197a7c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "CISQ / ITIF (coverage gate studies)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-0bebbeaedcd498bb",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Google (test coverage gate research)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "read_focus": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-193172163ad547ea:dim-fc083feb962560fa",
+          "row_id": "entity-193172163ad547ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-fc083feb962560fa",
+          "column_label": "Defect escape rate impact",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-193172163ad547ea:dim-6fbcd1faef2c3dd1",
+          "row_id": "entity-193172163ad547ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-6fbcd1faef2c3dd1",
+          "column_label": "Evidence and study type",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-0bebbeaedcd498bb:dim-d4bb861deebdd8f8",
+          "row_id": "entity-0bebbeaedcd498bb",
+          "branch_id": "branch-main",
+          "column_key": "dim-d4bb861deebdd8f8",
+          "column_label": "Coverage gate studied",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-0bebbeaedcd498bb:dim-fc083feb962560fa",
+          "row_id": "entity-0bebbeaedcd498bb",
+          "branch_id": "branch-main",
+          "column_key": "dim-fc083feb962560fa",
+          "column_label": "Defect escape rate impact",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-f2daf879d9197a7c:dim-d4bb861deebdd8f8",
+          "row_id": "entity-f2daf879d9197a7c",
+          "branch_id": "branch-main",
+          "column_key": "dim-d4bb861deebdd8f8",
+          "column_label": "Coverage gate studied",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-f2daf879d9197a7c:dim-6fbcd1faef2c3dd1",
+          "row_id": "entity-f2daf879d9197a7c",
+          "branch_id": "branch-main",
+          "column_key": "dim-6fbcd1faef2c3dd1",
+          "column_label": "Evidence and study type",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-193172163ad547ea:dim-d4bb861deebdd8f8",
+          "row_id": "entity-193172163ad547ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-d4bb861deebdd8f8",
+          "column_label": "Coverage gate studied",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-0bebbeaedcd498bb:dim-6fbcd1faef2c3dd1",
+          "row_id": "entity-0bebbeaedcd498bb",
+          "branch_id": "branch-main",
+          "column_key": "dim-6fbcd1faef2c3dd1",
+          "column_label": "Evidence and study type",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-f2daf879d9197a7c:dim-fc083feb962560fa",
+          "row_id": "entity-f2daf879d9197a7c",
+          "branch_id": "branch-main",
+          "column_key": "dim-fc083feb962560fa",
+          "column_label": "Defect escape rate impact",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [],
+      "cell_evidence": [],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "7e5dc9ec-6b6d-4b47-b40a-037878fac96e",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "profile_key": "DEFAULT",
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0
+        },
+        "created_at": "2026-10-17T10:12:59Z"
+      },
+      {
+        "trace_id": "7da9947f-310b-41ca-b23a-7d202a224003",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "reason_codes": [],
+          "columns": 3,
+          "rows": 3,
+          "planner_version": "llm-matrix.v1"
+        },
+        "created_at": "2026-10-17T10:13:14Z"
+      },
+      {
+        "trace_id": "ac383caf-bba7-46d7-80a3-521176d4bf9a",
+        "trace_type": "RUN_FAILED",
+        "trace_message": "RESEARCH_WEB_PROVIDER_UNAVAILABLE",
+        "payload": {},
+        "created_at": "2026-10-17T10:13:28Z"
+      }
+    ],
+    "created_at": "2026-10-17T10:12:59Z",
+    "updated_at": "2026-10-17T10:13:28Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "merge_count": 0,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [],
+      "checkpoints": [],
+      "tasks": [
+        {
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T10:14:00Z",
+          "lease_epoch": 1,
+          "task_id": "8441844f-583f-4c72-8f1f-c41e47242ebc",
+          "task_key": "planning:d9090f8f-9950-4bea-9d42-8845f3bbb471"
+        },
+        {
+          "worker_instance_id": "",
+          "fencing_token": 0,
+          "attempt_count": 0,
+          "status": "FAILED",
+          "lease_expires_at": "",
+          "lease_epoch": 0,
+          "task_id": "5f97cf88-27bb-4eff-ae25-128bcf026861",
+          "task_key": "deep-cell:98dd411e14370915897596ae1b17f74a"
+        },
+        {
+          "worker_instance_id": "",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "",
+          "lease_epoch": 1,
+          "task_id": "7a1f8c06-edea-4417-bf1d-0774e5fa5ba1",
+          "task_key": "deep-cell:365a591de87bd17bededdcc7161cb454"
+        },
+        {
+          "worker_instance_id": "",
+          "fencing_token": 1,
+          "attempt_count": 1,
+          "status": "FAILED",
+          "lease_expires_at": "",
+          "lease_epoch": 1,
+          "task_id": "f5bbb7cd-1615-4ee7-8ab4-eb7e049b9fbd",
+          "task_key": "deep-cell:7e86cfc5e12878a9d060313ad5ee5eb0"
+        }
+      ],
+      "candidates": [],
+      "candidate_count": 0,
+      "task_count": 4
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-0bebbeaedcd498bb",
+            "label": "Google (test coverage gate research)"
+          },
+          {
+            "entity_key": "entity-193172163ad547ea",
+            "label": "Microsoft (test coverage gate research)"
+          },
+          {
+            "entity_key": "entity-f2daf879d9197a7c",
+            "label": "CISQ / ITIF (coverage gate studies)"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-6fbcd1faef2c3dd1",
+            "label": "Evidence and study type",
+            "description": "The nature of the empirical evidence (controlled experiment, industrial case study, industry survey) and sample or setting it draws on.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-d4bb861deebdd8f8",
+            "label": "Coverage gate studied",
+            "description": "The specific test coverage threshold or policy the organization applied, with the value (for example a percentage) or the form of the gate.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-fc083feb962560fa",
+            "label": "Defect escape rate impact",
+            "description": "Reported effect of raising the coverage threshold on defect escape rate or post-release defects, quantified if available.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Published studies and industry reports from named organizations with test coverage gate evidence.",
+          "objective": "Compare empirical findings on whether raising test coverage thresholds reduces defect escape rates across organizations.",
+          "exclusions": [
+            "Anecdotal blog opinions without measured defect data",
+            "Coverage tool product marketing"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "dl.acm.org",
+          "ieeexplore.ieee.org",
+          "research.google",
+          "microsoft.com",
+          "it-cisq.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "What threshold was set and how was coverage measured?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Did the gate measurably reduce escaped defects?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-0bebbeaedcd498bb:dim-6fbcd1faef2c3dd1",
+          "entity_label": "Google (test coverage gate research)",
+          "column_label": "Evidence and study type",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-0bebbeaedcd498bb:dim-d4bb861deebdd8f8",
+          "entity_label": "Google (test coverage gate research)",
+          "column_label": "Coverage gate studied",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-0bebbeaedcd498bb:dim-fc083feb962560fa",
+          "entity_label": "Google (test coverage gate research)",
+          "column_label": "Defect escape rate impact",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-193172163ad547ea:dim-6fbcd1faef2c3dd1",
+          "entity_label": "Microsoft (test coverage gate research)",
+          "column_label": "Evidence and study type",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-193172163ad547ea:dim-d4bb861deebdd8f8",
+          "entity_label": "Microsoft (test coverage gate research)",
+          "column_label": "Coverage gate studied",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-193172163ad547ea:dim-fc083feb962560fa",
+          "entity_label": "Microsoft (test coverage gate research)",
+          "column_label": "Defect escape rate impact",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-f2daf879d9197a7c:dim-6fbcd1faef2c3dd1",
+          "entity_label": "CISQ / ITIF (coverage gate studies)",
+          "column_label": "Evidence and study type",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-f2daf879d9197a7c:dim-d4bb861deebdd8f8",
+          "entity_label": "CISQ / ITIF (coverage gate studies)",
+          "column_label": "Coverage gate studied",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-f2daf879d9197a7c:dim-fc083feb962560fa",
+          "entity_label": "CISQ / ITIF (coverage gate studies)",
+          "column_label": "Defect escape rate impact",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

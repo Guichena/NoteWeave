@@ -591,3 +591,16 @@ def test_source_quality_should_preserve_substantive_repository_content() -> None
 
     assert quality == "REPOSITORY_SOURCE"
     assert score >= 0.8
+
+
+def test_long_spec_page_keeps_its_header_with_the_identifier_and_release() -> None:
+    from app.fetch_adapters import _select_query_relevant_text
+
+    header = "JEP 491: Synchronize Virtual Threads without Pinning\nOwner Alan Bateman\nRelease 24\nStatus Closed / Delivered\n"
+    filler = "Background discussion of carrier threads and monitors. " * 200
+    body = "Virtual threads that block in synchronized methods release their carrier. " * 40
+    selected = _select_query_relevant_text(header + filler + body, "synchronized carrier release", token_budget=800)
+
+    assert selected.startswith("JEP 491")
+    assert "Release 24" in selected
+    assert "release their carrier" in selected

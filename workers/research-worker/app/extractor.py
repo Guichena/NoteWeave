@@ -149,11 +149,7 @@ def _extract_evidence_cards_detailed_with_llm(
                     "window_id": window.window_id,
                     "entity_hint": window.source_title,
                     "query": window.query,
-                    "text": _select_relevant_excerpt(
-                        window.window_text,
-                        _excerpt_hint(plan, window),
-                        max_chars=EXCERPT_MAX_CHARS,
-                    ),
+                    "text": _excerpt_with_title(window.window_text, _excerpt_hint(plan, window)),
                     "trust_boundary": "UNTRUSTED_EXTERNAL_CONTENT" if window.untrusted_content else "TRUSTED_WORKSPACE_CONTENT",
                     "prompt_injection_detected": window.prompt_injection_detected,
                     "prompt_injection_signals": list(window.prompt_injection_signals),
@@ -438,6 +434,20 @@ def _excerpt_hint(plan: ResearchPlan, window: ResearchReadWindow) -> str:
     )
     entity = str(plan.stop_contract.get("deep_cell_entity_label") or "")
     return " ".join((column_terms, column_terms, entity, plan.normalized_question, window.query))
+
+
+# 片段之外再给模型页面开头的一小段：标题里常有规范编号、产品版本，单独看正文段落时会丢掉
+TITLE_CHARS = 300
+
+
+def _excerpt_with_title(text: str, relevance_hint: str) -> str:
+    if len(text) <= EXCERPT_MAX_CHARS:
+        return text
+    excerpt = _select_relevant_excerpt(text, relevance_hint, max_chars=EXCERPT_MAX_CHARS - TITLE_CHARS)
+    title = _snap_to_boundaries(text, 0, TITLE_CHARS)
+    if not title or text.startswith(excerpt[:40]):
+        return excerpt
+    return title + "\n\n" + excerpt
 
 
 def _select_relevant_excerpt(text: str, relevance_hint: str, *, max_chars: int) -> str:
