@@ -1,0 +1,1192 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-pg-17-incremental-backup",
+  "run_id": "592e2cab-9c67-49aa-8562-d95ee2869731",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T12:22:04.908958+00:00",
+  "finished_at": "2026-10-17T12:25:16.086083+00:00",
+  "wall_seconds": 191.2,
+  "run_detail": {
+    "research_run_id": "592e2cab-9c67-49aa-8562-d95ee2869731",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "5db6b1f6-c167-45b2-8e0f-310a865670ea",
+    "question": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+    "final_report_title": "研究报告：PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+    "final_report_markdown": "# PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\n以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。\n\n## PostgreSQL 17 · 增量备份功能说明与版本引入\n\n块级增量备份使用 Postgres 17 引入的原生增量备份功能 [evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea]\n\n## 局限\n\n- PostgreSQL 17 · 为何需要 WAL 摘要机制：必需研究项未找到足够证据\n- PostgreSQL 17 · 使用步骤与命令：必需研究项未找到足够证据\n- PostgreSQL 17 · 前提条件与配置：必需研究项未找到足够证据\n\n**核验情况：** 已核验 1 项，未找到足够证据 3 项。\n\n## 结论汇总\n\n| 研究对象 | 增量备份功能说明与版本引入 | 使用步骤与命令 | 前提条件与配置 | 为何需要 WAL 摘要机制 |\n|---|---|---|---|---|\n| PostgreSQL 17 | 块级增量备份使用 Postgres 17 引入的原生增量备份功能 | 未找到证据 | 未找到证据 | 未找到证据 |\n\n## 引用核对\n\n### PostgreSQL 17 · 增量备份功能说明与版本引入\n\n块级增量备份使用 Postgres 17 引入的原生增量备份功能\n\n- Evidence: `evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea`\n  - Exact quote: “This type of backup uses the native incremental backup feature introduced in Postgres 17.”\n  - Snapshot: `research/external/f53f8a1d-496e-4b65-bde7-609db88d8089/0ac5b9b8dc024071aca4132682de89addb338baceff10760ad3bf66591920dab`\n  - URL: https://docs.pgbarman.org/release/3.17.0/user_guide/backup.html\n\n## 局限与未解决项\n\n- **PostgreSQL 17 · 为何需要 WAL 摘要机制**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **PostgreSQL 17 · 使用步骤与命令**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **PostgreSQL 17 · 前提条件与配置**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n\n## 完成判定原因\n\n- 完成状态：`INSUFFICIENT_EVIDENCE`\n- INSUFFICIENT_EVIDENCE",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/592e2cab-9c67-49aa-8562-d95ee2869731/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 2090,
+      "sha256": "d3a0483c6d696c3dc40d29b36e9ed2493daad5e47190a36c4843390c9bcdc68f"
+    },
+    "research_artifact": {
+      "artifact_id": "592e2cab-9c67-49aa-8562-d95ee2869731",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "592e2cab-9c67-49aa-8562-d95ee2869731",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/592e2cab-9c67-49aa-8562-d95ee2869731/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 2090,
+        "sha256": "d3a0483c6d696c3dc40d29b36e9ed2493daad5e47190a36c4843390c9bcdc68f"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "PostgreSQL 17 wal summarization incremental backup prerequisite summarize_wal",
+          "PostgreSQL 17 incremental backup",
+          "pg_basebackup --incremental backup manifest syntax",
+          "PostgreSQL WAL summarization incremental backup how it works",
+          "PostgreSQL 17 前提条件与配置 documented limitations",
+          "PostgreSQL 17 前提条件与配置 implementation requirements",
+          "PostgreSQL 17 为何需要 WAL 摘要机制 primary research limitations",
+          "PostgreSQL 17 为何需要 WAL 摘要机制 官方说明 适用条件",
+          "PostgreSQL 17 使用步骤与命令 官方说明 适用条件",
+          "PostgreSQL 17 使用步骤与命令 primary research limitations",
+          "PostgreSQL 17 pg_basebackup incremental backup WAL summarization official documentation",
+          "PostgreSQL 17 release notes block-level incremental backup pg_basebackup --incremental",
+          "PostgreSQL 17 前提条件与配置 官方说明 适用条件",
+          "PostgreSQL 17 前提条件与配置 primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-7039726e75a8087c",
+            "source_id": "",
+            "source_title": "PostgreSQL 17",
+            "evidence_id": "",
+            "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-7039726e75a8087c",
+            "source_id": "",
+            "source_title": "PostgreSQL 17",
+            "evidence_id": "",
+            "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "PostgreSQL 17",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+            "read_focus": "整理 PostgreSQL 17 增量备份的使用方法与前提条件，并附官方文档原文引用。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-05c9fdcb38326124",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-05c9fdcb38326124",
+            "column_label": "为何需要 WAL 摘要机制",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-22c978689a1649af",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-22c978689a1649af",
+            "column_label": "增量备份功能说明与版本引入",
+            "candidate_value": "块级增量备份使用 Postgres 17 引入的原生增量备份功能",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-79ab4aadd0731cb4",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-79ab4aadd0731cb4",
+            "column_label": "前提条件与配置",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-7039726e75a8087c:dim-23f44f4e3ded4855",
+            "row_id": "entity-7039726e75a8087c",
+            "branch_id": "branch-main",
+            "column_key": "dim-23f44f4e3ded4855",
+            "column_label": "使用步骤与命令",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "read_focus": "整理 PostgreSQL 17 增量备份的使用方法与前提条件，并附官方文档原文引用。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-05c9fdcb38326124",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-05c9fdcb38326124",
+          "column_label": "为何需要 WAL 摘要机制",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-22c978689a1649af",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-22c978689a1649af",
+          "column_label": "增量备份功能说明与版本引入",
+          "candidate_value": "块级增量备份使用 Postgres 17 引入的原生增量备份功能",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-79ab4aadd0731cb4",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-79ab4aadd0731cb4",
+          "column_label": "前提条件与配置",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-23f44f4e3ded4855",
+          "row_id": "entity-7039726e75a8087c",
+          "branch_id": "branch-main",
+          "column_key": "dim-23f44f4e3ded4855",
+          "column_label": "使用步骤与命令",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:23:08Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:24:28Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:25:05Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:96503b2376e4de6ade3b36474e1e879ab807490dab3106ac",
+          "window_id": "window-3",
+          "source_id": "web-540841b4a5b3701c",
+          "source_title": "Incremental Backup In PostgreSQL 17",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pgdash.io/blog/incremental-backup-in-postgresql-17.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 incremental backup",
+          "read_focus": "Read external URL Incremental Backup In PostgreSQL 17 for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The upcoming version of PostgreSQL, v17, is set to include an exciting new feature – incremental backups.",
+          "claim_text": "PostgreSQL 17 将引入增量备份这一新功能",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/ccb2554d-4ad8-438e-8693-c22e10cfa6ce/821648a36ead11df91ccc544517c500c57c8ced950547679d32f3ed6961cf143"
+        },
+        {
+          "evidence_id": "evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea",
+          "window_id": "window-2",
+          "source_id": "web-7d65260e2de65d94",
+          "source_title": "Backups — Barman 3.17.0 documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.pgbarman.org/release/3.17.0/user_guide/backup.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "PostgreSQL 17 release notes block-level incremental backup pg_basebackup --incremental",
+          "read_focus": "Read external URL Backups — Barman 3.17.0 documentation for claims that answer: PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。\n\nCurrent Table-as-State entity: PostgreSQL 17. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This type of backup uses the native incremental backup feature introduced in Postgres\n17.",
+          "claim_text": "块级增量备份使用 Postgres 17 引入的原生增量备份功能",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f53f8a1d-496e-4b65-bde7-609db88d8089/0ac5b9b8dc024071aca4132682de89addb338baceff10760ad3bf66591920dab"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-7039726e75a8087c:dim-22c978689a1649af",
+          "row_id": "entity-7039726e75a8087c",
+          "evidence_id": "evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea",
+          "source_id": "web-7d65260e2de65d94",
+          "source_title": "Backups — Barman 3.17.0 documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.pgbarman.org/release/3.17.0/user_guide/backup.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "4d1476d0-65c7-43f6-bdf7-c7737ef26d85",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "PostgreSQL 17 新增的增量备份怎么使用，需要什么前提？引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T12:22:05Z"
+      },
+      {
+        "trace_id": "4ec118a7-59bf-436f-8b72-82c60e796780",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4
+        },
+        "created_at": "2026-10-17T12:22:16Z"
+      },
+      {
+        "trace_id": "6212e3c5-9923-41ff-a8c3-b9b471a52c63",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
+        "payload": {},
+        "created_at": "2026-10-17T12:25:12Z"
+      }
+    ],
+    "created_at": "2026-10-17T12:22:05Z",
+    "updated_at": "2026-10-17T12:25:12Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:23:06Z",
+          "lease_epoch": 1,
+          "task_id": "78f82bcd-137d-43aa-9486-3ae20d70c25b",
+          "task_key": "planning:592e2cab-9c67-49aa-8562-d95ee2869731",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:23:33Z",
+          "lease_epoch": 1,
+          "task_id": "04fbb40e-c796-4f2c-b1b0-4d6934b50973",
+          "task_key": "deep-cell:c5082fc0a112f796bbd785a1b758945b",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:24:03Z",
+          "lease_epoch": 1,
+          "task_id": "ccb2554d-4ad8-438e-8693-c22e10cfa6ce",
+          "task_key": "deep-cell:4c4f5174c291e0978f82bb4e9279ab51",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:24:39Z",
+          "lease_epoch": 1,
+          "task_id": "76b41c65-e0c2-49f1-947e-fbd1ad90a5ab",
+          "task_key": "counterfactual:acf063e3f6c074989b46af1716607bc7",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:24:39Z",
+          "lease_epoch": 1,
+          "task_id": "7d4fb026-c2ef-4b2f-8cba-07245800e479",
+          "task_key": "counterfactual:17d0aebff817f1e0c7145dc8f68732d7",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:24:54Z",
+          "lease_epoch": 1,
+          "task_id": "bf7a6d09-6fdf-4e20-bd84-5e5e1231cd29",
+          "task_key": "counterfactual:c4f914de95aed761ed0986f02a2b8d2b",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:25:19Z",
+          "lease_epoch": 1,
+          "task_id": "f53f8a1d-496e-4b65-bde7-609db88d8089",
+          "task_key": "counterfactual:d558cb6099855c92111e19639a0cfb3d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:25:28Z",
+          "lease_epoch": 1,
+          "task_id": "43cd1757-331c-451c-8a82-3e8f3fe4baae",
+          "task_key": "counterfactual:291840258121007269d121568c061bba",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:26:03Z",
+          "lease_epoch": 1,
+          "task_id": "51f58d49-a878-40e8-a99b-ee8caf95f676",
+          "task_key": "counterfactual:dc6505828edbf52f0504544a43dd151d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:25:28Z",
+          "lease_epoch": 1,
+          "task_id": "8fb31c6b-b400-4953-a31d-c17059b1b2d9",
+          "task_key": "counterfactual:82db31d9b4407d812f94f4bf6efa5c5f",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:26:05Z",
+          "lease_epoch": 1,
+          "task_id": "16b3f847-cf6e-4ff0-a652-deb60e12c5d2",
+          "task_key": "synthesis:f58f270f4b98ed512cfde43bb647c4c7",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "5bcbe3e6-570f-46f3-8bcc-27e7673928bb",
+          "cell_key": "entity-7039726e75a8087c:dim-22c978689a1649af",
+          "task_id": "ccb2554d-4ad8-438e-8693-c22e10cfa6ce"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "fdbf7b3c-5b0c-414d-b6d5-79def7243b37",
+          "cell_key": "entity-7039726e75a8087c:dim-22c978689a1649af",
+          "task_id": "f53f8a1d-496e-4b65-bde7-609db88d8089"
+        }
+      ],
+      "candidate_count": 2,
+      "task_count": 11,
+      "merge_count": 2,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:af19c896144b1744730a3cdaf34cc7fe649db9e24ee29595da702646b8dc592b",
+          "candidate_id": "5bcbe3e6-570f-46f3-8bcc-27e7673928bb",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-7039726e75a8087c:dim-22c978689a1649af"
+        },
+        {
+          "merge_id": "merge:a7433ec64d4db17959e8349d4d632f020170d5fbabda9eb2a3b8234d9f638dd4",
+          "candidate_id": "fdbf7b3c-5b0c-414d-b6d5-79def7243b37",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-7039726e75a8087c:dim-22c978689a1649af"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 3,
+          "merge_high_water_mark": 1,
+          "candidate_high_water_mark": 1
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 7,
+          "merge_high_water_mark": 2,
+          "candidate_high_water_mark": 2
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 10,
+          "merge_high_water_mark": 2,
+          "candidate_high_water_mark": 2
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-7039726e75a8087c",
+            "label": "PostgreSQL 17"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-05c9fdcb38326124",
+            "label": "为何需要 WAL 摘要机制",
+            "description": "官方文档解释增量备份依赖 WAL 摘要（WAL summarization）记录变更数据页信息的原因与机制。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-22c978689a1649af",
+            "label": "增量备份功能说明与版本引入",
+            "description": "官方文档对 PostgreSQL 17 块级增量备份（block-level incremental backup）能力的定义与新增说明。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-23f44f4e3ded4855",
+            "label": "使用步骤与命令",
+            "description": "pg_basebackup 以增量模式执行备份的具体命令、参数（如 --incremental）及操作流程。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-79ab4aadd0731cb4",
+            "label": "前提条件与配置",
+            "description": "启用增量备份所需的前置条件，例如 WAL summarization 的开启及相关配置参数。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅覆盖 PostgreSQL 17 块级增量备份功能的使用与前提",
+          "objective": "整理 PostgreSQL 17 增量备份的使用方法与前提条件，并附官方文档原文引用。",
+          "exclusions": [
+            "其他版本或其他数据库的增量备份",
+            "第三方备份工具（如 pgBackRest）的增量备份方案"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown 研究报告 + 引用审计（exact quote、snapshot、URL）"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "postgresql.org"
+        ],
+        "perspectives": [
+          {
+            "name": "DBA / SRE（实施者）",
+            "questions": [
+              "执行增量备份的具体命令和步骤是什么？",
+              "需要开启哪些配置参数才能使用？"
+            ]
+          },
+          {
+            "name": "架构决策者",
+            "questions": [
+              "该功能依赖什么机制，有何限制？",
+              "什么条件下值得采用增量备份？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-05c9fdcb38326124",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "为何需要 WAL 摘要机制",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-22c978689a1649af",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "增量备份功能说明与版本引入",
+          "cell_status": "VERIFIED",
+          "candidate_value": "块级增量备份使用 Postgres 17 引入的原生增量备份功能",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:70c9b9de4df2602a0f3b87fd28c76b6c96d6ae2e036878ea",
+              "source_domain": "pgbarman.org",
+              "claim_text": "块级增量备份使用 Postgres 17 引入的原生增量备份功能"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-23f44f4e3ded4855",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "使用步骤与命令",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-7039726e75a8087c:dim-79ab4aadd0731cb4",
+          "entity_label": "PostgreSQL 17",
+          "column_label": "前提条件与配置",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 4 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-7039726e75a8087c:dim-05c9fdcb38326124",
+            "entity-7039726e75a8087c:dim-22c978689a1649af",
+            "entity-7039726e75a8087c:dim-23f44f4e3ded4855",
+            "entity-7039726e75a8087c:dim-79ab4aadd0731cb4"
+          ],
+          "strategy": "NARROW",
+          "query_count": 8,
+          "created_at": "2026-10-17T12:23:08Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-7039726e75a8087c:dim-05c9fdcb38326124",
+            "entity-7039726e75a8087c:dim-23f44f4e3ded4855",
+            "entity-7039726e75a8087c:dim-79ab4aadd0731cb4"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T12:24:28Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -1,0 +1,1816 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-grpc-graphql",
+  "run_id": "20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T11:46:01.148613+00:00",
+  "finished_at": "2026-10-17T11:49:22.475991+00:00",
+  "wall_seconds": 201.3,
+  "run_detail": {
+    "research_run_id": "20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "6f0d8ad6-5753-49bd-961a-75248603a05e",
+    "question": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+    "final_report_markdown": "# gRPC 与 GraphQL 的取舍比较：接口定义、传输协议与流式能力\n\n本次核验的资料显示，gRPC 以 .proto 文件定义服务并由 protoc 插件生成客户端与服务端代码，构建在 HTTP/2 之上，原生支持 unary、服务端流、客户端流和双向流四种方法类型；GraphQL 则以类型系统定义强类型 schema，订阅通常依赖有状态传输协议（首个基于 WebSocket 的订阅传输实现为 subscriptions-transport-ws），查询本身不支持 SELECT * 式的全字段选取。两者的取舍在于：gRPC 换来原生双向流式但流启动后无法负载均衡且难以调试，GraphQL 以灵活性统一多客户端与多后端系统，却很少能像定制端点那样优化。\n\n## 直接回答\n\n在接口定义上，gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码；GraphQL 服务则通过定义类型系统来提供强类型 schema，使工具能在执行前对查询做语法校验并保证响应可预期。 [evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1] [evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35] [evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf] [evidence:dc77e1d0f5ccdefb664860e027ea5abcf92603cd001fd581] [evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1] [evidence:334c1e9e4cf92367df8b8b4834dd44087fe1051708130448]\n\n在传输协议上，gRPC 基于 HTTP/2 传输构建，借助它获得原生双向流式能力和请求头中灵活的自定义元数据，其双向流映射到 HTTP/2 流，每个 channel 使用 0 个或多个 HTTP/2 连接且连接通常对并发流数量有限制；GraphQL 的订阅操作通常由有状态传输协议支持，因此实现与维护的投入高于查询和变更，而 subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现。 [evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c] [evidence:f6c848c86b1530ffb2c2ab4d089601ad24a89b671f1c92f6] [evidence:516d8c4a20b643928af31b04ddda4e79a90c95fed746c5ff] [evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4] [evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773] [evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453]\n\n在流式能力上，gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming；GraphQL 则是通过长连接请求进行增量数据更新，并以订阅操作承载这类需求，而订阅对传输协议的要求正是前述取舍所在。 [evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c] [evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4] [evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773]\n\n## 接口定义方式的差异\n\ngRPC 在普通的 proto 文件中定义服务，RPC 方法的参数与返回类型都指定为 protocol buffer 消息；配合 protoc 的专用 gRPC 插件，可以从 proto 文件生成 gRPC 客户端与服务端代码以及常规的 protocol buffer 代码。资料也指出 gRPC 与 Protobuf 配合得特别好，可借助特殊的 Protobuf 编译器插件直接从 .proto 文件生成相关 RPC 代码。 [evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1] [evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35] [evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf] [evidence:dc77e1d0f5ccdefb664860e027ea5abcf92603cd001fd581]\n\nGraphQL 侧的对应机制是类型系统：每个 GraphQL 服务都会定义类型系统，从而在执行前对查询做语法校验并保证响应可预期。用类型系统定义语言描述 schema 时，为简洁起见必须省略所有内建标量。此外，GraphQL 查询语言只允许声明式、显式地选择字段，没有 SELECT *，也没有选取某个类型全部字段的方式。 [evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1] [evidence:334c1e9e4cf92367df8b8b4834dd44087fe1051708130448] [evidence:5109d1b6291b15b87378cd8cfb1648979f0b669ccc9ab7f5]\n\n## 传输协议与流式能力的取舍\n\ngRPC 构建在 HTTP/2 传输之上，因此天然具备双向流式能力，并能在请求头中携带灵活的自定义元数据。其双向流映射到 HTTP/2 流；每个 gRPC channel 使用 0 个或多个 HTTP/2 连接，而每个连接通常对并发流数量设有上限。在此基础上，gRPC 区分四种服务方法类型：unary、server streaming、client streaming 与 bidirectional streaming。 [evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c] [evidence:f6c848c86b1530ffb2c2ab4d089601ad24a89b671f1c92f6] [evidence:516d8c4a20b643928af31b04ddda4e79a90c95fed746c5ff] [evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c]\n\nGraphQL 的流式能力走的是另一条路径：订阅操作通常由有状态传输协议支持，故实现与支撑成本高于查询和变更，但可用于通过长连接请求获得增量数据更新。在订阅传输的实现上，subscriptions-transport-ws 是 TypeScript 中首个基于 WebSocket 的 GraphQL 订阅传输实现。 [evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4] [evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773] [evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453]\n\n## 典型适用场景与代价\n\nGraphQL API 很少能像针对特定客户端需求定制的端点那样优化，资料将其描述为一项有意识的取舍：让 API 能处理不同用例，同时保持合理的开发体验。它的灵活性与统一数据源的能力使其适合多种使用模式，通常在客户端多、后端系统多或 UI 频繁变化时表现突出。 [evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c] [evidence:95c4852cd8593e8436e3765e99dd28ed77b4cb4d1f647ddd] [evidence:8576c77be08f9171b8745b421c1953341790a8b9493789e9]\n\ngRPC 的流式能力也有明确代价：流一旦启动便无法负载均衡，且流失败时难以调试，因此使用流应以其能为应用逻辑带来实质性的性能或简洁性收益为前提。 [evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341]\n\n## 对比表\n\n| 比较维度 | gRPC | GraphQL |\n| --- | --- | --- |\n| 接口定义 | 从 .proto 文件中的服务定义出发，由 protocol buffer 编译器插件生成客户端和服务端代码；与 Protobuf 配合良好 | 服务通过类型系统提供强类型 schema，可在执行前校验查询；描述 schema 时省略内建标量 [evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1] [evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35] [evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf] [evidence:dc77e1d0f5ccdefb664860e027ea5abcf92603cd001fd581] [evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1] [evidence:334c1e9e4cf92367df8b8b4834dd44087fe1051708130448] |\n| 传输协议 | 基于 HTTP/2 传输构建，双向流映射到 HTTP/2 流，channel 使用 0 个或多个 HTTP/2 连接 | 订阅通常由有状态传输协议支持；subscriptions-transport-ws 是首个基于 WebSocket 的订阅传输实现 [evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c] [evidence:f6c848c86b1530ffb2c2ab4d089601ad24a89b671f1c92f6] [evidence:516d8c4a20b643928af31b04ddda4e79a90c95fed746c5ff] [evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4] [evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453] |\n| 流式能力 | 支持 unary、server streaming、client streaming 和 bidirectional streaming 四种服务方法类型 | 可通过长连接请求做增量数据更新，订阅的实现与支撑成本高于查询和变更 [evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c] [evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4] [evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773] |\n| 取舍 | 流启动后无法负载均衡，流失败难以调试 | 很少能像定制端点那样优化（有意识的取舍）；适合客户端多、后端系统多或 UI 频繁变化的场景 [evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341] [evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c] [evidence:95c4852cd8593e8436e3765e99dd28ed77b4cb4d1f647ddd] [evidence:8576c77be08f9171b8745b421c1953341790a8b9493789e9] |\n\n## Citation audit\n\n### GraphQL · Streaming capabilities\n\n- Evidence: `evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4`\n- Exact quote: “Subscription operations are typically supported by a stateful transport protocol, so they will require more effort to implement and support than queries and mutations”\n- Snapshot: `research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df`\n- URL: https://graphql.org/learn/subscriptions/\n\n### GraphQL · Transport protocol\n\n- Evidence: `evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453`\n- Exact quote: “was the first implementation of a WebSocket-based GraphQL subscriptions transport in TypeScript”\n- Snapshot: `research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/ba7853004735d752e65ecdf9134ad4abe87e9e3c0c55063bd7e2e32092fb25f3`\n- URL: https://github.com/apollographql/subscriptions-transport-ws\n\n### GraphQL · Trade-offs and typical use cases\n\n- Evidence: `evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c`\n- Exact quote: “A GraphQL API will rarely be as optimized as an endpoint answering the need of a specific client. However, this was a conscious decision, to allow our API to handle different use cases while keeping a sane development experience.”\n- Snapshot: `research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/9993ebdb4848b5adb60dec25f83a8df7c936aa5778c1aa877ac5675fcf532fb0`\n- URL: https://medium.com/@xuorig/where-we-come-from-an-honest-introduction-to-graphql-4a2ef6124488\n\n### GraphQL · Interface definition / schema (IDL)\n\n- Evidence: `evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1`\n- Exact quote: “Every GraphQL service defines a type system, enabling tools to syntactically validate queries before execution and ensuring predictable responses.”\n- Snapshot: `research/external/a21ba1ab-9126-441f-8073-e04eb8c0de26/3b70146c383c0278d66f3c22c29e382529d1d38fa929f5e8b1332f0e29c21587`\n- URL: https://graphql.org/\n\n### gRPC · Streaming capabilities\n\n- Evidence: `evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c`\n- Exact quote: “gRPC supports four types of service methods: unary, server streaming, client streaming, and bidirectional streaming.”\n- Snapshot: `research/external/bb87562a-b7f3-4180-8460-e967a40af10e/27554d0063dca7cf63b60ae776bcdef97c96463c9d3874420dc44e260017fd57`\n- URL: https://buildwithfern.com/learn/api-definitions/grpc/services/streaming\n\n### gRPC · Transport protocol\n\n- Evidence: `evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c`\n- Exact quote: “The fact that gRPC is built on HTTP/2 transport brings us native bi-directional streaming capabilities and flexible custom-metadata in request headers.”\n- Snapshot: `research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/f07bf4b75fac5590182858d24ee40455446979a48cadb2bbe54aa088c317621c`\n- URL: https://grpc.io/about/\n\n### gRPC · Trade-offs and typical use cases\n\n- Evidence: `evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341`\n- Exact quote: “Streams, however, cannot be load balanced once they have started and can be hard to debug for stream failures.”\n- Snapshot: `research/external/87b3f023-9bd6-4472-ad50-8dfe35ea0463/46607db59c709c8c7a4600d6fc4d7049980d7cb9cffa764fdadabd33e403b433`\n- URL: https://grpc.io/docs/guides/performance/\n\n### gRPC · Interface definition / schema (IDL)\n\n- Evidence: `evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1`\n- Exact quote: “Starting from a service definition in a `.proto` file, gRPC provides protocol buffer compiler plugins that generate client- and server-side code.”\n- Snapshot: `research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/a2497e892c404bd42af3d037c933e99497af58c2a570b0ce502966130717b0c2`\n- URL: https://grpc.io/docs/what-is-grpc/core-concepts/\n\n### gRPC · Interface definition / schema (IDL)\n\n- Evidence: `evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35`\n- Exact quote: “gRPC uses `protoc` with a special gRPC plugin to generate code from your proto file: you get generated gRPC client and server code, as well as the regular protocol buffer code”\n- Snapshot: `research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/9ccaca51fa467db529fca21d47a2fd777402e29c9786df8ed4383221e5db3f79`\n- URL: https://grpc.io/docs/what-is-grpc/introduction/\n\n### gRPC · Interface definition / schema (IDL)\n\n- Evidence: `evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf`\n- Exact quote: “gRPC works particularly well with Protobuf and lets you generate the relevant RPC code directly from your `.proto` files using a special Protobuf compiler plugin.”\n- Snapshot: `research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/8cf2bf26b5baf7b000dc4cf10e2efa25fc165cbfadf29156afbf0cdbb9d923f8`\n- URL: https://protobuf.dev/programming-guides/proto3/\n\n## 补充引用\n\n- Evidence: `evidence:dc77e1d0f5ccdefb664860e027ea5abcf92603cd001fd581`\n  - Exact quote: “You define gRPC services in ordinary proto files, with RPC method parameters and return types specified as protocol buffer messages:”\n  - Snapshot: `research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/9ccaca51fa467db529fca21d47a2fd777402e29c9786df8ed4383221e5db3f79`\n  - URL: https://grpc.io/docs/what-is-grpc/introduction/\n- Evidence: `evidence:334c1e9e4cf92367df8b8b4834dd44087fe1051708130448`\n  - Exact quote: “When representing a GraphQL schema using the type system definition language, all built-in scalars must be omitted for brevity.”\n  - Snapshot: `research/external/a21ba1ab-9126-441f-8073-e04eb8c0de26/f6d145243a6cf542689ddcbdc24d7821ea90d9962d5fa5463a253e3125ebc8bb`\n  - URL: https://spec.graphql.org/October2021/\n- Evidence: `evidence:f6c848c86b1530ffb2c2ab4d089601ad24a89b671f1c92f6`\n  - Exact quote: “gRPC bidirectional streams are mapped to HTTP/2 streams.”\n  - Snapshot: `research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/eb4bb3ba901fa8416dad6a42423a1cec46050ff21ba419b61d075ddd41aeee59`\n  - URL: https://github.com/grpc/grpc/blob/master/CONCEPTS.md\n- Evidence: `evidence:516d8c4a20b643928af31b04ddda4e79a90c95fed746c5ff`\n  - Exact quote: “Each gRPC channel uses 0 or more HTTP/2 connections and each connection usually has a limit on the number of concurrent streams.”\n  - Snapshot: `research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/46607db59c709c8c7a4600d6fc4d7049980d7cb9cffa764fdadabd33e403b433`\n  - URL: https://grpc.io/docs/guides/performance/\n- Evidence: `evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773`\n  - Exact quote: “GraphQL subscription operations can be used for incremental data updates via long-lived requests”\n  - Snapshot: `research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df`\n  - URL: https://graphql.org/learn/subscriptions/\n- Evidence: `evidence:5109d1b6291b15b87378cd8cfb1648979f0b669ccc9ab7f5`\n  - Exact quote: “the GraphQL query language only allows selecting fields declaratively and explicitly. There is no `SELECT *` , no way of selecting all fields on a particular type”\n  - Snapshot: `research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/9993ebdb4848b5adb60dec25f83a8df7c936aa5778c1aa877ac5675fcf532fb0`\n  - URL: https://medium.com/@xuorig/where-we-come-from-an-honest-introduction-to-graphql-4a2ef6124488\n- Evidence: `evidence:95c4852cd8593e8436e3765e99dd28ed77b4cb4d1f647ddd`\n  - Exact quote: “GraphQL tends to shine when you have lots of clients, lots of backend systems, or a UI that changes frequently.”\n  - Snapshot: `research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/33a8e02283977196b2e9ca6d9bac6322d2a147e739587e95f11165c64b673cbf`\n  - URL: https://www.browserless.io/blog/what-is-graphql\n- Evidence: `evidence:8576c77be08f9171b8745b421c1953341790a8b9493789e9`\n  - Exact quote: “Its flexibility and ability to unify data sources makes it well- suited for a variety of different usage patterns.”\n  - Snapshot: `research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/a556894a012386ea9006e9bb731604d115505570214fb0ecd30ee7b10e7ad63b`\n  - URL: https://www.f5.com/resources/reports/the-role-and-impact-of-graphql-octo-report\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/20f11169-8b4b-4e6d-bed1-2f5fd534dc8b/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 16247,
+      "sha256": "eb05ddcc7608940b08cdba005d6ca1178156af132197e2a252a51c3c07ca0da7"
+    },
+    "research_artifact": {
+      "artifact_id": "20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/20f11169-8b4b-4e6d-bed1-2f5fd534dc8b/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 16247,
+        "sha256": "eb05ddcc7608940b08cdba005d6ca1178156af132197e2a252a51c3c07ca0da7"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Protocol Buffers language guide proto3 service definition rpc message types",
+          "gRPC interface definition protobuf IDL official documentation",
+          "gRPC core concepts HTTP/2 unary server client bidirectional streaming",
+          "GraphQL subscriptions transport WebSocket official documentation",
+          "GraphQL vs gRPC official documentation",
+          "gRPC streaming unary server client bidirectional streaming official documentation",
+          "gRPC GraphQL comparison",
+          "GraphQL subscriptions official documentation streaming",
+          "GraphQL schema type system specification",
+          "GraphQL schema SDL type system official graphql.org",
+          "gRPC HTTP/2 transport layer official docs grpc.io",
+          "gRPC Core concepts HTTP/2 framing official documentation",
+          "gRPC Trade-offs and typical use cases 官方说明 适用条件",
+          "gRPC Trade-offs and typical use cases primary research limitations",
+          "GraphQL Trade-offs and typical use cases 官方说明 适用条件",
+          "GraphQL Trade-offs and typical use cases primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-b389db1475dc52e4",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "gRPC",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+            "read_focus": "Compare gRPC and GraphQL on interface definition, transport protocol, streaming, and trade-offs, with exact quotes from official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-aed31c11881f20f3",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "GraphQL",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+            "read_focus": "Compare gRPC and GraphQL on interface definition, transport protocol, streaming, and trade-offs, with exact quotes from official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-aed31c11881f20f3:dim-6602a3b9663a8006",
+            "row_id": "entity-aed31c11881f20f3",
+            "branch_id": "branch-main",
+            "column_key": "dim-6602a3b9663a8006",
+            "column_label": "Streaming capabilities",
+            "candidate_value": "GraphQL 订阅操作通常由有状态传输协议支持",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00",
+            "row_id": "entity-b389db1475dc52e4",
+            "branch_id": "branch-main",
+            "column_key": "dim-9c4c3a13e4159e00",
+            "column_label": "Trade-offs and typical use cases",
+            "candidate_value": "流一旦启动便无法负载均衡且难以调试，只在能为应用逻辑带来实质性能或简洁性收益时才应使用",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-b389db1475dc52e4:dim-6602a3b9663a8006",
+            "row_id": "entity-b389db1475dc52e4",
+            "branch_id": "branch-main",
+            "column_key": "dim-6602a3b9663a8006",
+            "column_label": "Streaming capabilities",
+            "candidate_value": "gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+            "row_id": "entity-b389db1475dc52e4",
+            "branch_id": "branch-main",
+            "column_key": "dim-6b371260a960ac87",
+            "column_label": "Transport protocol",
+            "candidate_value": "gRPC 基于 HTTP/2 传输构建。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574",
+            "row_id": "entity-aed31c11881f20f3",
+            "branch_id": "branch-main",
+            "column_key": "dim-f0e6d3c0c81b2574",
+            "column_label": "Interface definition / schema (IDL)",
+            "candidate_value": "GraphQL 服务通过定义类型系统来提供强类型 schema",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+            "row_id": "entity-aed31c11881f20f3",
+            "branch_id": "branch-main",
+            "column_key": "dim-9c4c3a13e4159e00",
+            "column_label": "Trade-offs and typical use cases",
+            "candidate_value": "GraphQL API 很少能像针对特定客户端需求定制的端点那样优化，这是为兼顾多种用例和开发体验而做出的取舍",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+            "row_id": "entity-b389db1475dc52e4",
+            "branch_id": "branch-main",
+            "column_key": "dim-f0e6d3c0c81b2574",
+            "column_label": "Interface definition / schema (IDL)",
+            "candidate_value": "gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1",
+              "evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35",
+              "evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-aed31c11881f20f3:dim-6b371260a960ac87",
+            "row_id": "entity-aed31c11881f20f3",
+            "branch_id": "branch-main",
+            "column_key": "dim-6b371260a960ac87",
+            "column_label": "Transport protocol",
+            "candidate_value": "subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-b389db1475dc52e4",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+          "read_focus": "Compare gRPC and GraphQL on interface definition, transport protocol, streaming, and trade-offs, with exact quotes from official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-aed31c11881f20f3",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "GraphQL",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+          "read_focus": "Compare gRPC and GraphQL on interface definition, transport protocol, streaming, and trade-offs, with exact quotes from official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-6602a3b9663a8006",
+          "row_id": "entity-aed31c11881f20f3",
+          "branch_id": "branch-main",
+          "column_key": "dim-6602a3b9663a8006",
+          "column_label": "Streaming capabilities",
+          "candidate_value": "GraphQL 订阅操作通常由有状态传输协议支持",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00",
+          "row_id": "entity-b389db1475dc52e4",
+          "branch_id": "branch-main",
+          "column_key": "dim-9c4c3a13e4159e00",
+          "column_label": "Trade-offs and typical use cases",
+          "candidate_value": "流一旦启动便无法负载均衡且难以调试，只在能为应用逻辑带来实质性能或简洁性收益时才应使用",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-6602a3b9663a8006",
+          "row_id": "entity-b389db1475dc52e4",
+          "branch_id": "branch-main",
+          "column_key": "dim-6602a3b9663a8006",
+          "column_label": "Streaming capabilities",
+          "candidate_value": "gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+          "row_id": "entity-b389db1475dc52e4",
+          "branch_id": "branch-main",
+          "column_key": "dim-6b371260a960ac87",
+          "column_label": "Transport protocol",
+          "candidate_value": "gRPC 基于 HTTP/2 传输构建。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-aed31c11881f20f3",
+          "branch_id": "branch-main",
+          "column_key": "dim-f0e6d3c0c81b2574",
+          "column_label": "Interface definition / schema (IDL)",
+          "candidate_value": "GraphQL 服务通过定义类型系统来提供强类型 schema",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+          "row_id": "entity-aed31c11881f20f3",
+          "branch_id": "branch-main",
+          "column_key": "dim-9c4c3a13e4159e00",
+          "column_label": "Trade-offs and typical use cases",
+          "candidate_value": "GraphQL API 很少能像针对特定客户端需求定制的端点那样优化，这是为兼顾多种用例和开发体验而做出的取舍",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-b389db1475dc52e4",
+          "branch_id": "branch-main",
+          "column_key": "dim-f0e6d3c0c81b2574",
+          "column_label": "Interface definition / schema (IDL)",
+          "candidate_value": "gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1",
+            "evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35",
+            "evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-6b371260a960ac87",
+          "row_id": "entity-aed31c11881f20f3",
+          "branch_id": "branch-main",
+          "column_key": "dim-6b371260a960ac87",
+          "column_label": "Transport protocol",
+          "candidate_value": "subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:48:17Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1",
+          "window_id": "window-2",
+          "source_id": "web-378333d1a78bc8e8",
+          "source_title": "Core concepts, architecture and lifecycle",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/what-is-grpc/core-concepts/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC interface definition protobuf IDL official documentation",
+          "read_focus": "Read external URL Core concepts, architecture and lifecycle for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Starting from a service definition in a `.proto` file, gRPC provides protocol buffer compiler plugins that generate client- and server-side code.",
+          "claim_text": "gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/a2497e892c404bd42af3d037c933e99497af58c2a570b0ce502966130717b0c2"
+        },
+        {
+          "evidence_id": "evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35",
+          "window_id": "window-1",
+          "source_id": "web-2578c30275839cde",
+          "source_title": "Introduction to gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/what-is-grpc/introduction/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Protocol Buffers language guide proto3 service definition rpc message types",
+          "read_focus": "Read external URL Introduction to gRPC for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "gRPC uses `protoc` with a special gRPC plugin to generate code from your proto file: you get generated gRPC client and server code, as well as the regular protocol buffer code",
+          "claim_text": "gRPC 使用 protoc 加专用 gRPC 插件，从 proto 文件生成 gRPC 客户端和服务端代码以及常规 protocol buffer 代码",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/9ccaca51fa467db529fca21d47a2fd777402e29c9786df8ed4383221e5db3f79"
+        },
+        {
+          "evidence_id": "evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf",
+          "window_id": "window-5",
+          "source_id": "web-8ef76b879289311a",
+          "source_title": "Language Guide (proto 3) | Protocol Buffers Documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://protobuf.dev/programming-guides/proto3/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Protocol Buffers language guide proto3 service definition rpc message types",
+          "read_focus": "Read external URL Language Guide (proto 3) | Protocol Buffers Documentation for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "gRPC works particularly well with Protobuf and lets you generate the relevant RPC code directly from your `.proto` files using a special Protobuf compiler plugin.",
+          "claim_text": "gRPC 与 Protobuf 配合良好，可通过专用 Protobuf 编译器插件直接从 .proto 文件生成 RPC 代码",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.93,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/8cf2bf26b5baf7b000dc4cf10e2efa25fc165cbfadf29156afbf0cdbb9d923f8"
+        },
+        {
+          "evidence_id": "evidence:dc77e1d0f5ccdefb664860e027ea5abcf92603cd001fd581",
+          "window_id": "window-1",
+          "source_id": "web-2578c30275839cde",
+          "source_title": "Introduction to gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/what-is-grpc/introduction/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Protocol Buffers language guide proto3 service definition rpc message types",
+          "read_focus": "Read external URL Introduction to gRPC for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "You define gRPC services in ordinary proto files, with RPC method parameters and return types specified as protocol buffer messages:",
+          "claim_text": "gRPC 服务定义在普通 proto 文件中，RPC 方法的参数和返回类型都指定为 protocol buffer 消息",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.97,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/0b393946-05eb-42bd-b0ed-acb92b33cc5c/9ccaca51fa467db529fca21d47a2fd777402e29c9786df8ed4383221e5db3f79"
+        },
+        {
+          "evidence_id": "evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453",
+          "window_id": "window-2",
+          "source_id": "web-f711a690b2d4d905",
+          "source_title": "apollographql/subscriptions-transport-ws ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/apollographql/subscriptions-transport-ws",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL apollographql/subscriptions-transport-ws ... for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "was the first implementation of a WebSocket-based GraphQL subscriptions transport in TypeScript",
+          "claim_text": "subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/ba7853004735d752e65ecdf9134ad4abe87e9e3c0c55063bd7e2e32092fb25f3"
+        },
+        {
+          "evidence_id": "evidence:b3ca5ee2384e0629ab7378ab75bcddae4538f4d20dee8496",
+          "window_id": "window-3",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In practice, a GraphQL API that supports subscriptions will call for a more complicated architecture than one that only exposes query and mutation fields.",
+          "claim_text": "GraphQL 订阅适合频繁且增量变化、需近实时推送给客户端的数据，但会要求比查询和变更更复杂的架构。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df"
+        },
+        {
+          "evidence_id": "evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4",
+          "window_id": "window-3",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Subscription operations are typically supported by a stateful transport protocol, so they will require more effort to implement and support than queries and mutations",
+          "claim_text": "GraphQL 订阅操作通常由有状态传输协议支持",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df"
+        },
+        {
+          "evidence_id": "evidence:18cbb1d0fbb6069c8fc257a479560ca061a45de320ea7e29",
+          "window_id": "window-3",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Subscription operations are typically supported by a stateful transport protocol, so they will require more effort to implement and support than queries and mutations",
+          "claim_text": "GraphQL 订阅依赖有状态传输协议，因此实现和支持成本高于查询与变更。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df"
+        },
+        {
+          "evidence_id": "evidence:7d78391db0fc2f7b9ed6054496925dd0f304b1c26b75b16c",
+          "window_id": "window-4",
+          "source_id": "web-7688326188f9f2e5",
+          "source_title": "Subscriptions - Apollo GraphQL Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.apollographql.com/docs/react/data/subscriptions",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions - Apollo GraphQL Docs for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "import { GraphQLWsLink } from \"@apollo/client/link/subscriptions\";",
+          "claim_text": "Apollo 的 GraphQLWsLink 使用 graphql-ws 客户端通过 WebSocket URL 连接订阅服务",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/0c5e0f59ca45b48b9375440b678261c270cc582051b194c15d64878524d31b3c"
+        },
+        {
+          "evidence_id": "evidence:33306e0a47ff49681b9e40374ca51594ef24225a52d1f773",
+          "window_id": "window-3",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "GraphQL subscription operations can be used for incremental data updates via long-lived requests",
+          "claim_text": "GraphQL 订阅操作通过长生命周期请求实现增量数据更新",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df"
+        },
+        {
+          "evidence_id": "evidence:2bbca0ffb281a2759539818d67af304e2c1e8085155433b7",
+          "window_id": "window-3",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL subscriptions transport WebSocket official documentation",
+          "read_focus": "Read external URL Subscriptions for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For data with less frequent updates, periodic polling, mobile push notifications, or re-fetching queries based on user interaction may be the better solutions for keeping a client UI up to date.",
+          "claim_text": "对更新不频繁的数据，GraphQL 官方建议改用轮询、推送通知或按用户交互重新查询，而非订阅。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/83c9c028-7e5e-4a19-b912-644da7bade7b/a45df4a62f6c012e435cd029cecaf20bfdfc696eeb99c5d29391a3b1fa7757df"
+        },
+        {
+          "evidence_id": "evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c",
+          "window_id": "window-3",
+          "source_id": "web-b7374927503176c5",
+          "source_title": "Streaming | Fern Documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://buildwithfern.com/learn/api-definitions/grpc/services/streaming",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC streaming unary server client bidirectional streaming official documentation",
+          "read_focus": "Read external URL Streaming | Fern Documentation for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "gRPC supports four types of service methods: unary, server streaming, client streaming, and bidirectional streaming.",
+          "claim_text": "gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/bb87562a-b7f3-4180-8460-e967a40af10e/27554d0063dca7cf63b60ae776bcdef97c96463c9d3874420dc44e260017fd57"
+        },
+        {
+          "evidence_id": "evidence:334c1e9e4cf92367df8b8b4834dd44087fe1051708130448",
+          "window_id": "window-2",
+          "source_id": "web-d5c27bd0ee12a6d7",
+          "source_title": "GraphQL Specification",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://spec.graphql.org/October2021/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL schema type system specification",
+          "read_focus": "Read external URL GraphQL Specification for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "When representing a GraphQL schema using the type system definition language, all built-in scalars must be omitted for brevity.",
+          "claim_text": "可用类型系统定义语言（SDL）表示 GraphQL schema",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a21ba1ab-9126-441f-8073-e04eb8c0de26/f6d145243a6cf542689ddcbdc24d7821ea90d9962d5fa5463a253e3125ebc8bb"
+        },
+        {
+          "evidence_id": "evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1",
+          "window_id": "window-3",
+          "source_id": "web-5e3893c90e60321d",
+          "source_title": "GraphQL | The API language for humans and agents",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL schema SDL type system official graphql.org",
+          "read_focus": "Read external URL GraphQL | The API language for humans and agents for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Every GraphQL service defines a type system, enabling tools to syntactically validate queries before execution and ensuring predictable responses.",
+          "claim_text": "GraphQL 服务通过定义类型系统来提供强类型 schema",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a21ba1ab-9126-441f-8073-e04eb8c0de26/3b70146c383c0278d66f3c22c29e382529d1d38fa929f5e8b1332f0e29c21587"
+        },
+        {
+          "evidence_id": "evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c",
+          "window_id": "window-4",
+          "source_id": "web-2a4fc807c2d384a7",
+          "source_title": "About gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/about/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC HTTP/2 transport layer official docs grpc.io",
+          "read_focus": "Read external URL About gRPC for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The fact that gRPC is built on HTTP/2 transport brings us native bi-directional streaming capabilities and flexible custom-metadata in request headers.",
+          "claim_text": "gRPC 基于 HTTP/2 传输构建。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/f07bf4b75fac5590182858d24ee40455446979a48cadb2bbe54aa088c317621c"
+        },
+        {
+          "evidence_id": "evidence:f6c848c86b1530ffb2c2ab4d089601ad24a89b671f1c92f6",
+          "window_id": "window-2",
+          "source_id": "web-12763e5c9b7dabce",
+          "source_title": "grpc/CONCEPTS.md at master",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/grpc/grpc/blob/master/CONCEPTS.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC Core concepts HTTP/2 framing official documentation",
+          "read_focus": "Read external URL grpc/CONCEPTS.md at master for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "gRPC bidirectional streams are mapped to HTTP/2 streams.",
+          "claim_text": "gRPC 的双向流映射到 HTTP/2 流。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/eb4bb3ba901fa8416dad6a42423a1cec46050ff21ba419b61d075ddd41aeee59"
+        },
+        {
+          "evidence_id": "evidence:516d8c4a20b643928af31b04ddda4e79a90c95fed746c5ff",
+          "window_id": "window-5",
+          "source_id": "web-f91292bc3142f46f",
+          "source_title": "Performance Best Practices",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/guides/performance/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC HTTP/2 transport layer official docs grpc.io",
+          "read_focus": "Read external URL Performance Best Practices for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Each gRPC channel uses 0 or more HTTP/2 connections and each connection usually has a limit on the number of concurrent streams.",
+          "claim_text": "每个 gRPC 通道使用 0 个或多个 HTTP/2 连接。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/fc53d5aa-c8b9-48f5-bcd4-c1ed73149720/46607db59c709c8c7a4600d6fc4d7049980d7cb9cffa764fdadabd33e403b433"
+        },
+        {
+          "evidence_id": "evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341",
+          "window_id": "window-1",
+          "source_id": "web-f91292bc3142f46f",
+          "source_title": "Performance Best Practices",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/guides/performance/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "gRPC Trade-offs and typical use cases 官方说明 适用条件",
+          "read_focus": "Read external URL Performance Best Practices for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: gRPC. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Streams, however, cannot be load balanced once they have started and can be hard to debug for stream failures.",
+          "claim_text": "流一旦启动便无法负载均衡且难以调试，只在能为应用逻辑带来实质性能或简洁性收益时才应使用",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/87b3f023-9bd6-4472-ad50-8dfe35ea0463/46607db59c709c8c7a4600d6fc4d7049980d7cb9cffa764fdadabd33e403b433"
+        },
+        {
+          "evidence_id": "evidence:5109d1b6291b15b87378cd8cfb1648979f0b669ccc9ab7f5",
+          "window_id": "window-3",
+          "source_id": "web-db0f77fafc93c15a",
+          "source_title": "Where we Come From: An Honest Introduction to GraphQL",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@xuorig/where-we-come-from-an-honest-introduction-to-graphql-4a2ef6124488",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL Trade-offs and typical use cases 官方说明 适用条件",
+          "read_focus": "Read external URL Where we Come From: An Honest Introduction to GraphQL for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "the GraphQL query language only allows selecting fields declaratively and explicitly. There is no `SELECT *` , no way of selecting all fields on a particular type",
+          "claim_text": "GraphQL 只允许声明式、显式地选择字段，没有 SELECT *，使服务端可新增字段和用例而不影响现有客户端",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/9993ebdb4848b5adb60dec25f83a8df7c936aa5778c1aa877ac5675fcf532fb0"
+        },
+        {
+          "evidence_id": "evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c",
+          "window_id": "window-3",
+          "source_id": "web-db0f77fafc93c15a",
+          "source_title": "Where we Come From: An Honest Introduction to GraphQL",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@xuorig/where-we-come-from-an-honest-introduction-to-graphql-4a2ef6124488",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL Trade-offs and typical use cases 官方说明 适用条件",
+          "read_focus": "Read external URL Where we Come From: An Honest Introduction to GraphQL for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "A GraphQL API will rarely be as optimized as an endpoint answering the need of a specific client. However, this was a conscious decision, to allow our API to handle different use cases while keeping a sane development experience.",
+          "claim_text": "GraphQL API 很少能像针对特定客户端需求定制的端点那样优化，这是为兼顾多种用例和开发体验而做出的取舍",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/9993ebdb4848b5adb60dec25f83a8df7c936aa5778c1aa877ac5675fcf532fb0"
+        },
+        {
+          "evidence_id": "evidence:95c4852cd8593e8436e3765e99dd28ed77b4cb4d1f647ddd",
+          "window_id": "window-2",
+          "source_id": "web-bab8ffbceb1bf6b5",
+          "source_title": "What Is GraphQL Used For? The API Query Language ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.browserless.io/blog/what-is-graphql",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL Trade-offs and typical use cases 官方说明 适用条件",
+          "read_focus": "Read external URL What Is GraphQL Used For? The API Query Language ... for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "GraphQL tends to shine when you have lots of clients, lots of backend systems, or a UI that changes frequently.",
+          "claim_text": "GraphQL 在客户端多、后端系统多或 UI 频繁变化时表现突出",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/33a8e02283977196b2e9ca6d9bac6322d2a147e739587e95f11165c64b673cbf"
+        },
+        {
+          "evidence_id": "evidence:8576c77be08f9171b8745b421c1953341790a8b9493789e9",
+          "window_id": "window-1",
+          "source_id": "web-15d611f2e51951f1",
+          "source_title": "The Role and Impact of GraphQL",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.f5.com/resources/reports/the-role-and-impact-of-graphql-octo-report",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "GraphQL Trade-offs and typical use cases 官方说明 适用条件",
+          "read_focus": "Read external URL The Role and Impact of GraphQL for claims that answer: 比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。\n\nCurrent Table-as-State entity: GraphQL. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Its flexibility and ability to unify data sources makes it well- suited for a variety of different usage patterns.",
+          "claim_text": "GraphQL 的灵活性和统一数据源的能力使其适合多种使用模式，如构建高效 API、数据获取与操作、实时用例、微服务和 BFF",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/830d4d33-8b15-47f6-ac6f-a49ad74e1698/a556894a012386ea9006e9bb731604d115505570214fb0ecd30ee7b10e7ad63b"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1",
+          "source_id": "web-378333d1a78bc8e8",
+          "source_title": "Core concepts, architecture and lifecycle",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/what-is-grpc/core-concepts/"
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35",
+          "source_id": "web-2578c30275839cde",
+          "source_title": "Introduction to gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/what-is-grpc/introduction/"
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf",
+          "source_id": "web-8ef76b879289311a",
+          "source_title": "Language Guide (proto 3) | Protocol Buffers Documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://protobuf.dev/programming-guides/proto3/"
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-6b371260a960ac87",
+          "row_id": "entity-aed31c11881f20f3",
+          "evidence_id": "evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453",
+          "source_id": "web-f711a690b2d4d905",
+          "source_title": "apollographql/subscriptions-transport-ws ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/apollographql/subscriptions-transport-ws"
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-6602a3b9663a8006",
+          "row_id": "entity-aed31c11881f20f3",
+          "evidence_id": "evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4",
+          "source_id": "web-8b5ce482632dd7a3",
+          "source_title": "Subscriptions",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/learn/subscriptions/"
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-6602a3b9663a8006",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c",
+          "source_id": "web-b7374927503176c5",
+          "source_title": "Streaming | Fern Documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://buildwithfern.com/learn/api-definitions/grpc/services/streaming"
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574",
+          "row_id": "entity-aed31c11881f20f3",
+          "evidence_id": "evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1",
+          "source_id": "web-5e3893c90e60321d",
+          "source_title": "GraphQL | The API language for humans and agents",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://graphql.org/"
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c",
+          "source_id": "web-2a4fc807c2d384a7",
+          "source_title": "About gRPC",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/about/"
+        },
+        {
+          "cell_id": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00",
+          "row_id": "entity-b389db1475dc52e4",
+          "evidence_id": "evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341",
+          "source_id": "web-f91292bc3142f46f",
+          "source_title": "Performance Best Practices",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://grpc.io/docs/guides/performance/"
+        },
+        {
+          "cell_id": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+          "row_id": "entity-aed31c11881f20f3",
+          "evidence_id": "evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c",
+          "source_id": "web-db0f77fafc93c15a",
+          "source_title": "Where we Come From: An Honest Introduction to GraphQL",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://medium.com/@xuorig/where-we-come-from-an-honest-introduction-to-graphql-4a2ef6124488"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "3a0048a1-2051-48b2-a317-e562455414c5",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T11:46:01Z"
+      },
+      {
+        "trace_id": "8e50a208-0465-4bae-9079-7fdf9fdafe81",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4
+        },
+        "created_at": "2026-10-17T11:46:13Z"
+      },
+      {
+        "trace_id": "71a3392c-b425-4931-9aa2-d5d2fb470d17",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：比较 gRPC 与 GraphQL 在接口定义、传输协议和流式能力上的取舍，引用官方文档。",
+        "payload": {
+          "cell_count": 8
+        },
+        "created_at": "2026-10-17T11:49:21Z"
+      }
+    ],
+    "created_at": "2026-10-17T11:46:01Z",
+    "updated_at": "2026-10-17T11:49:21Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:47:02Z",
+          "lease_epoch": 1,
+          "task_id": "8c2669fa-2e7e-48f9-8c34-b468270d2006",
+          "task_key": "planning:20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:47:45Z",
+          "lease_epoch": 1,
+          "task_id": "0b393946-05eb-42bd-b0ed-acb92b33cc5c",
+          "task_key": "deep-cell:40236bfa0de14187acee09d6839294b1",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:48:00Z",
+          "lease_epoch": 1,
+          "task_id": "83c9c028-7e5e-4a19-b912-644da7bade7b",
+          "task_key": "deep-cell:8bd0da4f487e02f51b839142f4541af6",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:49:13Z",
+          "lease_epoch": 1,
+          "task_id": "a21ba1ab-9126-441f-8073-e04eb8c0de26",
+          "task_key": "deep-cell:2450088893df92ab44b189064c3aa8b0",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:48:40Z",
+          "lease_epoch": 1,
+          "task_id": "bb87562a-b7f3-4180-8460-e967a40af10e",
+          "task_key": "deep-cell:54873118b1a6368ffdb2a0d8ce675c20",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:50:03Z",
+          "lease_epoch": 1,
+          "task_id": "830d4d33-8b15-47f6-ac6f-a49ad74e1698",
+          "task_key": "counterfactual:759e28647392fb7a37289e2c63792396",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:49:48Z",
+          "lease_epoch": 1,
+          "task_id": "87b3f023-9bd6-4472-ad50-8dfe35ea0463",
+          "task_key": "counterfactual:ad988bc75d60f6af607ec444bd5bdb47",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:49:48Z",
+          "lease_epoch": 1,
+          "task_id": "fc53d5aa-c8b9-48f5-bcd4-c1ed73149720",
+          "task_key": "counterfactual:4d7beb28a96a1c2dee4357f05f67e65b",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:50:07Z",
+          "lease_epoch": 1,
+          "task_id": "075cd976-5ee4-4dca-b7c0-eaaf979c9335",
+          "task_key": "synthesis:00b7fb49b52045cd10cef09609203c19",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "04f2ca02-f324-4c01-a543-a1c00b530adf",
+          "cell_key": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "task_id": "0b393946-05eb-42bd-b0ed-acb92b33cc5c"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "824a4687-08f0-4129-ac09-eb29fe3eb64a",
+          "cell_key": "entity-aed31c11881f20f3:dim-6b371260a960ac87",
+          "task_id": "83c9c028-7e5e-4a19-b912-644da7bade7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "91b45f58-439b-4aef-adc7-dec4c44272b0",
+          "cell_key": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+          "task_id": "83c9c028-7e5e-4a19-b912-644da7bade7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "f11746a2-11dd-4dac-960e-3fbc28550f8d",
+          "cell_key": "entity-aed31c11881f20f3:dim-6602a3b9663a8006",
+          "task_id": "83c9c028-7e5e-4a19-b912-644da7bade7b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "50d7c0eb-d47f-4eaa-bb83-326fdd843d60",
+          "cell_key": "entity-b389db1475dc52e4:dim-6602a3b9663a8006",
+          "task_id": "bb87562a-b7f3-4180-8460-e967a40af10e"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "b1c9d60f-b358-4dd8-a082-542c975f782d",
+          "cell_key": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574",
+          "task_id": "a21ba1ab-9126-441f-8073-e04eb8c0de26"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "c90732fe-a758-42c7-926a-6e669d931e3b",
+          "cell_key": "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+          "task_id": "fc53d5aa-c8b9-48f5-bcd4-c1ed73149720"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "05093d0c-d81d-43af-aa80-ea8410be3aed",
+          "cell_key": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00",
+          "task_id": "87b3f023-9bd6-4472-ad50-8dfe35ea0463"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "32ccb127-0350-459a-810f-32cf2243724d",
+          "cell_key": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+          "task_id": "830d4d33-8b15-47f6-ac6f-a49ad74e1698"
+        }
+      ],
+      "candidate_count": 9,
+      "task_count": 9,
+      "merge_count": 9,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:9bca3cb5d0cea2636944bc1a67214b79eb9785f8d2e61ad7c652343c5fb46533",
+          "candidate_id": "04f2ca02-f324-4c01-a543-a1c00b530adf",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574"
+        },
+        {
+          "merge_id": "merge:a33a762980219f85f6227d08269661488eed9c98693809bb7d8c6fc185346634",
+          "candidate_id": "824a4687-08f0-4129-ac09-eb29fe3eb64a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aed31c11881f20f3:dim-6b371260a960ac87"
+        },
+        {
+          "merge_id": "merge:8958776c0091a82aa591d2f60915e7c29b45669de3c41adb341022e767967b74",
+          "candidate_id": "91b45f58-439b-4aef-adc7-dec4c44272b0",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00"
+        },
+        {
+          "merge_id": "merge:0d7106a3cb5394a791b47968950d0de0a5db61b2c1263c4d5e43ef935d4de5bd",
+          "candidate_id": "f11746a2-11dd-4dac-960e-3fbc28550f8d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aed31c11881f20f3:dim-6602a3b9663a8006"
+        },
+        {
+          "merge_id": "merge:39c84234ee2e892f3493b2214264c38325454166cddfe164466d3688cb747b85",
+          "candidate_id": "50d7c0eb-d47f-4eaa-bb83-326fdd843d60",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b389db1475dc52e4:dim-6602a3b9663a8006"
+        },
+        {
+          "merge_id": "merge:ceb1b881599320014a7292487f7bbf85e054402ff4fe24661a7825319c17bc0c",
+          "candidate_id": "b1c9d60f-b358-4dd8-a082-542c975f782d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574"
+        },
+        {
+          "merge_id": "merge:db0ac541a9cb0719a39e32d4ab783b8e9f9881de25a43c7a0bb701e4cbf8a635",
+          "candidate_id": "c90732fe-a758-42c7-926a-6e669d931e3b",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b389db1475dc52e4:dim-6b371260a960ac87"
+        },
+        {
+          "merge_id": "merge:41ff7b10e793e5463f139c1ca04ae9f06ee3db7bcdf334620b3c76c4941248e0",
+          "candidate_id": "05093d0c-d81d-43af-aa80-ea8410be3aed",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00"
+        },
+        {
+          "merge_id": "merge:172f7b2b762caf6815c591616e4a93d7563f4ed7668fcbb85cfa096a6ff246ee",
+          "candidate_id": "32ccb127-0350-459a-810f-32cf2243724d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 6,
+          "candidate_high_water_mark": 6
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-aed31c11881f20f3",
+            "label": "GraphQL"
+          },
+          {
+            "entity_key": "entity-b389db1475dc52e4",
+            "label": "gRPC"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-6602a3b9663a8006",
+            "label": "Streaming capabilities",
+            "description": "What streaming modes (unary, server, client, bidirectional) or subscription mechanisms each supports according to official sources.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-6b371260a960ac87",
+            "label": "Transport protocol",
+            "description": "Which underlying transport/network protocols each technology runs over (e.g., HTTP/2, HTTP, WebSocket) per official docs.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-9c4c3a13e4159e00",
+            "label": "Trade-offs and typical use cases",
+            "description": "The stated trade-offs (coupling, efficiency, flexibility) and recommended use cases each technology implies, per official documentation.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-f0e6d3c0c81b2574",
+            "label": "Interface definition / schema (IDL)",
+            "description": "How each technology defines its interface and schema (IDL used, typing, code generation), per official documentation.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Official gRPC and GraphQL documentation and specifications only.",
+          "objective": "Compare gRPC and GraphQL on interface definition, transport protocol, streaming, and trade-offs, with exact quotes from official documentation.",
+          "exclusions": [
+            "Unofficial blogs and community forums as primary evidence",
+            "Performance benchmarks without official sourcing"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with per-cell exact quotes, snapshot and URL, plus citation audit and noted evidence gaps."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "grpc.io",
+          "graphql.org",
+          "github.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "What IDL and transport must I adopt for each?",
+              "Which streaming modes can I build?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "What trade-offs affect architecture and use case fit?",
+              "Which fits service-to-service vs client-driven data needs?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-aed31c11881f20f3:dim-6602a3b9663a8006",
+          "entity_label": "GraphQL",
+          "column_label": "Streaming capabilities",
+          "cell_status": "VERIFIED",
+          "candidate_value": "GraphQL 订阅操作通常由有状态传输协议支持",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4d12019feaefe3c1ab23e5fde9768538954505a6c1ee29e4",
+              "source_domain": "graphql.org",
+              "claim_text": "GraphQL 订阅操作通常由有状态传输协议支持"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-aed31c11881f20f3:dim-6b371260a960ac87",
+          "entity_label": "GraphQL",
+          "column_label": "Transport protocol",
+          "cell_status": "VERIFIED",
+          "candidate_value": "subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ad7470521df80aaed3d3dbf221d6c4742ea74975c6d60453",
+              "source_domain": "github.com",
+              "claim_text": "subscriptions-transport-ws 是首个基于 WebSocket 的 GraphQL 订阅传输实现"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+          "entity_label": "GraphQL",
+          "column_label": "Trade-offs and typical use cases",
+          "cell_status": "VERIFIED",
+          "candidate_value": "GraphQL API 很少能像针对特定客户端需求定制的端点那样优化，这是为兼顾多种用例和开发体验而做出的取舍",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3b21b20d1206443d914c4e187830a33e4bc3cdc40166742c",
+              "source_domain": "medium.com",
+              "claim_text": "GraphQL API 很少能像针对特定客户端需求定制的端点那样优化，这是为兼顾多种用例和开发体验而做出的取舍"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-aed31c11881f20f3:dim-f0e6d3c0c81b2574",
+          "entity_label": "GraphQL",
+          "column_label": "Interface definition / schema (IDL)",
+          "cell_status": "VERIFIED",
+          "candidate_value": "GraphQL 服务通过定义类型系统来提供强类型 schema",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0f08322ec6b3fc9b04670771bd67951bf1dc70c44c70ffb1",
+              "source_domain": "graphql.org",
+              "claim_text": "GraphQL 服务通过定义类型系统来提供强类型 schema"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b389db1475dc52e4:dim-6602a3b9663a8006",
+          "entity_label": "gRPC",
+          "column_label": "Streaming capabilities",
+          "cell_status": "VERIFIED",
+          "candidate_value": "gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:eb23270bf1280295a88296fce31f6b35dfa3028d5d86cf7c",
+              "source_domain": "buildwithfern.com",
+              "claim_text": "gRPC 支持四种服务方法类型：unary、server streaming、client streaming 和 bidirectional streaming。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+          "entity_label": "gRPC",
+          "column_label": "Transport protocol",
+          "cell_status": "VERIFIED",
+          "candidate_value": "gRPC 基于 HTTP/2 传输构建。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0792637f2d61d5cd2fa18de949377daf0d49a232d825b45c",
+              "source_domain": "grpc.io",
+              "claim_text": "gRPC 基于 HTTP/2 传输构建。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00",
+          "entity_label": "gRPC",
+          "column_label": "Trade-offs and typical use cases",
+          "cell_status": "VERIFIED",
+          "candidate_value": "流一旦启动便无法负载均衡且难以调试，只在能为应用逻辑带来实质性能或简洁性收益时才应使用",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b92f39e63e2d85f41d59d5a272c03df0ea2d4823c05c9341",
+              "source_domain": "grpc.io",
+              "claim_text": "流一旦启动便无法负载均衡且难以调试，只在能为应用逻辑带来实质性能或简洁性收益时才应使用"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b389db1475dc52e4:dim-f0e6d3c0c81b2574",
+          "entity_label": "gRPC",
+          "column_label": "Interface definition / schema (IDL)",
+          "cell_status": "VERIFIED",
+          "candidate_value": "gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:14155b6f5596f9c8942a24e85fa28981f8aadcd962becaf1",
+              "source_domain": "grpc.io",
+              "claim_text": "gRPC 从 .proto 文件中的服务定义出发，提供 protocol buffer 编译器插件来生成客户端和服务端代码"
+            },
+            {
+              "evidence_key": "evidence:271db34b707516d1ac4a6719a0605b622da9557f6ced7d35",
+              "source_domain": "grpc.io",
+              "claim_text": "gRPC 使用 protoc 加专用 gRPC 插件，从 proto 文件生成 gRPC 客户端和服务端代码以及常规 protocol buffer 代码"
+            },
+            {
+              "evidence_key": "evidence:2a173d3357940076d723f4be6e33ae8eaa75db7fd3de87cf",
+              "source_domain": "protobuf.dev",
+              "claim_text": "gRPC 与 Protobuf 配合良好，可通过专用 Protobuf 编译器插件直接从 .proto 文件生成 RPC 代码"
+            }
+          ],
+          "independent_source_count": 2,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-aed31c11881f20f3:dim-9c4c3a13e4159e00",
+            "entity-b389db1475dc52e4:dim-6b371260a960ac87",
+            "entity-b389db1475dc52e4:dim-9c4c3a13e4159e00"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 6,
+          "created_at": "2026-10-17T11:48:17Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

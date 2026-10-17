@@ -1,0 +1,1179 @@
+{
+  "dataset_key": "research-quality-v1",
+  "dataset_version": "1.0.0",
+  "generated_at": "2026-10-17T12:54:29.629372+00:00",
+  "cases_total": 20,
+  "runs_found": 20,
+  "judge_scored": 20,
+  "judge_not_run": 0,
+  "pass_rate": 0.3,
+  "dimension_means": {
+    "factual_accuracy": 0.7275,
+    "citation_accuracy": 0.725,
+    "completeness": 0.5605,
+    "source_quality": 0.6225,
+    "tool_efficiency": 0.62
+  },
+  "effective_cell_rate": 0.7871,
+  "runs_without_cells": 0,
+  "by_question_type": {
+    "COMPARISON": {
+      "scored": 8,
+      "pass_rate": 0.125,
+      "factual_accuracy": 0.7375,
+      "citation_accuracy": 0.725,
+      "completeness": 0.5925,
+      "source_quality": 0.6438,
+      "tool_efficiency": 0.6687
+    },
+    "SURVEY": {
+      "scored": 4,
+      "pass_rate": 0.5,
+      "factual_accuracy": 0.6625,
+      "citation_accuracy": 0.7,
+      "completeness": 0.48,
+      "source_quality": 0.6,
+      "tool_efficiency": 0.525
+    },
+    "FACT": {
+      "scored": 4,
+      "pass_rate": 0.75,
+      "factual_accuracy": 0.825,
+      "citation_accuracy": 0.825,
+      "completeness": 0.75,
+      "source_quality": 0.7625,
+      "tool_efficiency": 0.775
+    },
+    "CONFLICT": {
+      "scored": 4,
+      "pass_rate": 0.0,
+      "factual_accuracy": 0.675,
+      "citation_accuracy": 0.65,
+      "completeness": 0.3875,
+      "source_quality": 0.4625,
+      "tool_efficiency": 0.4625
+    }
+  },
+  "results": [
+    {
+      "case_key": "cmp-postgres-mysql-json",
+      "question_type": "COMPARISON",
+      "run_id": "8db6042c-70f3-4565-9b8c-52e856f4a06b",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 488.4,
+        "search_query_count": 13,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 4,
+        "effective_cell_rate": 0.6667,
+        "status_counts": {
+          "GAP": 2,
+          "VERIFIED": 4
+        },
+        "queries_per_effective_cell": 3.25
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.5,
+          "citation_accuracy": 0.55,
+          "completeness": 0.25,
+          "source_quality": 0.35,
+          "tool_efficiency": 0.35
+        },
+        "rationales": {
+          "factual_accuracy": "报告中关于 PostgreSQL 的 json_path_ops 描述（仅支持 @>，索引更小更快）方向正确，但关键引文实际来自 PostgreSQL 9.4 wiki 页面，且使用了 'path_ops' 这一旧称，与 PostgreSQL 17 官方当前文档（jsonb_path_ops）存在版本/命名偏差，报告未明确说明。MySQL 侧仅确认函数索引存在，未给出索引形式、运算符支持或代价的实质结论，正确但严重不完整。",
+          "citation_accuracy": "各引文的 exact quote 与所引结论基本一致（JSON_VALUE 函数索引、json_path_ops 仅支持 @>、更小更快索引、GIN 不支持 index-only scan 等均被原文支持）。但核心 PostgreSQL 索引类型/运算符/代价证据来源是 wiki.postgresql.org 的 9.4 页面而非 17 官方文档，且 'path_ops' 旧称与 'json_path_ops' 混用，存在标签与原文不完全一致的问题。",
+          "completeness": "must_cover 三项中，PostgreSQL 索引形式与运算符被实质回答（部分），但 MySQL 的运算符支持与写入代价两项均标为未找到证据，索引代价维度仅覆盖 PostgreSQL 且缺 MySQL 写入开销，整体比较远未完成。",
+          "source_quality": "PostgreSQL 部分主要依赖 wiki.postgresql.org 的 9.4 页面而非 PostgreSQL 17 官方文档，版本不匹配且非一手规范；仅 index-only scan、CREATE INDEX、GIN 三处使用 postgresql.org 文档。MySQL 使用 dev.mysql.com 8.4 文档属一手来源，但仅一条。",
+          "tool_efficiency": "13 次检索仅产出 4 个有效单元格，MySQL 两个必需单元格（运算符、代价）未解决，且有重复取同一 9.4 wiki 页面作为多维度证据的现象，检索效率偏低、覆盖不足。"
+        },
+        "must_cover": [
+          {
+            "item": "两者各自支持的 JSON 索引形式",
+            "covered": true
+          },
+          {
+            "item": "哪些运算符或函数能用上索引",
+            "covered": false
+          },
+          {
+            "item": "索引的写入开销或限制",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "PostgreSQL 侧结论方向基本正确但证据来自 9.4 wiki 而非 17 官方文档，MySQL 的运算符支持与索引代价两项缺失，比较不完整，未通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-openai-anthropic-tools",
+      "question_type": "COMPARISON",
+      "run_id": "72d613bf-031b-4d06-92c9-ed2216102db0",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 246.6,
+        "search_query_count": 16,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 10,
+        "effective_cells": 9,
+        "effective_cell_rate": 0.9,
+        "status_counts": {
+          "VERIFIED": 9,
+          "GAP": 1
+        },
+        "queries_per_effective_cell": 1.78
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.75,
+          "citation_accuracy": 0.6,
+          "completeness": 0.8,
+          "source_quality": 0.4,
+          "tool_efficiency": 0.65
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论基本正确：OpenAI Responses API 使用类型化、有名称的流事件（通过 type 字段识别），以 output item / function_call 表示工具调用，function_call_output 结果；Anthropic 使用 tool_use / tool_result content block 及 SSE 事件。但 OpenAI「多个 function_call 可并行执行」的推断来自示例中过滤 output 的代码，证据稍弱；并行部分表述偏谨慎，基本合理。无严重事实错误。",
+          "citation_accuracy": "多数引用与原文一致，但 Anthropic 关键结论依赖 github.com/can1357/oh-my-pi 第三方文档而非 Anthropic 官方文档，与问题「引用官方文档」不符；OpenAI MCP 流事件证据来自 parallel.ai、function_call_output 来自 exa.ai，均非一手来源。且「可返回多个调用并并行执行」引用的代码片段仅显示 filter，并未直接证明并行执行。",
+          "completeness": "工具消息结构与并行调用两项较完整；流式事件类型划分对 OpenAI 较充分，对 Anthropic 仅列 message_start/content_block_delta/message_delta 等未系统分类，且明确承认 Anthropic 工具调用流式事件证据缺失，故该项只部分覆盖。",
+          "source_quality": "OpenAI 部分引用 developers.openai.com 官方文档，但 Anthropic 部分主要引用 github.com 第三方文档和 nvidia.com 教程，MCP/exa 也非一手；对「引用官方文档」的要求明显不足。",
+          "tool_efficiency": "16 次检索得到 9 个有效单元格并有一项未解决，效率中等；重复使用了同一第三方 Anthropic 文档的多条 evidence，未能补足缺失的 Anthropic 工具流式事件，存在一定检索浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "工具定义与调用结果的消息结构",
+            "covered": true
+          },
+          {
+            "item": "流式事件的类型划分",
+            "covered": true
+          },
+          {
+            "item": "并行工具调用的支持方式",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "核心对比结论大体正确且三项要点均有涉及，但 Anthropic 关键事实依赖第三方而非官方文档、并行执行结论证据偏弱，源质量与引用支撑是主要短板。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-kafka-pulsar-ordering",
+      "question_type": "COMPARISON",
+      "run_id": "39e55ad0-da65-4851-9192-5552415c3545",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 317.1,
+        "search_query_count": 16,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 8,
+        "effective_cells": 8,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 8
+        },
+        "queries_per_effective_cell": 2.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.85,
+          "citation_accuracy": 0.8,
+          "completeness": 0.6,
+          "source_quality": 0.7,
+          "tool_efficiency": 0.75
+        },
+        "rationales": {
+          "factual_accuracy": "Kafka 分区内有序、跨分区不保证，消费者组模型，Pulsar Shared 不保序、Key_Shared 按 key 保序等核心结论均正确。但报告未明确回答问题中「重平衡或故障时对顺序的影响」这一 must_cover 要点，仅隐含提及 Shared 多消费者，属于覆盖不完整的部分事实缺口。",
+          "citation_accuracy": "多数引文与结论一致（Confluent 分区内有序、KafkaConsumer javadoc 消费组、Pulsar SubscriptionType 与 concepts-messaging）。但部分引用来源为 Spring Pulsar 文档而非 Pulsar 官方，且 Key_Shared 引用来自旧版 2.4.1 API 文档，略有过时风险；个别 claim 引用的原文片段被截断（'allows multiple'），支撑力稍弱。",
+          "completeness": "分区内顺序保证与订阅/消费组模型两项被实质回答；重平衡或故障对顺序的影响几乎未涉及（未讨论 Kafka 消费者组重平衡导致分区迁移、Pulsar 消费者故障后 key 归属变化等），仅泛泛提到 Shared 多消费者。",
+          "source_quality": "主要使用 apache.org 官方文档与 javadoc，但 Kafka 顺序结论主要依赖 Confluent 博客（二手），Pulsar key 顺序依赖旧版 2.4.1 API 及 Spring 文档，一手官方规范使用不够充分。",
+          "tool_efficiency": "16 次检索、8 个计划单元全部有效完成，产出 8 条有效证据支撑主要结论；但检索量偏多，且对重平衡/故障场景缺乏针对性检索，存在一定浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "分区或主题内的顺序保证",
+            "covered": true
+          },
+          {
+            "item": "订阅或消费组模型",
+            "covered": true
+          },
+          {
+            "item": "重平衡或故障时对顺序的影响",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "Kafka 与 Pulsar 顺序与消费模型的核心对比准确且有官方引用，但缺失「重平衡/故障对顺序影响」这一必答要点，且部分引用为二手或旧版来源，未完全达标。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-terraform-pulumi-state",
+      "question_type": "COMPARISON",
+      "run_id": "14c52edf-7570-4b6e-b29e-2cde645ac961",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 211.1,
+        "search_query_count": 12,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 8,
+        "effective_cells": 7,
+        "effective_cell_rate": 0.875,
+        "status_counts": {
+          "VERIFIED": 7,
+          "GAP": 1
+        },
+        "queries_per_effective_cell": 1.71
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.9,
+          "citation_accuracy": 0.95,
+          "completeness": 0.7,
+          "source_quality": 1.0,
+          "tool_efficiency": 0.75
+        },
+        "rationales": {
+          "factual_accuracy": "关于 Terraform 状态后端、自动加锁、serial/lineage、force-unlock nonce 和 Pulumi 后端选项及 409 冲突与 pulumi cancel 的说法均正确；Pulumi 的加锁机制被如实标记为证据不足，未编造，但未能回答 Pulumi 如何实现租约/加锁这一关键对比点，略影响完整性而非事实错误。",
+          "citation_accuracy": "引用原文与所支撑结论逐条吻合，Terraform 锁、后端列表、Pulumi backend 列表、409 冲突均有精确引文支撑；Pulumi 加锁项未强行引用而是标注缺口，处理得当。",
+          "completeness": "状态存储、并发修改控制两要点均已实质回答；加锁机制要点中 Terraform 一侧完整，但 Pulumi 的加锁机制（如基于 lease 的机制）仅表现为未找到证据，未实质回答该对比项，must_cover 加锁要点仅部分覆盖。",
+          "source_quality": "全部引用来自 developer.hashicorp.com 与 pulumi.com 官方文档，属一手来源。",
+          "tool_efficiency": "12 次检索获得 7 项有效结论，但仍有 1 个必需研究项（Pulumi 加锁）未解决，存在可改进的检索遗漏；整体无明显冗余但未达全覆盖。"
+        },
+        "must_cover": [
+          {
+            "item": "状态文件的存放位置与后端",
+            "covered": true
+          },
+          {
+            "item": "加锁机制",
+            "covered": false
+          },
+          {
+            "item": "多人并发修改时的行为",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告在状态后端与并发冲突行为上准确且引用可靠，但未实质回答 Pulumi 的加锁机制，导致加锁对比不完整，未能满足全部必答要点。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-redis-valkey-persistence",
+      "question_type": "COMPARISON",
+      "run_id": "d8951860-af2b-42d4-9416-b93ad58f8741",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 120.6,
+        "search_query_count": 8,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 6,
+        "effective_cells": 6,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 6
+        },
+        "queries_per_effective_cell": 1.33
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.8,
+          "citation_accuracy": 0.7,
+          "completeness": 0.6,
+          "source_quality": 0.7,
+          "tool_efficiency": 0.9
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论正确：Valkey 8 使用 BSD 3-Clause，Redis 7.4 及以后使用 RSALv2/SSPLv1 双许可；两者均支持 RDB 和 AOF，Valkey 的多部分 AOF 描述准确。但存在轻微事实风险：对于 Redis 7.4，RDB/AOF 持久化实际与 Valkey 高度同源，报告未说明“两者均支持多部分 AOF 且 Redis 也有 base+增量文件”这一共同点，也遗漏了 Valkey 8 的 AOF fsync 策略与 Redis 相同这一事实，导致对 AOF 差异的描述有误导性。",
+          "citation_accuracy": "多数引用可支撑所述内容，但若提及“Valkey 8 使用 BSD 3-Clause”，引用来源为 redis.io 的博客（https://redis.io/blog/what-is-valkey/），属于厂商博客而非 Valkey 官方许可证页或仓库 LICENSE，作为许可证的一手来源尚有不足；另外引用 URL 与所声明的 source 域存在跨域使用（cell 写 valkey.io 但实际引用 redis.io）。",
+          "completeness": "RDB/AOF 支持情况和许可证区别均有回答；但 must_cover 第三条“分叉之后新增的差异”未被实质回答，报告只列出双方各自描述，并明确说“资料并未做逐项对照”，没有归纳 fork 后 Valkey 8 相对于 Redis 7.4 的新增特性（如多部分 AOF 在 Redis 7.0 已有、Valkey 8 的异步 I/O、双通道复制等），因此该要点 covered=false。",
+          "source_quality": "持久化部分使用了 valkey.io/topics/persistence 与 redis.io/docs 官方文档，质量较好；但 Valkey 许可证信息引用了 redis.io 博客而不是 valkey.io 官方许可页面或 GitHub LICENSE，略微降低了来源质量。",
+          "tool_efficiency": "8 次检索、6 个 planned cell 全部有效覆盖，检索次数合理，无明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "RDB 与 AOF 的支持情况",
+            "covered": true
+          },
+          {
+            "item": "两者许可证的区别",
+            "covered": true
+          },
+          {
+            "item": "分叉之后新增的差异",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "持久化与许可证核心事实基本正确，但“分叉后新增差异”要点未实质回答，且 Valkey 许可证引用来源为 redis.io 博客而非 Valkey 一手许可文件，故不通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-vite-webpack-hmr",
+      "question_type": "COMPARISON",
+      "run_id": "ba949fcd-5a8e-453f-831e-85e608b12b14",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 457.9,
+        "search_query_count": 30,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 12,
+        "effective_cells": 10,
+        "effective_cell_rate": 0.8333,
+        "status_counts": {
+          "VERIFIED": 10,
+          "GAP": 2
+        },
+        "queries_per_effective_cell": 3.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.7,
+          "citation_accuracy": 0.75,
+          "completeness": 0.45,
+          "source_quality": 0.65,
+          "tool_efficiency": 0.4
+        },
+        "rationales": {
+          "factual_accuracy": "报告对 Vite 与 webpack 的对比基本准确，核心事实（Vite 按需转换、原生 ESM HMR、webpack-dev-server 内存服务、webpack HMR 实验性）均有官方文档支撑。但存在几点事实性不足：1) 报告称 webpack HMR“可用于生产环境”，而同一官方 wiki 明确说“实验性、未充分测试、或许为时过早用于严肃项目”，报告虽并列了两方面证据，但表述上有引导性冲突未充分说明双方证据；2) 未明确回答 webpack 开发阶段是否打包（webpack-dev-server 本质仍是打包后从内存提供资源），这是 must_cover 的关键点，报告只用“从内存提供资源”间接暗示，没有直接回答；3) 将 webpack docs wiki（github.com）当作官方来源，wiki 内容是官方维护但并非 webpack.js.org 正式文档，质量稍逊。总体事实无明显错误，属轻度扣分。",
+          "citation_accuracy": "绝大多数引用与原文一致（如 hot.decline noop、源码原生 ESM 按需提供、webpack-dev-server 内存服务、start/build 脚本），引用核对段落给出精确 quote 与快照，可验证性较好。但存在注意力问题：1) 一条补充引用 evidence:30c7b3bf... 的 URL 指向 developer.jdcloud.com（第三方文章）而非 Vite 官方文档，却用于支撑“首次启动预构建依赖”这一官方文档已有的事实，来源不当；2) webpack HMR 的“可用于生产”与“实验性”来自同一 wiki 的冲突表述，报告虽并列，但表格里在“HMR 机制”行只写“可用于生产环境”，未同时标注成熟度风险，有选择性引用之嫌。整体引用一致性较高，扣分主要在上述两点。",
+          "completeness": "must_cover 三项中：热更新粒度与机制被实质且较好地回答（Vite 原生 ESM 单模块更新、webpack 类 LiveReload 增量下载）；生产构建使用的工具仅部分回答——报告提到 webpack build 脚本运行 webpack 且用 webpack.prod.js，但 Vite 侧完全未提生产构建（Vite 生产用 Rollup 打包），这一对比要点缺失；开发阶段是否打包——Vite 侧明确（按需转换不打包），但 webpack 侧仅说“从内存提供资源”，未明确点出 webpack 开发服务器仍需先打包（bundle）再从内存提供，属于关键机制未直接回答。故 must_cover 三项中两项未被实质完整回答。",
+          "source_quality": "总体优先使用 vite.dev / cn.vite.dev 官方文档与 webpack.js.org 官方指南，质量尚可。但 webpack 侧的 HMR 机制、限制、启动性能多引用 github.com/webpack/docs/wiki（旧 wiki），并非 webpack.js.org 现行官方文档，且部分内容（HMR 实验性描述）年代较早，可能过时；另有一条补充引用指向京东云第三方文章（developer.jdcloud.com），属二手来源被用于支撑官方文档可覆盖的事实。source_quality 因此扣分。",
+          "tool_efficiency": "检索次数 30 次、计划 12 个 cell、有效 10 个，完成状态 COMPLETED_WITH_LIMITATIONS，且仍有 2 个必需 cell 未解决（webpack 开发服务器启动机制、webpack 浏览器原生 ESM 依赖）。30 次检索对 12 个 cell 而言偏多，且关键 must_cover（webpack 是否打包、Vite 生产构建工具）仍未通过检索补全，存在明显浪费与遗漏并存，效率偏低。"
+        },
+        "must_cover": [
+          {
+            "item": "开发阶段是否打包",
+            "covered": false
+          },
+          {
+            "item": "热更新的粒度与机制",
+            "covered": true
+          },
+          {
+            "item": "生产构建使用的工具",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告对 HMR 机制与 Vite 按需启动的事实基本准确、引用大体可核验，但未直接回答 webpack 开发阶段是否打包、也遗漏 Vite 生产构建（Rollup）与 webpack 生产构建的对比，且部分来源为旧 wiki 与第三方文章，must_cover 未全满足，判定不通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "cmp-grpc-graphql",
+      "question_type": "COMPARISON",
+      "run_id": "20f11169-8b4b-4e6d-bed1-2f5fd534dc8b",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 201.3,
+        "search_query_count": 16,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 8,
+        "effective_cells": 8,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 8
+        },
+        "queries_per_effective_cell": 2.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.9,
+          "citation_accuracy": 0.85,
+          "completeness": 1.0,
+          "source_quality": 0.75,
+          "tool_efficiency": 0.8
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论正确：gRPC 基于 .proto + protoc 插件生成代码、基于 HTTP/2、支持四种流类型；GraphQL 用类型系统定义 schema、订阅依赖有状态传输（WebSocket 等）。个别表述偏弱，如称 subscriptions-transport-ws 为“首个”需限定 TypeScript 语境，报告基本保留了限定语。GraphQL 传输协议部分未明确说明 GraphQL 本身通常走 HTTP（单端点 POST），只围绕订阅展开，使“传输协议”维度对 GraphQL 覆盖略不完整，但不算事实错误。",
+          "citation_accuracy": "多数引用与原文一致且能支撑结论（grpc.io、graphql.org、spec.graphql.org、protobuf.dev、github CONCEPTS.md 均对口）。但“GraphQL API 很少能像定制端点那样优化”及“SELECT * 不存在”引用的 medium.com 博客而非官方文档，作为观点引用可接受但权威性偏低；buildwithfern.com 非 gRPC 官方来源支撑四种方法类型，虽结论正确但来源非一手。未发现引用与结论明显矛盾。",
+          "completeness": "must_cover 三项（接口描述语言、底层传输协议、流式/订阅能力）均在正文与对比表中被实质回答，并给出双方取舍。",
+          "source_quality": "优先使用了 grpc.io、graphql.org、GraphQL 规范、protobuf.dev 及 grpc GitHub 等一手来源；但混入 medium.com、buildwithfern.com、browserless.io、f5.com 等二手/第三方来源，用于支撑核心取舍论点，削弱了一手来源优先度。",
+          "tool_efficiency": "检索 16 次、计划 8 个单元、8 个有效结论，单元完成率高且终态为 VERIFIED；但检索次数相对 8 个单元偏多，且部分检索落在二手博客上，存在一定可优化空间，整体无明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "接口描述语言",
+            "covered": true
+          },
+          {
+            "item": "底层传输协议",
+            "covered": true
+          },
+          {
+            "item": "流式或订阅能力",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告准确覆盖了接口定义、传输协议与流式能力的取舍，引用大体可靠，主要不足是部分核心取舍论点依赖二手博客而非官方一手来源。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "cmp-otel-prometheus-metrics",
+      "question_type": "COMPARISON",
+      "run_id": "3ee70ef5-2ed5-4d75-959e-26f412a07c8c",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 211.1,
+        "search_query_count": 13,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "expected_entity_coverage": 1.0,
+        "cells_available": true,
+        "planned_cells": 10,
+        "effective_cells": 10,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 10
+        },
+        "queries_per_effective_cell": 1.3
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.5,
+          "citation_accuracy": 0.6,
+          "completeness": 0.34,
+          "source_quality": 0.6,
+          "tool_efficiency": 0.75
+        },
+        "rationales": {
+          "factual_accuracy": "报告的核心事实大体正确（OTLP temporality 可为 cumulative/delta、Prometheus counter 单调递增、Exemplars 转换规则、经典/原生直方图），但有两个 must_cover 要点未被实质回答：采集方式是推送还是拉取——报告完全没有涉及；累计值与增量值的表示也只触及 temporality 标签，未说明 Prometheus 通过 counter/increase 等派生 delta、OTLP 可用 delta temporality 直传的机制差异。另外报告把 Prometheus 视角的若干结论错误归入“OpenTelemetry 指标数据模型”条目（如“可无歧义转为 Prometheus Remote Write 协议”实为 OTel 数据模型的性质，却被列在 Prometheus 行），造成对比表语义混淆。Exemplars 支持一项引用来自 Google 托管 Prometheus 文档而非官方规范，也削弱了事实可靠性。",
+          "citation_accuracy": "多数引用与原文一致且能支撑被引结论（OTel data-model、prometheus.io 均为一手）。但存在问题：'Prometheus 的 counter 单调递增' 引用 last9.io 博客而非官方文档；'Prometheus 使用 OpenMetrics 支持 Exemplars' 引用 Google Cloud 文档而非 Prometheus 官方规范；对比表中把 OTel data-model 关于 '可无歧义转为 Prometheus Remote Write' 的陈述放在 Prometheus 列，属于引用与结论错位（该句描述的是 OTel 数据模型，而非 Prometheus 数据模型）。",
+          "completeness": "三个 must_cover 中仅'指标类型划分'被实质回答（OTel 同步/异步仪表 vs Prometheus counter/gauge/histogram/原生直方图）；'采集方式是推送还是拉取'完全缺失；'累计值与增量值的表示'仅以 temporality 一句带过，未说明 OTel 支持 cumulative 与 delta 两种 temporality、Prometheus 仅存累计值（delta 需由查询派生如 increase/rate）的核心差异。",
+          "source_quality": "主要依赖 opentelemetry.io 与 prometheus.io 官方规范/文档，质量较高；但部分关键 cell 使用了 last9.io 博客和 Google Cloud 托管 Prometheus 文档替代官方规范，且缺少 Prometheus 官方文档对拉取模型（pull-based scraping）的引用，这是采集方式缺失的直接来源。",
+          "tool_efficiency": "13 次检索、10/10 计划 cell 全部完成，终止状态 COMPLETED_VERIFIED，多数检索产出被有效引用；但检索未覆盖'推送 vs 拉取'这一 must_cover 维度，属于计划/检索覆盖的明显缺口，存在一定低效。"
+        },
+        "must_cover": [
+          {
+            "item": "指标类型划分",
+            "covered": true
+          },
+          {
+            "item": "采集方式是推送还是拉取",
+            "covered": false
+          },
+          {
+            "item": "累计值与增量值的表示",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告在指标类型与 Exemplars/直方图转换上有官方引用支撑，但完全遗漏采集方式（推/拉）并弱化了累计/增量表示差异，且部分引用来源非一手，未达比较类问题的完整性要求。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "survey-vector-db-hybrid",
+      "question_type": "SURVEY",
+      "run_id": "9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 593.5,
+        "search_query_count": 34,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 16,
+        "effective_cells": 15,
+        "effective_cell_rate": 0.9375,
+        "status_counts": {
+          "VERIFIED": 15,
+          "GAP": 1
+        },
+        "queries_per_effective_cell": 2.27
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.9,
+          "citation_accuracy": 0.85,
+          "completeness": 0.8,
+          "source_quality": 0.85,
+          "tool_efficiency": 0.7
+        },
+        "rationales": {
+          "factual_accuracy": "四个产品均被判定支持混合检索，融合方式（Milvus WeightedRanker/RRFRanker、ES RRF/linear、Qdrant rrf/dbsf、Weaviate relativeScoreFusion/rankedFusion）与公开官方文档一致；版本线索（Milvus 2.4、Weaviate 1.17）准确。重排方面把融合与重排混为一谈（Milvus 的 Ranker 属融合/重排无误，但 ES linear 为检索器而非重排），略有概念混淆，未发现硬性事实错误。",
+          "citation_accuracy": "绝大多数结论有精确引用与原文摘录支撑，如 Milvus hybrid_search()、Qdrant FusionQuery、Weaviate relativeScoreFusion 等。少数引用略弱：Qdrant 'Universal Query API' 来自课程页而非纯文档；ES FORK/FUSE 例子来自 what-is 营销页而非规范文档；Weaviate 官方文档引用实际来自博客。总体可支撑结论。",
+          "completeness": "must_cover 三项均被回答：至少三产品原生支持（四产品均覆盖）、各自融合方式（RRF/加权/dbsf/score fusion）、重排（Milvus Ranker、ES rescorer、Weaviate 融合策略）。但 Weaviate 查询 API 缺失，ES 的加权（linear）与重排区分不够清晰，属于边缘缺口。",
+          "source_quality": "优先使用 milvus.io、elastic.co、qdrant.tech、weaviate.io 官方文档，符合一手来源要求；但有少量博客/课程/论坛页面（weaviate.io/blog、qdrant 课程、forum.weaviate.io）被用于关键结论，略拉低。",
+          "tool_efficiency": "34 次检索覆盖 16 个计划单元、15 个有效单元，产出密度尚可；但完成状态为 COMPLETED_WITH_LIMITATIONS 且仍有 1 个必需单元未解决，说明检索存在一定冗余与未收敛，效率中等偏上。"
+        },
+        "must_cover": [
+          {
+            "item": "至少三个产品是否原生支持关键词加向量混合检索",
+            "covered": true
+          },
+          {
+            "item": "各自的融合方式，例如 RRF 或加权",
+            "covered": true
+          },
+          {
+            "item": "是否支持重排",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告基于官方文档准确覆盖了四款向量数据库的混合检索支持、融合策略与重排能力，仅 Weaviate 查询 API 与少量来源层级存在次要缺口。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "survey-rust-edition-2024",
+      "question_type": "SURVEY",
+      "run_id": "ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 171.0,
+        "search_query_count": 8,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 5,
+        "effective_cells": 5,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 5
+        },
+        "queries_per_effective_cell": 1.6
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.35,
+          "citation_accuracy": 0.55,
+          "completeness": 0.15,
+          "source_quality": 0.45,
+          "tool_efficiency": 0.4
+        },
+        "rationales": {
+          "factual_accuracy": "报告总体正确描述了 edition 机制与迁移工具，但核心问题要求列出 2024 相对 2021 的不兼容变更，报告几乎未给出真正的变更清单，仅以含糊的“可能包含新关键字”和单一 `#\"hey\"#` 词法案例充数，且该案例引用自 rustc lint 文档而非 edition 指南，未提及任何 2024 edition 实际变更（如 reserved gen 关键字、RPIT lifetime capture、unsafe extern、static mut 引用、尾部表达式临时值作用域、match ergonomics 解析调整、never 类型 fallback 等），也未说明生效的 Rust 版本（1.85.0），对 SURVEY 问题实质回答不足。",
+          "citation_accuracy": "引用原文与所转述的 claim 基本一致（edition 可选性、cargo fix、关键字冲突、Cargo/rustfmt 纳入考虑等），但所引来源均未支撑‘2024 相对 2021 的具体不兼容变更’这一核心结论，`#\"hey\"#` 案例来自 rustc lint 文档而非 edition 指南，且报告称其为 2024 变更缺乏 edition 指南佐证，属引用无法充分支撑结论。",
+          "completeness": "must_cover 三项中，‘至少三项具体的不兼容变更’未实质回答（仅一项边缘词法案例且不准确）；迁移工具/自动修复方式部分回答（cargo fix、手动修复）；生效的 Rust 版本完全未提及（2024 edition 随 Rust 1.85.0 稳定）。",
+          "source_quality": "引用了 doc.rust-lang.org、blog.rust-lang.org 等官方一手来源，质量本身尚可，但一条核心 evidence 指向 rustc 默认 lint 列表页而非 edition 指南，且未引用 edition-guide 中 2024 edition 的 breaking changes 专章，来源选择与问题要求（官方 edition 指南）匹配度低。",
+          "tool_efficiency": "8 次检索、5 个有效 cell，但有效结论极少（仅机制与迁移工具，核心变更清单缺失），检索投入与产出不匹配，存在明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "至少三项具体的不兼容变更",
+            "covered": false
+          },
+          {
+            "item": "迁移工具或自动修复方式",
+            "covered": true
+          },
+          {
+            "item": "生效的 Rust 版本",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告正确描述 edition 可选性与 cargo fix 迁移，但未列出 2024 edition 实际的不兼容变更清单、未给出生效 Rust 版本，引用来源亦非官方 edition 指南的 2024 变更章节，核心问题未实质回答。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "survey-http3-loss-recovery",
+      "question_type": "SURVEY",
+      "run_id": "62f38e66-7930-4ce1-b482-1a34cad55700",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 357.0,
+        "search_query_count": 23,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 10,
+        "effective_cells": 5,
+        "effective_cell_rate": 0.5,
+        "status_counts": {
+          "GAP": 5,
+          "VERIFIED": 5
+        },
+        "queries_per_effective_cell": 4.6
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.6,
+          "citation_accuracy": 0.65,
+          "completeness": 0.3,
+          "source_quality": 0.5,
+          "tool_efficiency": 0.3
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论（HTTP/3 基于 QUIC、HTTP/2 基于 TCP、QUIC 流级可靠+连接级拥塞控制、HTTP/2 跨流 HOL 阻塞）正确，但报告承认未回答 QUIC 丢包检测与恢复机制和具体拥塞控制机制，对题目要求的机制细节存在实质空白；此外用「尚未找到证据」这一检索局限掩盖了公开标准中已有的明确答案（RFC 9002 丢包检测、RFC 9002/9001 拥塞控制、RFC 9114 引用），并非严格的事实错误，但结论完整性受显著削弱。",
+          "citation_accuracy": "多数引用与原文一致：RFC 9114 原文、QUIC 流级可靠性/连接级拥塞控制句、HTTP/2 基于 TCP 句、Mozilla HOL 句均能支撑相应结论。但有一处引用不完整（MO 引用被截断为 'because HTTP/2 runs'，原文应续 'over TCP'），且部分引用来源为个人博客（ttias.be）与 quic-go 文档，支撑力弱于 RFC。此外把「stream and connection error 处理」引用用于「恢复粒度」略有解释性延伸。",
+          "completeness": "must_cover 三项中仅「队头阻塞差异」和「拥塞控制所在协议层」被实质回答；「QUIC 丢包检测与恢复机制」完全未答（报告明示为 GAP）。题目明确要求引用 RFC，但关于丢包恢复的 RFC 9002 内容未被引用和呈现，导致核心问题只答一半。",
+          "source_quality": "部分使用了一手来源（RFC 9114、httpwg.org、rfc-editor.org、Mozilla MDN），但关键 HOL 结论依赖个人博客与第三方文档；且对最需要 RFC 支撑的丢包检测/恢复机制未检索到或未引用 RFC 9002，来源覆盖不足以支撑完整答案。",
+          "tool_efficiency": "23 次检索仅产出 5 个有效证据单元，且 5 个必需研究项（QUIC 丢包恢复、双方拥塞控制机制等）未解决，检索投入与有效结论比明显偏低；显然未覆盖 RFC 9002 等关键规范，检索路径存在明显浪费和遗漏。"
+        },
+        "must_cover": [
+          {
+            "item": "队头阻塞问题的差异",
+            "covered": true
+          },
+          {
+            "item": "QUIC 丢包检测与恢复机制",
+            "covered": false
+          },
+          {
+            "item": "拥塞控制所在的协议层",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告对传输底座与 HOL 阻塞的回答基本正确并引用 RFC 9114，但完全缺失 QUIC 丢包检测/恢复机制（RFC 9002）与具体拥塞控制机制，且部分引用为二手来源，未满足题目核心要求。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "survey-oauth-oidc",
+      "question_type": "SURVEY",
+      "run_id": "1e6d2b14-5bcf-48ca-a5d4-bba9f3a8c44d",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 377.2,
+        "search_query_count": 16,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 10,
+        "effective_cells": 8,
+        "effective_cell_rate": 0.8,
+        "status_counts": {
+          "VERIFIED": 8,
+          "GAP": 2
+        },
+        "queries_per_effective_cell": 2.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.8,
+          "citation_accuracy": 0.75,
+          "completeness": 0.67,
+          "source_quality": 0.6,
+          "tool_efficiency": 0.7
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论正确：OAuth 2.1 省略 Implicit grant、强制 PKCE、公共客户端刷新令牌须受发送方约束或轮换、重定向 URI 精确匹配；OIDC 在 OAuth 2.0 之上增加认证、ID Token 为 JWT 含认证事件 Claims。但存在事实性瑕疵：报告声称重定向 URI 精确匹配与 OIDC 的表述相似，实际上 OAuth 2.1（RFC 9700/OAuth 2.1）的精确匹配要求与 OIDC 的预注册匹配高度一致，这一点基本正确；不过报告提到 OIDC 的 PKCE 要求（引用自 oauth.net/2.1 的 '* PKCE is required...'）被错误地列在 OIDC Core 之下，这是事实性错误，因为 OIDC Core 1.0 并未强制 PKCE。此外，报告未扩展说明 OAuth 2.1 移除 Resource Owner Password Credentials grant，虽未在 must_cover 中强制要求，但作为 OAuth 2.1 调整的一部分被遗漏，可视为不完整。",
+          "citation_accuracy": "大部分引用原文与结论一致（如 fusionauth 的 Implicit grant 省略、oauth.net/2.1 的 PKCE/刷新令牌/重定向 URI、OIDC Core 的重定向 URI 和 Claims 表述）。但存在引用错位：'* PKCE is required for all OAuth clients using the authorization code flow' 来自 oauth.net/2.1（OAuth 2.1 页面），却被标注为 OIDC Core 1.0 的 PKCE requirement，导致该引用不能支撑 OIDC 的 PKCE 要求。另外，将 OIDC 的 'Claims' 引用扩展为 'ID Token 是包含认证事件 Claims 的 JWT' 的表述，虽然补充引用 18fc4385 支持，但报告未明确指出该引用来自 OIDC Core 的词汇表而非核心需求段落，存在轻微过度推断。",
+          "completeness": "must_cover 三项中：OAuth 2.1 移除或强制的授权方式——部分覆盖（Implicit grant 省略、PKCE 强制、刷新令牌规则），但未提及 OAuth 2.1 还移除了 Resource Owner Password Credentials grant，且 OIDC 的 grant 移除情况未答；PKCE 的要求——覆盖（OAuth 2.1 强制 PKCE）；OIDC 增加的 ID Token 与身份信息——覆盖（ID Token 为 JWT 含认证事件 Claims、Claims 传递终端用户信息）。整体基本回答，但 OAuth 2.1 移除的授权方式不完整，且 OIDC 的 grant/刷新令牌规则缺失（报告也承认证据不足，但作为 SURVEY 问题应至少基于公开知识指出 OIDC 不定义 refresh token 规则）。",
+          "source_quality": "混合使用：有官方 OIDC Core 1.0 页面（openid.net/specs）、RFC 9700 引用，质量较高；但大量依赖 oauth.net/2.1 摘要页面和 fusionauth 博客文章作为 OAuth 2.1 主要证据，而非直接引用 OAuth 2.1 草案（draft-ietf-oauth-v2-1）或 RFC 9700 原文。对于 SURVEY 类问题，应优先使用 IETF 草案和规范原文，source_quality 因此扣分。",
+          "tool_efficiency": "16 次检索、计划 10 个单元格、有效 8 个、完成状态 COMPLETED_WITH_LIMITATIONS。检索次数相对较多，且两个 OIDC 相关单元格（removed grant types、refresh token rules）被标记为未解决，但这些实际上可通过公开知识或 OIDC Core 规范直接回答（OIDC 不定义 grant 类型或刷新令牌规则），属于检索策略可优化之处。整体效率尚可，但有明显浪费和未充分利用公开知识。"
+        },
+        "must_cover": [
+          {
+            "item": "OAuth 2.1 移除或强制的授权方式",
+            "covered": true
+          },
+          {
+            "item": "PKCE 的要求",
+            "covered": true
+          },
+          {
+            "item": "OIDC 增加的 ID Token 与身份信息",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告准确回答了 OAuth 2.1 的主要调整（Implicit grant 省略、PKCE 强制、刷新令牌规则、重定向 URI 精确匹配）和 OIDC 增加的认证能力（ID Token 与 Claims），但存在引用错位（OIDC PKCE 引用实际来自 OAuth 2.1 页面）、遗漏 OAuth 2.1 移除 Password grant，以及过度依赖二手来源。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "fact-k8s-sidecar",
+      "question_type": "FACT",
+      "run_id": "8377af07-6bca-4ba6-aeef-bf63651b08d0",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 80.4,
+        "search_query_count": 3,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 3,
+        "effective_cells": 3,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 3
+        },
+        "queries_per_effective_cell": 1.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 1.0,
+          "citation_accuracy": 1.0,
+          "completeness": 1.0,
+          "source_quality": 1.0,
+          "tool_efficiency": 1.0
+        },
+        "rationales": {
+          "factual_accuracy": "引入版本 1.28 Alpha、稳定版本 v1.33、声明方式（initContainers 中设置 restartPolicy: Always，受 SidecarContainers 门控）均与官方文档/发布说明一致，无事实错误。",
+          "citation_accuracy": "各结论均有对应的官方 kubernetes.io 引用原文支撑，引用摘录与结论一致，未出现引用无法支撑的情况。",
+          "completeness": "must_cover 三项（引入版本与特性状态、稳定版本、声明方式）均被实质回答，并附具体字段与门控说明。",
+          "source_quality": "全部引用来自 kubernetes.io 官方博客、文档和发布说明，属一手来源。",
+          "tool_efficiency": "3 次检索覆盖 3 个计划单元，全部产生有效结论，无明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "引入时的版本与特性状态",
+            "covered": true
+          },
+          {
+            "item": "稳定时的版本",
+            "covered": true
+          },
+          {
+            "item": "在 Pod 中的声明方式",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告准确指出原生 Sidecar 于 1.28 以 Alpha 引入、v1.33 稳定，并正确说明通过 initContainers 的 restartPolicy 声明，引用均为官方一手来源。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "fact-python-free-threading",
+      "question_type": "FACT",
+      "run_id": "94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 70.3,
+        "search_query_count": 3,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 3,
+        "effective_cells": 3,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 3
+        },
+        "queries_per_effective_cell": 1.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 1.0,
+          "citation_accuracy": 1.0,
+          "completeness": 1.0,
+          "source_quality": 1.0,
+          "tool_efficiency": 1.0
+        },
+        "rationales": {
+          "factual_accuracy": "PEP 703、Python 3.13 首次提供自由线程二进制、实验性且默认不启用等核心事实均正确，与公开知识一致。",
+          "citation_accuracy": "所有引用均来自 python.org 官方文档，引文与结论逐条对应，PEP 编号、起始版本与实验性状态均有原文支撑。",
+          "completeness": "must_cover 三项（PEP 编号、首次版本、当前状态与限制）均在正文和对比表中实质回答。",
+          "source_quality": "优先使用 PEP 703、docs.python.org 的 whatsnew 与 howto 一手来源，无二手转述。",
+          "tool_efficiency": "3 次检索覆盖 3 个计划单元且全部有效，无重复或浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "对应的 PEP 编号",
+            "covered": true
+          },
+          {
+            "item": "首次提供的版本",
+            "covered": true
+          },
+          {
+            "item": "当前的支持状态或限制",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告准确指出 PEP 703、Python 3.13 起提供自由线程构建，并说明其仍为实验性、默认不启用，引用均为官方一手来源，完全达标。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "fact-java-virtual-threads",
+      "question_type": "FACT",
+      "run_id": "3c6bf4ba-122c-4cd8-a14d-c939d69007aa",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_VERIFIED",
+        "wall_seconds": 100.6,
+        "search_query_count": 5,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 3,
+        "effective_cells": 3,
+        "effective_cell_rate": 1.0,
+        "status_counts": {
+          "VERIFIED": 3
+        },
+        "queries_per_effective_cell": 1.67
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 1.0,
+          "citation_accuracy": 0.9,
+          "completeness": 1.0,
+          "source_quality": 0.85,
+          "tool_efficiency": 0.9
+        },
+        "rationales": {
+          "factual_accuracy": "JDK 21/JEP 444 正式发布、JDK 19 起预览、JEP 491 改善 synchronized 固定、固定成因描述均正确。",
+          "citation_accuracy": "引用原文与结论一致；JEP 491 的引用仅为邮件标题（Implement JEP 491），未直接给出交付版本号，版本（JDK 24）结论略超出引用原文，但属公开知识，影响较小。",
+          "completeness": "三个 must_cover 要点均有实质回答：版本与 JEP、固定原因、改善 JEP 与版本（491，明确指向后续版本）。",
+          "source_quality": "固定成因与 JEP 491 使用 openjdk.org 一手来源；JEP 444 版本信息使用 Azul 博客而非 OpenJDK JEP 页面，略逊但可接受。",
+          "tool_efficiency": "5 次检索覆盖 3 个计划点，全部有效，无明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "正式发布的 JDK 版本与 JEP 编号",
+            "covered": true
+          },
+          {
+            "item": "线程固定问题的原因",
+            "covered": true
+          },
+          {
+            "item": "改善该问题的 JEP 与版本",
+            "covered": true
+          }
+        ],
+        "judge_pass": true,
+        "summary": "报告正确指出虚拟线程由 JEP 444 在 JDK 21 正式发布、JEP 491 改善 synchronized 固定问题，成因与引用一致，仅版本号细节略依赖公开知识。"
+      },
+      "passed": true
+    },
+    {
+      "case_key": "fact-pg-17-incremental-backup",
+      "question_type": "FACT",
+      "run_id": "592e2cab-9c67-49aa-8562-d95ee2869731",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 191.2,
+        "search_query_count": 14,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 4,
+        "effective_cells": 1,
+        "effective_cell_rate": 0.25,
+        "status_counts": {
+          "GAP": 3,
+          "VERIFIED": 1
+        },
+        "queries_per_effective_cell": 14.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.3,
+          "citation_accuracy": 0.4,
+          "completeness": 0.0,
+          "source_quality": 0.2,
+          "tool_efficiency": 0.2
+        },
+        "rationales": {
+          "factual_accuracy": "唯一结论“块级增量备份使用 Postgres 17 引入的原生增量备份功能”本身与事实基本相符，但报告几乎未回答问题的核心（如何使用、前提），且引用来源为 pgbarman 而非所要求的官方文档，整体对问题的实质回答严重不足。",
+          "citation_accuracy": "引用引文与结论一致，但该引文本身来自 pgBarman 用户指南而非 PostgreSQL 官方文档，无法满足“引用官方文档”的要求，且仅支撑版本引入这一非核心点。",
+          "completeness": "must_cover 中的使用的命令/参数、需开启的配置、恢复时合并备份的工具三项均未回答，报告自述三项必需研究项未找到证据。",
+          "source_quality": "唯一来源是第三方工具 pgBarman 文档，而非 PostgreSQL 官方文档（如 pg_basebackup、pg_combinebackup、summarize_wal 等官方页面），与问题明确要求不符。",
+          "tool_efficiency": "检索 14 次仅得 1 个有效结论，且该结论来自非官方来源，未解决三个核心要点，检索效率低，终态为证据不足。"
+        },
+        "must_cover": [
+          {
+            "item": "使用的命令或参数",
+            "covered": false
+          },
+          {
+            "item": "需要开启的配置",
+            "covered": false
+          },
+          {
+            "item": "恢复时合并备份的工具",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告仅确认了增量备份由 PG17 引入这一非核心点且引用非官方来源，三个必需要点全部缺失，未满足问题要求。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-microservice-speed",
+      "question_type": "CONFLICT",
+      "run_id": "7d63dac6-391e-4d39-ae4b-0f50ca3e6028",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 256.6,
+        "search_query_count": 2,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 3,
+        "effective_cells": 2,
+        "effective_cell_rate": 0.6667,
+        "status_counts": {
+          "VERIFIED": 2,
+          "GAP": 1
+        },
+        "queries_per_effective_cell": 1.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.6,
+          "citation_accuracy": 0.75,
+          "completeness": 0.5,
+          "source_quality": 0.4,
+          "tool_efficiency": 0.5
+        },
+        "rationales": {
+          "factual_accuracy": "报告对AWS表述的转述基本准确，但对问题核心（中型团队长期交付速度）没有给出直接且可靠的回答；把'非常小的项目'成本顾虑当作条件性证据，虽未失实，但不足以支撑对中型团队的实质结论，且未提示长期速度证据（如DORA/学术研究）的缺失。",
+          "citation_accuracy": "引用的原句与所支持的主张总体一致（专业知识组织更快发布；小项目成本不划算），但'反对或不结论证据'一节宣称'未找到证据'，而引用的AWS句子本身可视为保留/条件证据，措辞上存在引用与结论张力；引用均为厂商文档，粒度较粗。",
+          "completeness": "支持证据与条件/前提有涉及，但'反对或保留的证据'被标为未找到，实际仅以'小项目成本'勉强充数，未检索到任何反面研究（如微服务增加运维复杂度、分布式系统开销、团队认知负担的论文或案例），三要点只实质覆盖约一项半。",
+          "source_quality": "两份引用均为AWS厂商对比页面，属营销性二手来源，非论文、规范或独立实证研究；缺少DORA、学术文献等一手来源，且仅检索2次，来源覆盖极窄。",
+          "tool_efficiency": "2次检索、3个计划单元、2个有效单元，无明显重复浪费，但检索量过少导致必需的反面证据单元未解决，效率以产出论偏低。"
+        },
+        "must_cover": [
+          {
+            "item": "支持的证据与来源",
+            "covered": true
+          },
+          {
+            "item": "反对或保留的证据与来源",
+            "covered": false
+          },
+          {
+            "item": "结论成立的前提条件",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告仅依据AWS厂商页面，正面与条件证据转述基本准确，但完全缺失真正的反对/保留证据（未检索到学术或独立研究），无法完成冲突类问题的双向比较，故不通过。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-typescript-defects",
+      "question_type": "CONFLICT",
+      "run_id": "935d0ef3-8f57-4990-8d16-4d940d81b59f",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 648.7,
+        "search_query_count": 50,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 16,
+        "effective_cells": 10,
+        "effective_cell_rate": 0.625,
+        "status_counts": {
+          "VERIFIED": 10,
+          "GAP": 6
+        },
+        "queries_per_effective_cell": 5.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.75,
+          "citation_accuracy": 0.6,
+          "completeness": 0.45,
+          "source_quality": 0.5,
+          "tool_efficiency": 0.5
+        },
+        "rationales": {
+          "factual_accuracy": "主要结论（多数实证研究未发现 TypeScript 与更少缺陷有显著关联；Microsoft 报告称局部错误减少但故障转向编排）与引用基本一致。但存在归属混淆：'bug 倾向和修复时间 JavaScript 更低'、'600+ 仓库 2022 研究'等与 Bogner & Merkel 及同一论文不同段落混用，报告将它们分散到不同'研究'名下，结构性夸大/双计了研究数量。",
+          "citation_accuracy": "逐条引文大体支持其表面主张，但若干引用明显不支持所在单元格结论：'850 projects/17 languages'、'基于 SonarQube 的自动化管线'被用来支撑'4000+ TypeScript 仓库'的方法学；'项目越大成本越高'被用来支撑'Flow/TS 缺陷重叠'的混杂因素；'633 bug commits'引文本身表述可疑（arxiv 2601 编号不似真实）。引用与声称之间存在错位。",
+          "completeness": "覆盖了'不显著/相反研究'和部分方法差异（挖掘实证、混杂因素），但'报告缺陷减少的研究'基本缺席——Microsoft 报告只说错误局部化而非明确缺陷率下降，且其 quantified outcome 缺失；方法差异仅零散提及，未系统比较样本、基线、纵向vs横截面。",
+          "source_quality": "包含 arXiv、SBC 期刊、Microsoft Research 等一手来源，但也有 swizec.com、medium.com（含一篇商业博客'TypeScript Tax'）作为主要证据，且把二手博客用于方法学与混杂因素主张。",
+          "tool_efficiency": "50 次检索仅 10 个有效证据单元、16 计划格仍有 6 个未解决，其中若干缺口（如 Merkel 结论、混杂因素）其实同一论文中可得，检索存在浪费与遗漏并存。"
+        },
+        "must_cover": [
+          {
+            "item": "报告缺陷减少的研究",
+            "covered": false
+          },
+          {
+            "item": "结论不显著或相反的研究",
+            "covered": true
+          },
+          {
+            "item": "研究方法上的差异",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告正确呈现了多项'无显著关联'的研究，但缺少明确缺陷减少的证据、方法比较不系统，且多处引用与所支撑的结论错位，未达冲突类问题应保留双方证据的要求。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-coverage-threshold",
+      "question_type": "CONFLICT",
+      "run_id": "5e30f884-c4cb-437e-83c1-44bb31dca25d",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+        "wall_seconds": 517.9,
+        "search_query_count": 22,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 9,
+        "effective_cells": 2,
+        "effective_cell_rate": 0.2222,
+        "status_counts": {
+          "VERIFIED": 2,
+          "GAP": 7
+        },
+        "queries_per_effective_cell": 11.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.8,
+          "citation_accuracy": 0.75,
+          "completeness": 0.2,
+          "source_quality": 0.5,
+          "tool_efficiency": 0.3
+        },
+        "rationales": {
+          "factual_accuracy": "报告未编造门槛与逃逸率的因果结论，如实声明证据不足；对 oracle gap 和 MC/DC 的描述与引用一致。但 Microsoft 一条来源为 Vector（商业工具厂商）页面，冠以“Microsoft 研究”略有夸大，且部分表述（“测量口径差异导致结论差异”）略超出单一来源可取范围。",
+          "citation_accuracy": "Google 两条引文与 oracle gap 论述基本对应；但“覆盖率或变异得分单独任一 adequacy 指标都不足以刻画测试有效性”是对原文“beyond either adequacy metric alone”的引申，原文只说 oracle gap 提供额外信息。Microsoft 条以厂商文档支撑“研究”结论，属弱支撑。",
+          "completeness": "must_cover 三项中仅“覆盖率之外的混杂因素”以测量口径形式部分触及；支持的实证与不支持的实证均未提供任何实质证据，报告主要说明缺口。",
+          "source_quality": "Google 使用 NSF 公开论文原文（一手学术来源）较好；Microsoft 侧使用 Vector 商业厂商页面而非 Microsoft 官方研究或论文，来源层级不足，且缺少 ICSE/FSE 等学术一手来源。",
+          "tool_efficiency": "22 次检索、9 个计划单元仅 2 个有效，最终仍为 INSUFFICIENT_EVIDENCE，有效结论少，检索投入与产出不匹配，存在明显浪费。"
+        },
+        "must_cover": [
+          {
+            "item": "支持的实证",
+            "covered": false
+          },
+          {
+            "item": "不支持的实证",
+            "covered": false
+          },
+          {
+            "item": "覆盖率之外的混杂因素",
+            "covered": true
+          }
+        ],
+        "judge_pass": false,
+        "summary": "报告如实承认证据不足、未编造因果结论，但支持与不支持两方面的实证均缺失，Microsoft 侧仅以商业厂商文档支撑，整体未实质回答冲突问题。"
+      },
+      "passed": false
+    },
+    {
+      "case_key": "conflict-ssr-web-vitals",
+      "question_type": "CONFLICT",
+      "run_id": "1cfafc58-e2d6-4462-beb2-a856db550f3a",
+      "metrics": {
+        "terminal_status": "COMPLETED",
+        "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+        "wall_seconds": 236.3,
+        "search_query_count": 12,
+        "counter_check_not_run": 0,
+        "counter_check_refuted": 0,
+        "cells_available": true,
+        "planned_cells": 5,
+        "effective_cells": 3,
+        "effective_cell_rate": 0.6,
+        "status_counts": {
+          "VERIFIED": 3,
+          "GAP": 2
+        },
+        "queries_per_effective_cell": 4.0
+      },
+      "judge": {
+        "status": "SCORED",
+        "scores": {
+          "factual_accuracy": 0.55,
+          "citation_accuracy": 0.5,
+          "completeness": 0.4,
+          "source_quality": 0.45,
+          "tool_efficiency": 0.55
+        },
+        "rationales": {
+          "factual_accuracy": "核心结论（SSR 不必然改善全部 CWV）方向正确，但报告把'SSR 可显著改善 Core Web Vitals 并改善 LCP'当作已核验事实，同时又承认 LCP/CLS 证据不足，自相矛盾；且未给出真正'没有改善或变差'的测量，水合成本这一关键条件几乎未涉及。",
+          "citation_accuracy": "linkbot 引用原文只说 SSR 可显著改善 CWV 并提及 loading/interactivity/visual stability，并未支持'改善 LCP'这一具体断言，报告将其外推；web.dev TTFB/FCP 引用被用来支撑'服务端响应是 LCP 制约机制'属合理但部分外推；jasminedirectory 表格引用只对比 CSR 快速，未直接测 INP，支撑力弱。",
+          "completeness": "must_cover 三项中，'改善的测量'有概括表述但缺具体数据；'没有改善或变差的测量'基本缺失，仅以表格中'未找到证据'充数；'水合成本'等决定条件未被实质讨论，仅提 TTFB 与往返请求。",
+          "source_quality": "web.dev 为一手权威来源，但关键冲突结论依赖 linkbot.com 与 jasminedirectory.com 这类非一手内容农场/聚合站，缺少规范与论文支撑。",
+          "tool_efficiency": "12 次检索仅 3 个有效结论，且两个必需单元格（LCP、CLS）仍未解决，检索产出比偏低。"
+        },
+        "must_cover": [
+          {
+            "item": "改善的测量",
+            "covered": true
+          },
+          {
+            "item": "没有改善或变差的测量",
+            "covered": false
+          },
+          {
+            "item": "决定结果的条件，例如水合成本",
+            "covered": false
+          }
+        ],
+        "judge_pass": false,
+        "summary": "结论方向正确但自相矛盾，且缺少变差测量与水合成本等成立条件，引用多为二手来源，未达冲突类问题的双方证据要求。"
+      },
+      "passed": false
+    }
+  ]
+}

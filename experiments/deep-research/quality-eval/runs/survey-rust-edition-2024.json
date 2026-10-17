@@ -1,0 +1,1229 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-rust-edition-2024",
+  "run_id": "ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T12:02:47.564519+00:00",
+  "finished_at": "2026-10-17T12:05:38.595148+00:00",
+  "wall_seconds": 171.0,
+  "run_detail": {
+    "research_run_id": "ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "6c23443a-2c64-4e88-82d6-db7a859eb407",
+    "question": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+    "final_report_markdown": "# Rust 2024 edition 相对 2021 edition 的不兼容变更：基于官方 edition 指南的梳理\n\n本次核验的资料显示，2024 edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字；同时，edition 机制本身以选择性迁移为前提，不兼容变更被推入下一个 edition，现有代码除非显式迁移否则不会使用这些变更，而迁移可借助 cargo fix 自动完成。关于具体不兼容变更的细目，资料仅明确提到 `#\"hey\"#` 这类词法形式在 2021 被接受、在 2024 为 hard error，以及 Cargo 与 rustfmt 等工具层面也会被纳入 edition 相关变更的考虑。\n\n## 直接回答\n\n本次核验的资料显示，edition 可以承载不兼容变更，典型例子是引入与代码中标识符冲突的新关键字，因此 2024 edition 相对 2021 edition 在语言层面可能带来需要迁移调整的写法。与此同时，这类变更并非只限于语言本身，Cargo 和 rustfmt 的变化同样会被纳入 edition 相关变更的考虑范围。 [evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5] [evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e]\n\n在词法解析方面，资料给出的具体案例是 `#\"hey\"#`：它在当前 edition（Rust 2021）中被接受，但在 Rust 2024 中是 hard error。这说明部分在 2021 下合法的写法在 2024 中会被拒绝，需要相应调整。 [evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3]\n\n不兼容变更的落地方式与 edition 的可选性直接相关：变更被推入下一个 edition，而 edition 是 opt-in 的，现有 crate 除非显式迁移，否则不会使用这些变更。为帮助过渡，Cargo 提供 `cargo fix` 子命令自动更新源代码；若某些问题无法自动修复，`cargo fix` 会在控制台打印无法修复的警告，此时需要手动更新代码。2024 edition 的相关指引同样说明可通过 `cargo fix` 自动升级代码。 [evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32] [evidence:2e42ef789f20480f4555f3aaa7790f86731fee379a1d5db5] [evidence:04a621f478d6de572de87eddd3b3e4ed6d685e181957428a] [evidence:a13be51325279c97cf8996f11a78e5d1b63c1b1c6544e1d6] [evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb]\n\n## 对比表\n\n| 主题 | Rust 2021 edition | Rust 2024 edition |\n| --- | --- | --- |\n| 不兼容变更的性质 | 资料未直接描述 | edition 可包含不兼容变更，例如引入与代码中标识符冲突的新关键字 [evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5] |\n| 词法解析 `#\"hey\"#` | 被接受 | hard error [evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3] |\n| 受影响范围 | 资料未直接描述 | 不只限于语言本身，Cargo 与 rustfmt 的变化也在考虑范围内 [evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e] |\n| 迁移与兼容指引 | 不兼容变更推入下一个 edition；edition 为 opt-in，现有 crate 除非显式迁移否则不受影响；`cargo fix` 自动更新代码，无法修复时打印警告并需手动更新 | 可通过 `cargo fix` 自动升级代码到新 edition [evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32] [evidence:2e42ef789f20480f4555f3aaa7790f86731fee379a1d5db5] [evidence:04a621f478d6de572de87eddd3b3e4ed6d685e181957428a] [evidence:a13be51325279c97cf8996f11a78e5d1b63c1b1c6544e1d6] [evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb] |\n\n## Citation audit\n\n### Rust 2021 edition · Migration and compatibility guidance\n\n- Evidence: `evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32`\n- Exact quote: “When there are backwards-incompatible changes, they are pushed into the next edition. Since editions are opt-in, existing crates won’t use the changes unless they explicitly migrate into the new edition.”\n- Snapshot: `research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/a06396c91394fbfef444cd9d344b37e45c718e2e9162b113370fbe3bde70f6a9`\n- URL: https://doc.rust-lang.org/edition-guide/editions/\n\n### Rust 2021 edition · Affected language areas\n\n- Evidence: `evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3`\n- Exact quote: “this is accepted in the current edition (Rust 2021) but is a hard error in Rust 2024!”\n- Snapshot: `research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/00d5c5adb62f4408fcb2c000bacd6ab10e9102f312e1ee3c80a2283c3220bf17`\n- URL: https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html\n\n### Rust 2024 edition · Migration and compatibility guidance\n\n- Evidence: `evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb`\n- Exact quote: “explains how to automatically upgrade your code to a new edition via `cargo fix`.”\n- Snapshot: `research/external/9a6de107-631e-490f-86da-36e5fba4e076/fd50cd1493d64499d817e9ca2eeee0c8e32be7f9233bb87b03ebbe10e3cd80f8`\n- URL: https://doc.rust-lang.org/book/appendix-05-editions.html\n\n### Rust 2024 edition · Incompatible breaking changes\n\n- Evidence: `evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5`\n- Exact quote: “Editions can contain incompatible changes, such as including a new keyword that conflicts with identifiers in code.”\n- Snapshot: `research/external/9a6de107-631e-490f-86da-36e5fba4e076/fd50cd1493d64499d817e9ca2eeee0c8e32be7f9233bb87b03ebbe10e3cd80f8`\n- URL: https://doc.rust-lang.org/book/appendix-05-editions.html\n\n### Rust 2024 edition · Affected language areas\n\n- Evidence: `evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e`\n- Exact quote: “Also note that potential Edition-related changes aren't just limited to the language itself:<br>we'll also consider changes to both Cargo and rustfmt as well.”\n- Snapshot: `research/external/2ea0eb63-1df4-4ef5-9587-d3127d18d7eb/abfa7d6c74fa9f6c9520f9f7a061659da283186fe43386568ae2192869952da1`\n- URL: https://blog.rust-lang.org/2023/12/15/2024-Edition-CFP/\n\n## 补充引用\n\n- Evidence: `evidence:2e42ef789f20480f4555f3aaa7790f86731fee379a1d5db5`\n  - Exact quote: “In order to help transition to the next edition, Cargo includes the [`cargo fix`](../../cargo/commands/cargo-fix.html) subcommand to automatically update your source code.”\n  - Snapshot: `research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/36195c6194c6bfa26e6326dc8b31140facb8d090e52e568ca2c7ca513cf8f935`\n  - URL: https://doc.rust-lang.org/edition-guide/editions/transitioning-an-existing-project-to-a-new-edition.html\n- Evidence: `evidence:04a621f478d6de572de87eddd3b3e4ed6d685e181957428a`\n  - Exact quote: “If `cargo fix` can’t fix something, it will print the warning that it cannot fix to the console. If you see one of these warnings, you’ll have to update your code manually.”\n  - Snapshot: `research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/36195c6194c6bfa26e6326dc8b31140facb8d090e52e568ca2c7ca513cf8f935`\n  - URL: https://doc.rust-lang.org/edition-guide/editions/transitioning-an-existing-project-to-a-new-edition.html\n- Evidence: `evidence:a13be51325279c97cf8996f11a78e5d1b63c1b1c6544e1d6`\n  - Exact quote: “When a new edition releases, crate authors may use [automatic migration tooling within `cargo`](https://doc.rust-lang.org/cargo/commands/cargo-fix.html) to migrate. Cargo will then make minor changes to the code to make it compatible with the new version.”\n  - Snapshot: `research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/a06396c91394fbfef444cd9d344b37e45c718e2e9162b113370fbe3bde70f6a9`\n  - URL: https://doc.rust-lang.org/edition-guide/editions/\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/ee15ccf4-b8f2-48fb-a61b-174fb781410f/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 7449,
+      "sha256": "13435daf307808168d24b17862554f02bdf4038813d0140600ed94d178871616"
+    },
+    "research_artifact": {
+      "artifact_id": "ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/ee15ccf4-b8f2-48fb-a61b-174fb781410f/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 7449,
+        "sha256": "13435daf307808168d24b17862554f02bdf4038813d0140600ed94d178871616"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "site:doc.rust-lang.org edition 2024 breaking changes keywords closures match ergonomics",
+          "Rust 2024 edition incompatibility guide",
+          "Rust edition guide migration lints cargo fix edition 2024",
+          "Rust 2024 edition migration guide cargo fix edition lints",
+          "Rust 2024 edition changes",
+          "Rust edition guide backwards incompatible changes 2024",
+          "Rust 2024 edition Affected language areas 官方说明 适用条件",
+          "Rust 2024 edition Affected language areas primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-616bf6674641dce8",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Rust 2021 edition",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "read_focus": "Identify the backwards-incompatible changes introduced by the Rust 2024 edition relative to the 2021 edition, citing the official Rust edition guide.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Rust 2024 edition",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+            "read_focus": "Identify the backwards-incompatible changes introduced by the Rust 2024 edition relative to the 2021 edition, citing the official Rust edition guide.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-616bf6674641dce8:dim-8305c37c8cde068c",
+            "row_id": "entity-616bf6674641dce8",
+            "branch_id": "branch-main",
+            "column_key": "dim-8305c37c8cde068c",
+            "column_label": "Migration and compatibility guidance",
+            "candidate_value": "Rust 版本的更新通过 edition 实现，不兼容变更被推入下一个 edition；由于 edition 为可选项，现有 crate 除非显式迁移，否则不会使用这些变更",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-8305c37c8cde068c",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-8305c37c8cde068c",
+            "column_label": "Migration and compatibility guidance",
+            "candidate_value": "explains how to automatically upgrade your code to a new edition via `cargo fix`.",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-d81aeb0a2a1edffe",
+            "column_label": "Affected language areas",
+            "candidate_value": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well.",
+            "status": "VERIFIED",
+            "confidence": 0.92,
+            "evidence_refs": [
+              "evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2",
+            "row_id": "entity-8e46954cce57f960",
+            "branch_id": "branch-main",
+            "column_key": "dim-c876eeeffd6f4ff2",
+            "column_label": "Incompatible breaking changes",
+            "candidate_value": "Edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe",
+            "row_id": "entity-616bf6674641dce8",
+            "branch_id": "branch-main",
+            "column_key": "dim-d81aeb0a2a1edffe",
+            "column_label": "Affected language areas",
+            "candidate_value": "词法解析：`#\"hey\"#` 在当前 edition（2021）被接受，但在 2024 中是 hard error",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-616bf6674641dce8",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Rust 2021 edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "read_focus": "Identify the backwards-incompatible changes introduced by the Rust 2024 edition relative to the 2021 edition, citing the official Rust edition guide.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Rust 2024 edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "read_focus": "Identify the backwards-incompatible changes introduced by the Rust 2024 edition relative to the 2021 edition, citing the official Rust edition guide.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-616bf6674641dce8:dim-8305c37c8cde068c",
+          "row_id": "entity-616bf6674641dce8",
+          "branch_id": "branch-main",
+          "column_key": "dim-8305c37c8cde068c",
+          "column_label": "Migration and compatibility guidance",
+          "candidate_value": "Rust 版本的更新通过 edition 实现，不兼容变更被推入下一个 edition；由于 edition 为可选项，现有 crate 除非显式迁移，否则不会使用这些变更",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-8305c37c8cde068c",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-8305c37c8cde068c",
+          "column_label": "Migration and compatibility guidance",
+          "candidate_value": "explains how to automatically upgrade your code to a new edition via `cargo fix`.",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-d81aeb0a2a1edffe",
+          "column_label": "Affected language areas",
+          "candidate_value": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well.",
+          "status": "VERIFIED",
+          "confidence": 0.92,
+          "evidence_refs": [
+            "evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2",
+          "row_id": "entity-8e46954cce57f960",
+          "branch_id": "branch-main",
+          "column_key": "dim-c876eeeffd6f4ff2",
+          "column_label": "Incompatible breaking changes",
+          "candidate_value": "Edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe",
+          "row_id": "entity-616bf6674641dce8",
+          "branch_id": "branch-main",
+          "column_key": "dim-d81aeb0a2a1edffe",
+          "column_label": "Affected language areas",
+          "candidate_value": "词法解析：`#\"hey\"#` 在当前 edition（2021）被接受，但在 2024 中是 hard error",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:04:57Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:04a621f478d6de572de87eddd3b3e4ed6d685e181957428a",
+          "window_id": "window-3",
+          "source_id": "web-f3babe65803e6c2a",
+          "source_title": "Transitioning an existing project to a new edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/transitioning-an-existing-project-to-a-new-edition.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust edition guide migration lints cargo fix edition 2024",
+          "read_focus": "Read external URL Transitioning an existing project to a new edition for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2021 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "If `cargo fix` can’t fix something, it will print the warning that it cannot fix to the console. If you see one of these warnings, you’ll have to update your code manually.",
+          "claim_text": "当 cargo fix 无法自动修复代码时，会输出一个它无法修复的警告，用户必须手动更新代码",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/36195c6194c6bfa26e6326dc8b31140facb8d090e52e568ca2c7ca513cf8f935"
+        },
+        {
+          "evidence_id": "evidence:a13be51325279c97cf8996f11a78e5d1b63c1b1c6544e1d6",
+          "window_id": "window-2",
+          "source_id": "web-a62218717e80b4d3",
+          "source_title": "What are editions? - The Rust Edition Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition incompatibility guide",
+          "read_focus": "Read external URL What are editions? - The Rust Edition Guide for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2021 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "When a new edition releases, crate authors may use [automatic migration tooling within `cargo`](https://doc.rust-lang.org/cargo/commands/cargo-fix.html) to migrate. Cargo will then make minor changes to the code to make it compatible with the new version.",
+          "claim_text": "新 edition 发布后，crate 作者可以使用 cargo 中的自动迁移工具进行迁移，Cargo 会小幅修改代码以兼容新版本",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/a06396c91394fbfef444cd9d344b37e45c718e2e9162b113370fbe3bde70f6a9"
+        },
+        {
+          "evidence_id": "evidence:2e42ef789f20480f4555f3aaa7790f86731fee379a1d5db5",
+          "window_id": "window-3",
+          "source_id": "web-f3babe65803e6c2a",
+          "source_title": "Transitioning an existing project to a new edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/transitioning-an-existing-project-to-a-new-edition.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust edition guide migration lints cargo fix edition 2024",
+          "read_focus": "Read external URL Transitioning an existing project to a new edition for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2021 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In order to help transition to the next edition, Cargo includes the [`cargo fix`](../../cargo/commands/cargo-fix.html) subcommand to automatically update your source code.",
+          "claim_text": "Cargo 包含 cargo fix 子命令来自动更新源码，可通过 cargo fix --edition 运行",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/36195c6194c6bfa26e6326dc8b31140facb8d090e52e568ca2c7ca513cf8f935"
+        },
+        {
+          "evidence_id": "evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32",
+          "window_id": "window-2",
+          "source_id": "web-a62218717e80b4d3",
+          "source_title": "What are editions? - The Rust Edition Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition incompatibility guide",
+          "read_focus": "Read external URL What are editions? - The Rust Edition Guide for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2021 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "When there are backwards-incompatible changes, they are pushed into the next edition. Since editions are opt-in, existing crates won’t use the changes unless they explicitly migrate into the new edition.",
+          "claim_text": "Rust 版本的更新通过 edition 实现，不兼容变更被推入下一个 edition；由于 edition 为可选项，现有 crate 除非显式迁移，否则不会使用这些变更",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/a06396c91394fbfef444cd9d344b37e45c718e2e9162b113370fbe3bde70f6a9"
+        },
+        {
+          "evidence_id": "evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3",
+          "window_id": "window-4",
+          "source_id": "web-94b314e478b5b332",
+          "source_title": "Allowed-by-default Lints - The rustc book",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:doc.rust-lang.org edition 2024 breaking changes keywords closures match ergonomics",
+          "read_focus": "Read external URL Allowed-by-default Lints - The rustc book for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2021 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "this is accepted in the current edition (Rust 2021) but is a hard error in Rust 2024!",
+          "claim_text": "词法解析：`#\"hey\"#` 在当前 edition（2021）被接受，但在 2024 中是 hard error",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9f0fc2df-ff82-4bf5-82dd-0171905439f9/00d5c5adb62f4408fcb2c000bacd6ab10e9102f312e1ee3c80a2283c3220bf17"
+        },
+        {
+          "evidence_id": "evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5",
+          "window_id": "window-2",
+          "source_id": "web-e247e75ada8cb835",
+          "source_title": "E - Editions - The Rust Programming Language",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/book/appendix-05-editions.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition changes",
+          "read_focus": "Read external URL E - Editions - The Rust Programming Language for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2024 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Editions can contain incompatible changes, such as including a new keyword that conflicts with identifiers in code.",
+          "claim_text": "Edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9a6de107-631e-490f-86da-36e5fba4e076/fd50cd1493d64499d817e9ca2eeee0c8e32be7f9233bb87b03ebbe10e3cd80f8"
+        },
+        {
+          "evidence_id": "evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb",
+          "window_id": "window-2",
+          "source_id": "web-e247e75ada8cb835",
+          "source_title": "E - Editions - The Rust Programming Language",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/book/appendix-05-editions.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition changes",
+          "read_focus": "Read external URL E - Editions - The Rust Programming Language for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2024 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "explains how to automatically upgrade your code to a new edition via `cargo fix`.",
+          "claim_text": "explains how to automatically upgrade your code to a new edition via `cargo fix`.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9a6de107-631e-490f-86da-36e5fba4e076/fd50cd1493d64499d817e9ca2eeee0c8e32be7f9233bb87b03ebbe10e3cd80f8"
+        },
+        {
+          "evidence_id": "evidence:1da0f33ffbc5480173a1fd8472448723ac9ec937b2fe859b",
+          "window_id": "window-4",
+          "source_id": "web-f3babe65803e6c2a",
+          "source_title": "Transitioning an existing project to a new edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/transitioning-an-existing-project-to-a-new-edition.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition migration guide cargo fix edition lints",
+          "read_focus": "Read external URL Transitioning an existing project to a new edition for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2024 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`cargo fix` can’t always fix your code automatically. If `cargo fix` can’t fix something, it will print the warning that it cannot fix to the console.",
+          "claim_text": "cargo fix 无法自动修复所有问题，无法修复时会打印警告，需手动更新代码",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.6,
+          "conflict_score": 0.6,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9a6de107-631e-490f-86da-36e5fba4e076/36195c6194c6bfa26e6326dc8b31140facb8d090e52e568ca2c7ca513cf8f935"
+        },
+        {
+          "evidence_id": "evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e",
+          "window_id": "window-1",
+          "source_id": "web-92d4e047d9319659",
+          "source_title": "A Call for Proposals for the Rust 2024 Edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blog.rust-lang.org/2023/12/15/2024-Edition-CFP/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Rust 2024 edition Affected language areas 官方说明 适用条件",
+          "read_focus": "Read external URL A Call for Proposals for the Rust 2024 Edition for claims that answer: Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。\n\nCurrent Table-as-State entity: Rust 2024 edition. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well.",
+          "claim_text": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.92,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2ea0eb63-1df4-4ef5-9587-d3127d18d7eb/abfa7d6c74fa9f6c9520f9f7a061659da283186fe43386568ae2192869952da1"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-616bf6674641dce8:dim-8305c37c8cde068c",
+          "row_id": "entity-616bf6674641dce8",
+          "evidence_id": "evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32",
+          "source_id": "web-a62218717e80b4d3",
+          "source_title": "What are editions? - The Rust Edition Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/edition-guide/editions/"
+        },
+        {
+          "cell_id": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe",
+          "row_id": "entity-616bf6674641dce8",
+          "evidence_id": "evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3",
+          "source_id": "web-94b314e478b5b332",
+          "source_title": "Allowed-by-default Lints - The rustc book",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html"
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-8305c37c8cde068c",
+          "row_id": "entity-8e46954cce57f960",
+          "evidence_id": "evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb",
+          "source_id": "web-e247e75ada8cb835",
+          "source_title": "E - Editions - The Rust Programming Language",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/book/appendix-05-editions.html"
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2",
+          "row_id": "entity-8e46954cce57f960",
+          "evidence_id": "evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5",
+          "source_id": "web-e247e75ada8cb835",
+          "source_title": "E - Editions - The Rust Programming Language",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://doc.rust-lang.org/book/appendix-05-editions.html"
+        },
+        {
+          "cell_id": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe",
+          "row_id": "entity-8e46954cce57f960",
+          "evidence_id": "evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e",
+          "source_id": "web-92d4e047d9319659",
+          "source_title": "A Call for Proposals for the Rust 2024 Edition",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://blog.rust-lang.org/2023/12/15/2024-Edition-CFP/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "74bf527d-5922-4392-a4b3-c7c96065f34a",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T12:02:47Z"
+      },
+      {
+        "trace_id": "daad0eab-d7b0-4440-8ffb-adb0ff908508",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T12:02:57Z"
+      },
+      {
+        "trace_id": "8c56d1d2-f909-44a6-b793-816990a65203",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Rust 2024 edition 相对 2021 edition 有哪些不兼容变更？引用 Rust 官方 edition 指南。",
+        "payload": {
+          "cell_count": 5
+        },
+        "created_at": "2026-10-17T12:05:34Z"
+      }
+    ],
+    "created_at": "2026-10-17T12:02:47Z",
+    "updated_at": "2026-10-17T12:05:34Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:03:47Z",
+          "lease_epoch": 1,
+          "task_id": "54686969-f733-4a2d-86d5-ef931232d16f",
+          "task_key": "planning:ee15ccf4-b8f2-48fb-a61b-174fb781410f",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:05:56Z",
+          "lease_epoch": 1,
+          "task_id": "9a6de107-631e-490f-86da-36e5fba4e076",
+          "task_key": "deep-cell:6cf59994080be897d274c1163448627d",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:04:59Z",
+          "lease_epoch": 1,
+          "task_id": "9f0fc2df-ff82-4bf5-82dd-0171905439f9",
+          "task_key": "deep-cell:499f923780bfeda3bf056b21fa9a1ad8",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:06:14Z",
+          "lease_epoch": 1,
+          "task_id": "2ea0eb63-1df4-4ef5-9587-d3127d18d7eb",
+          "task_key": "counterfactual:5b406aa75a526d1ba9071ce317a0103b",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:06:27Z",
+          "lease_epoch": 1,
+          "task_id": "006c3ef7-4213-42c5-b515-187c922f9ae0",
+          "task_key": "synthesis:620b4d6f7e6e884c2170c7f6dbad0619",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "29fa5c33-3460-4e62-9a6c-aa141eab31bf",
+          "cell_key": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe",
+          "task_id": "9f0fc2df-ff82-4bf5-82dd-0171905439f9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "e5c23a9f-47fa-470d-8366-8778fc44083d",
+          "cell_key": "entity-616bf6674641dce8:dim-8305c37c8cde068c",
+          "task_id": "9f0fc2df-ff82-4bf5-82dd-0171905439f9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "705d1fbf-d45e-4e04-b1b9-9021b3dec153",
+          "cell_key": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2",
+          "task_id": "9a6de107-631e-490f-86da-36e5fba4e076"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "df849545-c7a5-405b-beb1-a53973e6bfc9",
+          "cell_key": "entity-8e46954cce57f960:dim-8305c37c8cde068c",
+          "task_id": "9a6de107-631e-490f-86da-36e5fba4e076"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.92,
+          "candidate_id": "2ca95899-3115-4535-a7cd-07df9d7d14d1",
+          "cell_key": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe",
+          "task_id": "2ea0eb63-1df4-4ef5-9587-d3127d18d7eb"
+        }
+      ],
+      "candidate_count": 5,
+      "task_count": 5,
+      "merge_count": 5,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:2fc6966d69e135da04b873aecc1273ff2f08c67018b6a8052f71fc0e9e86d815",
+          "candidate_id": "29fa5c33-3460-4e62-9a6c-aa141eab31bf",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe"
+        },
+        {
+          "merge_id": "merge:1af411af4a47e27b1783afe15cdb24fb758397d38d8f62c6e694f6f0123c993f",
+          "candidate_id": "e5c23a9f-47fa-470d-8366-8778fc44083d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-616bf6674641dce8:dim-8305c37c8cde068c"
+        },
+        {
+          "merge_id": "merge:6964cf7ae868e96b83a814e27876440c7bdbb9a7f5db6e8719006845b36d76be",
+          "candidate_id": "705d1fbf-d45e-4e04-b1b9-9021b3dec153",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2"
+        },
+        {
+          "merge_id": "merge:dcd0de5ecfee7819e842fa48545a4f43f5d827f92582ef678128f0eb883475ad",
+          "candidate_id": "df849545-c7a5-405b-beb1-a53973e6bfc9",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-8e46954cce57f960:dim-8305c37c8cde068c"
+        },
+        {
+          "merge_id": "merge:eae3de1d4179c01a77e89306fb5b1e293b30d5c895a9b4e2a505756813a24e7a",
+          "candidate_id": "2ca95899-3115-4535-a7cd-07df9d7d14d1",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 3,
+          "merge_high_water_mark": 4,
+          "candidate_high_water_mark": 4
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-616bf6674641dce8",
+            "label": "Rust 2021 edition"
+          },
+          {
+            "entity_key": "entity-8e46954cce57f960",
+            "label": "Rust 2024 edition"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-8305c37c8cde068c",
+            "label": "Migration and compatibility guidance",
+            "description": "Official guidance on how code written for this edition must be updated or how tools auto-migrate it, with the edition guide reference.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-c876eeeffd6f4ff2",
+            "label": "Incompatible breaking changes",
+            "description": "The list of changes in this edition that can break existing code compared with the previous edition, as documented in the official Rust edition guide.",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-d81aeb0a2a1edffe",
+            "label": "Affected language areas",
+            "description": "Which language and tooling areas (e.g. keywords, closures, captures, match ergonomics, Cargo, FFI) each breaking change touches in this edition.",
+            "answer_format": "LIST",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Official Rust edition guide content on Rust 2024 breaking changes and migration guidance; no third-party summaries as primary evidence.",
+          "objective": "Identify the backwards-incompatible changes introduced by the Rust 2024 edition relative to the 2021 edition, citing the official Rust edition guide.",
+          "exclusions": [
+            "Non-breaking additive features and idioms",
+            "Third-party blog summaries as primary sources",
+            "Editions older than 2021 or future editions"
+          ],
+          "time_range": "current (Rust 2024 stabilized in Rust 1.85.0, Feb 2025)",
+          "deliverable": "Markdown research report with per-item exact quotes, snapshot references and URLs from the official edition guide."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "doc.rust-lang.org",
+          "blog.rust-lang.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which 2021 constructs break or behave differently in 2024?",
+              "What migration steps does the edition guide prescribe?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Is the authoritative breaking-change list complete and citable before upgrade?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-616bf6674641dce8:dim-8305c37c8cde068c",
+          "entity_label": "Rust 2021 edition",
+          "column_label": "Migration and compatibility guidance",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Rust 版本的更新通过 edition 实现，不兼容变更被推入下一个 edition；由于 edition 为可选项，现有 crate 除非显式迁移，否则不会使用这些变更",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:19e00485f4eb41f013664fab95b7e8b499fa20d3a45c9f32",
+              "source_domain": "rust-lang.org",
+              "claim_text": "Rust 版本的更新通过 edition 实现，不兼容变更被推入下一个 edition；由于 edition 为可选项，现有 crate 除非显式迁移，否则不会使用这些变更"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-616bf6674641dce8:dim-d81aeb0a2a1edffe",
+          "entity_label": "Rust 2021 edition",
+          "column_label": "Affected language areas",
+          "cell_status": "VERIFIED",
+          "candidate_value": "词法解析：`#\"hey\"#` 在当前 edition（2021）被接受，但在 2024 中是 hard error",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0a74574a616fbe1376acef234e5b484a63eb0811528c20e3",
+              "source_domain": "rust-lang.org",
+              "claim_text": "词法解析：`#\"hey\"#` 在当前 edition（2021）被接受，但在 2024 中是 hard error"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-8305c37c8cde068c",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Migration and compatibility guidance",
+          "cell_status": "VERIFIED",
+          "candidate_value": "explains how to automatically upgrade your code to a new edition via `cargo fix`.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:09e9eb2775862338a5dc0fdb3c3987ae7145ca5f2b5167eb",
+              "source_domain": "rust-lang.org",
+              "claim_text": "explains how to automatically upgrade your code to a new edition via `cargo fix`."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-c876eeeffd6f4ff2",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Incompatible breaking changes",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ea0f50f866f149b41f0953400cdcd108584e49bc70aa79b5",
+              "source_domain": "rust-lang.org",
+              "claim_text": "Edition 可以包含不兼容变更，例如引入与代码中标识符冲突的新关键字"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe",
+          "entity_label": "Rust 2024 edition",
+          "column_label": "Affected language areas",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3ea19d415f97e3bb199b48bae56e60eada5f56e0c1d0937e",
+              "source_domain": "rust-lang.org",
+              "claim_text": "Also note that potential Edition-related changes aren't just limited to the language itself:\nwe'll also consider changes to both Cargo and rustfmt as well."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 920000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-8e46954cce57f960:dim-d81aeb0a2a1edffe"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T12:04:57Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

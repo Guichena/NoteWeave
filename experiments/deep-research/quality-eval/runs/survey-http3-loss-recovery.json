@@ -1,0 +1,1800 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-http3-loss-recovery",
+  "run_id": "62f38e66-7930-4ce1-b482-1a34cad55700",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T12:05:38.707623+00:00",
+  "finished_at": "2026-10-17T12:11:35.674103+00:00",
+  "wall_seconds": 357.0,
+  "run_detail": {
+    "research_run_id": "62f38e66-7930-4ce1-b482-1a34cad55700",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "17718f20-bce7-463c-b25e-01b54d247599",
+    "question": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+    "final_report_markdown": "# HTTP/3 与 HTTP/2 在拥塞控制与丢包恢复上的差异：基于已核验资料的梳理\n\n本次核验的资料显示，HTTP/3 是 HTTP 语义在 QUIC 上的映射，传输可靠性在流级别提供、拥塞控制作用于整个连接，因此单个资源的丢包不会阻塞其他流；HTTP/2 则运行在 TCP 之上，传输层丢包仍会造成跨流队头阻塞。两份协议在拥塞控制的具体机制与丢包检测恢复机制方面的证据不足，相关问题仍待解答。\n\n## 直接回答\n\n就传输底座而言，已核验资料表明 HTTP/3 依赖 QUIC 作为底层传输，并以 QUIC version 1 为传输协议；HTTP/2 则运行在 TCP 连接之上。也就是说，两者的拥塞控制与恢复能力分别由 QUIC 和 TCP 在传输层承担，而非在 HTTP 层实现。 [evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235] [evidence:c8d854d69c4dd57fa2bd743982c95c21ae3c6d80a32e25c8] [evidence:dc1c36e98700f596fc0111a0edcc26b6269c2100b641091a] [evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97]\n\n在丢包恢复的表现上，已核验资料指出 QUIC 在流级别提供可靠性、在整个连接层面实施拥塞控制，因此具备相对 TCP 映射改善 HTTP 性能的能力；其独立流基于 UDP，某个资源的丢包不会拖累其他资源。相比之下，HTTP/2 运行于 TCP 之上，传输层丢包仍可能造成跨流的队头阻塞。 [evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e] [evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416]\n\n## 传输底座与拥塞控制的归属\n\n已核验资料将 HTTP/3 界定为 HTTP 语义映射到 QUIC 传输协议之上的版本，并明确其依赖 QUIC version 1 作为底层传输；资料同时说明，QUIC 在流级别提供可靠性，并在整个连接范围内进行拥塞控制。这表明针对 HTTP/3 的拥塞控制作用域是整个连接，而不是单条流。 [evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235] [evidence:c8d854d69c4dd57fa2bd743982c95c21ae3c6d80a32e25c8] [evidence:dc1c36e98700f596fc0111a0edcc26b6269c2100b641091a]\n\n对于 HTTP/2，已核验资料仅说明它与 HTTP/1.1 一样运行在 TCP 连接之上，而 HTTP/3 才是运行在 QUIC 之上的版本。因此资料所能支持的结论限于其传输底座为 TCP，未涉及 TCP 侧拥塞控制的具体机制。 [evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97]\n\n## 丢包影响范围与恢复粒度\n\n关于 HTTP/3 在丢包场景下的表现，已核验资料指出其基于 UDP 的独立流意味着某个资源丢包时不会阻塞其他资源，这与单一 TCP 连接中顺序重要的情形形成对比。资料还描述了相关错误条件是在具体流上还是在整个连接层面上被处理与表达。 [evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e] [evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295]\n\n对于 HTTP/2，已核验资料表明传输层丢包仍可能在流之间造成队头阻塞，其原因在于 HTTP/2 运行在 TCP 之上。这一对比解释了为何两者在丢包恢复的宏观表现上不同：差异源自传输层结构，而非 HTTP 层本身的机制描述。 [evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416]\n\n## 对比表\n\n| 传输底座与拥塞控制作用域 | 丢包的影响范围 | 错误处理的粒度 |\n| --- | --- | --- |\n| 映射于 QUIC 之上，以 QUIC version 1 为底层传输；可靠性在流级别，拥塞控制作用于整个连接 | 独立流基于 UDP，某资源丢包不阻塞其他资源 | 区分具体流上的错误与整个连接层面的错误 [evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235] [evidence:c8d854d69c4dd57fa2bd743982c95c21ae3c6d80a32e25c8] [evidence:dc1c36e98700f596fc0111a0edcc26b6269c2100b641091a] [evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e] [evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295] |\n| 运行在 TCP 连接之上 | 传输层丢包仍可造成跨流队的头阻塞 | 资料未提供 [evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97] [evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416] |\n\n**核验情况：** 已核验 5 项，未找到足够证据 5 项。\n\n## 结论汇总\n\n| 研究对象 | Transport substrate and congestion control locus | Congestion control mechanism | Loss detection and recovery mechanism | Head-of-line blocking behavior | Stream and connection recovery granularity |\n|---|---|---|---|---|---|\n| HTTP/2 | HTTP/2 运行在 TCP 连接之上 | 未找到证据 | 未找到证据 | HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。 | 未找到证据 |\n| HTTP/3 | HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。 | 未找到证据 | 未找到证据 | Independent streams over UDP mean a lost packet for one resource doesn’t stall t… | describes how error conditions are handled and expressed, either on a particular… |\n\n## 引用核对\n\n### HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。\n\n- 研究项：`HTTP/3 · Transport substrate and congestion control locus`\n- 候选：`c7ca39d9-d5d3-4425-9bbb-fcd6ff6bd540`\n- Evidence: `evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235`\n  - Exact quote: “This document defines HTTP/3: a mapping of HTTP semantics over the QUIC transport protocol, drawing heavily on the design of HTTP/2.”\n  - Snapshot: `research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/3d45f4e813262ea6af913b92bd4f441edf1ce0260efe9c2cb6a0805e469acd11`\n  - URL: https://httpwg.org/specs/rfc9114.html\n\n### describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.\n\n- 研究项：`HTTP/3 · Stream and connection recovery granularity`\n- 候选：`0318ba74-2104-4ab9-a006-854dd4c904a0`\n- Evidence: `evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295`\n  - Exact quote: “describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.”\n  - Snapshot: `research/external/81a505fc-c04f-439e-9eb7-d563dc33ec61/943490dce67c2b0ac82429e2c3c0dbf7710f4692fa2209d48fa50aeca099457a`\n  - URL: https://www.rfc-editor.org/info/rfc9114/\n\n### Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.\n\n- 研究项：`HTTP/3 · Head-of-line blocking behavior`\n- 候选：`369e0762-8d16-4e6b-a9b4-ffa9a2fa1b50`\n- Evidence: `evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e`\n  - Exact quote: “Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.”\n  - Snapshot: `research/external/6117b7d0-aa81-4fc9-831d-395e5fd5a5dc/7a5d75aeb8710b2e462d7347f1d0b08fe53866d84e1cdfaed695586fe614cce2`\n  - URL: https://ma.ttias.be/quic-http3-in-2026/\n\n### HTTP/2 运行在 TCP 连接之上\n\n- 研究项：`HTTP/2 · Transport substrate and congestion control locus`\n- 候选：`e0f03626-29f9-42a7-a018-34e2738fdb60`\n- Evidence: `evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97`\n  - Exact quote: “While HTTP/1.1 and HTTP/2 both run on top of TCP connections, HTTP/3 is the HTTP version that runs on top of QUIC.”\n  - Snapshot: `research/external/9e76362c-e149-41f8-9cd0-69f1dea8c453/9098fca4eb3fbb70c925fa6588812f68d1e29ed27283e476823a729c3ef43f9f`\n  - URL: https://quic-go.net/docs/http3/\n\n### HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。\n\n- 研究项：`HTTP/2 · Head-of-line blocking behavior`\n- 候选：`885158b7-5e89-434d-9500-a62a32810f28`\n- Evidence: `evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416`\n  - Exact quote: “Packet loss at the transport layer can still cause HOL blocking across streams because HTTP/2 runs”\n  - Snapshot: `research/external/6d313414-f0c3-4414-b2df-239d97ca29aa/a93c0a00ccfa8b03f354f1bb2ba932d7856953f4f979125a1c749ca52a0874cf`\n  - URL: https://developer.mozilla.org/en-US/docs/Glossary/Head_of_line_blocking\n\n## 局限与未解决项\n\n- **HTTP/3 · Congestion control mechanism**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **HTTP/3 · Loss detection and recovery mechanism**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **HTTP/2 · Congestion control mechanism**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **HTTP/2 · Stream and connection recovery granularity**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **HTTP/2 · Loss detection and recovery mechanism**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:c8d854d69c4dd57fa2bd743982c95c21ae3c6d80a32e25c8`\n  - Exact quote: “By providing reliability at the stream level and congestion control across the entire connection, QUIC has the capability to improve the performance of HTTP compared to a TCP mapping.”\n  - Snapshot: `research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/3d45f4e813262ea6af913b92bd4f441edf1ce0260efe9c2cb6a0805e469acd11`\n  - URL: https://httpwg.org/specs/rfc9114.html\n- Evidence: `evidence:dc1c36e98700f596fc0111a0edcc26b6269c2100b641091a`\n  - Exact quote: “HTTP/3 relies on QUIC version 1 as the underlying transport.”\n  - Snapshot: `research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/e7f20f1b7bd8e9d1d9dfd46632c736ff5666e86e35a4f5cb95d699fab7752b4b`\n  - URL: https://www.rfc-editor.org/info/rfc9114/",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/62f38e66-7930-4ce1-b482-1a34cad55700/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 9834,
+      "sha256": "b2ff3b0393c514c7d70448e67b1009eedf8bc6ca9190e6e049cc7b60d3015034"
+    },
+    "research_artifact": {
+      "artifact_id": "62f38e66-7930-4ce1-b482-1a34cad55700",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "62f38e66-7930-4ce1-b482-1a34cad55700",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/62f38e66-7930-4ce1-b482-1a34cad55700/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 9834,
+        "sha256": "b2ff3b0393c514c7d70448e67b1009eedf8bc6ca9190e6e049cc7b60d3015034"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "RFC 9114 HTTP/3 QUIC transport section",
+          "HTTP/2 HTTP/3 congestion control packet loss recovery",
+          "RFC 9002 QUIC congestion control NewReno loss recovery",
+          "HTTP/3 HTTP/2 congestion control loss recovery",
+          "HTTP/2 TCP head-of-line blocking RFC 9113 streams",
+          "QUIC loss detection and congestion control RFC 9002 packet number ACK",
+          "RFC 9114 HTTP/3 over QUIC transport section reference",
+          "RFC 9002 QUIC congestion control NewReno status",
+          "HTTP/3 congestion control loss recovery RFC",
+          "HTTP/2 Stream and connection recovery granularity primary research limitations",
+          "HTTP/2 Stream and connection recovery granularity 官方说明 适用条件",
+          "QUIC ACK frame largest acknowledged loss detection RFC 9002 pseudocode",
+          "RFC 9002 section 6 loss detection timer kPacketThreshold kTimeThreshold",
+          "HTTP/2 Congestion control mechanism primary research limitations",
+          "HTTP/2 Congestion control mechanism 官方说明 适用条件",
+          "HTTP/2 Loss detection and recovery mechanism 官方说明 适用条件",
+          "HTTP/2 Loss detection and recovery mechanism primary research limitations",
+          "HTTP/3 Stream and connection recovery granularity 官方说明 适用条件",
+          "HTTP/3 Stream and connection recovery granularity primary research limitations",
+          "HTTP/3 Congestion control mechanism primary research limitations",
+          "HTTP/3 Congestion control mechanism 官方说明 适用条件",
+          "HTTP/3 Loss detection and recovery mechanism documented limitations",
+          "HTTP/3 Loss detection and recovery mechanism implementation requirements"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 2,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 2,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 2,
+        "guardrailed_row_count": 2,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 2,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-46179e1c8e2c3f84",
+            "source_id": "",
+            "source_title": "HTTP/2",
+            "evidence_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-2fc9676ded53e39a",
+            "source_id": "",
+            "source_title": "HTTP/3",
+            "evidence_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-46179e1c8e2c3f84",
+            "source_id": "",
+            "source_title": "HTTP/2",
+            "evidence_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          },
+          {
+            "row_id": "entity-2fc9676ded53e39a",
+            "source_id": "",
+            "source_title": "HTTP/3",
+            "evidence_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "HTTP/2",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "read_focus": "对比 HTTP/2 与 HTTP/3 在拥塞控制与丢包恢复上的实现差异，并以 RFC 原文逐项引用。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "HTTP/3",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+            "read_focus": "对比 HTTP/2 与 HTTP/3 在拥塞控制与丢包恢复上的实现差异，并以 RFC 原文逐项引用。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1",
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "column_key": "dim-47727b75d1dccad1",
+            "column_label": "Transport substrate and congestion control locus",
+            "candidate_value": "HTTP/2 运行在 TCP 连接之上",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1",
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "column_key": "dim-47727b75d1dccad1",
+            "column_label": "Transport substrate and congestion control locus",
+            "candidate_value": "HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6",
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "column_key": "dim-73e5ffc8f3df49a6",
+            "column_label": "Head-of-line blocking behavior",
+            "candidate_value": "HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-46179e1c8e2c3f84:dim-fb59f13867874d3c",
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "column_key": "dim-fb59f13867874d3c",
+            "column_label": "Loss detection and recovery mechanism",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6",
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "column_key": "dim-73e5ffc8f3df49a6",
+            "column_label": "Head-of-line blocking behavior",
+            "candidate_value": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-46179e1c8e2c3f84:dim-15a35e7a642388ac",
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "column_key": "dim-15a35e7a642388ac",
+            "column_label": "Congestion control mechanism",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "column_key": "dim-6dc0f195e47ef006",
+            "column_label": "Stream and connection recovery granularity",
+            "candidate_value": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-2fc9676ded53e39a:dim-15a35e7a642388ac",
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "column_key": "dim-15a35e7a642388ac",
+            "column_label": "Congestion control mechanism",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-2fc9676ded53e39a:dim-fb59f13867874d3c",
+            "row_id": "entity-2fc9676ded53e39a",
+            "branch_id": "branch-main",
+            "column_key": "dim-fb59f13867874d3c",
+            "column_label": "Loss detection and recovery mechanism",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-46179e1c8e2c3f84:dim-6dc0f195e47ef006",
+            "row_id": "entity-46179e1c8e2c3f84",
+            "branch_id": "branch-main",
+            "column_key": "dim-6dc0f195e47ef006",
+            "column_label": "Stream and connection recovery granularity",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "HTTP/2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+          "read_focus": "对比 HTTP/2 与 HTTP/3 在拥塞控制与丢包恢复上的实现差异，并以 RFC 原文逐项引用。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+          "read_focus": "对比 HTTP/2 与 HTTP/3 在拥塞控制与丢包恢复上的实现差异，并以 RFC 原文逐项引用。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "column_key": "dim-47727b75d1dccad1",
+          "column_label": "Transport substrate and congestion control locus",
+          "candidate_value": "HTTP/2 运行在 TCP 连接之上",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1",
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "column_key": "dim-47727b75d1dccad1",
+          "column_label": "Transport substrate and congestion control locus",
+          "candidate_value": "HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "column_key": "dim-73e5ffc8f3df49a6",
+          "column_label": "Head-of-line blocking behavior",
+          "candidate_value": "HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-fb59f13867874d3c",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "column_key": "dim-fb59f13867874d3c",
+          "column_label": "Loss detection and recovery mechanism",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6",
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "column_key": "dim-73e5ffc8f3df49a6",
+          "column_label": "Head-of-line blocking behavior",
+          "candidate_value": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-15a35e7a642388ac",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "column_key": "dim-15a35e7a642388ac",
+          "column_label": "Congestion control mechanism",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "column_key": "dim-6dc0f195e47ef006",
+          "column_label": "Stream and connection recovery granularity",
+          "candidate_value": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-15a35e7a642388ac",
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "column_key": "dim-15a35e7a642388ac",
+          "column_label": "Congestion control mechanism",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-fb59f13867874d3c",
+          "row_id": "entity-2fc9676ded53e39a",
+          "branch_id": "branch-main",
+          "column_key": "dim-fb59f13867874d3c",
+          "column_label": "Loss detection and recovery mechanism",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-6dc0f195e47ef006",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "branch_id": "branch-main",
+          "column_key": "dim-6dc0f195e47ef006",
+          "column_label": "Stream and connection recovery granularity",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:07:50Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:10:42Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:11:26Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97",
+          "window_id": "window-4",
+          "source_id": "web-7106bf0e6b6455a6",
+          "source_title": "HTTP/3 – quic-go docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://quic-go.net/docs/http3/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "RFC 9114 HTTP/3 QUIC transport section",
+          "read_focus": "Read external URL HTTP/3 – quic-go docs for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/2. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "While HTTP/1.1 and HTTP/2 both run on top of TCP connections, HTTP/3 is the HTTP version that runs on top of QUIC.",
+          "claim_text": "HTTP/2 运行在 TCP 连接之上",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9e76362c-e149-41f8-9cd0-69f1dea8c453/9098fca4eb3fbb70c925fa6588812f68d1e29ed27283e476823a729c3ef43f9f"
+        },
+        {
+          "evidence_id": "evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416",
+          "window_id": "window-3",
+          "source_id": "web-7ab85b6091af30d0",
+          "source_title": "Head-of-line blocking - Glossary - MDN Web Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.mozilla.org/en-US/docs/Glossary/Head_of_line_blocking",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "HTTP/2 TCP head-of-line blocking RFC 9113 streams",
+          "read_focus": "Read external URL Head-of-line blocking - Glossary - MDN Web Docs for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/2. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Packet loss at the transport layer can still cause HOL blocking across streams because HTTP/2 runs",
+          "claim_text": "HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6d313414-f0c3-4414-b2df-239d97ca29aa/a93c0a00ccfa8b03f354f1bb2ba932d7856953f4f979125a1c749ca52a0874cf"
+        },
+        {
+          "evidence_id": "evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e",
+          "window_id": "window-6",
+          "source_id": "web-0c6b9b5be926ef65",
+          "source_title": "QUIC and HTTP/3 in 2026: from Google experiment to IETF ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://ma.ttias.be/quic-http3-in-2026/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+          "read_focus": "archive-reuse:dim-73e5ffc8f3df49a6/dim-fb59f13867874d3c",
+          "quote_text": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.",
+          "claim_text": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6117b7d0-aa81-4fc9-831d-395e5fd5a5dc/7a5d75aeb8710b2e462d7347f1d0b08fe53866d84e1cdfaed695586fe614cce2"
+        },
+        {
+          "evidence_id": "evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235",
+          "window_id": "window-7",
+          "source_id": "web-619f8fc7ff502856",
+          "source_title": "RFC 9114 - HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://httpwg.org/specs/rfc9114.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "HTTP/3 congestion control loss recovery RFC",
+          "read_focus": "Read external URL RFC 9114 - HTTP/3 for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/3. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This document defines HTTP/3: a mapping of HTTP semantics over the QUIC transport protocol, drawing heavily on the design of HTTP/2.",
+          "claim_text": "HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/3d45f4e813262ea6af913b92bd4f441edf1ce0260efe9c2cb6a0805e469acd11"
+        },
+        {
+          "evidence_id": "evidence:dc1c36e98700f596fc0111a0edcc26b6269c2100b641091a",
+          "window_id": "window-5",
+          "source_id": "web-c06a106170e03199",
+          "source_title": "RFC 9114: HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rfc-editor.org/info/rfc9114/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "RFC 9114 HTTP/3 over QUIC transport section reference",
+          "read_focus": "Read external URL RFC 9114: HTTP/3 for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/3. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "HTTP/3 relies on QUIC version 1 as the underlying transport.",
+          "claim_text": "HTTP/3 依赖 QUIC 版本 1 作为底层传输。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/e7f20f1b7bd8e9d1d9dfd46632c736ff5666e86e35a4f5cb95d699fab7752b4b"
+        },
+        {
+          "evidence_id": "evidence:c8d854d69c4dd57fa2bd743982c95c21ae3c6d80a32e25c8",
+          "window_id": "window-7",
+          "source_id": "web-619f8fc7ff502856",
+          "source_title": "RFC 9114 - HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://httpwg.org/specs/rfc9114.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "HTTP/3 congestion control loss recovery RFC",
+          "read_focus": "Read external URL RFC 9114 - HTTP/3 for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/3. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "By providing reliability at the stream level and congestion control across the entire connection, QUIC has the capability to improve the performance of HTTP compared to a TCP mapping.",
+          "claim_text": "QUIC 在流级别提供可靠性、在整个连接上提供拥塞控制。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/975565f8-8317-44b4-89fb-2ddb0bdc236d/3d45f4e813262ea6af913b92bd4f441edf1ce0260efe9c2cb6a0805e469acd11"
+        },
+        {
+          "evidence_id": "evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295",
+          "window_id": "window-1",
+          "source_id": "web-c06a106170e03199",
+          "source_title": "RFC 9114: HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rfc-editor.org/info/rfc9114/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "HTTP/3 Stream and connection recovery granularity 官方说明 适用条件",
+          "read_focus": "Read external URL RFC 9114: HTTP/3 for claims that answer: HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。\n\nCurrent Table-as-State entity: HTTP/3. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.",
+          "claim_text": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/81a505fc-c04f-439e-9eb7-d563dc33ec61/943490dce67c2b0ac82429e2c3c0dbf7710f4692fa2209d48fa50aeca099457a"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "evidence_id": "evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97",
+          "source_id": "web-7106bf0e6b6455a6",
+          "source_title": "HTTP/3 – quic-go docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://quic-go.net/docs/http3/"
+        },
+        {
+          "cell_id": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6",
+          "row_id": "entity-46179e1c8e2c3f84",
+          "evidence_id": "evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416",
+          "source_id": "web-7ab85b6091af30d0",
+          "source_title": "Head-of-line blocking - Glossary - MDN Web Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.mozilla.org/en-US/docs/Glossary/Head_of_line_blocking"
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6",
+          "row_id": "entity-2fc9676ded53e39a",
+          "evidence_id": "evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e",
+          "source_id": "web-0c6b9b5be926ef65",
+          "source_title": "QUIC and HTTP/3 in 2026: from Google experiment to IETF ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://ma.ttias.be/quic-http3-in-2026/"
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1",
+          "row_id": "entity-2fc9676ded53e39a",
+          "evidence_id": "evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235",
+          "source_id": "web-619f8fc7ff502856",
+          "source_title": "RFC 9114 - HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://httpwg.org/specs/rfc9114.html"
+        },
+        {
+          "cell_id": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+          "row_id": "entity-2fc9676ded53e39a",
+          "evidence_id": "evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295",
+          "source_id": "web-c06a106170e03199",
+          "source_title": "RFC 9114: HTTP/3",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.rfc-editor.org/info/rfc9114/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "a3564599-a59b-4bef-8b14-a8fe603d016c",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "HTTP/3 与 HTTP/2 在拥塞控制和丢包恢复上的实现差异是什么？引用 RFC。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T12:05:38Z"
+      },
+      {
+        "trace_id": "dcd26994-e458-45a8-a156-7051ae24aee8",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 5
+        },
+        "created_at": "2026-10-17T12:05:51Z"
+      },
+      {
+        "trace_id": "5b7a92ea-a595-44aa-824f-9b9f16dcfcbb",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T12:11:35Z"
+      }
+    ],
+    "created_at": "2026-10-17T12:05:38Z",
+    "updated_at": "2026-10-17T12:11:35Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:06:40Z",
+          "lease_epoch": 1,
+          "task_id": "a5fc349c-e77f-492d-a48c-1b4037bbaf87",
+          "task_key": "planning:62f38e66-7930-4ce1-b482-1a34cad55700",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:08:40Z",
+          "lease_epoch": 2,
+          "task_id": "6117b7d0-aa81-4fc9-831d-395e5fd5a5dc",
+          "task_key": "deep-cell:c3b7f798ba9b9d97be88d9c1d12ad7d1",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 2,
+          "attempt_count": 2
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:07:54Z",
+          "lease_epoch": 1,
+          "task_id": "6d313414-f0c3-4414-b2df-239d97ca29aa",
+          "task_key": "deep-cell:e0bd370ebbdba1aa36129c595b7da946",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:08:44Z",
+          "lease_epoch": 1,
+          "task_id": "975565f8-8317-44b4-89fb-2ddb0bdc236d",
+          "task_key": "deep-cell:0009793a93a7a18d5ab145fc84a11e71",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:07:54Z",
+          "lease_epoch": 1,
+          "task_id": "9e76362c-e149-41f8-9cd0-69f1dea8c453",
+          "task_key": "deep-cell:6d5cc0c19108e2fadd050c525c741aad",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:09:21Z",
+          "lease_epoch": 1,
+          "task_id": "1e9b9638-31df-4c4f-a013-f512199d0144",
+          "task_key": "counterfactual:be7f13d751aba9e3af3a36a39f3d4ee8",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:09:21Z",
+          "lease_epoch": 1,
+          "task_id": "2acb4090-5a1a-4d60-9ebf-4f5eb1c44337",
+          "task_key": "counterfactual:bb9b955f33bbbcef91f030e176ce3615",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:09:37Z",
+          "lease_epoch": 1,
+          "task_id": "4c550bf5-2319-4499-8a4d-21b14727fce7",
+          "task_key": "counterfactual:7a39e9b686267899bd9431534ab8de2f",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:11:33Z",
+          "lease_epoch": 1,
+          "task_id": "76606fa8-420b-4d67-a8bd-5bb557b278f6",
+          "task_key": "counterfactual:7c63f73d01b963f0d47c70a4642a6889",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:10:03Z",
+          "lease_epoch": 1,
+          "task_id": "81a505fc-c04f-439e-9eb7-d563dc33ec61",
+          "task_key": "counterfactual:dbf0ec596f6040ee22c3340153f6e3a0",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:09:53Z",
+          "lease_epoch": 1,
+          "task_id": "c936f2e0-0577-45b1-b0f0-895064666ec2",
+          "task_key": "counterfactual:48107e86e93d994a4cfda642476466dd",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:11:43Z",
+          "lease_epoch": 1,
+          "task_id": "00ab7d5c-3b4d-4cbb-b6e0-4d5ed6bc72f7",
+          "task_key": "counterfactual:e8aa7c61e4fed48a81510bd25d98eadf",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:11:47Z",
+          "lease_epoch": 1,
+          "task_id": "8d033312-0d10-4d5a-9175-b40d834eab83",
+          "task_key": "counterfactual:720b604c3ce7dd2b4aceeba4e31460f6",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:12:14Z",
+          "lease_epoch": 1,
+          "task_id": "900f1e0d-6bc7-4ca4-8a69-ebd6131e68ef",
+          "task_key": "counterfactual:7ce5f2b4562ac7010a248562493849f6",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:11:48Z",
+          "lease_epoch": 1,
+          "task_id": "bc9d2e2c-6987-4d8e-a255-15e0f0cb1817",
+          "task_key": "counterfactual:09d4c2467f96b007b4aa15f04f0fc876",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:11:43Z",
+          "lease_epoch": 1,
+          "task_id": "beb2ceb8-2c68-4a9f-a296-6ab5a8d3ecca",
+          "task_key": "counterfactual:f56cf3f0e05a577035650df29011eedf",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:12:27Z",
+          "lease_epoch": 1,
+          "task_id": "60658586-bcbd-4e22-b240-79c23fece76c",
+          "task_key": "synthesis:9e82d325b17ea8ce02741f1f6d839ef7",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "e0f03626-29f9-42a7-a018-34e2738fdb60",
+          "cell_key": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1",
+          "task_id": "9e76362c-e149-41f8-9cd0-69f1dea8c453"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "885158b7-5e89-434d-9500-a62a32810f28",
+          "cell_key": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6",
+          "task_id": "6d313414-f0c3-4414-b2df-239d97ca29aa"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "369e0762-8d16-4e6b-a9b4-ffa9a2fa1b50",
+          "cell_key": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6",
+          "task_id": "6117b7d0-aa81-4fc9-831d-395e5fd5a5dc"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "c7ca39d9-d5d3-4425-9bbb-fcd6ff6bd540",
+          "cell_key": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1",
+          "task_id": "975565f8-8317-44b4-89fb-2ddb0bdc236d"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "0318ba74-2104-4ab9-a006-854dd4c904a0",
+          "cell_key": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+          "task_id": "81a505fc-c04f-439e-9eb7-d563dc33ec61"
+        }
+      ],
+      "candidate_count": 5,
+      "task_count": 17,
+      "merge_count": 5,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:34a3ab55a2ac95de7aa45a2e2cd3220bd1657f8aa52425801416b1ce6c3647f3",
+          "candidate_id": "e0f03626-29f9-42a7-a018-34e2738fdb60",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1"
+        },
+        {
+          "merge_id": "merge:c30137357c00d5a460bddea86c3358fce35beeff33400d38bc890528bcb9ab2e",
+          "candidate_id": "885158b7-5e89-434d-9500-a62a32810f28",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6"
+        },
+        {
+          "merge_id": "merge:a1ac384f9426e9c32f91e5f0eb1f4a31dc658c05a7a77652e9f22b207304dd52",
+          "candidate_id": "369e0762-8d16-4e6b-a9b4-ffa9a2fa1b50",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6"
+        },
+        {
+          "merge_id": "merge:3d2ff0c6bb793b738f6e1dd288968ecb5ff3ab99b64db5662af0426a255b3d5a",
+          "candidate_id": "c7ca39d9-d5d3-4425-9bbb-fcd6ff6bd540",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1"
+        },
+        {
+          "merge_id": "merge:c1a7db59ddbe1add9fe3c9827ee07f82847f7cd5edff7ba57db4ad4b23f3457d",
+          "candidate_id": "0318ba74-2104-4ab9-a006-854dd4c904a0",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 4,
+          "candidate_high_water_mark": 4
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 11,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 16,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-2fc9676ded53e39a",
+            "label": "HTTP/3"
+          },
+          {
+            "entity_key": "entity-46179e1c8e2c3f84",
+            "label": "HTTP/2"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-15a35e7a642388ac",
+            "label": "Congestion control mechanism",
+            "description": "Which congestion controller is mandated or recommended and how it is pluggable or fixed, with quoted RFC text.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-47727b75d1dccad1",
+            "label": "Transport substrate and congestion control locus",
+            "description": "What transport each protocol runs over and where congestion control is implemented or specified (TCP vs QUIC), citing the governing RFC sections.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-6dc0f195e47ef006",
+            "label": "Stream and connection recovery granularity",
+            "description": "At what granularity recovery happens (per-stream vs per-connection) and the RFC-defined unit that must be retransmitted.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-73e5ffc8f3df49a6",
+            "label": "Head-of-line blocking behavior",
+            "description": "How a single lost packet affects other streams, i.e. whether loss recovery blocks all streams, with cited RFC or primary-source explanation.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-fb59f13867874d3c",
+            "label": "Loss detection and recovery mechanism",
+            "description": "How lost packets are detected and retransmitted (TCP RTO/SACK vs QUIC packet-number and ACK-based loss detection), with RFC citations.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "HTTP/2 (RFC 9113/7540) 基于 TCP 的传输模型与 HTTP/3 (RFC 9114) 基于 QUIC (RFC 9000/9002) 的传输与恢复机制。",
+          "objective": "对比 HTTP/2 与 HTTP/3 在拥塞控制与丢包恢复上的实现差异，并以 RFC 原文逐项引用。",
+          "exclusions": [
+            "性能基准数据实测",
+            "实现库的代码级实现细节"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "rfc-editor.org",
+          "datatracker.ietf.org",
+          "ietf.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "拥塞控制与丢包检测分别在哪一层实现？",
+              "丢包时哪些流被阻塞？"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "两者在恢复粒度上的实质差异是什么？",
+              "RFC 如何规范这些机制？"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-2fc9676ded53e39a:dim-15a35e7a642388ac",
+          "entity_label": "HTTP/3",
+          "column_label": "Congestion control mechanism",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2fc9676ded53e39a:dim-47727b75d1dccad1",
+          "entity_label": "HTTP/3",
+          "column_label": "Transport substrate and congestion control locus",
+          "cell_status": "VERIFIED",
+          "candidate_value": "HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f740cca2015efad270d3d7a2ccb3300a2ddb6da5d25cf235",
+              "source_domain": "httpwg.org",
+              "claim_text": "HTTP/3 是 HTTP 语义在 QUIC 传输协议上的映射，依赖 QUIC 提供可靠、按流有序的交付。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+          "entity_label": "HTTP/3",
+          "column_label": "Stream and connection recovery granularity",
+          "cell_status": "VERIFIED",
+          "candidate_value": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d8909c028ea256488183c0c0e30840dc2d0340d2bea32295",
+              "source_domain": "rfc-editor.org",
+              "claim_text": "describes how error conditions are handled and expressed, either on a particular stream or for the connection as a whole."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2fc9676ded53e39a:dim-73e5ffc8f3df49a6",
+          "entity_label": "HTTP/3",
+          "column_label": "Head-of-line blocking behavior",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ff5cd46661d64fa84003aba303be4b2355234cc7bcd3370e",
+              "source_domain": "ttias.be",
+              "claim_text": "Independent streams over UDP mean a lost packet for one resource doesn’t stall the others, unlike a single TCP connection where order matters."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2fc9676ded53e39a:dim-fb59f13867874d3c",
+          "entity_label": "HTTP/3",
+          "column_label": "Loss detection and recovery mechanism",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-46179e1c8e2c3f84:dim-15a35e7a642388ac",
+          "entity_label": "HTTP/2",
+          "column_label": "Congestion control mechanism",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-46179e1c8e2c3f84:dim-47727b75d1dccad1",
+          "entity_label": "HTTP/2",
+          "column_label": "Transport substrate and congestion control locus",
+          "cell_status": "VERIFIED",
+          "candidate_value": "HTTP/2 运行在 TCP 连接之上",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:dfa327b0b1173c132afd9265cd55d744fde510bcc3681e97",
+              "source_domain": "quic-go.net",
+              "claim_text": "HTTP/2 运行在 TCP 连接之上"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-46179e1c8e2c3f84:dim-6dc0f195e47ef006",
+          "entity_label": "HTTP/2",
+          "column_label": "Stream and connection recovery granularity",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-46179e1c8e2c3f84:dim-73e5ffc8f3df49a6",
+          "entity_label": "HTTP/2",
+          "column_label": "Head-of-line blocking behavior",
+          "cell_status": "VERIFIED",
+          "candidate_value": "HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:a9e2effaa53a67de12a85c9d42a8f5da2c44bc0c3bf68416",
+              "source_domain": "mozilla.org",
+              "claim_text": "HTTP/2 在传输层丢包时仍会导致跨流 HOL 阻塞，因为其运行在 TCP 之上。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-46179e1c8e2c3f84:dim-fb59f13867874d3c",
+          "entity_label": "HTTP/2",
+          "column_label": "Loss detection and recovery mechanism",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 6 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2fc9676ded53e39a:dim-15a35e7a642388ac",
+            "entity-2fc9676ded53e39a:dim-6dc0f195e47ef006",
+            "entity-2fc9676ded53e39a:dim-fb59f13867874d3c",
+            "entity-46179e1c8e2c3f84:dim-15a35e7a642388ac",
+            "entity-46179e1c8e2c3f84:dim-6dc0f195e47ef006",
+            "entity-46179e1c8e2c3f84:dim-fb59f13867874d3c"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 12,
+          "created_at": "2026-10-17T12:07:50Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 5 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2fc9676ded53e39a:dim-15a35e7a642388ac",
+            "entity-2fc9676ded53e39a:dim-fb59f13867874d3c",
+            "entity-46179e1c8e2c3f84:dim-15a35e7a642388ac",
+            "entity-46179e1c8e2c3f84:dim-6dc0f195e47ef006",
+            "entity-46179e1c8e2c3f84:dim-fb59f13867874d3c"
+          ],
+          "strategy": "NARROW",
+          "query_count": 2,
+          "created_at": "2026-10-17T12:10:42Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

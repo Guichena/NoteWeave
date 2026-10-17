@@ -1,0 +1,808 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-python-free-threading",
+  "run_id": "94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T12:19:13.719717+00:00",
+  "finished_at": "2026-10-17T12:20:24.055458+00:00",
+  "wall_seconds": 70.3,
+  "run_detail": {
+    "research_run_id": "94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "7c3ff9ec-dd56-4f5c-88a2-b3a6cf09b940",
+    "question": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+    "final_report_markdown": "# Python 无 GIL 自由线程构建：起始版本与当前状态\n\n根据本次核验的官方文档与 PEP 说明，CPython 已具备实验性的自由线程(no-GIL)运行模式，关闭全局解释器锁；自 Python 3.13 起，官方 macOS 与 Windows 安装程序可选择安装自由线程二进制文件，该模式目前仍为实验特性、默认不启用，并预期存在缺陷与明显的单线程性能损失，整体设计由 PEP 703 描述。\n\n## 直接回答\n\n本次核验的官方文档显示，CPython 目前已经提供实验性的自由线程运行模式，即关闭全局解释器锁(GIL)；官方将该特性定性为实验性，因此默认不启用。PEP 703 的标题为 Making the Global Interpreter Lock Optional in CPython，被官方文档指出用于对自由线程 Python 作整体描述。 [evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e] [evidence:2a343c3d7b4d67181ddfc84846f6e45b507c5411fa8e07a6] [evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f]\n\n在可获得方式上，本次核验的资料显示，从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择支持安装自由线程的 Python 二进制文件。 [evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567]\n\n## 当前状态与实验性定位\n\n关于目前状态，官方文档明确将自由线程模式标记为实验性，并说明相关工作仍在推进：使用者应预期会遇到一些缺陷，同时单线程性能会有明显损失。同一处说明还指出，该特性默认不启用，这与它被定位为实验性特性相一致。 [evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e] [evidence:2a343c3d7b4d67181ddfc84846f6e45b507c5411fa8e07a6]\n\n在设计与规范层面，PEP 703 被官方文档引用为对自由线程 Python 的整体描述来源，即 Making the Global Interpreter Lock Optional in CPython。 [evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f]\n\n## 对比表\n\n| 对比维度 | 已核验事实 |\n| --- | --- |\n| 对应 PEP | PEP 703 – Making the Global Interpreter Lock Optional in CPython，被官方文档用于整体描述自由线程 Python [evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f] |\n| 起始版本 | 从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程二进制文件 [evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567] |\n| 当前状态 | 实验性支持，GIL 关闭；默认不启用；相关工作仍在进行，预期存在缺陷与明显的单线程性能损失 [evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e] [evidence:2a343c3d7b4d67181ddfc84846f6e45b507c5411fa8e07a6] |\n\n## Citation audit\n\n### CPython 自由线程(no-GIL)构建 · 对应 PEP 编号与内容\n\n- Evidence: `evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f`\n- Exact quote: “[**PEP 703**](https://peps.python.org/pep-0703/) – Making the Global Interpreter Lock Optional in CPython for an overall description of free-threaded Python.”\n- Snapshot: `research/external/16c9166f-fb65-41f1-863c-757f242a8997/b0217674ba5639131b79c4ea274e8f8110a3f271df59a76b5e50181920703cba`\n- URL: https://docs.python.org/3.13/howto/free-threading-python.html\n\n### CPython 自由线程(no-GIL)构建 · 起始版本\n\n- Evidence: `evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567`\n- Exact quote: “Starting with Python 3.13, the official macOS and Windows installers optionally support installing free-threaded Python binaries.”\n- Snapshot: `research/external/16c9166f-fb65-41f1-863c-757f242a8997/b0217674ba5639131b79c4ea274e8f8110a3f271df59a76b5e50181920703cba`\n- URL: https://docs.python.org/3.13/howto/free-threading-python.html\n\n### CPython 自由线程(no-GIL)构建 · 目前状态与实验性\n\n- Evidence: `evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e`\n- Exact quote: “CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.”\n- Snapshot: `research/external/16c9166f-fb65-41f1-863c-757f242a8997/a7c3b01eb8106d2fbae662f1cf6ba03e6be5255726d39b170feb230799310c00`\n- URL: https://docs.python.org/3/whatsnew/3.13.html\n\n## 补充引用\n\n- Evidence: `evidence:2a343c3d7b4d67181ddfc84846f6e45b507c5411fa8e07a6`\n  - Exact quote: “**The free-threaded mode is experimental** and work is ongoing to improve it: expect some bugs and a substantial single-threaded performance hit.”\n  - Snapshot: `research/external/16c9166f-fb65-41f1-863c-757f242a8997/a7c3b01eb8106d2fbae662f1cf6ba03e6be5255726d39b170feb230799310c00`\n  - URL: https://docs.python.org/3/whatsnew/3.13.html\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/94c4bdd4-76b8-45e7-bb20-b7b34095855e/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 4715,
+      "sha256": "a875bfaf7d19de22f02c88a67024480ae4c4e34d1e1c804771817a27ef849cbd"
+    },
+    "research_artifact": {
+      "artifact_id": "94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/94c4bdd4-76b8-45e7-bb20-b7b34095855e/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 4715,
+        "sha256": "a875bfaf7d19de22f02c88a67024480ae4c4e34d1e1c804771817a27ef849cbd"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "CPython free-threaded build no-GIL",
+          "PEP 703 making the global interpreter lock optional",
+          "free-threaded CPython first available Python 3.13 docs.python.org"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 0,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-aa352c4a3a4fb0d4",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "CPython 自由线程(no-GIL)构建",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+            "read_focus": "确定 CPython 自由线程(no-GIL)构建的起始版本、对应 PEP 与当前状态,并附官方引用。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d",
+            "row_id": "entity-aa352c4a3a4fb0d4",
+            "branch_id": "branch-main",
+            "column_key": "dim-f2f4ff27df21dd0d",
+            "column_label": "目前状态与实验性",
+            "candidate_value": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb",
+            "row_id": "entity-aa352c4a3a4fb0d4",
+            "branch_id": "branch-main",
+            "column_key": "dim-0a930ba500fa30fb",
+            "column_label": "对应 PEP 编号与内容",
+            "candidate_value": "PEP 703 对自由线程 Python 的整体说明：Making the Global Interpreter Lock Optional in CPython",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd",
+            "row_id": "entity-aa352c4a3a4fb0d4",
+            "branch_id": "branch-main",
+            "column_key": "dim-7f3414ce4633d7dd",
+            "column_label": "起始版本",
+            "candidate_value": "从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程 Python 二进制文件",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "CPython 自由线程(no-GIL)构建",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "read_focus": "确定 CPython 自由线程(no-GIL)构建的起始版本、对应 PEP 与当前状态,并附官方引用。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "branch_id": "branch-main",
+          "column_key": "dim-f2f4ff27df21dd0d",
+          "column_label": "目前状态与实验性",
+          "candidate_value": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "branch_id": "branch-main",
+          "column_key": "dim-0a930ba500fa30fb",
+          "column_label": "对应 PEP 编号与内容",
+          "candidate_value": "PEP 703 对自由线程 Python 的整体说明：Making the Global Interpreter Lock Optional in CPython",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "branch_id": "branch-main",
+          "column_key": "dim-7f3414ce4633d7dd",
+          "column_label": "起始版本",
+          "candidate_value": "从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程 Python 二进制文件",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f",
+          "window_id": "window-6",
+          "source_id": "web-5862e5106de18e3d",
+          "source_title": "Python experimental support for free threading — Python 3.13 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3.13/howto/free-threading-python.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "free-threaded CPython first available Python 3.13 docs.python.org",
+          "read_focus": "Read external URL Python experimental support for free threading — Python 3.13 ... for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython 自由线程(no-GIL)构建. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "[**PEP 703**](https://peps.python.org/pep-0703/) – Making the Global Interpreter Lock Optional in CPython for an overall description of free-threaded Python.",
+          "claim_text": "PEP 703 对自由线程 Python 的整体说明：Making the Global Interpreter Lock Optional in CPython",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/16c9166f-fb65-41f1-863c-757f242a8997/b0217674ba5639131b79c4ea274e8f8110a3f271df59a76b5e50181920703cba"
+        },
+        {
+          "evidence_id": "evidence:2a343c3d7b4d67181ddfc84846f6e45b507c5411fa8e07a6",
+          "window_id": "window-4",
+          "source_id": "web-e9820dbd7cc8f8e6",
+          "source_title": "What's New In Python 3.13",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/whatsnew/3.13.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "free-threaded CPython first available Python 3.13 docs.python.org",
+          "read_focus": "Read external URL What's New In Python 3.13 for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython 自由线程(no-GIL)构建. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "**The free-threaded mode is experimental** and work is ongoing to improve it: expect some bugs and a substantial single-threaded performance hit.",
+          "claim_text": "自由线程模式仍为实验性，官方预期存在缺陷并伴有明显的单线程性能损失。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/16c9166f-fb65-41f1-863c-757f242a8997/a7c3b01eb8106d2fbae662f1cf6ba03e6be5255726d39b170feb230799310c00"
+        },
+        {
+          "evidence_id": "evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567",
+          "window_id": "window-6",
+          "source_id": "web-5862e5106de18e3d",
+          "source_title": "Python experimental support for free threading — Python 3.13 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3.13/howto/free-threading-python.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "free-threaded CPython first available Python 3.13 docs.python.org",
+          "read_focus": "Read external URL Python experimental support for free threading — Python 3.13 ... for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython 自由线程(no-GIL)构建. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Starting with Python 3.13, the official macOS and Windows installers optionally support installing free-threaded Python binaries.",
+          "claim_text": "从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程 Python 二进制文件",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/16c9166f-fb65-41f1-863c-757f242a8997/b0217674ba5639131b79c4ea274e8f8110a3f271df59a76b5e50181920703cba"
+        },
+        {
+          "evidence_id": "evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e",
+          "window_id": "window-4",
+          "source_id": "web-e9820dbd7cc8f8e6",
+          "source_title": "What's New In Python 3.13",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/whatsnew/3.13.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "free-threaded CPython first available Python 3.13 docs.python.org",
+          "read_focus": "Read external URL What's New In Python 3.13 for claims that answer: Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。\n\nCurrent Table-as-State entity: CPython 自由线程(no-GIL)构建. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.",
+          "claim_text": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.97,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/16c9166f-fb65-41f1-863c-757f242a8997/a7c3b01eb8106d2fbae662f1cf6ba03e6be5255726d39b170feb230799310c00"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "evidence_id": "evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567",
+          "source_id": "web-5862e5106de18e3d",
+          "source_title": "Python experimental support for free threading — Python 3.13 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3.13/howto/free-threading-python.html"
+        },
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "evidence_id": "evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e",
+          "source_id": "web-e9820dbd7cc8f8e6",
+          "source_title": "What's New In Python 3.13",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3/whatsnew/3.13.html"
+        },
+        {
+          "cell_id": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb",
+          "row_id": "entity-aa352c4a3a4fb0d4",
+          "evidence_id": "evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f",
+          "source_id": "web-5862e5106de18e3d",
+          "source_title": "Python experimental support for free threading — Python 3.13 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.python.org/3.13/howto/free-threading-python.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "97feb2a4-5117-4186-8c5f-d8059f10906f",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T12:19:13Z"
+      },
+      {
+        "trace_id": "d539309c-e62e-4c65-9d01-3b4d90c6e917",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 3
+        },
+        "created_at": "2026-10-17T12:19:24Z"
+      },
+      {
+        "trace_id": "c7426237-c6c2-493a-b97a-446b0ed41239",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Python 的无 GIL 自由线程构建从哪个版本开始提供，目前处于什么状态？引用 PEP 和官方文档。",
+        "payload": {
+          "cell_count": 3
+        },
+        "created_at": "2026-10-17T12:20:20Z"
+      }
+    ],
+    "created_at": "2026-10-17T12:19:13Z",
+    "updated_at": "2026-10-17T12:20:20Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:20:14Z",
+          "lease_epoch": 1,
+          "task_id": "da6e1ee2-e4ec-4849-9600-9596567f668f",
+          "task_key": "planning:94c4bdd4-76b8-45e7-bb20-b7b34095855e",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:21:10Z",
+          "lease_epoch": 1,
+          "task_id": "16c9166f-fb65-41f1-863c-757f242a8997",
+          "task_key": "deep-cell:a8518a036aa33c57e4e77133f29b6e66",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:21:14Z",
+          "lease_epoch": 1,
+          "task_id": "dacb573e-74ac-4249-8851-6193ba1936f5",
+          "task_key": "synthesis:b8c1bf96f1b558d78a43d55bf87b7832",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "0f79f51a-cd89-4c36-a1d1-e8bf4d120d2a",
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd",
+          "task_id": "16c9166f-fb65-41f1-863c-757f242a8997"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "2634f470-1dc3-48b9-afff-374bb75f1052",
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb",
+          "task_id": "16c9166f-fb65-41f1-863c-757f242a8997"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "8e18cc22-4bf1-4df4-bc92-57b04b00de0e",
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d",
+          "task_id": "16c9166f-fb65-41f1-863c-757f242a8997"
+        }
+      ],
+      "candidate_count": 3,
+      "task_count": 3,
+      "merge_count": 3,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:ee20261ccefa036617529a614a7328a7cb4699b98fb22f10c0961c6ce8eb69af",
+          "candidate_id": "0f79f51a-cd89-4c36-a1d1-e8bf4d120d2a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd"
+        },
+        {
+          "merge_id": "merge:c02752bca748dfd62f840c12400876f11581752e5039db6f69ad315449bb52bf",
+          "candidate_id": "2634f470-1dc3-48b9-afff-374bb75f1052",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb"
+        },
+        {
+          "merge_id": "merge:51cb7b60ab23b48e2dae87c3f5918320e033d1e8a7adf1f37ba5b5ab8f3d4cec",
+          "candidate_id": "8e18cc22-4bf1-4df4-bc92-57b04b00de0e",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d"
+        }
+      ],
+      "checkpoints": []
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-aa352c4a3a4fb0d4",
+            "label": "CPython 自由线程(no-GIL)构建"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-0a930ba500fa30fb",
+            "label": "对应 PEP 编号与内容",
+            "description": "自由线程所对应的 PEP 编号(如 PEP 703)及其对该构建的说明。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-7f3414ce4633d7dd",
+            "label": "起始版本",
+            "description": "官方文档或 PEP 指明自由线程(禁用 GIL)的 CPython 构建最早在哪个版本中提供。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-f2f4ff27df21dd0d",
+            "label": "目前状态与实验性",
+            "description": "该构建当前处于实验性还是正式支持状态及其官方表述。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅限 CPython 官方自由线程构建的版本引入与状态说明。",
+          "objective": "确定 CPython 自由线程(no-GIL)构建的起始版本、对应 PEP 与当前状态,并附官方引用。",
+          "exclusions": [
+            "第三方分支或非 CPython 实现",
+            "性能基准细节",
+            "未来版本路线图推测"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown 研究报告与引用审计"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "docs.python.org",
+          "peps.python.org",
+          "python.org"
+        ],
+        "perspectives": [
+          {
+            "name": "实现者",
+            "questions": [
+              "自由线程构建从哪个版本可用,如何启用?",
+              "对应哪个 PEP?"
+            ]
+          },
+          {
+            "name": "决策者",
+            "questions": [
+              "目前是实验性还是正式支持,可否用于生产?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-0a930ba500fa30fb",
+          "entity_label": "CPython 自由线程(no-GIL)构建",
+          "column_label": "对应 PEP 编号与内容",
+          "cell_status": "VERIFIED",
+          "candidate_value": "PEP 703 对自由线程 Python 的整体说明：Making the Global Interpreter Lock Optional in CPython",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f1cb9339603d3b164b96c0cb7fb1a9c2491e419927c7288f",
+              "source_domain": "python.org",
+              "claim_text": "PEP 703 对自由线程 Python 的整体说明：Making the Global Interpreter Lock Optional in CPython"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-7f3414ce4633d7dd",
+          "entity_label": "CPython 自由线程(no-GIL)构建",
+          "column_label": "起始版本",
+          "cell_status": "VERIFIED",
+          "candidate_value": "从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程 Python 二进制文件",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:018288d21d182b6a31889c0277263ed3533f075eb81fa567",
+              "source_domain": "python.org",
+              "claim_text": "从 Python 3.13 开始，官方 macOS 和 Windows 安装程序可选择安装自由线程 Python 二进制文件"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-aa352c4a3a4fb0d4:dim-f2f4ff27df21dd0d",
+          "entity_label": "CPython 自由线程(no-GIL)构建",
+          "column_label": "目前状态与实验性",
+          "cell_status": "VERIFIED",
+          "candidate_value": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:2e4a036743ca1365023880bfc4213072f6ddeb461439369e",
+              "source_domain": "python.org",
+              "claim_text": "CPython now has experimental support for running in a free-threaded mode, with the [global interpreter lock](../glossary.html#term-global-interpreter-lock) (GIL) disabled. This is an experimental feature and therefore is not enabled by default."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": []
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

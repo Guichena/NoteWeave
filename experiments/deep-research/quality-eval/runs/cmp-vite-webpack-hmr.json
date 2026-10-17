@@ -1,0 +1,2235 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-vite-webpack-hmr",
+  "run_id": "ba949fcd-5a8e-453f-831e-85e608b12b14",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T11:38:23.080904+00:00",
+  "finished_at": "2026-10-17T11:46:00.982843+00:00",
+  "wall_seconds": 457.9,
+  "run_detail": {
+    "research_run_id": "ba949fcd-5a8e-453f-831e-85e608b12b14",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "8eac75e0-449d-4f5f-8fa0-fbfb77749a85",
+    "question": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+    "final_report_markdown": "# Vite 与 webpack 的开发服务器与热更新机制对比：基于官方文档的核验\n\n本次核验的资料显示，Vite 的开发服务器通过原生 ESM 按需提供源码、在请求时逐文件转换，并借助依赖预构建来快速启动，其 HMR 基于原生 ESM 只更新对应模块而无需整页刷新；webpack 则以 webpack-dev-server 从内存提供资源以求最佳性能，HMR 具备类似逐模块 LiveReload 且只下载变更部分的特性，但被官方描述为实验性、未经充分测试。webpack 的开发服务器启动机制与对浏览器原生 ESM 的依赖这两项在本轮核验中缺少足够证据，相关问题仍未得到回答。\n\n## 直接回答\n\n在开发服务器方面，本次核验的 Vite 官方文档指出，其开发服务器只转换浏览器请求的文件，因此在首次启动时启动很快，并且无论应用规模多大，开发服务器的启动几乎都是即时的；其机制在于通过原生 ESM 按需提供频繁变动的源码，让浏览器只加载当前页面所需的内容，并在请求时对每个文件进行转换，同时在首次启动时检查并预构建依赖。webpack 一侧的资料则说明，webpack-dev-server 从内存提供所有 webpack 资源，官方标注其性能最佳。 [evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db] [evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2] [evidence:30c7b3bf7081ad77f182fff64a03b4f25b0897121abe0d29] [evidence:bf29f3b7b680ade812a7b5e237dfbfbdca0ac187b73f7869] [evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535]\n\n在热更新方面，Vite 通过原生 ESM 的模块热替换只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建；其客户端 API 中，hot.decline() 当前为 noop、仅为向后兼容而保留，文档建议以 hot.invalidate() 表示模块不可热更新。webpack 侧的 HMR 被描述为类似针对每个模块的 LiveReload，更新遵循代码分割、只下载变更部分的更新，可用于生产环境；但同一官方资料也提醒其属于实验性功能、未经过充分测试，可能出现 bug，理论上可用于生产但或许为时过早用于严肃项目。此外，Vite 官方文档提到，在默认配置下位于 Vite 之前的反向代理应支持代理 WebSocket，若 HMR 客户端连接 WebSocket 失败，客户端会兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器。 [evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd] [evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22] [evidence:2cf3c1046b7cf51a767c8e17c6fb59b77a33e6c53e2da743] [evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582] [evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e] [evidence:1a33cdd6fa13d23f15db94b41ec79d4b0b86a9c74b682062] [evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c] [evidence:4b48264146bb843d41112162714c7704e5d598f2cab0435a]\n\n## 开发服务器启动机制与性能\n\nVite 的快速启动并非来自整体打包，而是来自按需策略。其文档说明，源码通过原生 ESM 按需提供，浏览器只加载当前页面所需的内容，Vite 在请求时对每个文件进行转换；首次启动开发服务器时，Vite 会检查是否存在预构建的依赖，若没有找到相应缓存，则抓取源码并自动寻找引入的依赖项。正是这一组合使其开发服务器只转换被请求的文件，从而启动很快，并且文档宣称无论应用规模多大，启动几乎都是即时的。 [evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2] [evidence:30c7b3bf7081ad77f182fff64a03b4f25b0897121abe0d29] [evidence:bf29f3b7b680ade812a7b5e237dfbfbdca0ac187b73f7869] [evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db]\n\nwebpack 一侧可核验的启动性能信息集中在资源供给方式上：webpack-dev-server 从内存提供所有 webpack 资源，官方将其标为最佳性能。就官方文档示例而言，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js，build 脚本运行 webpack 并使用 webpack.prod.js，开发环境配置中设置了 mode 为 development，并加入了该环境推荐的 devtool（强源码映射）以及 devServer 配置。本次核验未取得描述 webpack 开发服务器内部启动流程的证据，因此不对其启动速度作进一步判断。 [evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535] [evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a] [evidence:60e55cfdb075886264bfda6b8d5c5f73967f0c396329cf6e] [evidence:94408448342b396afd03f3c82316b9d0c2e6fdc861dbae93]\n\n## 热更新的机制与成熟度\n\nVite 的 HMR 与浏览器原生 ESM 绑定：当你修改某个文件时，Vite 通过原生 ESM 的模块热替换只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建。在模块接口层面，其 hot.decline() 目前是 noop，仅为向后兼容而保留，文档指出未来若有新用途可能会改变这一状态；若要表示模块不可热更新，应使用 hot.invalidate()，并且即使打算紧接着调用 invalidate，也始终应调用 import.meta.hot.accept，否则 HMR 客户端不会监听该自接受模块未来的变更。 [evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd] [evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72] [evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22] [evidence:2cf3c1046b7cf51a767c8e17c6fb59b77a33e6c53e2da743]\n\nwebpack 的 HMR 被描述为像针对每个模块的 LiveReload：更新遵循代码分割，只下载应用中变更部分的更新，并且文档称其可用于生产环境。但同一资料也明确指出它是实验性的、未经过充分测试，理论上可用于生产，但或许为时过早用于严肃项目。因此，对 webpack HMR 的可用性判断需要同时考虑其按需增量下载的机制优势与官方标注的成熟度风险。 [evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582] [evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e] [evidence:1a33cdd6fa13d23f15db94b41ec79d4b0b86a9c74b682062]\n\n## 部署与代理环境下的 HMR 连接\n\n在反向代理场景中，Vite 官方文档的“开发服务器选项”页面说明，默认配置下位于 Vite 之前的反向代理应该支持代理 WebSocket；如果 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器。本次核验未取得针对 webpack HMR 在同类代理环境下连接行为的对应证据，故不作比较。 [evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c] [evidence:4b48264146bb843d41112162714c7704e5d598f2cab0435a]\n\n## 对比表\n\n| 对比维度 | Vite | webpack |\n| --- | --- | --- |\n| 开发服务器资源供给与启动 | 开发服务器只转换浏览器请求的文件，启动快速；源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，请求时逐文件转换；首次启动检查并预构建依赖；文档称无论应用规模多大，启动几乎即时 | webpack-dev-server 从内存提供所有 webpack 资源，官方标注最佳性能 [evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db] [evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2] [evidence:30c7b3bf7081ad77f182fff64a03b4f25b0897121abe0d29] [evidence:bf29f3b7b680ade812a7b5e237dfbfbdca0ac187b73f7869] [evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535] |\n| HMR 机制 | 通过原生 ESM 的模块热替换只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建 | 类似针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新，可用于生产环境 [evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd] [evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72] [evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582] |\n| HMR 接口限制与成熟度 | hot.decline() 当前为 noop、仅为向后兼容保留；表示模块不可热更新应使用 hot.invalidate()；且即使紧接着调用 invalidate，也应始终调用 import.meta.hot.accept，否则 HMR 客户端不会监听该模块后续变更 | 官方资料称其 HMR 为实验性、未经过充分测试，可能出现 bug，理论上可用于生产但或许为时过早用于严肃项目 [evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22] [evidence:2cf3c1046b7cf51a767c8e17c6fb59b77a33e6c53e2da743] [evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e] [evidence:1a33cdd6fa13d23f15db94b41ec79d4b0b86a9c74b682062] |\n| 反向代理下的 HMR 连接 | 默认配置下，位于 Vite 之前的反向代理应支持代理 WebSocket；若 HMR 客户端连接 WebSocket 失败，客户端会兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器 | 本次核验的资料未提供对应信息 [evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c] [evidence:4b48264146bb843d41112162714c7704e5d598f2cab0435a] |\n\n**核验情况：** 已核验 10 项，未找到足够证据 2 项。\n\n## 结论汇总\n\n| 研究对象 | 开发服务器启动机制 | 启动性能特征 | 热更新(HMR)机制 | 浏览器原生 ESM 依赖 | HMR 覆盖范围与限制 | 官方文档来源 |\n|---|---|---|---|---|---|---|\n| Vite | Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。 | Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。 | Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新 | Vite 通过原生 ESM 的模块热替换只更新对应模块。 | Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate() | Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSock… |\n| webpack | 未找到证据 | webpack-dev-server 从内存提供所有 webpack 资源，性能最佳 | webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新 | 未找到证据 | webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。 | 官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 … |\n\n## 引用核对\n\n### webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。\n\n- 研究项：`webpack · HMR 覆盖范围与限制`\n- 候选：`df8e6d58-2636-4c6d-8fec-2f769c3f0fb6`\n- Evidence: `evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e`\n  - Exact quote: “It's experimental and not tested thoroughly.”\n  - Snapshot: `research/external/7681fdfc-7c4d-4090-a1e2-1ba9ac0276af/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9`\n  - URL: https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack\n\n### webpack-dev-server 从内存提供所有 webpack 资源，性能最佳\n\n- 研究项：`webpack · 启动性能特征`\n- 候选：`eb92a9f9-4666-487e-ba98-3c15a9e17a45`\n- Evidence: `evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535`\n  - Exact quote: “* [webpack-dev-server](/webpack/docs/wiki/webpack-dev-server): Serves all webpack assets from memory. Best performance.”\n  - Snapshot: `research/external/782e8e48-415a-4a9b-a81c-e3e8aac2f6fc/778e7b1600b9f89340bd105f99b9c9a122c8a21cd8a947da7c9cbdaf88463d1b`\n  - URL: https://github.com/webpack/docs/wiki/build-performance\n\n### 官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。\n\n- 研究项：`webpack · 官方文档来源`\n- 候选：`9ac3ef83-7507-4c69-8c9a-4c98e135d57b`\n- Evidence: `evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a`\n  - Exact quote: “For the \\`start\\` script, which runs \\`webpack-dev-server\\`, we will use \\`webpack.dev.js\\`”\n  - Snapshot: `research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/f26aa767ecde4aaaaf670bca7bc8a1c89ab08d62339c8d2d8a4ad6bd81f3659a`\n  - URL: https://webpack.js.org/guides/production/\n\n### webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新\n\n- 研究项：`webpack · 热更新(HMR)机制`\n- 候选：`8c2a6f25-7200-43cf-b284-cd20f41b1370`\n- Evidence: `evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582`\n  - Exact quote: “You can use it in production. The updates respect your Code Splitting and only download updates for the changed parts of your app.”\n  - Snapshot: `research/external/6dd274ad-0ce4-4bf2-b89e-a72eeebefda7/244754b952eed230b8233d3dcdf5db9aa28811a7079a9f9e036ce1914c8fc701`\n  - URL: https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack\n\n### Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()\n\n- 研究项：`Vite · HMR 覆盖范围与限制`\n- 候选：`4b10f9cb-b556-4c13-ba2f-15f3547a399d`\n- Evidence: `evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22`\n  - Exact quote: “This is currently a noop and is there for backward compatibility. This could change in the future if there is a new usage for it. To indicate that the module is not hot-updatable, use \\`hot.invalidate()\\`.”\n  - Snapshot: `research/external/88cc3666-a2af-46d8-afc9-a60e25c80522/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n  - URL: https://vite.dev/guide/api-hmr\n\n### Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。\n\n- 研究项：`Vite · 启动性能特征`\n- 候选：`7d09f33c-bf16-4881-9a46-ceaf175cdd13`\n- Evidence: `evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db`\n  - Exact quote: “Vite 开发服务器只转换浏览器请求的文件，这使得它能够快速启动，并且只对使用的文件执行转换。”\n  - Snapshot: `research/external/94c6f706-e657-4105-a2a4-8c2eb950364b/bfa619e987dd2f5d189677d1732a5aed3c8e3d52b8bdfdc9f2d782f82e106ba9`\n  - URL: https://cn.vite.dev/guide/performance\n\n### Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。\n\n- 研究项：`Vite · 开发服务器启动机制`\n- 候选：`b6db7355-781a-48cf-9a4f-6564befb1230`\n- Evidence: `evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2`\n  - Exact quote: “**源码**（频繁变动的应用代码）：通过原生 ESM 按需提供。浏览器只加载当前页面所需的内容，Vite 则在请求时对每个文件进行转换。”\n  - Snapshot: `research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/579aff79f903895a614c311709d7b64041d908f184ee11715ee9cc21b45b0764`\n  - URL: https://cn.vite.dev/guide/why\n\n### Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器\n\n- 研究项：`Vite · 官方文档来源`\n- 候选：`e1854910-cc12-4712-99d7-59b549b3799f`\n- Evidence: `evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c`\n  - Exact quote: “如果 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器：”\n  - Snapshot: `research/external/f9b23ee4-a856-49ff-801e-0078a60631de/48a770f90c21c9780ec91bea8460a36835ab73121c657015f6a0ed9c786377eb`\n  - URL: https://cn.vite.dev/config/server-options\n\n### Vite 通过原生 ESM 的模块热替换只更新对应模块。\n\n- 研究项：`Vite · 浏览器原生 ESM 依赖`\n- 候选：`0d3f065a-d62a-4927-8acc-99dd5121fc16`\n- Evidence: `evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72`\n  - Exact quote: “当你修改某个文件时，Vite 通过原生 ESM 的 模块热替换 （HMR）只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建。”\n  - Snapshot: `research/external/5edc8649-039c-4c3c-9c15-581713f58817/483d02efbbfc307a0ef3623d1e5382fab4c2db404fd3951ddca15f8a8716dd22`\n  - URL: https://cn.vite.dev/guide/why\n\n### Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新\n\n- 研究项：`Vite · 热更新(HMR)机制`\n- 候选：`f8aab1fd-edc1-4f81-ab4b-2b2e8b2bea0a`\n- Evidence: `evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd`\n  - Exact quote: “Vite 通过原生 ESM 的 模块热替换 （HMR）只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建。”\n  - Snapshot: `research/external/5edc8649-039c-4c3c-9c15-581713f58817/483d02efbbfc307a0ef3623d1e5382fab4c2db404fd3951ddca15f8a8716dd22`\n  - URL: https://cn.vite.dev/guide/why\n\n## 局限与未解决项\n\n- **webpack · 开发服务器启动机制**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **webpack · 浏览器原生 ESM 依赖**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:30c7b3bf7081ad77f182fff64a03b4f25b0897121abe0d29`\n  - Exact quote: “当首次启动 Vite 开发服务器时，Vite 会检查是否存在预构建的依赖。如果没有找到相应的缓存，Vite 将抓取源码并自动寻找引入的依赖项。”\n  - Snapshot: `research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/ff225b19dbf72f1935b38d09f9b3f8a05d98cdc07d135e20825712f740419a25`\n  - URL: https://developer.jdcloud.com/article/3792\n- Evidence: `evidence:bf29f3b7b680ade812a7b5e237dfbfbdca0ac187b73f7869`\n  - Exact quote: “这意味着无论应用规模多大，开发服务器的启动几乎都是即时的。”\n  - Snapshot: `research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/579aff79f903895a614c311709d7b64041d908f184ee11715ee9cc21b45b0764`\n  - URL: https://cn.vite.dev/guide/why\n- Evidence: `evidence:2cf3c1046b7cf51a767c8e17c6fb59b77a33e6c53e2da743`\n  - Exact quote: “Note that you should always call `import.meta.hot.accept` even if you plan to call `invalidate` immediately afterwards, or else the HMR client won't listen for future changes to the self-accepting module.”\n  - Snapshot: `research/external/88cc3666-a2af-46d8-afc9-a60e25c80522/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad`\n  - URL: https://vite.dev/guide/api-hmr\n- Evidence: `evidence:1a33cdd6fa13d23f15db94b41ec79d4b0b86a9c74b682062`\n  - Exact quote: “Theoretically usable in production, but it maybe too early to use it for something serious”\n  - Snapshot: `research/external/7681fdfc-7c4d-4090-a1e2-1ba9ac0276af/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9`\n  - URL: https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack\n- Evidence: `evidence:4b48264146bb843d41112162714c7704e5d598f2cab0435a`\n  - Exact quote: “在默认配置下，在 Vite 之前的反向代理应该支持代理 WebSocket。”\n  - Snapshot: `research/external/f9b23ee4-a856-49ff-801e-0078a60631de/48a770f90c21c9780ec91bea8460a36835ab73121c657015f6a0ed9c786377eb`\n  - URL: https://cn.vite.dev/config/server-options\n- Evidence: `evidence:60e55cfdb075886264bfda6b8d5c5f73967f0c396329cf6e`\n  - Exact quote: “Out of the box, webpack only understands JavaScript and JSON files. **Loaders** allow webpack to process other types of files and convert them into valid [modules](/concepts/modules)”\n  - Snapshot: `research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/7183f1f062498a9ceed1fafac441c84581d8b8a59545e38fc1b4189b63b0900d`\n  - URL: https://webpack.js.org/concepts/\n- Evidence: `evidence:94408448342b396afd03f3c82316b9d0c2e6fdc861dbae93`\n  - Exact quote: “we've set `mode` to `development`. Also, we've added the recommended `devtool` for that environment (strong source mapping), as well as our `devServer` configuration.”\n  - Snapshot: `research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/f26aa767ecde4aaaaf670bca7bc8a1c89ab08d62339c8d2d8a4ad6bd81f3659a`\n  - URL: https://webpack.js.org/guides/production/",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/ba949fcd-5a8e-453f-831e-85e608b12b14/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 20305,
+      "sha256": "96deb33027b3e58e39f6c8fc3a71bf966c9bb9086544fd6b34fbce51b095ce9a"
+    },
+    "research_artifact": {
+      "artifact_id": "ba949fcd-5a8e-453f-831e-85e608b12b14",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "ba949fcd-5a8e-453f-831e-85e608b12b14",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/ba949fcd-5a8e-453f-831e-85e608b12b14/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 20305,
+        "sha256": "96deb33027b3e58e39f6c8fc3a71bf966c9bb9086544fd6b34fbce51b095ce9a"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "webpack dev server bundling HMR official documentation",
+          "Vite webpack 开发服务器 热更新 官方文档",
+          "Vite why native ESM dev server webpack comparison",
+          "webpack development server hot module replacement",
+          "webpack hot module replacement concept documentation",
+          "webpack dev server official documentation",
+          "webpack HMR Hot Module Replacement documentation",
+          "webpack Hot Module Replacement limitations not supported cases",
+          "webpack dev server compile in memory bundling startup",
+          "Vite features dev server",
+          "Vite HMR limitations official documentation",
+          "webpack dev server HMR limitations documentation",
+          "webpack 官方文档来源 primary research limitations",
+          "webpack 官方文档来源 官方说明 适用条件",
+          "Vite official docs why native ESM dev server vs webpack bundling site:vitejs.dev",
+          "webpack official documentation dev-server hot module replacement concepts site:webpack.js.org",
+          "webpack 启动性能特征 primary research limitations",
+          "webpack 启动性能特征 官方说明 适用条件",
+          "webpack 开发服务器启动机制 primary research limitations",
+          "webpack 开发服务器启动机制 官方说明 适用条件",
+          "Vite 启动性能特征 primary research limitations",
+          "Vite 启动性能特征 官方说明 适用条件",
+          "Vite dev server on-demand vs pre-bundling official docs",
+          "Vite 官方文档 开发服务器 启动 按需编译 依赖预打包",
+          "webpack 浏览器原生 ESM 依赖 primary research limitations",
+          "webpack 浏览器原生 ESM 依赖 官方说明 适用条件",
+          "Vite 官方文档来源 primary research limitations",
+          "Vite 官方文档来源 官方说明 适用条件",
+          "webpack 5 dev server startup time cold start documentation",
+          "webpack watch mode incremental compilation performance docs"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-2575ee3a445c5783",
+            "source_id": "",
+            "source_title": "webpack",
+            "evidence_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-2575ee3a445c5783",
+            "source_id": "",
+            "source_title": "webpack",
+            "evidence_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Vite",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "read_focus": "基于官方文档比较 Vite 与 webpack 的开发服务器与热更新机制。",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "webpack",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+            "read_focus": "基于官方文档比较 Vite 与 webpack 的开发服务器与热更新机制。",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-d900cebdf86e72c5",
+            "column_label": "热更新(HMR)机制",
+            "candidate_value": "webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-1237c21ac94d82a5",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-1237c21ac94d82a5",
+            "column_label": "HMR 覆盖范围与限制",
+            "candidate_value": "Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-3489c99718ef5726",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-3489c99718ef5726",
+            "column_label": "启动性能特征",
+            "candidate_value": "Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-1237c21ac94d82a5",
+            "column_label": "HMR 覆盖范围与限制",
+            "candidate_value": "webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-d900cebdf86e72c5",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-d900cebdf86e72c5",
+            "column_label": "热更新(HMR)机制",
+            "candidate_value": "Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-3489c99718ef5726",
+            "column_label": "启动性能特征",
+            "candidate_value": "webpack-dev-server 从内存提供所有 webpack 资源，性能最佳",
+            "status": "VERIFIED",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-84f66acd83aef586",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-84f66acd83aef586",
+            "column_label": "官方文档来源",
+            "candidate_value": "Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-37d00ce000908b05",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-37d00ce000908b05",
+            "column_label": "开发服务器启动机制",
+            "candidate_value": "Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-b16efac145e9242c:dim-88a6f452c2775595",
+            "row_id": "entity-b16efac145e9242c",
+            "branch_id": "branch-main",
+            "column_key": "dim-88a6f452c2775595",
+            "column_label": "浏览器原生 ESM 依赖",
+            "candidate_value": "Vite 通过原生 ESM 的模块热替换只更新对应模块。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-88a6f452c2775595",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-88a6f452c2775595",
+            "column_label": "浏览器原生 ESM 依赖",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-84f66acd83aef586",
+            "column_label": "官方文档来源",
+            "candidate_value": "官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-2575ee3a445c5783:dim-37d00ce000908b05",
+            "row_id": "entity-2575ee3a445c5783",
+            "branch_id": "branch-main",
+            "column_key": "dim-37d00ce000908b05",
+            "column_label": "开发服务器启动机制",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Vite",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "read_focus": "基于官方文档比较 Vite 与 webpack 的开发服务器与热更新机制。",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "read_focus": "基于官方文档比较 Vite 与 webpack 的开发服务器与热更新机制。",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-d900cebdf86e72c5",
+          "column_label": "热更新(HMR)机制",
+          "candidate_value": "webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-1237c21ac94d82a5",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-1237c21ac94d82a5",
+          "column_label": "HMR 覆盖范围与限制",
+          "candidate_value": "Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-3489c99718ef5726",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-3489c99718ef5726",
+          "column_label": "启动性能特征",
+          "candidate_value": "Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-1237c21ac94d82a5",
+          "column_label": "HMR 覆盖范围与限制",
+          "candidate_value": "webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-d900cebdf86e72c5",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-d900cebdf86e72c5",
+          "column_label": "热更新(HMR)机制",
+          "candidate_value": "Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-3489c99718ef5726",
+          "column_label": "启动性能特征",
+          "candidate_value": "webpack-dev-server 从内存提供所有 webpack 资源，性能最佳",
+          "status": "VERIFIED",
+          "confidence": 0.6,
+          "evidence_refs": [
+            "evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-84f66acd83aef586",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-84f66acd83aef586",
+          "column_label": "官方文档来源",
+          "candidate_value": "Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-37d00ce000908b05",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-37d00ce000908b05",
+          "column_label": "开发服务器启动机制",
+          "candidate_value": "Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-88a6f452c2775595",
+          "row_id": "entity-b16efac145e9242c",
+          "branch_id": "branch-main",
+          "column_key": "dim-88a6f452c2775595",
+          "column_label": "浏览器原生 ESM 依赖",
+          "candidate_value": "Vite 通过原生 ESM 的模块热替换只更新对应模块。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-88a6f452c2775595",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-88a6f452c2775595",
+          "column_label": "浏览器原生 ESM 依赖",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-84f66acd83aef586",
+          "column_label": "官方文档来源",
+          "candidate_value": "官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-37d00ce000908b05",
+          "row_id": "entity-2575ee3a445c5783",
+          "branch_id": "branch-main",
+          "column_key": "dim-37d00ce000908b05",
+          "column_label": "开发服务器启动机制",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:41:28Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:44:22Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:45:30Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd",
+          "window_id": "window-1",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite webpack 开发服务器 热更新 官方文档",
+          "read_focus": "Read external URL 为什么选Vite | Vite 官方中文文档 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Vite 通过原生 ESM 的 模块热替换 （HMR）只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建。",
+          "claim_text": "Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5edc8649-039c-4c3c-9c15-581713f58817/483d02efbbfc307a0ef3623d1e5382fab4c2db404fd3951ddca15f8a8716dd22"
+        },
+        {
+          "evidence_id": "evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72",
+          "window_id": "window-1",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite webpack 开发服务器 热更新 官方文档",
+          "read_focus": "Read external URL 为什么选Vite | Vite 官方中文文档 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "当你修改某个文件时，Vite 通过原生 ESM 的 模块热替换 （HMR）只更新浏览器中的对应模块，无需整页刷新，也无需等待重新构建。",
+          "claim_text": "Vite 通过原生 ESM 的模块热替换只更新对应模块。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/5edc8649-039c-4c3c-9c15-581713f58817/483d02efbbfc307a0ef3623d1e5382fab4c2db404fd3951ddca15f8a8716dd22"
+        },
+        {
+          "evidence_id": "evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582",
+          "window_id": "window-5",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack hot module replacement concept documentation",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "You can use it in production. The updates respect your Code Splitting and only download updates for the changed parts of your app.",
+          "claim_text": "webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6dd274ad-0ce4-4bf2-b89e-a72eeebefda7/244754b952eed230b8233d3dcdf5db9aa28811a7079a9f9e036ce1914c8fc701"
+        },
+        {
+          "evidence_id": "evidence:1a33cdd6fa13d23f15db94b41ec79d4b0b86a9c74b682062",
+          "window_id": "window-3",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack HMR Hot Module Replacement documentation",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Theoretically usable in production, but it maybe too early to use it for something serious",
+          "claim_text": "webpack HMR 理论上可用于生产环境，但可能为时过早，不宜用于严肃场景。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7681fdfc-7c4d-4090-a1e2-1ba9ac0276af/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9"
+        },
+        {
+          "evidence_id": "evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e",
+          "window_id": "window-3",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack HMR Hot Module Replacement documentation",
+          "read_focus": "Read external URL hot module replacement with webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "It's experimental and not tested thoroughly.",
+          "claim_text": "webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/7681fdfc-7c4d-4090-a1e2-1ba9ac0276af/88a3b74dc2f8d88376c8269906a983a355823b974149a0955e240f378d7d5ef9"
+        },
+        {
+          "evidence_id": "evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22",
+          "window_id": "window-7",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR limitations official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "This is currently a noop and is there for backward compatibility. This could change in the future if there is a new usage for it. To indicate that the module is not hot-updatable, use `hot.invalidate()`.",
+          "claim_text": "Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/88cc3666-a2af-46d8-afc9-a60e25c80522/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:2cf3c1046b7cf51a767c8e17c6fb59b77a33e6c53e2da743",
+          "window_id": "window-7",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite HMR limitations official documentation",
+          "read_focus": "Read external URL HMR API for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Note that you should always call `import.meta.hot.accept` even if you plan to call `invalidate` immediately afterwards, or else the HMR client won't listen for future changes to the self-accepting module.",
+          "claim_text": "即使计划随后立即调用 invalidate，也仍应始终调用 import.meta.hot.accept，否则 HMR 客户端不会监听该自接受模块的后续变更",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/88cc3666-a2af-46d8-afc9-a60e25c80522/17b29d2b604b681aae48ca685c6cef726c676a2260f34c906ec04fa3a6f81cad"
+        },
+        {
+          "evidence_id": "evidence:60e55cfdb075886264bfda6b8d5c5f73967f0c396329cf6e",
+          "window_id": "window-2",
+          "source_id": "web-581e1b49ce523ec1",
+          "source_title": "Concepts | webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/concepts/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack 官方文档来源 官方说明 适用条件",
+          "read_focus": "Read external URL Concepts | webpack for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Out of the box, webpack only understands JavaScript and JSON files. **Loaders** allow webpack to process other types of files and convert them into valid [modules](/concepts/modules)",
+          "claim_text": "官方 Concepts 文档说明：默认情况下 webpack 仅理解 JavaScript 和 JSON 文件，loaders 用于将其它类型文件转换为有效模块。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/7183f1f062498a9ceed1fafac441c84581d8b8a59545e38fc1b4189b63b0900d"
+        },
+        {
+          "evidence_id": "evidence:94408448342b396afd03f3c82316b9d0c2e6fdc861dbae93",
+          "window_id": "window-3",
+          "source_id": "web-cf60a945d267ec0d",
+          "source_title": "Production",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/production/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack 官方文档来源 primary research limitations",
+          "read_focus": "Read external URL Production for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "we've set `mode` to `development`. Also, we've added the recommended `devtool` for that environment (strong source mapping), as well as our `devServer` configuration.",
+          "claim_text": "开发环境配置 webpack.dev.js 中 mode 设为 development，并加入推荐的 devtool 和 devServer 配置。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/f26aa767ecde4aaaaf670bca7bc8a1c89ab08d62339c8d2d8a4ad6bd81f3659a"
+        },
+        {
+          "evidence_id": "evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a",
+          "window_id": "window-3",
+          "source_id": "web-cf60a945d267ec0d",
+          "source_title": "Production",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/production/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack 官方文档来源 primary research limitations",
+          "read_focus": "Read external URL Production for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "For the `start` script, which runs `webpack-dev-server`, we will use `webpack.dev.js`",
+          "claim_text": "官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e15a929f-a6fc-430e-8bfe-6df69237b44f/f26aa767ecde4aaaaf670bca7bc8a1c89ab08d62339c8d2d8a4ad6bd81f3659a"
+        },
+        {
+          "evidence_id": "evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db",
+          "window_id": "window-1",
+          "source_id": "web-2ee99cd465ca0b55",
+          "source_title": "性能 | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/performance",
+          "provider": "tavily_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 启动性能特征 官方说明 适用条件",
+          "read_focus": "Read external URL 性能 | Vite 官方中文文档 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Vite 开发服务器只转换浏览器请求的文件，这使得它能够快速启动，并且只对使用的文件执行转换。",
+          "claim_text": "Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/94c6f706-e657-4105-a2a4-8c2eb950364b/bfa619e987dd2f5d189677d1732a5aed3c8e3d52b8bdfdc9f2d782f82e106ba9"
+        },
+        {
+          "evidence_id": "evidence:30c7b3bf7081ad77f182fff64a03b4f25b0897121abe0d29",
+          "window_id": "window-5",
+          "source_id": "web-ab48e52d7a42e1dd",
+          "source_title": "Vite 的预构建原理与实践",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.jdcloud.com/article/3792",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 官方文档 开发服务器 启动 按需编译 依赖预打包",
+          "read_focus": "Read external URL Vite 的预构建原理与实践 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "当首次启动 Vite 开发服务器时，Vite 会检查是否存在预构建的依赖。如果没有找到相应的缓存，Vite 将抓取源码并自动寻找引入的依赖项。",
+          "claim_text": "首次启动 Vite 开发服务器时，若没有缓存，Vite 将抓取源码并自动寻找引入的依赖项进行预构建。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.65,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/ff225b19dbf72f1935b38d09f9b3f8a05d98cdc07d135e20825712f740419a25"
+        },
+        {
+          "evidence_id": "evidence:bf29f3b7b680ade812a7b5e237dfbfbdca0ac187b73f7869",
+          "window_id": "window-4",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 官方文档 开发服务器 启动 按需编译 依赖预打包",
+          "read_focus": "Read external URL 为什么选Vite | Vite 官方中文文档 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "这意味着无论应用规模多大，开发服务器的启动几乎都是即时的。",
+          "claim_text": "无论应用规模多大，Vite 开发服务器的启动几乎都是即时的。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/579aff79f903895a614c311709d7b64041d908f184ee11715ee9cc21b45b0764"
+        },
+        {
+          "evidence_id": "evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2",
+          "window_id": "window-4",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 官方文档 开发服务器 启动 按需编译 依赖预打包",
+          "read_focus": "Read external URL 为什么选Vite | Vite 官方中文文档 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "**源码**（频繁变动的应用代码）：通过原生 ESM 按需提供。浏览器只加载当前页面所需的内容，Vite 则在请求时对每个文件进行转换。",
+          "claim_text": "Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/b11178e7-07c1-406f-8db2-c8d5fa57a2c9/579aff79f903895a614c311709d7b64041d908f184ee11715ee9cc21b45b0764"
+        },
+        {
+          "evidence_id": "evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c",
+          "window_id": "window-4",
+          "source_id": "web-f340a4f7ed24c420",
+          "source_title": "开发服务器选项",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 官方文档来源 官方说明 适用条件",
+          "read_focus": "Read external URL 开发服务器选项 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "如果 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器：",
+          "claim_text": "Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f9b23ee4-a856-49ff-801e-0078a60631de/48a770f90c21c9780ec91bea8460a36835ab73121c657015f6a0ed9c786377eb"
+        },
+        {
+          "evidence_id": "evidence:4b48264146bb843d41112162714c7704e5d598f2cab0435a",
+          "window_id": "window-4",
+          "source_id": "web-f340a4f7ed24c420",
+          "source_title": "开发服务器选项",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/config/server-options",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Vite 官方文档来源 官方说明 适用条件",
+          "read_focus": "Read external URL 开发服务器选项 for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: Vite. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "在默认配置下，在 Vite 之前的反向代理应该支持代理 WebSocket。",
+          "claim_text": "Vite 官方文档「开发服务器选项」页面说明：默认配置下，在 Vite 之前的反向代理应该支持代理 WebSocket",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.88,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/f9b23ee4-a856-49ff-801e-0078a60631de/48a770f90c21c9780ec91bea8460a36835ab73121c657015f6a0ed9c786377eb"
+        },
+        {
+          "evidence_id": "evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535",
+          "window_id": "window-4",
+          "source_id": "web-0ae13065b3eef98b",
+          "source_title": "build performance · webpack/docs Wiki",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/build-performance",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "webpack watch mode incremental compilation performance docs",
+          "read_focus": "Read external URL build performance · webpack/docs Wiki for claims that answer: 比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。\n\nCurrent Table-as-State entity: webpack. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "* [webpack-dev-server](/webpack/docs/wiki/webpack-dev-server): Serves all webpack assets from memory. Best performance.",
+          "claim_text": "webpack-dev-server 从内存提供所有 webpack 资源，性能最佳",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/782e8e48-415a-4a9b-a81c-e3e8aac2f6fc/778e7b1600b9f89340bd105f99b9c9a122c8a21cd8a947da7c9cbdaf88463d1b"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-88a6f452c2775595",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-d900cebdf86e72c5",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e",
+          "source_id": "web-e4fadebcda7924fb",
+          "source_title": "hot module replacement with webpack",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/hot-module-replacement-with-webpack"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-1237c21ac94d82a5",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22",
+          "source_id": "web-8b9ed702bce53b33",
+          "source_title": "HMR API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://vite.dev/guide/api-hmr"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a",
+          "source_id": "web-cf60a945d267ec0d",
+          "source_title": "Production",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://webpack.js.org/guides/production/"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-3489c99718ef5726",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db",
+          "source_id": "web-2ee99cd465ca0b55",
+          "source_title": "性能 | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/performance"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-37d00ce000908b05",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2",
+          "source_id": "web-baf9e2a8bee47c20",
+          "source_title": "为什么选Vite | Vite 官方中文文档",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/guide/why"
+        },
+        {
+          "cell_id": "entity-b16efac145e9242c:dim-84f66acd83aef586",
+          "row_id": "entity-b16efac145e9242c",
+          "evidence_id": "evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c",
+          "source_id": "web-f340a4f7ed24c420",
+          "source_title": "开发服务器选项",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://cn.vite.dev/config/server-options"
+        },
+        {
+          "cell_id": "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+          "row_id": "entity-2575ee3a445c5783",
+          "evidence_id": "evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535",
+          "source_id": "web-0ae13065b3eef98b",
+          "source_title": "build performance · webpack/docs Wiki",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/webpack/docs/wiki/build-performance"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "48aef9a4-7702-45a7-aa7d-39b7548b89cd",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "比较 Vite 与 webpack 的开发服务器和热更新机制，引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T11:38:23Z"
+      },
+      {
+        "trace_id": "d38365cc-5420-498e-ad64-66557709dbae",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 6
+        },
+        "created_at": "2026-10-17T11:38:34Z"
+      },
+      {
+        "trace_id": "490d6464-1f51-47bd-a38f-07708acb7581",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T11:45:57Z"
+      }
+    ],
+    "created_at": "2026-10-17T11:38:23Z",
+    "updated_at": "2026-10-17T11:45:57Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:39:24Z",
+          "lease_epoch": 1,
+          "task_id": "079a76bc-a42d-455f-b7f0-0d42060104de",
+          "task_key": "planning:ba949fcd-5a8e-453f-831e-85e608b12b14",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:40:38Z",
+          "lease_epoch": 1,
+          "task_id": "5edc8649-039c-4c3c-9c15-581713f58817",
+          "task_key": "deep-cell:16081aebb274aa881b8c90d82ed971d6",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:41:24Z",
+          "lease_epoch": 1,
+          "task_id": "6dd274ad-0ce4-4bf2-b89e-a72eeebefda7",
+          "task_key": "deep-cell:40186ef4f8b72adeb8fb02fac8781b11",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:41:24Z",
+          "lease_epoch": 1,
+          "task_id": "7681fdfc-7c4d-4090-a1e2-1ba9ac0276af",
+          "task_key": "deep-cell:8f9c9dc42fe63ebee0db51a1f5eb71a0",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:42:20Z",
+          "lease_epoch": 1,
+          "task_id": "88cc3666-a2af-46d8-afc9-a60e25c80522",
+          "task_key": "deep-cell:ba620ad90e0de20911ee5e22f049881b",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:45:14Z",
+          "lease_epoch": 1,
+          "task_id": "2a63972b-2906-47c7-91fb-fb323a337546",
+          "task_key": "counterfactual:02cdaa889f6c4dfabff9e1380c27aa20",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:42:59Z",
+          "lease_epoch": 1,
+          "task_id": "34b144a7-74d3-4930-a029-01a62c65a5e8",
+          "task_key": "counterfactual:ed991cdcb4517aafe2c719072109d46a",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:43:47Z",
+          "lease_epoch": 1,
+          "task_id": "527ad45a-f173-4393-bb0c-e62ff2964fe5",
+          "task_key": "counterfactual:010e0342c3c2c2ef7457d90d052c7f52",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:44:07Z",
+          "lease_epoch": 1,
+          "task_id": "94c6f706-e657-4105-a2a4-8c2eb950364b",
+          "task_key": "counterfactual:38c005c1613fd1dfe36f10694ccc5fa9",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:43:00Z",
+          "lease_epoch": 1,
+          "task_id": "b07da68f-ac77-44fe-92fe-8bf7f476bc9c",
+          "task_key": "counterfactual:f8480a8ae8d6582ec89f2af7afa40c65",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:44:41Z",
+          "lease_epoch": 1,
+          "task_id": "b11178e7-07c1-406f-8db2-c8d5fa57a2c9",
+          "task_key": "counterfactual:9ffe8ffde6ea50235100a7a378824139",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:42:59Z",
+          "lease_epoch": 1,
+          "task_id": "e15a929f-a6fc-430e-8bfe-6df69237b44f",
+          "task_key": "counterfactual:f8c1b8e6d10eca52fdd3b8afb535b6fb",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:45:23Z",
+          "lease_epoch": 1,
+          "task_id": "55314af9-2c0f-483b-ae9d-251929e47fbb",
+          "task_key": "counterfactual:e46ec7170c1f61e7df896971229bb578",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:46:27Z",
+          "lease_epoch": 1,
+          "task_id": "7208e102-e783-437d-b352-cd228c648460",
+          "task_key": "counterfactual:62bb1e3c63bc92c2504607bff442d1a1",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:46:27Z",
+          "lease_epoch": 1,
+          "task_id": "782e8e48-415a-4a9b-a81c-e3e8aac2f6fc",
+          "task_key": "counterfactual:07f3f4a58fe0b0442a71b201106f8fc7",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:45:53Z",
+          "lease_epoch": 1,
+          "task_id": "f9b23ee4-a856-49ff-801e-0078a60631de",
+          "task_key": "counterfactual:da262381c51ea96d7c00b1602503bcdd",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:46:46Z",
+          "lease_epoch": 1,
+          "task_id": "5431b00f-510f-4189-ac59-4b8ef93ec688",
+          "task_key": "synthesis:4001b69058471cc0dc5c0475b8744c4f",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "0d3f065a-d62a-4927-8acc-99dd5121fc16",
+          "cell_key": "entity-b16efac145e9242c:dim-88a6f452c2775595",
+          "task_id": "5edc8649-039c-4c3c-9c15-581713f58817"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "f8aab1fd-edc1-4f81-ab4b-2b2e8b2bea0a",
+          "cell_key": "entity-b16efac145e9242c:dim-d900cebdf86e72c5",
+          "task_id": "5edc8649-039c-4c3c-9c15-581713f58817"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "8c2a6f25-7200-43cf-b284-cd20f41b1370",
+          "cell_key": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5",
+          "task_id": "6dd274ad-0ce4-4bf2-b89e-a72eeebefda7"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "df8e6d58-2636-4c6d-8fec-2f769c3f0fb6",
+          "cell_key": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5",
+          "task_id": "7681fdfc-7c4d-4090-a1e2-1ba9ac0276af"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "4b10f9cb-b556-4c13-ba2f-15f3547a399d",
+          "cell_key": "entity-b16efac145e9242c:dim-1237c21ac94d82a5",
+          "task_id": "88cc3666-a2af-46d8-afc9-a60e25c80522"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "9ac3ef83-7507-4c69-8c9a-4c98e135d57b",
+          "cell_key": "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+          "task_id": "e15a929f-a6fc-430e-8bfe-6df69237b44f"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "7d09f33c-bf16-4881-9a46-ceaf175cdd13",
+          "cell_key": "entity-b16efac145e9242c:dim-3489c99718ef5726",
+          "task_id": "94c6f706-e657-4105-a2a4-8c2eb950364b"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "b6db7355-781a-48cf-9a4f-6564befb1230",
+          "cell_key": "entity-b16efac145e9242c:dim-37d00ce000908b05",
+          "task_id": "b11178e7-07c1-406f-8db2-c8d5fa57a2c9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "e1854910-cc12-4712-99d7-59b549b3799f",
+          "cell_key": "entity-b16efac145e9242c:dim-84f66acd83aef586",
+          "task_id": "f9b23ee4-a856-49ff-801e-0078a60631de"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.6,
+          "candidate_id": "eb92a9f9-4666-487e-ba98-3c15a9e17a45",
+          "cell_key": "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+          "task_id": "782e8e48-415a-4a9b-a81c-e3e8aac2f6fc"
+        }
+      ],
+      "candidate_count": 10,
+      "task_count": 17,
+      "merge_count": 10,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:941705d216bd2d816fc902f1433bf863cca0259d820c42cb984a6a07b37b65f6",
+          "candidate_id": "0d3f065a-d62a-4927-8acc-99dd5121fc16",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-88a6f452c2775595"
+        },
+        {
+          "merge_id": "merge:486159e4dcc6afb48812390935a5cf3773498fc79a4d57f811796f23d9f29716",
+          "candidate_id": "f8aab1fd-edc1-4f81-ab4b-2b2e8b2bea0a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-d900cebdf86e72c5"
+        },
+        {
+          "merge_id": "merge:514731b1837dc102fd9a6d2a84ec2a1aa636313737219344ce741e8d0526ba5a",
+          "candidate_id": "8c2a6f25-7200-43cf-b284-cd20f41b1370",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5"
+        },
+        {
+          "merge_id": "merge:b7a17c2670647a11302b23fd568bf97ccbf6858a6bb42d40ae57a34e1fca76bd",
+          "candidate_id": "df8e6d58-2636-4c6d-8fec-2f769c3f0fb6",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5"
+        },
+        {
+          "merge_id": "merge:9da890cbc7a028505aeaa0441b26c38c29e7f437ccd38114c8af84bbcc6aaa52",
+          "candidate_id": "4b10f9cb-b556-4c13-ba2f-15f3547a399d",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-1237c21ac94d82a5"
+        },
+        {
+          "merge_id": "merge:b80db74ecb7924a3deb1654145f5aa30bad5ecbfd12286651887fd4693206125",
+          "candidate_id": "9ac3ef83-7507-4c69-8c9a-4c98e135d57b",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-84f66acd83aef586"
+        },
+        {
+          "merge_id": "merge:2069125abd7af72f7a73882393321cf2f6efb3be91e99a1efc8a4ca1ec4316e4",
+          "candidate_id": "7d09f33c-bf16-4881-9a46-ceaf175cdd13",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-3489c99718ef5726"
+        },
+        {
+          "merge_id": "merge:b4b12ca089d707dfd309f914a5057b49b08f2fb4497a7c5994bbde552cf77eda",
+          "candidate_id": "b6db7355-781a-48cf-9a4f-6564befb1230",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-37d00ce000908b05"
+        },
+        {
+          "merge_id": "merge:3266dd7ee1d33e779a0575eab399a065ecb9554148d68ffbf6d260ee35bc9c93",
+          "candidate_id": "e1854910-cc12-4712-99d7-59b549b3799f",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-b16efac145e9242c:dim-84f66acd83aef586"
+        },
+        {
+          "merge_id": "merge:5a6914a7846f4a0ee88ac6e3f12c9382c8d99ca455f7c12c12229760ca1018bf",
+          "candidate_id": "eb92a9f9-4666-487e-ba98-3c15a9e17a45",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-2575ee3a445c5783:dim-3489c99718ef5726"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 12,
+          "merge_high_water_mark": 8,
+          "candidate_high_water_mark": 8
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 16,
+          "merge_high_water_mark": 10,
+          "candidate_high_water_mark": 10
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-2575ee3a445c5783",
+            "label": "webpack"
+          },
+          {
+            "entity_key": "entity-b16efac145e9242c",
+            "label": "Vite"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-1237c21ac94d82a5",
+            "label": "HMR 覆盖范围与限制",
+            "description": "官方文档说明的热更新适用场景或不支持的情形。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-3489c99718ef5726",
+            "label": "启动性能特征",
+            "description": "官方文档对开发服务器启动速度或冷启动行为的表述。",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-37d00ce000908b05",
+            "label": "开发服务器启动机制",
+            "description": "官方文档如何描述该工具开发服务器的启动与编译方式（如按需转换 vs 预打包）。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-84f66acd83aef586",
+            "label": "官方文档来源",
+            "description": "支撑上述结论的官方文档页面标题与要点。",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-88a6f452c2775595",
+            "label": "浏览器原生 ESM 依赖",
+            "description": "是否依赖浏览器原生 ES 模块实现开发时模块加载。",
+            "answer_format": "BOOLEAN",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-d900cebdf86e72c5",
+            "label": "热更新(HMR)机制",
+            "description": "官方文档描述的热更新实现方式与模块更新粒度。",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "仅覆盖开发服务器启动方式与 HMR 机制，两者各自官方文档为准。",
+          "objective": "基于官方文档比较 Vite 与 webpack 的开发服务器与热更新机制。",
+          "exclusions": [
+            "生产构建性能对比",
+            "第三方社区评测数据",
+            "迁移成本分析"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown 对比表与逐项引用审计"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "vite.dev",
+          "cn.vite.dev",
+          "webpack.js.org"
+        ],
+        "perspectives": [
+          {
+            "name": "前端开发者",
+            "questions": [
+              "开发服务器如何启动和编译模块?",
+              "热更新如何工作，粒度多细?"
+            ]
+          },
+          {
+            "name": "技术选型决策者",
+            "questions": [
+              "官方文档如何描述启动与 HMR 性能特征?",
+              "各自机制有哪些限制?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-1237c21ac94d82a5",
+          "entity_label": "webpack",
+          "column_label": "HMR 覆盖范围与限制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4548bdb9bee6ff9fe3b822265621a2eab778e5d148b1862e",
+              "source_domain": "github.com",
+              "claim_text": "webpack HMR 的限制包括：它属于实验性功能且未经过充分测试，可能出现 bug。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+          "entity_label": "webpack",
+          "column_label": "启动性能特征",
+          "cell_status": "VERIFIED",
+          "candidate_value": "webpack-dev-server 从内存提供所有 webpack 资源，性能最佳",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ae8802bdb306d0bea2c1e198df3e903b49ba702d13e0c535",
+              "source_domain": "github.com",
+              "claim_text": "webpack-dev-server 从内存提供所有 webpack 资源，性能最佳"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 600000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-37d00ce000908b05",
+          "entity_label": "webpack",
+          "column_label": "开发服务器启动机制",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+          "entity_label": "webpack",
+          "column_label": "官方文档来源",
+          "cell_status": "VERIFIED",
+          "candidate_value": "官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:e2a6f4a8b9eb8c707d5f1a300c7e657c2a733b85a66fb43a",
+              "source_domain": "webpack.js.org",
+              "claim_text": "官方文档示例中，start 脚本运行 webpack-dev-server 并使用 webpack.dev.js；build 脚本运行 webpack 并使用 webpack.prod.js。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-88a6f452c2775595",
+          "entity_label": "webpack",
+          "column_label": "浏览器原生 ESM 依赖",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-2575ee3a445c5783:dim-d900cebdf86e72c5",
+          "entity_label": "webpack",
+          "column_label": "热更新(HMR)机制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b0565ea15ce65e91555736326fe5d2be9d680aee5725f582",
+              "source_domain": "github.com",
+              "claim_text": "webpack 的 HMR 像针对每个模块的 LiveReload，更新遵循代码分割，只下载变更部分的更新"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-1237c21ac94d82a5",
+          "entity_label": "Vite",
+          "column_label": "HMR 覆盖范围与限制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4aa0bab88874f2d7f19076fcc8b6760b0a4f532b0bf32b22",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 的 hot.decline() 目前是 noop，仅为向后兼容保留；要表示模块不可热更新应使用 hot.invalidate()"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-3489c99718ef5726",
+          "entity_label": "Vite",
+          "column_label": "启动性能特征",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c6dc888346e69a5e9103ce4d08d0d1472e6b930f63d320db",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 开发服务器只转换浏览器请求的文件，因此能快速启动。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-37d00ce000908b05",
+          "entity_label": "Vite",
+          "column_label": "开发服务器启动机制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:2c42ec6bae5b83c8eeb302a640054a6add355458f6aab4a2",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 的源码通过原生 ESM 按需提供，浏览器只加载当前页面所需内容，Vite 在请求时对每个文件进行转换。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-84f66acd83aef586",
+          "entity_label": "Vite",
+          "column_label": "官方文档来源",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:0ed3a30bd54fc44076a6babc10aaa24ea9475cbb05ff7d6c",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 官方文档「开发服务器选项」页面说明：若 Vite HMR 客户端连接 WebSocket 失败，该客户端将兜底为绕过反向代理、直接连接 WebSocket 到 Vite HMR 服务器"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-88a6f452c2775595",
+          "entity_label": "Vite",
+          "column_label": "浏览器原生 ESM 依赖",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 通过原生 ESM 的模块热替换只更新对应模块。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:436c4ec9e9c2d322d3966af1a249598cb2294d298fff6b72",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 通过原生 ESM 的模块热替换只更新对应模块。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-b16efac145e9242c:dim-d900cebdf86e72c5",
+          "entity_label": "Vite",
+          "column_label": "热更新(HMR)机制",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:330b2b2e5fb296a591b0adc391b3f578da0e0726f1158ebd",
+              "source_domain": "vite.dev",
+              "claim_text": "Vite 通过原生 ESM 的模块热替换（HMR）只更新浏览器中的对应模块，无需整页刷新"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 7 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+            "entity-2575ee3a445c5783:dim-37d00ce000908b05",
+            "entity-2575ee3a445c5783:dim-84f66acd83aef586",
+            "entity-2575ee3a445c5783:dim-88a6f452c2775595",
+            "entity-b16efac145e9242c:dim-3489c99718ef5726",
+            "entity-b16efac145e9242c:dim-37d00ce000908b05",
+            "entity-b16efac145e9242c:dim-84f66acd83aef586"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 14,
+          "created_at": "2026-10-17T11:41:28Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 4 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-2575ee3a445c5783:dim-3489c99718ef5726",
+            "entity-2575ee3a445c5783:dim-37d00ce000908b05",
+            "entity-2575ee3a445c5783:dim-88a6f452c2775595",
+            "entity-b16efac145e9242c:dim-84f66acd83aef586"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 4,
+          "created_at": "2026-10-17T11:44:22Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

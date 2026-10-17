@@ -1,0 +1,2765 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-vector-db-hybrid",
+  "run_id": "9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T11:52:53.939719+00:00",
+  "finished_at": "2026-10-17T12:02:47.429964+00:00",
+  "wall_seconds": 593.5,
+  "run_detail": {
+    "research_run_id": "9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "e23a2cfd-f382-4587-a24d-e3de5324ab0c",
+    "question": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+    "final_report_markdown": "# 主流向量数据库混合检索支持情况：Elasticsearch、Milvus、Qdrant 与 Weaviate 官方文档综述\n\n本次核验的资料显示，Elasticsearch、Milvus、Qdrant 与 Weaviate 均支持混合检索，但机制各异：Milvus 自 2.4 起提供多向量支持与混合检索框架（最多 10 个向量字段），通过 hybrid_search() 提交并可用 WeightedRanker 或 RRFRanker 融合；Elasticsearch 推荐以 RRF 算法实现混合检索，同时提供 linear 与 rescorer 等检索器；Qdrant 通过 Universal Query API 构建混合流水线，提供 rrf 与 dbsf 两种融合方式；Weaviate 自 1.17 起提供混合搜索，支持 relativeScoreFusion 与 rankedFusion 两种策略。Weaviate 的混合检索查询语法/API 一项在已核验资料中缺乏足够证据，仍待补充。\n\n## 直接回答\n\n本次核验的资料显示，Milvus 自 2.4 版本起引入多向量支持与混合检索框架，用户可引入多个向量字段（最多 10 个）；混合检索通过 hybrid_search() 方法提交，并借助 WeightedRanker 与 RRFRanker 两种重排策略对来自多个 AnnSearchRequest 的结果进行精炼。 [evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64] [evidence:9026b021e2c71c07018359dbe617495f1eec1c81b8757e9b] [evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9] [evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3]\n\nElasticsearch 的官方文档表示，推荐使用 reciprocal rank fusion（RRF）算法实现混合检索，以合并全文查询与向量查询的排名；同时提供 linear 检索器以线性组合其他检索器的得分，以及 rescorer 检索器替代查询重打分功能。其示例以 FORK 与 FUSE 等 ES|QL 结构组织查询。 [evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238] [evidence:18fc90d9edf32afe7eca2012f27ac5421dbb29906793bb7b] [evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89] [evidence:ded0610bdf49ef950ba9ebfa2f916b36f3bac99535c5ba27] [evidence:9ab7105e7c033c43a083c6c3da65a2e874387782997e5a2d] [evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad] [evidence:7fd4d7d2ad372fbdeb47ec229f24fa6fdcaedb2e81eaa3f7]\n\nQdrant 以其 Universal Query API 简化复杂混合流水线的构建；在查询中，using 用于为每个预取（prefetch）选择命名向量，FusionQuery 负责合并两个结果列表。官方资料还说明 Qdrant 提供 rrf 与 dbsf 两种融合不同查询结果的方式。 [evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683] [evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82] [evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42]\n\nWeaviate 的混合搜索功能自 1.17 版本引入，使用稀疏与稠密向量表示查询与文档的语义含义和上下文，并通过组合向量检索与关键词（BM25F）检索的结果来实现混合搜索。官方文档说明其支持 relativeScoreFusion 与 rankedFusion 两种策略来组合向量与关键词检索的分数，使用官方混合搜索页面的功能需确认版本为 1.17 或更高。 [evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca] [evidence:d672a7f3f8dbe2c1bda7276d0380c0a9d144d0aced677b9d] [evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c] [evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88] [evidence:dee8561ae3a03acc804fc579f07e9f443d5b412034a66a98]\n\n## 混合检索机制与版本线索\n\n在混合检索的引入与机制上，Milvus 与 Weaviate 的官方资料给出了明确的版本线索。Milvus 官方文档的 Hybrid Search 页面记载，自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可以引入多个向量字段（最多 10 个）；混合检索能力通过 hybrid_search() API 使用，并配合复杂的重排策略，对多个 AnnSearchRequest 实例的搜索结果进行精炼。Weaviate 的混合搜索功能则自 1.17 版本引入，官方文档将其描述为利用稀疏与稠密向量表示查询和文档的语义含义与上下文，并通过融合向量搜索与关键词（BM25F）搜索的两组结果来实现。 [evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a] [evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64] [evidence:9026b021e2c71c07018359dbe617495f1eec1c81b8757e9b] [evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca] [evidence:d672a7f3f8dbe2c1bda7276d0380c0a9d144d0aced677b9d]\n\nElasticsearch 与 Qdrant 的官方资料更侧重融合方式与查询接口。Elasticsearch 明确推荐以 RRF 算法实现混合检索，用于合并全文查询与向量查询的排名，其参考文档指向 reciprocal-rank-fusion 页面；除 RRF 检索器外，文档还列出 linear 检索器（线性组合其他检索器对顶部文档的得分）与 rescorer 检索器（替代查询重打分功能）。Qdrant 的官方 Hybrid Search 页面则展示预取加 FusionQuery 的用法，并说明 using 为每个预取选择命名向量、FusionQuery 合并两个结果列表，融合方式包括 rrf 与 dbsf。 [evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68] [evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89] [evidence:ded0610bdf49ef950ba9ebfa2f916b36f3bac99535c5ba27] [evidence:9ab7105e7c033c43a083c6c3da65a2e874387782997e5a2d] [evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f] [evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82] [evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42]\n\n## 对比表\n\n| 数据库 | 混合检索基础机制与版本 | 查询 API / 语法线索 | 融合 / 重排选项 |\n| --- | --- | --- | --- |\n| Milvus | 自 2.4 起引入多向量支持与混合检索框架，最多 10 个向量字段 | hybrid_search() 方法，配合多个 AnnSearchRequest | WeightedRanker、RRFRanker [evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64] [evidence:9026b021e2c71c07018359dbe617495f1eec1c81b8757e9b] [evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a] [evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9] [evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3] |\n| Elasticsearch | 推荐以 RRF 算法合并全文查询与向量查询排名 | ES\\|QL 示例使用 FORK 与 FUSE | RRF；另有 linear 与 rescorer 检索器 [evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238] [evidence:18fc90d9edf32afe7eca2012f27ac5421dbb29906793bb7b] [evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68] [evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad] [evidence:7fd4d7d2ad372fbdeb47ec229f24fa6fdcaedb2e81eaa3f7] [evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89] [evidence:ded0610bdf49ef950ba9ebfa2f916b36f3bac99535c5ba27] [evidence:9ab7105e7c033c43a083c6c3da65a2e874387782997e5a2d] |\n| Qdrant | Universal Query API 用于构建复杂混合流水线 | using 为每个预取选择命名向量，FusionQuery 合并两个结果列表 | rrf、dbsf [evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683] [evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f] [evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82] [evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42] |\n| Weaviate | 自 1.17 起提供混合搜索，融合向量与关键词（BM25F）结果 | 已核验资料未覆盖其查询 API / 语法 | relativeScoreFusion、rankedFusion [evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca] [evidence:d672a7f3f8dbe2c1bda7276d0380c0a9d144d0aced677b9d] [evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88] [evidence:dee8561ae3a03acc804fc579f07e9f443d5b412034a66a98] [evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c] |\n\n**核验情况：** 已核验 15 项，未找到足够证据 1 项。\n\n## 结论汇总\n\n| 研究对象 | Hybrid search support & mechanism | Query syntax / API for hybrid | Fusion / reranking options | Official documentation reference |\n|---|---|---|---|---|\n| Elasticsearch | Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。 | ES\\|QL 示例使用 FORK 与 FUSE 实现混合检索 | Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。 | 官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fu… |\n| Milvus | Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段 | Milvus 通过 hybrid_search() 方法提交混合检索 | Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker | Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个） |\n| Qdrant | Qdrant 的 Universal Query API 支持构建混合检索流水线 | using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表 | Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式 | Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法 |\n| Weaviate | Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for … | 未找到证据 | Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数 | Weaviate hybrid search official documentation page: https://docs.weaviate.io/wea… |\n\n## 引用核对\n\n### Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段\n\n- 研究项：`Milvus · Hybrid search support & mechanism`\n- 候选：`25dc757b-8224-46e5-b364-b1950fbf3afb`\n- Evidence: `evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64`\n  - Exact quote: “Since Milvus 2.4, we introduced multi-vector support and a hybrid search framework, which means users can bring in several vector fields (up to 10)”\n  - Snapshot: `research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab`\n  - URL: https://milvus.io/docs/v2.4.x/multi-vector-search.md\n\n### Milvus 通过 hybrid_search() 方法提交混合检索\n\n- 研究项：`Milvus · Query syntax / API for hybrid`\n- 候选：`3a66c61a-4db3-4355-b683-e8db81413ffd`\n- Evidence: `evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9`\n  - Exact quote: “use the \\`hybrid_search()\\` method to perform the hybrid search.”\n  - Snapshot: `research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab`\n  - URL: https://milvus.io/docs/v2.4.x/multi-vector-search.md\n\n### Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker\n\n- 研究项：`Milvus · Fusion / reranking options`\n- 候选：`20f99a2c-25b0-4ae9-9e30-9f8d392431b4`\n- Evidence: `evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3`\n  - Exact quote: “Currently, there are two options: \\`WeightedRanker\\` and \\`RRFRanker\\`.”\n  - Snapshot: `research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab`\n  - URL: https://milvus.io/docs/v2.4.x/multi-vector-search.md\n\n### Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）\n\n- 研究项：`Milvus · Official documentation reference`\n- 候选：`fb92c83a-c179-4ebf-bfe4-67e529ab6f52`\n- Evidence: `evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a`\n  - Exact quote: “Since Milvus 2.4, we introduced multi-vector support and a hybrid search framework, which means users can bring in several vector fields (up to 10)”\n  - Snapshot: `research/external/d0911174-0484-4ec8-82ef-9bd4172ede05/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab`\n  - URL: https://milvus.io/docs/v2.4.x/multi-vector-search.md\n\n### Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。\n\n- 研究项：`Elasticsearch · Hybrid search support & mechanism`\n- 候选：`305eb7fb-bae2-4d6b-bf3f-b4e0e5cfb14e`\n- Evidence: `evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238`\n  - Exact quote: “We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17`\n  - URL: https://www.elastic.co/docs/solutions/search/hybrid-search\n\n### ES|QL 示例使用 FORK 与 FUSE 实现混合检索\n\n- 研究项：`Elasticsearch · Query syntax / API for hybrid`\n- 候选：`74d35c69-edb4-4441-8b35-fe23d1ea54fa`\n- Evidence: `evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad`\n  - Exact quote: “FROM my-index METADATA _score | FORK ( WHERE match(text_field:\"fox\") | SORT _score DESC | LIMIT 5)”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/ba4c7c6a02a27e2b436c1a20b5791347b1557e4df7cd3fc65952bb4276a128bd`\n  - URL: https://www.elastic.co/what-is/hybrid-search\n\n### Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。\n\n- 研究项：`Elasticsearch · Fusion / reranking options`\n- 候选：`1c99bdfa-ea50-46a7-a6bd-794fbcce5f61`\n- Evidence: `evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89`\n  - Exact quote: “We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17`\n  - URL: https://www.elastic.co/docs/solutions/search/hybrid-search\n\n### 官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面\n\n- 研究项：`Elasticsearch · Official documentation reference`\n- 候选：`a8b45a8a-7e95-420d-a2b6-7ecb14dc2bb2`\n- Evidence: `evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68`\n  - Exact quote: “We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.”\n  - Snapshot: `research/external/8cf5312c-eb4d-483a-a2e0-d4d82efe616a/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17`\n  - URL: https://www.elastic.co/docs/solutions/search/hybrid-search\n\n### Qdrant 的 Universal Query API 支持构建混合检索流水线\n\n- 研究项：`Qdrant · Hybrid search support & mechanism`\n- 候选：`6fa251d0-1d94-4c93-8d56-cd5bcaa82090`\n- Evidence: `evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683`\n  - Exact quote: “Qdrant’s Universal Query API makes building complex hybrid pipelines simple”\n  - Snapshot: `research/external/70a5c7cf-e7b1-471b-9772-0879d3a29c14/edeb7530d2b000c2baf336ba7f5038fa6c876dd0322dc0dfbb8784f8f785fb11`\n  - URL: https://qdrant.tech/course/essentials/day-3/hybrid-search/\n\n### using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表\n\n- 研究项：`Qdrant · Query syntax / API for hybrid`\n- 候选：`fead7641-1691-4c79-afdb-1bd1a004e61a`\n- Evidence: `evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82`\n  - Exact quote: “\\`using\\` selects the named vector for each prefetch, and \\`FusionQuery\\` merges the two lists.”\n  - Snapshot: `research/external/be91d96d-c846-4698-ac92-0f91ba00367c/d8da7f0124d8a28198264dd6362c705eee8102a5a0ba0bbe4e913628535508fd`\n  - URL: https://qdrant.tech/documentation/search-tuning/hybrid-search/\n\n### Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式\n\n- 研究项：`Qdrant · Fusion / reranking options`\n- 候选：`64fe5747-cb09-4029-b179-6e8daf4c4164`\n- Evidence: `evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42`\n  - Exact quote: “Qdrant has a few ways of fusing the results from different queries: rrf and dbsf”\n  - Snapshot: `research/external/273af5db-fac8-4c84-9eaa-7d744df52290/59eb2b5c6c418f69f65fcaa24287c78909cf057230bd7711c3b7e8ea47ddf892`\n  - URL: https://qdrant.tech/documentation/search/hybrid-queries/\n\n### Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法\n\n- 研究项：`Qdrant · Official documentation reference`\n- 候选：`d98346c5-924f-4ed9-8341-1a31f2f92873`\n- Evidence: `evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f`\n  - Exact quote: “# Hybrid Search in Qdrant”\n  - Snapshot: `research/external/556038a5-ae8d-454e-b064-e0f0978de30b/9fd22c0311d69deffe617d37fbb4e67a1a308a112ac953f278953700493f8237`\n  - URL: https://qdrant.tech/documentation/search-tuning/hybrid-search/\n\n### Weaviate supports two strategies (\\`relativeScoreFusion\\` and \\`rankedFusion\\`) for combining vector and keyword search scores:\n\n- 研究项：`Weaviate · Hybrid search support & mechanism`\n- 候选：`c9c39dc3-4a75-4f8d-be01-953e5ac8bbb8`\n- Evidence: `evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca`\n  - Exact quote: “Weaviate supports two strategies (\\`relativeScoreFusion\\` and \\`rankedFusion\\`) for combining vector and keyword search scores:”\n  - Snapshot: `research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/280e3b01037bfc1b474620b9eb8f122bc729720e74764d15909c2590af7ef13c`\n  - URL: https://docs.weaviate.io/weaviate/concepts/search/hybrid-search\n\n### Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数\n\n- 研究项：`Weaviate · Fusion / reranking options`\n- 候选：`42dd1384-ca33-4a73-95b8-1b64041f7449`\n- Evidence: `evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c`\n  - Exact quote: “Weaviate supports two strategies (\\`relativeScoreFusion\\` and \\`rankedFusion\\`) for combining vector and keyword search scores:”\n  - Snapshot: `research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/280e3b01037bfc1b474620b9eb8f122bc729720e74764d15909c2590af7ef13c`\n  - URL: https://docs.weaviate.io/weaviate/concepts/search/hybrid-search\n\n### Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）\n\n- 研究项：`Weaviate · Official documentation reference`\n- 候选：`bde945bd-6607-46cd-a698-2e2a4ebe2038`\n- Evidence: `evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88`\n  - Exact quote: “To use [Weaviate hybrid search](https://docs.weaviate.io/weaviate/search/hybrid) you only need to confirm that you’re using Weaviate \\`v1.17\\` or a later version.”\n  - Snapshot: `research/external/287335e2-c55b-4e48-b60c-b58fade9131c/cd1534501e70ecf648cece4c7967fcf0cd7c59e3dc09e0b50dc2df9aba59ab96`\n  - URL: https://weaviate.io/blog/hybrid-search-explained\n\n## 局限与未解决项\n\n- **Weaviate · Query syntax / API for hybrid**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:9026b021e2c71c07018359dbe617495f1eec1c81b8757e9b`\n  - Exact quote: “Milvus enables hybrid search capabilities using the [hybrid\\_search()](https://milvus.io/api-reference/pymilvus/v2.4.x/ORM/Collection/hybrid_search.md) API, incorporating sophisticated reranking strategies to refine search results from multiple `AnnSearchRequest` instances.”\n  - Snapshot: `research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/0863c809d58afc8b19a73084f18178ee09997068c2c1bf577ac06951dbc91956`\n  - URL: https://milvus.io/docs/reranking.md\n- Evidence: `evidence:18fc90d9edf32afe7eca2012f27ac5421dbb29906793bb7b`\n  - Exact quote: “The [linear](/docs/reference/elasticsearch/rest-apis/retrievers/linear-retriever) retriever linearly combines the scores of other retrievers for the top documents.”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be`\n  - URL: https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers\n- Evidence: `evidence:ded0610bdf49ef950ba9ebfa2f916b36f3bac99535c5ba27`\n  - Exact quote: “The [linear](/docs/reference/elasticsearch/rest-apis/retrievers/linear-retriever) retriever linearly combines the scores of other retrievers for the top documents.”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be`\n  - URL: https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers\n- Evidence: `evidence:9ab7105e7c033c43a083c6c3da65a2e874387782997e5a2d`\n  - Exact quote: “The [rescorer](/docs/reference/elasticsearch/rest-apis/retrievers/rescorer-retriever) retriever replaces the functionality of the [query rescorer](/docs/reference/elasticsearch/rest-apis/rescore-search-results#rescore).”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be`\n  - URL: https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers\n- Evidence: `evidence:7fd4d7d2ad372fbdeb47ec229f24fa6fdcaedb2e81eaa3f7`\n  - Exact quote: “The [rrf](/docs/reference/elasticsearch/rest-apis/retrievers/rrf-retriever) retriever produces top documents from [reciprocal rank fusion (RRF)](/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion).”\n  - Snapshot: `research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be`\n  - URL: https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers\n- Evidence: `evidence:d672a7f3f8dbe2c1bda7276d0380c0a9d144d0aced677b9d`\n  - Exact quote: “The [hybrid search](/hybrid-search) feature was introduced in Weaviate `1.17`. It uses sparse and dense vectors to represent the semantic meaning and context of search queries and documents.”\n  - Snapshot: `research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/82464bac1eac28526e517ed9aa32736c3995dca39d244a47bc87f6e2298d2054`\n  - URL: https://weaviate.io/blog/hybrid-search-explained\n- Evidence: `evidence:dee8561ae3a03acc804fc579f07e9f443d5b412034a66a98`\n  - Exact quote: “### [Hybrid search | Weaviate](https://weaviate.io/developers/weaviate/search/hybrid#set-weights-on-property-values)  Hybrid search combines the results of a vector search and a keyword (BM25F) search by fusing the two result sets.”\n  - Snapshot: `research/external/287335e2-c55b-4e48-b60c-b58fade9131c/2545da4d8ae074faa35f01992b337ef6a9ba64ec86364a5337ab09c703fe4c9d`\n  - URL: https://forum.weaviate.io/t/how-to-configure-hybrid-search-with-specific-query-properties/9699",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/9560b5b7-47df-43d5-abf1-1d349b4e7c41/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 22778,
+      "sha256": "9d9c1ab47d3e2b205de9ffbd7289f07cb6bfc35c6435bbe39a47de2eb7f700cb"
+    },
+    "research_artifact": {
+      "artifact_id": "9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/9560b5b7-47df-43d5-abf1-1d349b4e7c41/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 22778,
+        "sha256": "9d9c1ab47d3e2b205de9ffbd7289f07cb6bfc35c6435bbe39a47de2eb7f700cb"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Weaviate hybrid search documentation official docs",
+          "Weaviate hybrid search",
+          "Qdrant hybrid search",
+          "Qdrant fusion RRF DBSF hybrid search documentation",
+          "Qdrant Hybrid Query API prefetch reference documentation",
+          "site:qdrant.tech hybrid search documentation",
+          "Weaviate hybrid search official documentation",
+          "site:weaviate.io hybrid search fusion alpha",
+          "Weaviate hybrid GraphQL query alpha query properties parameters",
+          "site:milvus.io hybrid search",
+          "Milvus hybrid search official documentation",
+          "Milvus hybrid search",
+          "Milvus hybrid search ann_search request example",
+          "Milvus hybrid search multi-vector rerank documentation",
+          "Elasticsearch reciprocal rank fusion linear combination ranking docs",
+          "Elasticsearch RRF retriever reference API",
+          "Elasticsearch hybrid search official documentation",
+          "Elasticsearch RRF reciprocal rank fusion hybrid search reference",
+          "site:qdrant.tech \"hybrid\" \"Query API\" prefetch fusion RRF",
+          "site:qdrant.tech documentation hybrid queries query API",
+          "Qdrant Fusion / reranking options 官方说明 适用条件",
+          "Qdrant Fusion / reranking options primary research limitations",
+          "Weaviate hybrid search GraphQL get query syntax code example",
+          "Weaviate Python client collection.query.hybrid parameters reference",
+          "elastic.co guide reference 8.x search with hybrid retrieval",
+          "Elasticsearch 8 api reference hybrid search rrf documentation",
+          "Qdrant Query API fusion RRF DBSF source code implementation",
+          "Qdrant hybrid search sparse vectors BM25 example GitHub",
+          "Milvus 2.4 hybrid search documentation user guide",
+          "site:milvus.io/docs hybrid search multi-vector",
+          "Weaviate v4 collection.query.hybrid target_vector fusion_type ranked_fusion return_metadata",
+          "Weaviate hybrid search deprecated alpha parameter replaced by alpha property 2024",
+          "Qdrant documentation hybrid queries prefetch query API",
+          "Qdrant docs query API fusion RRF distribution-based score fusion"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-ea3f2c381cdbe297",
+            "source_id": "",
+            "source_title": "Weaviate",
+            "evidence_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-ea3f2c381cdbe297",
+            "source_id": "",
+            "source_title": "Weaviate",
+            "evidence_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 4,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-cfc35d18e7332fde",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Qdrant",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-ea3f2c381cdbe297",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Weaviate",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-57fc6fe52563f941",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Milvus",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-ae1b8c8635429669",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Elasticsearch",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+            "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+            "row_id": "entity-cfc35d18e7332fde",
+            "branch_id": "branch-main",
+            "column_key": "dim-17f40a6509840d1b",
+            "column_label": "Hybrid search support & mechanism",
+            "candidate_value": "Qdrant 的 Universal Query API 支持构建混合检索流水线",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b",
+            "row_id": "entity-ea3f2c381cdbe297",
+            "branch_id": "branch-main",
+            "column_key": "dim-17f40a6509840d1b",
+            "column_label": "Hybrid search support & mechanism",
+            "candidate_value": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+            "status": "VERIFIED",
+            "confidence": 0.93,
+            "evidence_refs": [
+              "evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5",
+            "row_id": "entity-57fc6fe52563f941",
+            "branch_id": "branch-main",
+            "column_key": "dim-89ce5445b691f1c5",
+            "column_label": "Fusion / reranking options",
+            "candidate_value": "Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ae1b8c8635429669:dim-17f40a6509840d1b",
+            "row_id": "entity-ae1b8c8635429669",
+            "branch_id": "branch-main",
+            "column_key": "dim-17f40a6509840d1b",
+            "column_label": "Hybrid search support & mechanism",
+            "candidate_value": "Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+            "row_id": "entity-ae1b8c8635429669",
+            "branch_id": "branch-main",
+            "column_key": "dim-8d9cad41677c007a",
+            "column_label": "Official documentation reference",
+            "candidate_value": "官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5",
+            "row_id": "entity-ae1b8c8635429669",
+            "branch_id": "branch-main",
+            "column_key": "dim-89ce5445b691f1c5",
+            "column_label": "Fusion / reranking options",
+            "candidate_value": "Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420",
+            "row_id": "entity-57fc6fe52563f941",
+            "branch_id": "branch-main",
+            "column_key": "dim-4acc2ceb24f01420",
+            "column_label": "Query syntax / API for hybrid",
+            "candidate_value": "Milvus 通过 hybrid_search() 方法提交混合检索",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+            "row_id": "entity-cfc35d18e7332fde",
+            "branch_id": "branch-main",
+            "column_key": "dim-89ce5445b691f1c5",
+            "column_label": "Fusion / reranking options",
+            "candidate_value": "Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+            "row_id": "entity-cfc35d18e7332fde",
+            "branch_id": "branch-main",
+            "column_key": "dim-8d9cad41677c007a",
+            "column_label": "Official documentation reference",
+            "candidate_value": "Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420",
+            "row_id": "entity-cfc35d18e7332fde",
+            "branch_id": "branch-main",
+            "column_key": "dim-4acc2ceb24f01420",
+            "column_label": "Query syntax / API for hybrid",
+            "candidate_value": "using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a",
+            "row_id": "entity-ea3f2c381cdbe297",
+            "branch_id": "branch-main",
+            "column_key": "dim-8d9cad41677c007a",
+            "column_label": "Official documentation reference",
+            "candidate_value": "Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420",
+            "row_id": "entity-ae1b8c8635429669",
+            "branch_id": "branch-main",
+            "column_key": "dim-4acc2ceb24f01420",
+            "column_label": "Query syntax / API for hybrid",
+            "candidate_value": "ES|QL 示例使用 FORK 与 FUSE 实现混合检索",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5",
+            "row_id": "entity-ea3f2c381cdbe297",
+            "branch_id": "branch-main",
+            "column_key": "dim-89ce5445b691f1c5",
+            "column_label": "Fusion / reranking options",
+            "candidate_value": "Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-ea3f2c381cdbe297:dim-4acc2ceb24f01420",
+            "row_id": "entity-ea3f2c381cdbe297",
+            "branch_id": "branch-main",
+            "column_key": "dim-4acc2ceb24f01420",
+            "column_label": "Query syntax / API for hybrid",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+            "row_id": "entity-57fc6fe52563f941",
+            "branch_id": "branch-main",
+            "column_key": "dim-8d9cad41677c007a",
+            "column_label": "Official documentation reference",
+            "candidate_value": "Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-57fc6fe52563f941:dim-17f40a6509840d1b",
+            "row_id": "entity-57fc6fe52563f941",
+            "branch_id": "branch-main",
+            "column_key": "dim-17f40a6509840d1b",
+            "column_label": "Hybrid search support & mechanism",
+            "candidate_value": "Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 3,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-cfc35d18e7332fde",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Qdrant",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-ea3f2c381cdbe297",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Weaviate",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-57fc6fe52563f941",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Milvus",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-ae1b8c8635429669",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Elasticsearch",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "read_focus": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+          "row_id": "entity-cfc35d18e7332fde",
+          "branch_id": "branch-main",
+          "column_key": "dim-17f40a6509840d1b",
+          "column_label": "Hybrid search support & mechanism",
+          "candidate_value": "Qdrant 的 Universal Query API 支持构建混合检索流水线",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "branch_id": "branch-main",
+          "column_key": "dim-17f40a6509840d1b",
+          "column_label": "Hybrid search support & mechanism",
+          "candidate_value": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+          "status": "VERIFIED",
+          "confidence": 0.93,
+          "evidence_refs": [
+            "evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5",
+          "row_id": "entity-57fc6fe52563f941",
+          "branch_id": "branch-main",
+          "column_key": "dim-89ce5445b691f1c5",
+          "column_label": "Fusion / reranking options",
+          "candidate_value": "Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-17f40a6509840d1b",
+          "row_id": "entity-ae1b8c8635429669",
+          "branch_id": "branch-main",
+          "column_key": "dim-17f40a6509840d1b",
+          "column_label": "Hybrid search support & mechanism",
+          "candidate_value": "Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+          "row_id": "entity-ae1b8c8635429669",
+          "branch_id": "branch-main",
+          "column_key": "dim-8d9cad41677c007a",
+          "column_label": "Official documentation reference",
+          "candidate_value": "官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5",
+          "row_id": "entity-ae1b8c8635429669",
+          "branch_id": "branch-main",
+          "column_key": "dim-89ce5445b691f1c5",
+          "column_label": "Fusion / reranking options",
+          "candidate_value": "Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420",
+          "row_id": "entity-57fc6fe52563f941",
+          "branch_id": "branch-main",
+          "column_key": "dim-4acc2ceb24f01420",
+          "column_label": "Query syntax / API for hybrid",
+          "candidate_value": "Milvus 通过 hybrid_search() 方法提交混合检索",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+          "row_id": "entity-cfc35d18e7332fde",
+          "branch_id": "branch-main",
+          "column_key": "dim-89ce5445b691f1c5",
+          "column_label": "Fusion / reranking options",
+          "candidate_value": "Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+          "row_id": "entity-cfc35d18e7332fde",
+          "branch_id": "branch-main",
+          "column_key": "dim-8d9cad41677c007a",
+          "column_label": "Official documentation reference",
+          "candidate_value": "Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420",
+          "row_id": "entity-cfc35d18e7332fde",
+          "branch_id": "branch-main",
+          "column_key": "dim-4acc2ceb24f01420",
+          "column_label": "Query syntax / API for hybrid",
+          "candidate_value": "using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "branch_id": "branch-main",
+          "column_key": "dim-8d9cad41677c007a",
+          "column_label": "Official documentation reference",
+          "candidate_value": "Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420",
+          "row_id": "entity-ae1b8c8635429669",
+          "branch_id": "branch-main",
+          "column_key": "dim-4acc2ceb24f01420",
+          "column_label": "Query syntax / API for hybrid",
+          "candidate_value": "ES|QL 示例使用 FORK 与 FUSE 实现混合检索",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "branch_id": "branch-main",
+          "column_key": "dim-89ce5445b691f1c5",
+          "column_label": "Fusion / reranking options",
+          "candidate_value": "Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-4acc2ceb24f01420",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "branch_id": "branch-main",
+          "column_key": "dim-4acc2ceb24f01420",
+          "column_label": "Query syntax / API for hybrid",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+          "row_id": "entity-57fc6fe52563f941",
+          "branch_id": "branch-main",
+          "column_key": "dim-8d9cad41677c007a",
+          "column_label": "Official documentation reference",
+          "candidate_value": "Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-17f40a6509840d1b",
+          "row_id": "entity-57fc6fe52563f941",
+          "branch_id": "branch-main",
+          "column_key": "dim-17f40a6509840d1b",
+          "column_label": "Hybrid search support & mechanism",
+          "candidate_value": "Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:59:03Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:01:55Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:02:32Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:dee8561ae3a03acc804fc579f07e9f443d5b412034a66a98",
+          "window_id": "window-3",
+          "source_id": "web-a60b92573f44d551",
+          "source_title": "How to Configure Hybrid Search with Specific Query ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://forum.weaviate.io/t/how-to-configure-hybrid-search-with-specific-query-properties/9699",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Weaviate hybrid search",
+          "read_focus": "Read external URL How to Configure Hybrid Search with Specific Query ... for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "### [Hybrid search | Weaviate](https://weaviate.io/developers/weaviate/search/hybrid#set-weights-on-property-values)\n\nHybrid search combines the results of a vector search and a keyword (BM25F) search by fusing the two result sets.",
+          "claim_text": "Hybrid search 文档页（weaviate.io/developers/weaviate/search/hybrid）说明混合检索融合向量检索与 BM25F 关键词检索结果",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/287335e2-c55b-4e48-b60c-b58fade9131c/2545da4d8ae074faa35f01992b337ef6a9ba64ec86364a5337ab09c703fe4c9d"
+        },
+        {
+          "evidence_id": "evidence:c50c17c903f1db8064a8d76085f1e78bac10f603e1dc4113",
+          "window_id": "window-3",
+          "source_id": "web-a60b92573f44d551",
+          "source_title": "How to Configure Hybrid Search with Specific Query ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://forum.weaviate.io/t/how-to-configure-hybrid-search-with-specific-query-properties/9699",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Weaviate hybrid search",
+          "read_focus": "Read external URL How to Configure Hybrid Search with Specific Query ... for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "### [Hybrid search | Weaviate](https://weaviate.io/developers/weaviate/search/hybrid#set-weights-on-property-values)",
+          "claim_text": "Weaviate 官方 Hybrid search 文档页 about 设置属性权重：https://weaviate.io/developers/weaviate/search/hybrid#set-weights-on-property-values",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/287335e2-c55b-4e48-b60c-b58fade9131c/2545da4d8ae074faa35f01992b337ef6a9ba64ec86364a5337ab09c703fe4c9d"
+        },
+        {
+          "evidence_id": "evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88",
+          "window_id": "window-2",
+          "source_id": "web-6a7fecda3e84014d",
+          "source_title": "Hybrid Search Explained",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://weaviate.io/blog/hybrid-search-explained",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Weaviate hybrid search",
+          "read_focus": "Read external URL Hybrid Search Explained for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "To use [Weaviate hybrid search](https://docs.weaviate.io/weaviate/search/hybrid) you only need to confirm that you’re using Weaviate `v1.17` or a later version.",
+          "claim_text": "Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/287335e2-c55b-4e48-b60c-b58fade9131c/cd1534501e70ecf648cece4c7967fcf0cd7c59e3dc09e0b50dc2df9aba59ab96"
+        },
+        {
+          "evidence_id": "evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82",
+          "window_id": "window-2",
+          "source_id": "web-f030f9bf348ad0e7",
+          "source_title": "Hybrid Search in Qdrant",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search-tuning/hybrid-search/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Qdrant Hybrid Query API prefetch reference documentation",
+          "read_focus": "Read external URL Hybrid Search in Qdrant for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Qdrant. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "`using` selects the named vector for each prefetch, and `FusionQuery` merges the two lists.",
+          "claim_text": "using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/be91d96d-c846-4698-ac92-0f91ba00367c/d8da7f0124d8a28198264dd6362c705eee8102a5a0ba0bbe4e913628535508fd"
+        },
+        {
+          "evidence_id": "evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca",
+          "window_id": "window-4",
+          "source_id": "web-a8ee7a13dfefa0be",
+          "source_title": "Hybrid search",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.weaviate.io/weaviate/concepts/search/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:weaviate.io hybrid search fusion alpha",
+          "read_focus": "Read external URL Hybrid search for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+          "claim_text": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.93,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/280e3b01037bfc1b474620b9eb8f122bc729720e74764d15909c2590af7ef13c"
+        },
+        {
+          "evidence_id": "evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c",
+          "window_id": "window-4",
+          "source_id": "web-a8ee7a13dfefa0be",
+          "source_title": "Hybrid search",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.weaviate.io/weaviate/concepts/search/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:weaviate.io hybrid search fusion alpha",
+          "read_focus": "Read external URL Hybrid search for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+          "claim_text": "Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/280e3b01037bfc1b474620b9eb8f122bc729720e74764d15909c2590af7ef13c"
+        },
+        {
+          "evidence_id": "evidence:d672a7f3f8dbe2c1bda7276d0380c0a9d144d0aced677b9d",
+          "window_id": "window-2",
+          "source_id": "web-6a7fecda3e84014d",
+          "source_title": "Hybrid Search Explained",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://weaviate.io/blog/hybrid-search-explained",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:weaviate.io hybrid search fusion alpha",
+          "read_focus": "Read external URL Hybrid Search Explained for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Weaviate. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The [hybrid search](/hybrid-search) feature was introduced in Weaviate `1.17`. It uses sparse and dense vectors to represent the semantic meaning and context of search queries and documents.",
+          "claim_text": "Weaviate 的混合检索功能在 1.17 版本引入，使用稀疏向量和稠密向量",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.92,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/033b2ba6-c590-444e-bbd4-e4f7c10f5027/82464bac1eac28526e517ed9aa32736c3995dca39d244a47bc87f6e2298d2054"
+        },
+        {
+          "evidence_id": "evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3",
+          "window_id": "window-4",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Milvus hybrid search multi-vector rerank documentation",
+          "read_focus": "Read external URL Hybrid Search Milvus v2.4.x documentation for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Milvus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Currently, there are two options: `WeightedRanker` and `RRFRanker`.",
+          "claim_text": "Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab"
+        },
+        {
+          "evidence_id": "evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9",
+          "window_id": "window-4",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Milvus hybrid search multi-vector rerank documentation",
+          "read_focus": "Read external URL Hybrid Search Milvus v2.4.x documentation for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Milvus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "use the `hybrid_search()` method to perform the hybrid search.",
+          "claim_text": "Milvus 通过 hybrid_search() 方法提交混合检索",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab"
+        },
+        {
+          "evidence_id": "evidence:9026b021e2c71c07018359dbe617495f1eec1c81b8757e9b",
+          "window_id": "window-5",
+          "source_id": "web-6777b74e2b25be34",
+          "source_title": "Reranking | Milvus Documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/reranking.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Milvus hybrid search multi-vector rerank documentation",
+          "read_focus": "Read external URL Reranking | Milvus Documentation for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Milvus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Milvus enables hybrid search capabilities using the [hybrid\\_search()](https://milvus.io/api-reference/pymilvus/v2.4.x/ORM/Collection/hybrid_search.md) API, incorporating sophisticated reranking strategies to refine search results from multiple `AnnSearchRequest` instances.",
+          "claim_text": "Milvus 通过 hybrid_search() API 实现混合检索，并使用重排策略整合多个 AnnSearchRequest 的结果",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/0863c809d58afc8b19a73084f18178ee09997068c2c1bf577ac06951dbc91956"
+        },
+        {
+          "evidence_id": "evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64",
+          "window_id": "window-4",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Milvus hybrid search multi-vector rerank documentation",
+          "read_focus": "Read external URL Hybrid Search Milvus v2.4.x documentation for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Milvus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Since Milvus 2.4, we introduced multi-vector support and a hybrid search framework, which means users can bring in several vector fields (up to 10)",
+          "claim_text": "Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d04b7111-bf8f-4eb9-9134-c168270dd7fa/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab"
+        },
+        {
+          "evidence_id": "evidence:18fc90d9edf32afe7eca2012f27ac5421dbb29906793bb7b",
+          "window_id": "window-5",
+          "source_id": "web-d1e3ae1eff323eb5",
+          "source_title": "Retrievers | Elasticsearch Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch RRF retriever reference API",
+          "read_focus": "Read external URL Retrievers | Elasticsearch Reference for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The [linear](/docs/reference/elasticsearch/rest-apis/retrievers/linear-retriever) retriever linearly combines the scores of other retrievers for the top documents.",
+          "claim_text": "Elasticsearch 还提供 linear retriever，对多个 retriever 的分数进行线性组合。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be"
+        },
+        {
+          "evidence_id": "evidence:ded0610bdf49ef950ba9ebfa2f916b36f3bac99535c5ba27",
+          "window_id": "window-5",
+          "source_id": "web-d1e3ae1eff323eb5",
+          "source_title": "Retrievers | Elasticsearch Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch RRF retriever reference API",
+          "read_focus": "Read external URL Retrievers | Elasticsearch Reference for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The [linear](/docs/reference/elasticsearch/rest-apis/retrievers/linear-retriever) retriever linearly combines the scores of other retrievers for the top documents.",
+          "claim_text": "Elasticsearch 提供 linear retriever，可对其他检索器的分数进行线性组合。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be"
+        },
+        {
+          "evidence_id": "evidence:7fd4d7d2ad372fbdeb47ec229f24fa6fdcaedb2e81eaa3f7",
+          "window_id": "window-5",
+          "source_id": "web-d1e3ae1eff323eb5",
+          "source_title": "Retrievers | Elasticsearch Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch RRF retriever reference API",
+          "read_focus": "Read external URL Retrievers | Elasticsearch Reference for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The [rrf](/docs/reference/elasticsearch/rest-apis/retrievers/rrf-retriever) retriever produces top documents from [reciprocal rank fusion (RRF)](/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion).",
+          "claim_text": "rrf retriever 基于 reciprocal rank fusion 产生 top documents",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be"
+        },
+        {
+          "evidence_id": "evidence:9ab7105e7c033c43a083c6c3da65a2e874387782997e5a2d",
+          "window_id": "window-5",
+          "source_id": "web-d1e3ae1eff323eb5",
+          "source_title": "Retrievers | Elasticsearch Reference",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/reference/elasticsearch/rest-apis/retrievers",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch RRF retriever reference API",
+          "read_focus": "Read external URL Retrievers | Elasticsearch Reference for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The [rescorer](/docs/reference/elasticsearch/rest-apis/retrievers/rescorer-retriever) retriever replaces the functionality of the [query rescorer](/docs/reference/elasticsearch/rest-apis/rescore-search-results#rescore).",
+          "claim_text": "Elasticsearch 提供 rescorer retriever，取代 query rescorer 的功能。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/67087d6ebd58adb9136924d821695fb1964a264bfa3b8f732c3d3755db29a4be"
+        },
+        {
+          "evidence_id": "evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad",
+          "window_id": "window-2",
+          "source_id": "web-ceedece305bcc5ec",
+          "source_title": "What is hybrid search? How it works and when to use it",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/what-is/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch hybrid search official documentation",
+          "read_focus": "Read external URL What is hybrid search? How it works and when to use it for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "FROM my-index METADATA _score | FORK ( WHERE match(text_field:\"fox\") | SORT _score DESC | LIMIT 5)",
+          "claim_text": "ES|QL 示例使用 FORK 与 FUSE 实现混合检索",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/ba4c7c6a02a27e2b436c1a20b5791347b1557e4df7cd3fc65952bb4276a128bd"
+        },
+        {
+          "evidence_id": "evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89",
+          "window_id": "window-1",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch hybrid search official documentation",
+          "read_focus": "Read external URL Hybrid search | Elastic Docs for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.",
+          "claim_text": "Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17"
+        },
+        {
+          "evidence_id": "evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238",
+          "window_id": "window-1",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Elasticsearch hybrid search official documentation",
+          "read_focus": "Read external URL Hybrid search | Elastic Docs for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.",
+          "claim_text": "Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/50f9a437-9032-4fdd-96e7-c17af6552ab9/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17"
+        },
+        {
+          "evidence_id": "evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42",
+          "window_id": "window-1",
+          "source_id": "web-c5ea993b30a27269",
+          "source_title": "Hybrid and Multi-Stage Queries",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search/hybrid-queries/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Qdrant Fusion / reranking options 官方说明 适用条件",
+          "read_focus": "Read external URL Hybrid and Multi-Stage Queries for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Qdrant. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Qdrant has a few ways of fusing the results from different queries: rrf and dbsf",
+          "claim_text": "Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/273af5db-fac8-4c84-9eaa-7d744df52290/59eb2b5c6c418f69f65fcaa24287c78909cf057230bd7711c3b7e8ea47ddf892"
+        },
+        {
+          "evidence_id": "evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68",
+          "window_id": "window-2",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "elastic.co guide reference 8.x search with hybrid retrieval",
+          "read_focus": "Read external URL Hybrid search | Elastic Docs for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Elasticsearch. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "We recommend implementing hybrid search with the [reciprocal rank fusion (RRF)](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion) algorithm.",
+          "claim_text": "官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/8cf5312c-eb4d-483a-a2e0-d4d82efe616a/25bd5b3d9f12c820cdcd050a87a8b09135a36e4ed48eceb20b39b591b913fc17"
+        },
+        {
+          "evidence_id": "evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683",
+          "window_id": "window-4",
+          "source_id": "web-fe220ae2bb9f3f2f",
+          "source_title": "Hybrid Search and the Universal Query API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/course/essentials/day-3/hybrid-search/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Qdrant Query API fusion RRF DBSF source code implementation",
+          "read_focus": "Read external URL Hybrid Search and the Universal Query API for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Qdrant. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Qdrant’s Universal Query API makes building complex hybrid pipelines simple",
+          "claim_text": "Qdrant 的 Universal Query API 支持构建混合检索流水线",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/70a5c7cf-e7b1-471b-9772-0879d3a29c14/edeb7530d2b000c2baf336ba7f5038fa6c876dd0322dc0dfbb8784f8f785fb11"
+        },
+        {
+          "evidence_id": "evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a",
+          "window_id": "window-2",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:milvus.io/docs hybrid search multi-vector",
+          "read_focus": "Read external URL Hybrid Search Milvus v2.4.x documentation for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Milvus. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Since Milvus 2.4, we introduced multi-vector support and a hybrid search framework, which means users can bring in several vector fields (up to 10)",
+          "claim_text": "Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d0911174-0484-4ec8-82ef-9bd4172ede05/4d86cfbd64c52bf9671f099ad51563377c9059a185dc0ab8395c36e16ae9a9ab"
+        },
+        {
+          "evidence_id": "evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f",
+          "window_id": "window-5",
+          "source_id": "web-f030f9bf348ad0e7",
+          "source_title": "Hybrid Search in Qdrant",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search-tuning/hybrid-search/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Qdrant docs query API fusion RRF distribution-based score fusion",
+          "read_focus": "Read external URL Hybrid Search in Qdrant for claims that answer: 主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。\n\nCurrent Table-as-State entity: Qdrant. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "# Hybrid Search in Qdrant",
+          "claim_text": "Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/556038a5-ae8d-454e-b064-e0f0978de30b/9fd22c0311d69deffe617d37fbb4e67a1a308a112ac953f278953700493f8237"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "evidence_id": "evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88",
+          "source_id": "web-6a7fecda3e84014d",
+          "source_title": "Hybrid Search Explained",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://weaviate.io/blog/hybrid-search-explained"
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420",
+          "row_id": "entity-cfc35d18e7332fde",
+          "evidence_id": "evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82",
+          "source_id": "web-f030f9bf348ad0e7",
+          "source_title": "Hybrid Search in Qdrant",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search-tuning/hybrid-search/"
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "evidence_id": "evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c",
+          "source_id": "web-a8ee7a13dfefa0be",
+          "source_title": "Hybrid search",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.weaviate.io/weaviate/concepts/search/hybrid-search"
+        },
+        {
+          "cell_id": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b",
+          "row_id": "entity-ea3f2c381cdbe297",
+          "evidence_id": "evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca",
+          "source_id": "web-a8ee7a13dfefa0be",
+          "source_title": "Hybrid search",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.weaviate.io/weaviate/concepts/search/hybrid-search"
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420",
+          "row_id": "entity-57fc6fe52563f941",
+          "evidence_id": "evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md"
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-17f40a6509840d1b",
+          "row_id": "entity-57fc6fe52563f941",
+          "evidence_id": "evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md"
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5",
+          "row_id": "entity-57fc6fe52563f941",
+          "evidence_id": "evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md"
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5",
+          "row_id": "entity-ae1b8c8635429669",
+          "evidence_id": "evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search"
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420",
+          "row_id": "entity-ae1b8c8635429669",
+          "evidence_id": "evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad",
+          "source_id": "web-ceedece305bcc5ec",
+          "source_title": "What is hybrid search? How it works and when to use it",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/what-is/hybrid-search"
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-17f40a6509840d1b",
+          "row_id": "entity-ae1b8c8635429669",
+          "evidence_id": "evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search"
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+          "row_id": "entity-cfc35d18e7332fde",
+          "evidence_id": "evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42",
+          "source_id": "web-c5ea993b30a27269",
+          "source_title": "Hybrid and Multi-Stage Queries",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search/hybrid-queries/"
+        },
+        {
+          "cell_id": "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+          "row_id": "entity-ae1b8c8635429669",
+          "evidence_id": "evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68",
+          "source_id": "web-138b507ae65f0607",
+          "source_title": "Hybrid search | Elastic Docs",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.elastic.co/docs/solutions/search/hybrid-search"
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+          "row_id": "entity-cfc35d18e7332fde",
+          "evidence_id": "evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683",
+          "source_id": "web-fe220ae2bb9f3f2f",
+          "source_title": "Hybrid Search and the Universal Query API",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/course/essentials/day-3/hybrid-search/"
+        },
+        {
+          "cell_id": "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+          "row_id": "entity-57fc6fe52563f941",
+          "evidence_id": "evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a",
+          "source_id": "web-13c666587bb3e0da",
+          "source_title": "Hybrid Search Milvus v2.4.x documentation",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://milvus.io/docs/v2.4.x/multi-vector-search.md"
+        },
+        {
+          "cell_id": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+          "row_id": "entity-cfc35d18e7332fde",
+          "evidence_id": "evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f",
+          "source_id": "web-f030f9bf348ad0e7",
+          "source_title": "Hybrid Search in Qdrant",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://qdrant.tech/documentation/search-tuning/hybrid-search/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "c6acb10b-0be4-407a-875f-964c374361cf",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "主流向量数据库（如 Elasticsearch、Milvus、Qdrant、Weaviate）对混合检索的支持情况如何？引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T11:52:53Z"
+      },
+      {
+        "trace_id": "004c7230-05a0-4f47-9b5d-730dc2b84036",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 4,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4
+        },
+        "created_at": "2026-10-17T11:53:09Z"
+      },
+      {
+        "trace_id": "45b060e6-8c2c-4bcb-b8f1-a98d5df5fb30",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T12:02:46Z"
+      }
+    ],
+    "created_at": "2026-10-17T11:52:53Z",
+    "updated_at": "2026-10-17T12:02:46Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:53:54Z",
+          "lease_epoch": 1,
+          "task_id": "026bc3f0-1e27-4ac3-82e1-4fce9f49e363",
+          "task_key": "planning:9560b5b7-47df-43d5-abf1-1d349b4e7c41",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:57:30Z",
+          "lease_epoch": 1,
+          "task_id": "033b2ba6-c590-444e-bbd4-e4f7c10f5027",
+          "task_key": "deep-cell:e03be726f3bc6675e2ec453584f90026",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:55:12Z",
+          "lease_epoch": 1,
+          "task_id": "287335e2-c55b-4e48-b60c-b58fade9131c",
+          "task_key": "deep-cell:b4b0dd359fe31829eadcc43ca5bc5f68",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:58:16Z",
+          "lease_epoch": 1,
+          "task_id": "4543b829-7446-42ba-a242-5944d55718bb",
+          "task_key": "deep-cell:d515442a4d365ea55a0dc05d38c8820d",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:59:23Z",
+          "lease_epoch": 1,
+          "task_id": "50f9a437-9032-4fdd-96e7-c17af6552ab9",
+          "task_key": "deep-cell:c5e67f4d492128d1269dc96146bf6db9",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:56:36Z",
+          "lease_epoch": 1,
+          "task_id": "6e7d0a06-ba52-4645-ac6a-f8d2d6bb53f5",
+          "task_key": "deep-cell:68e60f613718a598867b33a5316eb4c4",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:59:48Z",
+          "lease_epoch": 1,
+          "task_id": "b705110e-085b-4da5-8d52-00bd7474d654",
+          "task_key": "deep-cell:2fa1ae7b8d6c2e9cf8d8bc5d571fb59a",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:55:58Z",
+          "lease_epoch": 1,
+          "task_id": "be91d96d-c846-4698-ac92-0f91ba00367c",
+          "task_key": "deep-cell:c0aa3b51ae3f8e92eae40458444748ae",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:58:32Z",
+          "lease_epoch": 1,
+          "task_id": "d04b7111-bf8f-4eb9-9134-c168270dd7fa",
+          "task_key": "deep-cell:0241d67e31a6fe9cdeef66ef1c777e50",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:00:50Z",
+          "lease_epoch": 1,
+          "task_id": "273af5db-fac8-4c84-9eaa-7d744df52290",
+          "task_key": "counterfactual:74e4e079380196f3223bc55131c33182",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:02:05Z",
+          "lease_epoch": 1,
+          "task_id": "70a5c7cf-e7b1-471b-9772-0879d3a29c14",
+          "task_key": "counterfactual:f243f0c324ab4144623cb5af0f344381",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:00:50Z",
+          "lease_epoch": 1,
+          "task_id": "85573c43-d219-43e6-bce3-6856f1d647b2",
+          "task_key": "counterfactual:d45370a10abfeff1b731a9eaf7a4658c",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:01:32Z",
+          "lease_epoch": 1,
+          "task_id": "8cf5312c-eb4d-483a-a2e0-d4d82efe616a",
+          "task_key": "counterfactual:f82abe71f895cae36f2cee3af561a557",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:00:50Z",
+          "lease_epoch": 1,
+          "task_id": "a471e89f-37a7-45d2-aa57-01d73935fe6e",
+          "task_key": "counterfactual:7f8dea6bb68c4b86f9fe559fd5f08c3d",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:02:44Z",
+          "lease_epoch": 1,
+          "task_id": "d0911174-0484-4ec8-82ef-9bd4172ede05",
+          "task_key": "counterfactual:0b6376be1e64116e35d8c273d652e3a2",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:03:25Z",
+          "lease_epoch": 1,
+          "task_id": "556038a5-ae8d-454e-b064-e0f0978de30b",
+          "task_key": "counterfactual:3c5fe9b1e92a824b36ecc2794a626812",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:03:25Z",
+          "lease_epoch": 1,
+          "task_id": "d836c979-91d5-477e-a45a-a10de0379e34",
+          "task_key": "counterfactual:738c839798b1b737bba0ea2daf1ee716",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:03:32Z",
+          "lease_epoch": 1,
+          "task_id": "a19980f1-4f3b-42f4-adde-f2ae1ff05923",
+          "task_key": "synthesis:133c287544149b98b2bda4cecd4c2aba",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "bde945bd-6607-46cd-a698-2e2a4ebe2038",
+          "cell_key": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a",
+          "task_id": "287335e2-c55b-4e48-b60c-b58fade9131c"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "fead7641-1691-4c79-afdb-1bd1a004e61a",
+          "cell_key": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420",
+          "task_id": "be91d96d-c846-4698-ac92-0f91ba00367c"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "42dd1384-ca33-4a73-95b8-1b64041f7449",
+          "cell_key": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5",
+          "task_id": "033b2ba6-c590-444e-bbd4-e4f7c10f5027"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.93,
+          "candidate_id": "c9c39dc3-4a75-4f8d-be01-953e5ac8bbb8",
+          "cell_key": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b",
+          "task_id": "033b2ba6-c590-444e-bbd4-e4f7c10f5027"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "20f99a2c-25b0-4ae9-9e30-9f8d392431b4",
+          "cell_key": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5",
+          "task_id": "d04b7111-bf8f-4eb9-9134-c168270dd7fa"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "25dc757b-8224-46e5-b364-b1950fbf3afb",
+          "cell_key": "entity-57fc6fe52563f941:dim-17f40a6509840d1b",
+          "task_id": "d04b7111-bf8f-4eb9-9134-c168270dd7fa"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "3a66c61a-4db3-4355-b683-e8db81413ffd",
+          "cell_key": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420",
+          "task_id": "d04b7111-bf8f-4eb9-9134-c168270dd7fa"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "1c99bdfa-ea50-46a7-a6bd-794fbcce5f61",
+          "cell_key": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5",
+          "task_id": "50f9a437-9032-4fdd-96e7-c17af6552ab9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "305eb7fb-bae2-4d6b-bf3f-b4e0e5cfb14e",
+          "cell_key": "entity-ae1b8c8635429669:dim-17f40a6509840d1b",
+          "task_id": "50f9a437-9032-4fdd-96e7-c17af6552ab9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "74d35c69-edb4-4441-8b35-fe23d1ea54fa",
+          "cell_key": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420",
+          "task_id": "50f9a437-9032-4fdd-96e7-c17af6552ab9"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "64fe5747-cb09-4029-b179-6e8daf4c4164",
+          "cell_key": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+          "task_id": "273af5db-fac8-4c84-9eaa-7d744df52290"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "a8b45a8a-7e95-420d-a2b6-7ecb14dc2bb2",
+          "cell_key": "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+          "task_id": "8cf5312c-eb4d-483a-a2e0-d4d82efe616a"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "6fa251d0-1d94-4c93-8d56-cd5bcaa82090",
+          "cell_key": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+          "task_id": "70a5c7cf-e7b1-471b-9772-0879d3a29c14"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "fb92c83a-c179-4ebf-bfe4-67e529ab6f52",
+          "cell_key": "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+          "task_id": "d0911174-0484-4ec8-82ef-9bd4172ede05"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "d98346c5-924f-4ed9-8341-1a31f2f92873",
+          "cell_key": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+          "task_id": "556038a5-ae8d-454e-b064-e0f0978de30b"
+        }
+      ],
+      "candidate_count": 15,
+      "task_count": 18,
+      "merge_count": 15,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:189e8a4db8990ab631e6889fafbfce8b577154415f29b37fcc23bbd7a9911348",
+          "candidate_id": "bde945bd-6607-46cd-a698-2e2a4ebe2038",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a"
+        },
+        {
+          "merge_id": "merge:549200aeab07e32eccc35bdf852c01c255891aa493f9502e740373cba2a754f1",
+          "candidate_id": "fead7641-1691-4c79-afdb-1bd1a004e61a",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420"
+        },
+        {
+          "merge_id": "merge:c766ed3e5d50dc43d4764ab9d1dfb9c91fa2a4a55bcd3a629c971dc8bb761326",
+          "candidate_id": "42dd1384-ca33-4a73-95b8-1b64041f7449",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5"
+        },
+        {
+          "merge_id": "merge:a3f543b2606207e4c56cf4b703b14bef3aef166f887deb3fcc7f754e31406efa",
+          "candidate_id": "c9c39dc3-4a75-4f8d-be01-953e5ac8bbb8",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b"
+        },
+        {
+          "merge_id": "merge:fcf8f13f0e14f4afa53c3ef2bc3798314771b47acceaa8471e7b4be2787146b6",
+          "candidate_id": "20f99a2c-25b0-4ae9-9e30-9f8d392431b4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5"
+        },
+        {
+          "merge_id": "merge:cdc891d0ab7fecf43a49eb53117852a9e11288986a0503039892790c7501da31",
+          "candidate_id": "3a66c61a-4db3-4355-b683-e8db81413ffd",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420"
+        },
+        {
+          "merge_id": "merge:5eac5206b2baae0639d58a9a2a66d4fe1e35dab070bffaa2365a3530ec92cbc5",
+          "candidate_id": "25dc757b-8224-46e5-b364-b1950fbf3afb",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-57fc6fe52563f941:dim-17f40a6509840d1b"
+        },
+        {
+          "merge_id": "merge:6d79b24d4bac82d4fb89a9c9f4b68fb59d91e7b70132fd534782315d8606895d",
+          "candidate_id": "1c99bdfa-ea50-46a7-a6bd-794fbcce5f61",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5"
+        },
+        {
+          "merge_id": "merge:79fb9e3443072d441f8a70932e4c231e0d68b4846940cd8d268e90f9b0ab3dc0",
+          "candidate_id": "305eb7fb-bae2-4d6b-bf3f-b4e0e5cfb14e",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ae1b8c8635429669:dim-17f40a6509840d1b"
+        },
+        {
+          "merge_id": "merge:eaf4a1c1a7b3fecbf585e1301b226a328ce726d33c0a8b30ea286facf0b6933f",
+          "candidate_id": "74d35c69-edb4-4441-8b35-fe23d1ea54fa",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420"
+        },
+        {
+          "merge_id": "merge:fe167e023d601a111e3cb14de56c063e525155c040fa43c24c7e9a780f739dec",
+          "candidate_id": "64fe5747-cb09-4029-b179-6e8daf4c4164",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5"
+        },
+        {
+          "merge_id": "merge:f0b18eddb5afbe25a4f0ea5e770f709ccd51e810f7eab957f8f9a6bc6ef7571e",
+          "candidate_id": "a8b45a8a-7e95-420d-a2b6-7ecb14dc2bb2",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-ae1b8c8635429669:dim-8d9cad41677c007a"
+        },
+        {
+          "merge_id": "merge:aca76d7f7b2b5a9132dd8aa5b0ec45d56fed78c80aee1f2d4f04d0f50a769d84",
+          "candidate_id": "6fa251d0-1d94-4c93-8d56-cd5bcaa82090",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b"
+        },
+        {
+          "merge_id": "merge:63d078eb9bab687dbc4dbf1a03698f5fca08e7a4468e0ba8ab7a198352014b67",
+          "candidate_id": "fb92c83a-c179-4ebf-bfe4-67e529ab6f52",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-57fc6fe52563f941:dim-8d9cad41677c007a"
+        },
+        {
+          "merge_id": "merge:b207beda00848bc3a5e146634b3102a31baedad3fdd22d024296bed33b0d5bea",
+          "candidate_id": "d98346c5-924f-4ed9-8341-1a31f2f92873",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 9,
+          "merge_high_water_mark": 10,
+          "candidate_high_water_mark": 10
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 15,
+          "merge_high_water_mark": 14,
+          "candidate_high_water_mark": 14
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 17,
+          "merge_high_water_mark": 15,
+          "candidate_high_water_mark": 15
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-57fc6fe52563f941",
+            "label": "Milvus"
+          },
+          {
+            "entity_key": "entity-ae1b8c8635429669",
+            "label": "Elasticsearch"
+          },
+          {
+            "entity_key": "entity-cfc35d18e7332fde",
+            "label": "Qdrant"
+          },
+          {
+            "entity_key": "entity-ea3f2c381cdbe297",
+            "label": "Weaviate"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-17f40a6509840d1b",
+            "label": "Hybrid search support & mechanism",
+            "description": "Whether the product officially supports hybrid (vector + keyword/lexical) retrieval and how it combines the two signals (e.g. RRF, weighted score fusion, native hybrid query API).",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-4acc2ceb24f01420",
+            "label": "Query syntax / API for hybrid",
+            "description": "The documented API, query DSL or operator used to submit a hybrid query (e.g. RRF retriever, hybrid() method, Query API prefetch).",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-89ce5445b691f1c5",
+            "label": "Fusion / reranking options",
+            "description": "Which fusion or reranking methods the official docs list (e.g. RRF, weighted sum, cross-encoder rerank stage) and where they are configured.",
+            "answer_format": "LIST",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-8d9cad41677c007a",
+            "label": "Official documentation reference",
+            "description": "The official documentation page URL and version that documents hybrid search for this product.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Hybrid search capability, query API, fusion/reranking options and the official doc reference for each of the four named vector databases.",
+          "objective": "Compare how Elasticsearch, Milvus, Qdrant and Weaviate officially support hybrid (vector + keyword) retrieval, citing official documentation with exact quotes, snapshots and URLs.",
+          "exclusions": [
+            "Independent third-party benchmarks without official confirmation",
+            "Performance numbers not stated in official docs",
+            "Products not named in the question"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit (exact quote, snapshot, URL per cell)."
+        },
+        "effort_tier": "COMPLEX",
+        "authoritative_domains": [
+          "elastic.co",
+          "milvus.io",
+          "qdrant.tech",
+          "weaviate.io"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which API call or query syntax actually performs a hybrid query?",
+              "Do I need an external reranker or is fusion built in?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Does the vendor officially support hybrid search, or is it only community workarounds?",
+              "Which official doc page can I cite as proof?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-57fc6fe52563f941:dim-17f40a6509840d1b",
+          "entity_label": "Milvus",
+          "column_label": "Hybrid search support & mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:b2728947e72cb585325fe6fd62552aa7fa80ee9d06b9cc64",
+              "source_domain": "milvus.io",
+              "claim_text": "Milvus 自 2.4 版本引入多向量支持和混合检索框架，最多可使用 10 个向量字段"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-57fc6fe52563f941:dim-4acc2ceb24f01420",
+          "entity_label": "Milvus",
+          "column_label": "Query syntax / API for hybrid",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Milvus 通过 hybrid_search() 方法提交混合检索",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:5e6312ca0689000254c003c8fe399bf35e138e30a0d1f0c9",
+              "source_domain": "milvus.io",
+              "claim_text": "Milvus 通过 hybrid_search() 方法提交混合检索"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-57fc6fe52563f941:dim-89ce5445b691f1c5",
+          "entity_label": "Milvus",
+          "column_label": "Fusion / reranking options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ad1a7c86f969d88421b963b5a2ca8e69ce6adb210991f8b3",
+              "source_domain": "milvus.io",
+              "claim_text": "Milvus 混合检索的 reranking 策略有两种选项：WeightedRanker 和 RRFRanker"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+          "entity_label": "Milvus",
+          "column_label": "Official documentation reference",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d06b748bb932017dbde909f262a93b323dc7b9d870c0459a",
+              "source_domain": "milvus.io",
+              "claim_text": "Milvus 官方文档 Hybrid Search 页面记录：自 Milvus 2.4 起引入多向量支持与混合搜索框架，用户可引入多个向量字段（最多 10 个）"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ae1b8c8635429669:dim-17f40a6509840d1b",
+          "entity_label": "Elasticsearch",
+          "column_label": "Hybrid search support & mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7fc757a29d225241db4a46559c9eda83b3afac961d005238",
+              "source_domain": "elastic.co",
+              "claim_text": "Elasticsearch 推荐使用 reciprocal rank fusion (RRF) 算法实现混合检索，合并全文查询与向量查询的排名。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ae1b8c8635429669:dim-4acc2ceb24f01420",
+          "entity_label": "Elasticsearch",
+          "column_label": "Query syntax / API for hybrid",
+          "cell_status": "VERIFIED",
+          "candidate_value": "ES|QL 示例使用 FORK 与 FUSE 实现混合检索",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:ddc3507089ec1272ab462003044920158060bfc997a678ad",
+              "source_domain": "elastic.co",
+              "claim_text": "ES|QL 示例使用 FORK 与 FUSE 实现混合检索"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ae1b8c8635429669:dim-89ce5445b691f1c5",
+          "entity_label": "Elasticsearch",
+          "column_label": "Fusion / reranking options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d5440f0e1391ae320da1631f1c39ace3e61fb841022cde89",
+              "source_domain": "elastic.co",
+              "claim_text": "Elasticsearch 推荐使用 RRF 算法实现混合检索，合并全文查询和向量查询的排名。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+          "entity_label": "Elasticsearch",
+          "column_label": "Official documentation reference",
+          "cell_status": "VERIFIED",
+          "candidate_value": "官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:9bbdb2782dfc520fb8a78df0ffb5faf08266cae6b7323c68",
+              "source_domain": "elastic.co",
+              "claim_text": "官方推荐使用 RRF 算法实现混合检索，参考 docs/reference/elasticsearch/rest-apis/reciprocal-rank-fusion 页面"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+          "entity_label": "Qdrant",
+          "column_label": "Hybrid search support & mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Qdrant 的 Universal Query API 支持构建混合检索流水线",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:41b1cccf1d5a30864f70daa2c12b452cc695a6d67ed23683",
+              "source_domain": "qdrant.tech",
+              "claim_text": "Qdrant 的 Universal Query API 支持构建混合检索流水线"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cfc35d18e7332fde:dim-4acc2ceb24f01420",
+          "entity_label": "Qdrant",
+          "column_label": "Query syntax / API for hybrid",
+          "cell_status": "VERIFIED",
+          "candidate_value": "using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:926dae8d0688a32b7f8845f37b5caac6618743396e623d82",
+              "source_domain": "qdrant.tech",
+              "claim_text": "using 用于为每个 prefetch 选择命名向量，FusionQuery 负责合并两个结果列表"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+          "entity_label": "Qdrant",
+          "column_label": "Fusion / reranking options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:2abaf7d82807317df6bd0deebfa9b5111e62947e6f31cb42",
+              "source_domain": "qdrant.tech",
+              "claim_text": "Qdrant 提供 rrf 和 dbsf 两种融合不同查询结果的方式"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+          "entity_label": "Qdrant",
+          "column_label": "Official documentation reference",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:73199fd6044cf097b8055abacee77f6a1398af15365e0d6f",
+              "source_domain": "qdrant.tech",
+              "claim_text": "Qdrant 官方文档 Hybrid Search in Qdrant 页面记录了预取加 FusionQuery 的混合检索用法"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ea3f2c381cdbe297:dim-17f40a6509840d1b",
+          "entity_label": "Weaviate",
+          "column_label": "Hybrid search support & mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:698be944c2087773597b76f28ce7c0a2aeb81ef39de287ca",
+              "source_domain": "weaviate.io",
+              "claim_text": "Weaviate supports two strategies (`relativeScoreFusion` and `rankedFusion`) for combining vector and keyword search scores:"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 930000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ea3f2c381cdbe297:dim-4acc2ceb24f01420",
+          "entity_label": "Weaviate",
+          "column_label": "Query syntax / API for hybrid",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ea3f2c381cdbe297:dim-89ce5445b691f1c5",
+          "entity_label": "Weaviate",
+          "column_label": "Fusion / reranking options",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7bde1f5e4dfc125e619b67eb4f9104365397eeaa9f3bca9c",
+              "source_domain": "weaviate.io",
+              "claim_text": "Weaviate 支持 relativeScoreFusion 和 rankedFusion 两种融合策略来组合向量与关键词检索分数"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-ea3f2c381cdbe297:dim-8d9cad41677c007a",
+          "entity_label": "Weaviate",
+          "column_label": "Official documentation reference",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:4a8bbb86ca82353d02b074c7ea4d8ef931771ff91823fb88",
+              "source_domain": "weaviate.io",
+              "claim_text": "Weaviate hybrid search official documentation page: https://docs.weaviate.io/weaviate/search/hybrid（需要 v1.17 或更高版本）"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 6 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-57fc6fe52563f941:dim-8d9cad41677c007a",
+            "entity-ae1b8c8635429669:dim-8d9cad41677c007a",
+            "entity-cfc35d18e7332fde:dim-17f40a6509840d1b",
+            "entity-cfc35d18e7332fde:dim-89ce5445b691f1c5",
+            "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+            "entity-ea3f2c381cdbe297:dim-4acc2ceb24f01420"
+          ],
+          "strategy": "NARROW",
+          "query_count": 12,
+          "created_at": "2026-10-17T11:59:03Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-cfc35d18e7332fde:dim-8d9cad41677c007a",
+            "entity-ea3f2c381cdbe297:dim-4acc2ceb24f01420"
+          ],
+          "strategy": "SWITCH_SOURCE_TYPE",
+          "query_count": 4,
+          "created_at": "2026-10-17T12:01:55Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

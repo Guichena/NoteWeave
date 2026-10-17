@@ -1,0 +1,1526 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "cmp-kafka-pulsar-ordering",
+  "run_id": "39e55ad0-da65-4851-9192-5552415c3545",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T11:27:33.752129+00:00",
+  "finished_at": "2026-10-17T11:32:50.889166+00:00",
+  "wall_seconds": 317.1,
+  "run_detail": {
+    "research_run_id": "39e55ad0-da65-4851-9192-5552415c3545",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "0c3ac7d0-d466-4c03-a756-cbb244e3767b",
+    "question": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+    "final_report_markdown": "# Kafka 与 Pulsar 在消息顺序保证与消费模型上的差异：基于官方文档的核验\n\n本次核验的资料显示，Kafka 保证分区内有序、跨分区不保证有序，且给定 topic-partition 的消费者会按写入顺序读取该分区事件；Pulsar 的顺序保证则取决于订阅类型，Shared 订阅不保证消息顺序且会失去顺序保证，而 Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序。在消费模型上，Kafka 通过消费者组把一个消费组内每条消息投递给一个进程，Pulsar 的 shared 订阅类型允许多个消费者。\n\n## 直接回答\n\n在顺序保证上，Kafka 的保证范围限定在分区之内：分区内有序，跨分区不保证顺序，并且任何消费给定 topic-partition 的消费者都会按事件写入的完全相同顺序读取该分区事件。Pulsar 的顺序情况则与订阅类型相关，Shared 订阅不保证消息顺序，也不支持累积确认；在该模式下消费顺序不被保证，单个消费者可能在另一个消费者获得机会之前就收到所有分区的消息。 [evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824] [evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05] [evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244] [evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff] [evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3] [evidence:08e0eab9620ccfaa34608bebbfc6e5cea356fa3359ce6d96]\n\n在消费模型上，Kafka 使用消费者组的概念，让一组进程分担消费与处理记录的工作，并将订阅主题中的每条消息投递给每个消费组中的一个进程。Pulsar 的 shared 订阅类型则允许多个消费者，这也正是其在该模式下无法保持顺序的原因之一。 [evidence:38d20c9099061769705c234eca99485eb59a457806af88ec] [evidence:86f9c053ac37ef41cfc00663f945675f711397df5299f480] [evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d]\n\n## 顺序保证的机制与适用范围\n\nKafka 的排序机制以分区为边界。官方文档的表述是：在 Kafka 中，顺序在分区内得到保证，跨分区则不然。这一表述同时界定了其顺序保证的范围，即仅覆盖分区内部，而非多个分区之间。 [evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824] [evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05]\n\nPulsar 提供了一种可覆盖消息 key 的排序手段：Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序。需要强调的是，这一说明针对的是 Key_Shared 场景，而非所有订阅类型。 [evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd]\n\nPulsar 的顺序保证受订阅类型严格限制。官方文档明确指出，Shared 订阅不保证消息顺序，也不支持累积确认；因此在这一订阅类型下，不能期待顺序保证。 [evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff]\n\n## 消费模型如何影响顺序结果\n\nKafka 的消费模型以消费者组为核心：它允许一组进程分担消费和处理记录的工作，并保证订阅主题中的每条消息被投递给每个消费组中的一个进程。在这一模型下，任一消费给定 topic-partition 的消费者都会按照事件写入时的完全相同顺序读取该分区的事件，顺序保证与分区消费关系由此衔接。 [evidence:38d20c9099061769705c234eca99485eb59a457806af88ec] [evidence:86f9c053ac37ef41cfc00663f945675f711397df5299f480] [evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244]\n\nPulsar 的 shared 订阅类型允许存在多个消费者。官方文档进一步说明，在该模式下消费顺序不被保证，单个消费者可能在另一个消费者获得机会之前就收到所有分区的消息。由此可见，Pulsar 在 Shared 模式下顺序的缺失，与其允许多个消费者并发分消费的订阅设计直接相关。 [evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d] [evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3] [evidence:08e0eab9620ccfaa34608bebbfc6e5cea356fa3359ce6d96]\n\n## 对比表\n\n| 产品 | 顺序机制 | 顺序保证范围 | 顺序与消费的交互 | 消费模型 |\n| --- | --- | --- | --- | --- |\n| Kafka | 分区内保证顺序，跨分区不保证 | 仅分区内有序，跨分区不保证有序 | 给定 topic-partition 的消费者按写入时的完全相同顺序读取该分区事件 | 消费者组将一个消费组内每条订阅主题消息投递给一个进程，进程池分担消费与处理 [evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824] [evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05] [evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244] [evidence:38d20c9099061769705c234eca99485eb59a457806af88ec] [evidence:86f9c053ac37ef41cfc00663f945675f711397df5299f480] |\n| Pulsar | Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序 | Shared 订阅不保证消息顺序，也不支持累积确认 | Shared 模式下消费顺序不被保证，单个消费者可能先收到所有分区的消息 | shared 订阅类型允许多个消费者 [evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd] [evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff] [evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3] [evidence:08e0eab9620ccfaa34608bebbfc6e5cea356fa3359ce6d96] [evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d] |\n\n## Citation audit\n\n### Kafka · Ordering mechanism\n\n- Evidence: `evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824`\n- Exact quote: “In Kafka, ordering is guaranteed within a partition but not across partitions.”\n- Snapshot: `research/external/29d80d66-1a06-479a-81de-81ecebfaf876/a9b45626bf4e6a641c85d36b896b3b05a019693561ef2ed7a036e68e5aa57f2e`\n- URL: https://www.confluent.io/learn/kafka-partition-key/\n\n### Kafka · Ordering guarantee scope\n\n- Evidence: `evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05`\n- Exact quote: “In Kafka, ordering is guaranteed within a partition but not across partitions.”\n- Snapshot: `research/external/29d80d66-1a06-479a-81de-81ecebfaf876/a9b45626bf4e6a641c85d36b896b3b05a019693561ef2ed7a036e68e5aa57f2e`\n- URL: https://www.confluent.io/learn/kafka-partition-key/\n\n### Kafka · Ordering vs. consumption interaction\n\n- Evidence: `evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244`\n- Exact quote: “Kafka [guarantees](https://kafka.apache.org/documentation/#semantics) that any consumer of a given topic-partition will always read that partition’s events in exactly the same order as they were written.”\n- Snapshot: `research/external/9cb6efd6-9f33-483f-b51e-6548ce323b26/700f8ae22e4858d42f3ef76c39fcd285ae861277d0decf990105b856acf7e7fd`\n- URL: https://kafka.apache.org/documentation/\n\n### Kafka · Consumption model\n\n- Evidence: `evidence:38d20c9099061769705c234eca99485eb59a457806af88ec`\n- Exact quote: “Kafka will deliver each message in the subscribed topics to one process in each consumer group.”\n- Snapshot: `research/external/c369b025-8b17-446f-96f0-d0fbe48511d4/f2b925d720ec20be31cc0beb8cac7c082311f4a85cff9c08326ad3f301d3c954`\n- URL: https://kafka.apache.org/22/javadoc/org/apache/kafka/clients/consumer/KafkaConsumer.html\n\n### Pulsar · Ordering mechanism\n\n- Evidence: `evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd`\n- Exact quote: “Use ordering\\\\_key to overwrite the message key for message ordering.”\n- Snapshot: `research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/2dcfe31216f05a0c3c28cbdfb9d0543dba79d872dc1798e165a88c8878441911`\n- URL: https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html\n\n### Pulsar · Ordering guarantee scope\n\n- Evidence: `evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff`\n- Exact quote: “Shared subscriptions do not guarantee message ordering or support cumulative acknowledgment.”\n- Snapshot: `research/external/6d308fc6-9a53-4865-8e06-0217f525a81c/9bbcd7e7a2b279602f3a54816b74712c909c6785d7e38d97550e1d65cc414073`\n- URL: https://pulsar.apache.org/docs/next/concepts-messaging/\n\n### Pulsar · Ordering vs. consumption interaction\n\n- Evidence: `evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3`\n- Exact quote: “In this mode, the consumption order is not guaranteed.”\n- Snapshot: `research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/2dcfe31216f05a0c3c28cbdfb9d0543dba79d872dc1798e165a88c8878441911`\n- URL: https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html\n\n### Pulsar · Consumption model\n\n- Evidence: `evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d`\n- Exact quote: “The shared subscription type in Pulsar allows multiple”\n- Snapshot: `research/external/d3e72b3e-d1d4-4457-b31e-fcc0878fcad8/88442ac8309bfcf28162c6b29ce18783ba59e213b0cdf19ab513a4193c7d4128`\n- URL: https://pulsar.apache.org/docs/next/concepts-messaging/\n\n## 补充引用\n\n- Evidence: `evidence:08e0eab9620ccfaa34608bebbfc6e5cea356fa3359ce6d96`\n  - Exact quote: “when you use the shared mode, you lose any ordering guarantees, as a single consumer may receive messages from all the partitions before another consumer gets a chance”\n  - Snapshot: `research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/8e88353d5911a8b61c47c21dc4080927d2dbfa13dc08b785088a4d8ba968f0da`\n  - URL: https://docs.spring.io/spring-pulsar/reference/reference/pulsar/publishing-consuming-partitioned-topics.html\n- Evidence: `evidence:86f9c053ac37ef41cfc00663f945675f711397df5299f480`\n  - Exact quote: “Kafka uses the concept of *consumer groups* to allow a pool of processes to divide the work of consuming and processing records.”\n  - Snapshot: `research/external/c369b025-8b17-446f-96f0-d0fbe48511d4/f2b925d720ec20be31cc0beb8cac7c082311f4a85cff9c08326ad3f301d3c954`\n  - URL: https://kafka.apache.org/22/javadoc/org/apache/kafka/clients/consumer/KafkaConsumer.html\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/39e55ad0-da65-4851-9192-5552415c3545/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 9877,
+      "sha256": "c01ac5ded2c672646ec9ea7b5f473c6d4a8c138eee9349664b7dd534da1e0626"
+    },
+    "research_artifact": {
+      "artifact_id": "39e55ad0-da65-4851-9192-5552415c3545",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "39e55ad0-da65-4851-9192-5552415c3545",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/39e55ad0-da65-4851-9192-5552415c3545/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 9877,
+        "sha256": "c01ac5ded2c672646ec9ea7b5f473c6d4a8c138eee9349664b7dd534da1e0626"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "Kafka consumption model consumer group",
+          "site:kafka.apache.org Kafka consumer group ordering guarantee",
+          "Pulsar message ordering guarantee official documentation partitioned topic",
+          "site:pulsar.apache.org message ordering shared subscription",
+          "Pulsar message ordering consumption model",
+          "Pulsar Kafka consumption model comparison",
+          "Pulsar subscription types exclusive shared failover official",
+          "Kafka message ordering guarantee",
+          "Kafka message order per partition producer key official",
+          "Kafka consumer group multiple consumers per partition ordering official",
+          "Pulsar docs \"message ordering\" \"per partition\" OR \"per key\" OR \"global\" guarantee",
+          "site:pulsar.apache.org/docs \"ordering\" guarantee per key shared subscription partitioned topic",
+          "Kafka max.in.flight.requests.per.connection enable.idempotence ordering guarantee",
+          "Kafka consumer group rebalance partition assignment ordering guarantee official docs",
+          "site:kafka.apache.org documentation consumer group partition assignment queue semantics",
+          "Apache Kafka 4.0 consumer group rebalance protocol KIP-848 official documentation"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 2,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-e00811bb53630e3b",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Pulsar",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+            "read_focus": "Compare Kafka and Pulsar on message ordering guarantees and consumption models, citing official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          },
+          {
+            "row_id": "entity-cbbf241eebedba6f",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Kafka",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+            "read_focus": "Compare Kafka and Pulsar on message ordering guarantees and consumption models, citing official documentation.",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+            "row_id": "entity-cbbf241eebedba6f",
+            "branch_id": "branch-main",
+            "column_key": "dim-e04a90fea221f245",
+            "column_label": "Ordering vs. consumption interaction",
+            "candidate_value": "Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written.",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-e00811bb53630e3b:dim-e04a90fea221f245",
+            "row_id": "entity-e00811bb53630e3b",
+            "branch_id": "branch-main",
+            "column_key": "dim-e04a90fea221f245",
+            "column_label": "Ordering vs. consumption interaction",
+            "candidate_value": "在 Shared 模式下，消费顺序不被保证",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27",
+            "row_id": "entity-cbbf241eebedba6f",
+            "branch_id": "branch-main",
+            "column_key": "dim-9e7eee0f3edd4f27",
+            "column_label": "Ordering guarantee scope",
+            "candidate_value": "Kafka 保证分区内有序，但不保证跨分区有序",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-cbbf241eebedba6f:dim-9d47838a4d601361",
+            "row_id": "entity-cbbf241eebedba6f",
+            "branch_id": "branch-main",
+            "column_key": "dim-9d47838a4d601361",
+            "column_label": "Ordering mechanism",
+            "candidate_value": "Kafka 仅在分区内保证顺序，跨分区不保证顺序",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27",
+            "row_id": "entity-e00811bb53630e3b",
+            "branch_id": "branch-main",
+            "column_key": "dim-9e7eee0f3edd4f27",
+            "column_label": "Ordering guarantee scope",
+            "candidate_value": "Pulsar 的 Shared 订阅不保证消息顺序",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-e00811bb53630e3b:dim-9d47838a4d601361",
+            "row_id": "entity-e00811bb53630e3b",
+            "branch_id": "branch-main",
+            "column_key": "dim-9d47838a4d601361",
+            "column_label": "Ordering mechanism",
+            "candidate_value": "Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+            "row_id": "entity-cbbf241eebedba6f",
+            "branch_id": "branch-main",
+            "column_key": "dim-eabd68360f9efb9b",
+            "column_label": "Consumption model",
+            "candidate_value": "Kafka 将订阅主题中的每条消息投递给每个消费组中的一个进程",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:38d20c9099061769705c234eca99485eb59a457806af88ec"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b",
+            "row_id": "entity-e00811bb53630e3b",
+            "branch_id": "branch-main",
+            "column_key": "dim-eabd68360f9efb9b",
+            "column_label": "Consumption model",
+            "candidate_value": "Pulsar 的 shared 订阅类型允许多个消费者。",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 2,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-e00811bb53630e3b",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+          "read_focus": "Compare Kafka and Pulsar on message ordering guarantees and consumption models, citing official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        },
+        {
+          "row_id": "entity-cbbf241eebedba6f",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Kafka",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+          "read_focus": "Compare Kafka and Pulsar on message ordering guarantees and consumption models, citing official documentation.",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+          "row_id": "entity-cbbf241eebedba6f",
+          "branch_id": "branch-main",
+          "column_key": "dim-e04a90fea221f245",
+          "column_label": "Ordering vs. consumption interaction",
+          "candidate_value": "Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written.",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-e04a90fea221f245",
+          "row_id": "entity-e00811bb53630e3b",
+          "branch_id": "branch-main",
+          "column_key": "dim-e04a90fea221f245",
+          "column_label": "Ordering vs. consumption interaction",
+          "candidate_value": "在 Shared 模式下，消费顺序不被保证",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27",
+          "row_id": "entity-cbbf241eebedba6f",
+          "branch_id": "branch-main",
+          "column_key": "dim-9e7eee0f3edd4f27",
+          "column_label": "Ordering guarantee scope",
+          "candidate_value": "Kafka 保证分区内有序，但不保证跨分区有序",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-9d47838a4d601361",
+          "row_id": "entity-cbbf241eebedba6f",
+          "branch_id": "branch-main",
+          "column_key": "dim-9d47838a4d601361",
+          "column_label": "Ordering mechanism",
+          "candidate_value": "Kafka 仅在分区内保证顺序，跨分区不保证顺序",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27",
+          "row_id": "entity-e00811bb53630e3b",
+          "branch_id": "branch-main",
+          "column_key": "dim-9e7eee0f3edd4f27",
+          "column_label": "Ordering guarantee scope",
+          "candidate_value": "Pulsar 的 Shared 订阅不保证消息顺序",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-9d47838a4d601361",
+          "row_id": "entity-e00811bb53630e3b",
+          "branch_id": "branch-main",
+          "column_key": "dim-9d47838a4d601361",
+          "column_label": "Ordering mechanism",
+          "candidate_value": "Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+          "row_id": "entity-cbbf241eebedba6f",
+          "branch_id": "branch-main",
+          "column_key": "dim-eabd68360f9efb9b",
+          "column_label": "Consumption model",
+          "candidate_value": "Kafka 将订阅主题中的每条消息投递给每个消费组中的一个进程",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:38d20c9099061769705c234eca99485eb59a457806af88ec"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b",
+          "row_id": "entity-e00811bb53630e3b",
+          "branch_id": "branch-main",
+          "column_key": "dim-eabd68360f9efb9b",
+          "column_label": "Consumption model",
+          "candidate_value": "Pulsar 的 shared 订阅类型允许多个消费者。",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T11:31:16Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:08e0eab9620ccfaa34608bebbfc6e5cea356fa3359ce6d96",
+          "window_id": "window-5",
+          "source_id": "web-ea8c668a5ef68c34",
+          "source_title": "Publishing and Consuming Partitioned Topics",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://docs.spring.io/spring-pulsar/reference/reference/pulsar/publishing-consuming-partitioned-topics.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulsar message ordering guarantee official documentation partitioned topic",
+          "read_focus": "Read external URL Publishing and Consuming Partitioned Topics for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Pulsar. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "when you use the shared mode, you lose any ordering guarantees, as a single consumer may receive messages from all the partitions before another consumer gets a chance",
+          "claim_text": "使用共享模式会失去顺序保证，因为单个消费者可能在另一个消费者被调度前收到来自所有分区的消息",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/8e88353d5911a8b61c47c21dc4080927d2dbfa13dc08b785088a4d8ba968f0da"
+        },
+        {
+          "evidence_id": "evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3",
+          "window_id": "window-3",
+          "source_id": "web-81ba65ec8e7b1e82",
+          "source_title": "SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:pulsar.apache.org message ordering shared subscription",
+          "read_focus": "Read external URL SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Pulsar. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In this mode, the consumption order is not guaranteed.",
+          "claim_text": "在 Shared 模式下，消费顺序不被保证",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/2dcfe31216f05a0c3c28cbdfb9d0543dba79d872dc1798e165a88c8878441911"
+        },
+        {
+          "evidence_id": "evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd",
+          "window_id": "window-3",
+          "source_id": "web-81ba65ec8e7b1e82",
+          "source_title": "SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:pulsar.apache.org message ordering shared subscription",
+          "read_focus": "Read external URL SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Pulsar. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Use ordering\\_key to overwrite the message key for message ordering.",
+          "claim_text": "Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca/2dcfe31216f05a0c3c28cbdfb9d0543dba79d872dc1798e165a88c8878441911"
+        },
+        {
+          "evidence_id": "evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d",
+          "window_id": "window-1",
+          "source_id": "web-acd561e1f3a79783",
+          "source_title": "Messaging - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/docs/next/concepts-messaging/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Pulsar subscription types exclusive shared failover official",
+          "read_focus": "Read external URL Messaging - Apache Pulsar for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Pulsar. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "The shared subscription type in Pulsar allows multiple",
+          "claim_text": "Pulsar 的 shared 订阅类型允许多个消费者。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/d3e72b3e-d1d4-4457-b31e-fcc0878fcad8/88442ac8309bfcf28162c6b29ce18783ba59e213b0cdf19ab513a4193c7d4128"
+        },
+        {
+          "evidence_id": "evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824",
+          "window_id": "window-4",
+          "source_id": "web-d1ad37a11ffdbf35",
+          "source_title": "Apache Kafka Partition Key: A Comprehensive Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.confluent.io/learn/kafka-partition-key/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kafka message order per partition producer key official",
+          "read_focus": "Read external URL Apache Kafka Partition Key: A Comprehensive Guide for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Kafka. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In Kafka, ordering is guaranteed within a partition but not across partitions.",
+          "claim_text": "Kafka 仅在分区内保证顺序，跨分区不保证顺序",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/29d80d66-1a06-479a-81de-81ecebfaf876/a9b45626bf4e6a641c85d36b896b3b05a019693561ef2ed7a036e68e5aa57f2e"
+        },
+        {
+          "evidence_id": "evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05",
+          "window_id": "window-4",
+          "source_id": "web-d1ad37a11ffdbf35",
+          "source_title": "Apache Kafka Partition Key: A Comprehensive Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.confluent.io/learn/kafka-partition-key/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kafka message order per partition producer key official",
+          "read_focus": "Read external URL Apache Kafka Partition Key: A Comprehensive Guide for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Kafka. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "In Kafka, ordering is guaranteed within a partition but not across partitions.",
+          "claim_text": "Kafka 保证分区内有序，但不保证跨分区有序",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/29d80d66-1a06-479a-81de-81ecebfaf876/a9b45626bf4e6a641c85d36b896b3b05a019693561ef2ed7a036e68e5aa57f2e"
+        },
+        {
+          "evidence_id": "evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff",
+          "window_id": "window-1",
+          "source_id": "web-acd561e1f3a79783",
+          "source_title": "Messaging - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/docs/next/concepts-messaging/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:pulsar.apache.org/docs \"ordering\" guarantee per key shared subscription partitioned topic",
+          "read_focus": "Read external URL Messaging - Apache Pulsar for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Pulsar. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Shared subscriptions do not guarantee message ordering or support cumulative acknowledgment.",
+          "claim_text": "Pulsar 的 Shared 订阅不保证消息顺序",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6d308fc6-9a53-4865-8e06-0217f525a81c/9bbcd7e7a2b279602f3a54816b74712c909c6785d7e38d97550e1d65cc414073"
+        },
+        {
+          "evidence_id": "evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244",
+          "window_id": "window-1",
+          "source_id": "web-7f170ac8b9ffdadc",
+          "source_title": "Introduction | Apache Kafka",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kafka.apache.org/documentation/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Kafka consumer group rebalance partition assignment ordering guarantee official docs",
+          "read_focus": "Read external URL Introduction | Apache Kafka for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Kafka. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Kafka [guarantees](https://kafka.apache.org/documentation/#semantics) that any consumer of a given topic-partition will always read that partition’s events in exactly the same order as they were written.",
+          "claim_text": "Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written.",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/9cb6efd6-9f33-483f-b51e-6548ce323b26/700f8ae22e4858d42f3ef76c39fcd285ae861277d0decf990105b856acf7e7fd"
+        },
+        {
+          "evidence_id": "evidence:38d20c9099061769705c234eca99485eb59a457806af88ec",
+          "window_id": "window-3",
+          "source_id": "web-c47851aaca3428a7",
+          "source_title": "KafkaConsumer (kafka 2.2.0 API)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kafka.apache.org/22/javadoc/org/apache/kafka/clients/consumer/KafkaConsumer.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:kafka.apache.org documentation consumer group partition assignment queue semantics",
+          "read_focus": "Read external URL KafkaConsumer (kafka 2.2.0 API) for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Kafka. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Kafka will deliver each message in the subscribed topics to one process in each consumer group.",
+          "claim_text": "Kafka 将订阅主题中的每条消息投递给每个消费组中的一个进程",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c369b025-8b17-446f-96f0-d0fbe48511d4/f2b925d720ec20be31cc0beb8cac7c082311f4a85cff9c08326ad3f301d3c954"
+        },
+        {
+          "evidence_id": "evidence:86f9c053ac37ef41cfc00663f945675f711397df5299f480",
+          "window_id": "window-3",
+          "source_id": "web-c47851aaca3428a7",
+          "source_title": "KafkaConsumer (kafka 2.2.0 API)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kafka.apache.org/22/javadoc/org/apache/kafka/clients/consumer/KafkaConsumer.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "site:kafka.apache.org documentation consumer group partition assignment queue semantics",
+          "read_focus": "Read external URL KafkaConsumer (kafka 2.2.0 API) for claims that answer: Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。\n\nCurrent Table-as-State entity: Kafka. Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Kafka uses the concept of *consumer groups* to allow a pool of processes to divide the work of consuming and processing records.",
+          "claim_text": "Kafka 使用消费组（consumer group）让一组进程分担消息消费与处理工作",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c369b025-8b17-446f-96f0-d0fbe48511d4/f2b925d720ec20be31cc0beb8cac7c082311f4a85cff9c08326ad3f301d3c954"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-e04a90fea221f245",
+          "row_id": "entity-e00811bb53630e3b",
+          "evidence_id": "evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3",
+          "source_id": "web-81ba65ec8e7b1e82",
+          "source_title": "SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html"
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-9d47838a4d601361",
+          "row_id": "entity-e00811bb53630e3b",
+          "evidence_id": "evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd",
+          "source_id": "web-81ba65ec8e7b1e82",
+          "source_title": "SubscriptionType (Pulsar Client :: API 2.4.1 API) - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/api/client/2.4.1/org/apache/pulsar/client/api/SubscriptionType.html"
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b",
+          "row_id": "entity-e00811bb53630e3b",
+          "evidence_id": "evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d",
+          "source_id": "web-acd561e1f3a79783",
+          "source_title": "Messaging - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/docs/next/concepts-messaging/"
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-9d47838a4d601361",
+          "row_id": "entity-cbbf241eebedba6f",
+          "evidence_id": "evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824",
+          "source_id": "web-d1ad37a11ffdbf35",
+          "source_title": "Apache Kafka Partition Key: A Comprehensive Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.confluent.io/learn/kafka-partition-key/"
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27",
+          "row_id": "entity-cbbf241eebedba6f",
+          "evidence_id": "evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05",
+          "source_id": "web-d1ad37a11ffdbf35",
+          "source_title": "Apache Kafka Partition Key: A Comprehensive Guide",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.confluent.io/learn/kafka-partition-key/"
+        },
+        {
+          "cell_id": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27",
+          "row_id": "entity-e00811bb53630e3b",
+          "evidence_id": "evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff",
+          "source_id": "web-acd561e1f3a79783",
+          "source_title": "Messaging - Apache Pulsar",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://pulsar.apache.org/docs/next/concepts-messaging/"
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+          "row_id": "entity-cbbf241eebedba6f",
+          "evidence_id": "evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244",
+          "source_id": "web-7f170ac8b9ffdadc",
+          "source_title": "Introduction | Apache Kafka",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kafka.apache.org/documentation/"
+        },
+        {
+          "cell_id": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+          "row_id": "entity-cbbf241eebedba6f",
+          "evidence_id": "evidence:38d20c9099061769705c234eca99485eb59a457806af88ec",
+          "source_id": "web-c47851aaca3428a7",
+          "source_title": "KafkaConsumer (kafka 2.2.0 API)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://kafka.apache.org/22/javadoc/org/apache/kafka/clients/consumer/KafkaConsumer.html"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "5212e0f0-19a5-4528-a409-0e16038e2061",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T11:27:33Z"
+      },
+      {
+        "trace_id": "e0f83d58-0677-4e1d-93ff-9b28e0cd9fbc",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 2,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 4
+        },
+        "created_at": "2026-10-17T11:27:44Z"
+      },
+      {
+        "trace_id": "f5664a19-ad6b-4355-9213-8cc75f618c74",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Kafka 与 Pulsar 在消息顺序保证和消费模型上有什么差异？引用官方文档。",
+        "payload": {
+          "cell_count": 8
+        },
+        "created_at": "2026-10-17T11:32:49Z"
+      }
+    ],
+    "created_at": "2026-10-17T11:27:33Z",
+    "updated_at": "2026-10-17T11:32:49Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:28:34Z",
+          "lease_epoch": 1,
+          "task_id": "2dcefc1a-26e9-4190-80a2-945863ce5170",
+          "task_key": "planning:39e55ad0-da65-4851-9192-5552415c3545",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:32:05Z",
+          "lease_epoch": 1,
+          "task_id": "29d80d66-1a06-479a-81de-81ecebfaf876",
+          "task_key": "deep-cell:b82eeb2f238dbe757514a24548db584a",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:29:47Z",
+          "lease_epoch": 1,
+          "task_id": "cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca",
+          "task_key": "deep-cell:73bd6c7f9bedfe2f7e98bc81b25e32e4",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:30:32Z",
+          "lease_epoch": 1,
+          "task_id": "d3e72b3e-d1d4-4457-b31e-fcc0878fcad8",
+          "task_key": "deep-cell:6f6bae13315eebcc0f6fad70e3332950",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T11:29:16Z",
+          "lease_epoch": 1,
+          "task_id": "dd0551f6-0ffb-42f4-a02f-5d09f6325d7d",
+          "task_key": "deep-cell:ce1e777fe3f0aee19ce92b5968290837",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:32:48Z",
+          "lease_epoch": 1,
+          "task_id": "6d308fc6-9a53-4865-8e06-0217f525a81c",
+          "task_key": "counterfactual:1666d619f487bb185ed66c405abadecf",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:32:48Z",
+          "lease_epoch": 1,
+          "task_id": "9cb6efd6-9f33-483f-b51e-6548ce323b26",
+          "task_key": "counterfactual:d35e9fc750d57f51ad3ac8adf7f83362",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:33:22Z",
+          "lease_epoch": 1,
+          "task_id": "c369b025-8b17-446f-96f0-d0fbe48511d4",
+          "task_key": "counterfactual:56d12e4c18f836e5437fbb72c434f881",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T11:33:39Z",
+          "lease_epoch": 1,
+          "task_id": "4fcf35c7-2655-4182-97e6-dd342b7c2d2d",
+          "task_key": "synthesis:d11330baf7b43b1bbf543a6db385d76e",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "8699851d-c06b-4b16-b5c3-0e83ff699745",
+          "cell_key": "entity-e00811bb53630e3b:dim-9d47838a4d601361",
+          "task_id": "cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "fffe0293-16aa-471b-9ca3-32b061bb3839",
+          "cell_key": "entity-e00811bb53630e3b:dim-e04a90fea221f245",
+          "task_id": "cd6fb159-0ebf-4b34-b5f8-46dcbf19e5ca"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.85,
+          "candidate_id": "574758fe-2af9-427e-ab26-3b0519a0c20c",
+          "cell_key": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b",
+          "task_id": "d3e72b3e-d1d4-4457-b31e-fcc0878fcad8"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "56df5a29-0f5a-4afb-86b4-168315e2408c",
+          "cell_key": "entity-cbbf241eebedba6f:dim-9d47838a4d601361",
+          "task_id": "29d80d66-1a06-479a-81de-81ecebfaf876"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "d1783302-27aa-4ea2-9c58-82b085dda414",
+          "cell_key": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27",
+          "task_id": "29d80d66-1a06-479a-81de-81ecebfaf876"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "2f79967e-7731-40e9-88c5-1aecb0b26cf4",
+          "cell_key": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27",
+          "task_id": "6d308fc6-9a53-4865-8e06-0217f525a81c"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "872a1178-4ebe-4866-8cfb-87cfd9d3c01c",
+          "cell_key": "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+          "task_id": "9cb6efd6-9f33-483f-b51e-6548ce323b26"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.95,
+          "candidate_id": "1bb33336-5811-4125-8b64-4300030325c8",
+          "cell_key": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+          "task_id": "c369b025-8b17-446f-96f0-d0fbe48511d4"
+        }
+      ],
+      "candidate_count": 8,
+      "task_count": 9,
+      "merge_count": 8,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:62c66d0a2288e8d72730a60b01578b72a049a84b5488f8f454ee4d05ecde0eb4",
+          "candidate_id": "8699851d-c06b-4b16-b5c3-0e83ff699745",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-e00811bb53630e3b:dim-9d47838a4d601361"
+        },
+        {
+          "merge_id": "merge:e5fde7bf902188d3b7ee5e86b30ebacccc85426dc305014a2330c82433504961",
+          "candidate_id": "fffe0293-16aa-471b-9ca3-32b061bb3839",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-e00811bb53630e3b:dim-e04a90fea221f245"
+        },
+        {
+          "merge_id": "merge:9aac68340cde06b930710c0bf4f1c0ffc2839ce615b656f45ca305eb0ab63b9f",
+          "candidate_id": "574758fe-2af9-427e-ab26-3b0519a0c20c",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b"
+        },
+        {
+          "merge_id": "merge:eb125e2b38c24450bb3e40187d7aee8044077f7fe6884a3942a0b6a7eeb28c9f",
+          "candidate_id": "56df5a29-0f5a-4afb-86b4-168315e2408c",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cbbf241eebedba6f:dim-9d47838a4d601361"
+        },
+        {
+          "merge_id": "merge:2ae49cf79b58c12e7cac3e217ea82905d0179155bb49cc0c3b09018a5e7a85c4",
+          "candidate_id": "d1783302-27aa-4ea2-9c58-82b085dda414",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27"
+        },
+        {
+          "merge_id": "merge:a3f6e4d46632a051bffe55006de1484db96d9b8f12b45b2e66cf9efdf0ebbc26",
+          "candidate_id": "2f79967e-7731-40e9-88c5-1aecb0b26cf4",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27"
+        },
+        {
+          "merge_id": "merge:84d04b3e3554ee1cbaa18bdce66d9ef3f52f92778d70f2a3fc9a5dc7098a80c0",
+          "candidate_id": "872a1178-4ebe-4866-8cfb-87cfd9d3c01c",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cbbf241eebedba6f:dim-e04a90fea221f245"
+        },
+        {
+          "merge_id": "merge:0eac068fffc5e157f2f2c4eadf5d761937ff2a80a008a510447dc7a80db72f76",
+          "candidate_id": "1bb33336-5811-4125-8b64-4300030325c8",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 5,
+          "merge_high_water_mark": 5,
+          "candidate_high_water_mark": 5
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-cbbf241eebedba6f",
+            "label": "Kafka"
+          },
+          {
+            "entity_key": "entity-e00811bb53630e3b",
+            "label": "Pulsar"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-9d47838a4d601361",
+            "label": "Ordering mechanism",
+            "description": "How the system ensures order (e.g., partition assignment, key-based routing, broker-side sequencing), per official docs.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-9e7eee0f3edd4f27",
+            "label": "Ordering guarantee scope",
+            "description": "What scope of message ordering the system guarantees (e.g., per partition, per key, global), as stated in official documentation.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e04a90fea221f245",
+            "label": "Ordering vs. consumption interaction",
+            "description": "How the consumption model affects ordering guarantees (e.g., multiple consumers per partition, shared subscription), per official docs.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-eabd68360f9efb9b",
+            "label": "Consumption model",
+            "description": "The consumption models supported (e.g., queue, stream, exclusive, shared, failover), as described in official documentation.",
+            "answer_format": "SHORT_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "Ordering guarantee scope and mechanism; consumption model and its effect on ordering.",
+          "objective": "Compare Kafka and Pulsar on message ordering guarantees and consumption models, citing official documentation.",
+          "exclusions": [
+            "Performance benchmarks",
+            "Operational complexity",
+            "Ecosystem integrations"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit"
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "kafka.apache.org",
+          "pulsar.apache.org"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "How do I configure ordering in each system?",
+              "What consumption models are available and how do they affect ordering?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Which system provides stronger ordering guarantees for my use case?",
+              "What are the trade-offs in consumption model flexibility?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-cbbf241eebedba6f:dim-9d47838a4d601361",
+          "entity_label": "Kafka",
+          "column_label": "Ordering mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Kafka 仅在分区内保证顺序，跨分区不保证顺序",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:78e6d7042d4f4fd4cc7f384017c408ded46227176d73a824",
+              "source_domain": "confluent.io",
+              "claim_text": "Kafka 仅在分区内保证顺序，跨分区不保证顺序"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cbbf241eebedba6f:dim-9e7eee0f3edd4f27",
+          "entity_label": "Kafka",
+          "column_label": "Ordering guarantee scope",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Kafka 保证分区内有序，但不保证跨分区有序",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7102593995e67abb45c33d13437c6fb64c8b56938a204f05",
+              "source_domain": "confluent.io",
+              "claim_text": "Kafka 保证分区内有序，但不保证跨分区有序"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+          "entity_label": "Kafka",
+          "column_label": "Ordering vs. consumption interaction",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written.",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c0777f7894f1e8eeaf49e25abd9c896f330d48cbea050244",
+              "source_domain": "apache.org",
+              "claim_text": "Kafka guarantees that any consumer of a given topic-partition will always read that partition's events in exactly the same order as they were written."
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+          "entity_label": "Kafka",
+          "column_label": "Consumption model",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Kafka 将订阅主题中的每条消息投递给每个消费组中的一个进程",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:38d20c9099061769705c234eca99485eb59a457806af88ec",
+              "source_domain": "apache.org",
+              "claim_text": "Kafka 将订阅主题中的每条消息投递给每个消费组中的一个进程"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e00811bb53630e3b:dim-9d47838a4d601361",
+          "entity_label": "Pulsar",
+          "column_label": "Ordering mechanism",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:d252f0d2ba983792395519f30bb499ff042558f8c21409cd",
+              "source_domain": "apache.org",
+              "claim_text": "Key_Shared 使用 ordering_key 覆盖消息 key 以实现消息顺序"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27",
+          "entity_label": "Pulsar",
+          "column_label": "Ordering guarantee scope",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Pulsar 的 Shared 订阅不保证消息顺序",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:1e22bf29311324caab44c5a6f1cfcdc65ef64af0f29383ff",
+              "source_domain": "apache.org",
+              "claim_text": "Pulsar 的 Shared 订阅不保证消息顺序"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e00811bb53630e3b:dim-e04a90fea221f245",
+          "entity_label": "Pulsar",
+          "column_label": "Ordering vs. consumption interaction",
+          "cell_status": "VERIFIED",
+          "candidate_value": "在 Shared 模式下，消费顺序不被保证",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:78061805a181f5fe93d435953bccdd23bc79841c3b5044e3",
+              "source_domain": "apache.org",
+              "claim_text": "在 Shared 模式下，消费顺序不被保证"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-e00811bb53630e3b:dim-eabd68360f9efb9b",
+          "entity_label": "Pulsar",
+          "column_label": "Consumption model",
+          "cell_status": "VERIFIED",
+          "candidate_value": "Pulsar 的 shared 订阅类型允许多个消费者。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:93e9b9c409ffddd040dab95f1b28de69f9493ccdbad7b50d",
+              "source_domain": "apache.org",
+              "claim_text": "Pulsar 的 shared 订阅类型允许多个消费者。"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-cbbf241eebedba6f:dim-e04a90fea221f245",
+            "entity-cbbf241eebedba6f:dim-eabd68360f9efb9b",
+            "entity-e00811bb53630e3b:dim-9e7eee0f3edd4f27"
+          ],
+          "strategy": "NARROW",
+          "query_count": 6,
+          "created_at": "2026-10-17T11:31:16Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

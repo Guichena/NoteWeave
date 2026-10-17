@@ -1,0 +1,1366 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-ssr-web-vitals",
+  "run_id": "1cfafc58-e2d6-4462-beb2-a856db550f3a",
+  "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+  "started_at": "2026-10-17T12:48:59.734353+00:00",
+  "finished_at": "2026-10-17T12:52:55.992075+00:00",
+  "wall_seconds": 236.3,
+  "run_detail": {
+    "research_run_id": "1cfafc58-e2d6-4462-beb2-a856db550f3a",
+    "workspace_id": "47cf8752-eca8-4292-b03a-f604ee5c2e09",
+    "task_id": "bf3aacca-1647-47d7-92d7-5d08ff341a1f",
+    "question": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+    "final_report_markdown": "# 服务端渲染与 Core Web Vitals：改善并不必然，取决于指标与场景\n\n服务端渲染（SSR）并不必然全面改善 Core Web Vitals。已核验的资料显示，SSR 可显著改善 Core Web Vitals 并改善 LCP，但关于 SSR 对 LCP 和 CLS 的具体影响仍缺少足够证据，且 SSR 在用户交互上较慢、需要往返请求，因此更适合首屏呈现而非持续交互。\n\n## 直接回答\n\n是否必然改善？并非如此。本次核验的资料显示，服务端渲染（SSR）能够显著改善 Core Web Vitals，这组指标针对加载、交互与视觉稳定性等关键用户体验方面，并涉及 LCP 的改善。不过，这一结论建立在 SSR 主要作用于首屏与加载体验的前提上，而非对所有指标都成立的普遍结论。 [evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5]\n\n哪些指标存在结论不一致或证据不足？已核验的资料对 SSR 在 LCP 与 CLS 上的具体影响仍缺少足够证据，因此不能把“显著改善 Core Web Vitals”的概括性表述直接套用到这两个单项指标上。 [evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5]\n\n## 成立条件与作用机制\n\nSSR 的收益与加载体验中的服务端响应速度相关。本次核验的资料指出，Time to First Byte（TTFB）与 First Contentful Paint（FCP）都是加载体验的重要方面，并且都有助于诊断 LCP 问题，例如服务器响应过慢。这意味着当服务端响应成为瓶颈时，SSR 对加载类指标的作用会受到制约，改善效果取决于服务端响应是否足够快。 [evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8] [evidence:43e971da6bcb49a7adfb5438cbaaf8286497ff191934a45b]\n\n## 与交互类指标的张力\n\n在用户交互方面，SSR 并非优势项。本次核验的资料对比显示，用户交互在客户端侧较快，而在 SSR 下较慢，因为需要往返请求，因此交互场景更适合客户端渲染（CSR）。资料进一步建议：用 SSR 处理第一印象（首屏），用 CSR 处理持续的交互。 [evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3] [evidence:c1e66ac873a30ee4f0cb30a814895a4173efefc7ad8bb206]\n\n## 对比表\n\n| 指标或方面 | SSR 的作用与证据 | 成立条件或局限 |\n| --- | --- | --- |\n| Core Web Vitals 整体与 LCP | 可显著改善 Core Web Vitals，并改善 LCP | 资料同时提示 SSR 对 LCP 与 CLS 的具体影响证据不足，不能逐项外推 [evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5] |\n| 加载体验诊断（TTFB、FCP 与 LCP） | TTFB 与 FCP 是加载体验的重要方面，可用于诊断 LCP 问题如服务器响应过慢 | SSR 的加载收益受服务端响应速度制约 [evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8] [evidence:43e971da6bcb49a7adfb5438cbaaf8286497ff191934a45b] |\n| 用户交互 | SSR 下交互较慢（需要往返请求），客户端侧较快；建议 SSR 负责首屏、CSR 负责持续交互 | 交互类场景更宜采用 CSR [evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3] [evidence:c1e66ac873a30ee4f0cb30a814895a4173efefc7ad8bb206] |\n\n**核验情况：** 已核验 3 项，未找到足够证据 2 项。\n\n## 结论汇总\n\n| 研究对象 | SSR impact on LCP | SSR impact on INP/FID | SSR impact on CLS | Conflicting measurement results | Conditions and mechanisms |\n|---|---|---|---|---|---|\n| Server-side rendering (SSR) | 未找到证据 | SSR 对用户交互较慢（需要往返请求），不适合交互场景 | 未找到证据 | SSR 可显著改善 Core Web Vitals，并改善 LCP | TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制 |\n\n## 引用核对\n\n### SSR 可显著改善 Core Web Vitals，并改善 LCP\n\n- 研究项：`Server-side rendering (SSR) · Conflicting measurement results`\n- 候选：`98dbe3b7-a86f-4ec1-8c90-5dbad6461b87`\n- Evidence: `evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5`\n  - Exact quote: “Server-Side Rendering (SSR) can significantly improve Core Web Vitals, a set of real-world metrics that target critical aspects of user experience such as loading, interactivity, and visual stability.”\n  - Snapshot: `research/external/937bffdc-a4e4-411c-9590-a71f8639d8e2/0a0d60b68239922b5e352a6261d08288c842e7d2b29122005508c0fc22c940f9`\n  - URL: https://library.linkbot.com/how-does-implementing-server-side-rendering-ssr-improve-core-web-vitals-and-what-are-the-best-practices-for-ssr-setup/\n\n### TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制\n\n- 研究项：`Server-side rendering (SSR) · Conditions and mechanisms`\n- 候选：`5bdb1377-2504-4f0d-9ea3-e305cbd5ff0e`\n- Evidence: `evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8`\n  - Exact quote: “the metrics [Time to First Byte (TTFB)](/articles/ttfb) and [First Contentful Paint (FCP)](/articles/fcp) are both vital aspects of the *loading* experience, and are both useful in diagnosing issues with LCP (slow [server response times](/articles/overloaded-server)”\n  - Snapshot: `research/external/58bc3383-55e9-4c64-b9ab-8087b695e76c/80085e3e81138bd02b973ccc60e5f530cf3dc1ea69aa448b22ac15362c6c96d1`\n  - URL: https://web.dev/articles/vitals\n\n### SSR 对用户交互较慢（需要往返请求），不适合交互场景\n\n- 研究项：`Server-side rendering (SSR) · SSR impact on INP/FID`\n- 候选：`4db4a1cf-505d-46b2-9bfb-20f864a4bda8`\n- Evidence: `evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3`\n  - Exact quote: “| User Interactions | Fast (client-side) | Slow (round trip) | CSR for interactions |”\n  - Snapshot: `research/external/c8364d50-8cdf-4511-8bbd-8a6fb8270e30/bf0092c0d7c8a10bca72a2e333758bc6965fbe74ce646538fd0fab153f279c73`\n  - URL: https://www.jasminedirectory.com/blog/server-side-rendering-ssr-vs-client-side-the-2026-verdict/\n\n## 局限与未解决项\n\n- **Server-side rendering (SSR) · SSR impact on LCP**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **Server-side rendering (SSR) · SSR impact on CLS**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 补充引用\n\n- Evidence: `evidence:43e971da6bcb49a7adfb5438cbaaf8286497ff191934a45b`\n  - Exact quote: “User behaviors can be unpredictable and highly variable, meaning that your testing in the lab may not surface problem interactions in the”\n  - Snapshot: `research/external/58bc3383-55e9-4c64-b9ab-8087b695e76c/905368adf288d5e703fc82657471c742038f136409e39383c1cd485d6e6b2cf8`\n  - URL: https://web.dev/articles/inp\n- Evidence: `evidence:c1e66ac873a30ee4f0cb30a814895a4173efefc7ad8bb206`\n  - Exact quote: “Use SSR for the **first impression**, and CSR for the **ongoing interaction**.”\n  - Snapshot: `research/external/c8364d50-8cdf-4511-8bbd-8a6fb8270e30/744546e893e8321266aa0dd4a2bd94904bef81594027fb3ee85824e48949f9a6`\n  - URL: https://github.com/vercel/next.js/discussions/86078",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/1cfafc58-e2d6-4462-beb2-a856db550f3a/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 7256,
+      "sha256": "7a83dd8799632dbbb1c20227443b686f321ce965db9ea4739333692000b79696"
+    },
+    "research_artifact": {
+      "artifact_id": "1cfafc58-e2d6-4462-beb2-a856db550f3a",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "1cfafc58-e2d6-4462-beb2-a856db550f3a",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/47cf8752-eca8-4292-b03a-f604ee5c2e09/research/1cfafc58-e2d6-4462-beb2-a856db550f3a/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 7256,
+        "sha256": "7a83dd8799632dbbb1c20227443b686f321ce965db9ea4739333692000b79696"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "SSR TTFB hydration cost Core Web Vitals field versus lab data",
+          "server-side rendering INP interaction latency hydration measurement",
+          "server-side rendering Core Web Vitals",
+          "server-side rendering Core Web Vitals performance",
+          "SSR hydration layout shift CLS case study empirical results",
+          "server-side rendering versus client-side rendering LCP benchmark measurements",
+          "Server-side rendering (SSR) SSR impact on CLS 官方说明 适用条件",
+          "Server-side rendering (SSR) SSR impact on CLS primary research limitations",
+          "Server-side rendering (SSR) SSR impact on LCP 官方说明 适用条件",
+          "Server-side rendering (SSR) SSR impact on LCP primary research limitations",
+          "Next.js SSR vs CSR interaction to next paint measurement study",
+          "hydration delay first input delay server rendered React benchmark"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "entity-23fc07c4eee483ea",
+            "source_id": "",
+            "source_title": "Server-side rendering (SSR)",
+            "evidence_id": "",
+            "search_query": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "entity-23fc07c4eee483ea",
+            "source_id": "",
+            "source_title": "Server-side rendering (SSR)",
+            "evidence_id": "",
+            "search_query": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Server-side rendering (SSR)",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+            "read_focus": "Determine whether server-side rendering necessarily improves Core Web Vitals, gathering quoted measurements that both support and contradict the claim and the conditions under which each holds.",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "entity-23fc07c4eee483ea:dim-eed4310282d782fb",
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-eed4310282d782fb",
+            "column_label": "SSR impact on INP/FID",
+            "candidate_value": "SSR 对用户交互较慢（需要往返请求），不适合交互场景",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a",
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-ac6fee4dbbbb231a",
+            "column_label": "Conflicting measurement results",
+            "candidate_value": "SSR 可显著改善 Core Web Vitals，并改善 LCP",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-23fc07c4eee483ea:dim-e12c616e211975d4",
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-e12c616e211975d4",
+            "column_label": "SSR impact on CLS",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21",
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-e99939cd9435ac21",
+            "column_label": "Conditions and mechanisms",
+            "candidate_value": "TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制",
+            "status": "VERIFIED",
+            "confidence": 0.75,
+            "evidence_refs": [
+              "evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "entity-23fc07c4eee483ea:dim-b1b6935dd9d093da",
+            "row_id": "entity-23fc07c4eee483ea",
+            "branch_id": "branch-main",
+            "column_key": "dim-b1b6935dd9d093da",
+            "column_label": "SSR impact on LCP",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Server-side rendering (SSR)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+          "read_focus": "Determine whether server-side rendering necessarily improves Core Web Vitals, gathering quoted measurements that both support and contradict the claim and the conditions under which each holds.",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-eed4310282d782fb",
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-eed4310282d782fb",
+          "column_label": "SSR impact on INP/FID",
+          "candidate_value": "SSR 对用户交互较慢（需要往返请求），不适合交互场景",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a",
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-ac6fee4dbbbb231a",
+          "column_label": "Conflicting measurement results",
+          "candidate_value": "SSR 可显著改善 Core Web Vitals，并改善 LCP",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-e12c616e211975d4",
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-e12c616e211975d4",
+          "column_label": "SSR impact on CLS",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21",
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-e99939cd9435ac21",
+          "column_label": "Conditions and mechanisms",
+          "candidate_value": "TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制",
+          "status": "VERIFIED",
+          "confidence": 0.75,
+          "evidence_refs": [
+            "evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-b1b6935dd9d093da",
+          "row_id": "entity-23fc07c4eee483ea",
+          "branch_id": "branch-main",
+          "column_key": "dim-b1b6935dd9d093da",
+          "column_label": "SSR impact on LCP",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:51:32Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:52:40Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T12:52:45Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:43e971da6bcb49a7adfb5438cbaaf8286497ff191934a45b",
+          "window_id": "window-3",
+          "source_id": "web-594b275d01935111",
+          "source_title": "Interaction to Next Paint (INP)",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://web.dev/articles/inp",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "server-side rendering INP interaction latency hydration measurement",
+          "read_focus": "Read external URL Interaction to Next Paint (INP) for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "User behaviors can be unpredictable and highly variable, meaning that your testing in the lab may not surface problem interactions in the",
+          "claim_text": "由于用户行为不可预测且高度可变，实验室测试可能无法在测量期间暴露问题交互，导致实验室 INP 与字段数据不一致",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/58bc3383-55e9-4c64-b9ab-8087b695e76c/905368adf288d5e703fc82657471c742038f136409e39383c1cd485d6e6b2cf8"
+        },
+        {
+          "evidence_id": "evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8",
+          "window_id": "window-1",
+          "source_id": "web-1f2734e7294c86f2",
+          "source_title": "Web Vitals | Articles",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://web.dev/articles/vitals",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "SSR TTFB hydration cost Core Web Vitals field versus lab data",
+          "read_focus": "Read external URL Web Vitals | Articles for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "the metrics [Time to First Byte (TTFB)](/articles/ttfb) and [First Contentful Paint (FCP)](/articles/fcp) are both vital aspects of the *loading* experience, and are both useful in diagnosing issues with LCP (slow [server response times](/articles/overloaded-server)",
+          "claim_text": "TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/58bc3383-55e9-4c64-b9ab-8087b695e76c/80085e3e81138bd02b973ccc60e5f530cf3dc1ea69aa448b22ac15362c6c96d1"
+        },
+        {
+          "evidence_id": "evidence:50ca13493cec014e930840ec90f9005671dfbbee60c67e49",
+          "window_id": "window-4",
+          "source_id": "web-c7e6d7951644c42b",
+          "source_title": "How Does Implementing Server-Side Rendering (SSR) ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://library.linkbot.com/how-does-implementing-server-side-rendering-ssr-improve-core-web-vitals-and-what-are-the-best-practices-for-ssr-setup/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "server-side rendering Core Web Vitals performance",
+          "read_focus": "Read external URL How Does Implementing Server-Side Rendering (SSR) ... for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "By rendering more content server-side, it reduces the amount of work needed on the client-side, leading to faster interactivity (FID) and less layout shift while loading (CLS)",
+          "claim_text": "SSR 能减少客户端工作量，从而在加载期间减少布局偏移（CLS）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.72,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/937bffdc-a4e4-411c-9590-a71f8639d8e2/0a0d60b68239922b5e352a6261d08288c842e7d2b29122005508c0fc22c940f9"
+        },
+        {
+          "evidence_id": "evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5",
+          "window_id": "window-4",
+          "source_id": "web-c7e6d7951644c42b",
+          "source_title": "How Does Implementing Server-Side Rendering (SSR) ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://library.linkbot.com/how-does-implementing-server-side-rendering-ssr-improve-core-web-vitals-and-what-are-the-best-practices-for-ssr-setup/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "server-side rendering Core Web Vitals performance",
+          "read_focus": "Read external URL How Does Implementing Server-Side Rendering (SSR) ... for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Server-Side Rendering (SSR) can significantly improve Core Web Vitals, a set of real-world metrics that target critical aspects of user experience such as loading, interactivity, and visual stability.",
+          "claim_text": "SSR 可显著改善 Core Web Vitals，并改善 LCP",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/937bffdc-a4e4-411c-9590-a71f8639d8e2/0a0d60b68239922b5e352a6261d08288c842e7d2b29122005508c0fc22c940f9"
+        },
+        {
+          "evidence_id": "evidence:c1e66ac873a30ee4f0cb30a814895a4173efefc7ad8bb206",
+          "window_id": "window-2",
+          "source_id": "web-e78c22ac77eac774",
+          "source_title": "When should I use SSR vs CSR in Next.js? #86078",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://github.com/vercel/next.js/discussions/86078",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Next.js SSR vs CSR interaction to next paint measurement study",
+          "read_focus": "Read external URL When should I use SSR vs CSR in Next.js? #86078 for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "Use SSR for the **first impression**, and CSR for the **ongoing interaction**.",
+          "claim_text": "SSR 用于第一印象，交互交给 CSR",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c8364d50-8cdf-4511-8bbd-8a6fb8270e30/744546e893e8321266aa0dd4a2bd94904bef81594027fb3ee85824e48949f9a6"
+        },
+        {
+          "evidence_id": "evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3",
+          "window_id": "window-4",
+          "source_id": "web-b90bfc3a807c3b5b",
+          "source_title": "Server-Side Rendering (SSR) vs. Client-Side: The 2026 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.jasminedirectory.com/blog/server-side-rendering-ssr-vs-client-side-the-2026-verdict/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Next.js SSR vs CSR interaction to next paint measurement study",
+          "read_focus": "Read external URL Server-Side Rendering (SSR) vs. Client-Side: The 2026 ... for claims that answer: 服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。\n\nCurrent Table-as-State entity: Server-side rendering (SSR). Extract claims and evidence only for this entity; do not use another compared entity's evidence to fill this entity's cells.",
+          "quote_text": "| User Interactions | Fast (client-side) | Slow (round trip) | CSR for interactions |",
+          "claim_text": "SSR 对用户交互较慢（需要往返请求），不适合交互场景",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/c8364d50-8cdf-4511-8bbd-8a6fb8270e30/bf0092c0d7c8a10bca72a2e333758bc6965fbe74ce646538fd0fab153f279c73"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21",
+          "row_id": "entity-23fc07c4eee483ea",
+          "evidence_id": "evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8",
+          "source_id": "web-1f2734e7294c86f2",
+          "source_title": "Web Vitals | Articles",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://web.dev/articles/vitals"
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a",
+          "row_id": "entity-23fc07c4eee483ea",
+          "evidence_id": "evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5",
+          "source_id": "web-c7e6d7951644c42b",
+          "source_title": "How Does Implementing Server-Side Rendering (SSR) ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://library.linkbot.com/how-does-implementing-server-side-rendering-ssr-improve-core-web-vitals-and-what-are-the-best-practices-for-ssr-setup/"
+        },
+        {
+          "cell_id": "entity-23fc07c4eee483ea:dim-eed4310282d782fb",
+          "row_id": "entity-23fc07c4eee483ea",
+          "evidence_id": "evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3",
+          "source_id": "web-b90bfc3a807c3b5b",
+          "source_title": "Server-Side Rendering (SSR) vs. Client-Side: The 2026 ...",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.jasminedirectory.com/blog/server-side-rendering-ssr-vs-client-side-the-2026-verdict/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "fcd8ee97-7731-4eff-862d-db82158a3e01",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "retrieval_mode": "WEB_ONLY",
+          "source_scope_count": 0,
+          "question": "服务端渲染是否必然改善 Core Web Vitals？给出结论不一致的测量和成立条件。",
+          "profile_key": "DEFAULT"
+        },
+        "created_at": "2026-10-17T12:48:59Z"
+      },
+      {
+        "trace_id": "f3b15c08-377f-4a2f-8763-0baca98a0b18",
+        "trace_type": "PLAN_COMPILED",
+        "trace_message": "研究表格已由模型规划",
+        "payload": {
+          "rows": 1,
+          "planner_version": "llm-matrix.v1",
+          "reason_codes": [],
+          "columns": 5
+        },
+        "created_at": "2026-10-17T12:49:11Z"
+      },
+      {
+        "trace_id": "0148568c-9ff3-4520-ac74-6e9759c7329e",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T12:52:51Z"
+      }
+    ],
+    "created_at": "2026-10-17T12:48:59Z",
+    "updated_at": "2026-10-17T12:52:51Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "tasks": [
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:50:00Z",
+          "lease_epoch": 1,
+          "task_id": "854e04a1-1171-48ab-acad-f5f49b2c7627",
+          "task_key": "planning:1cfafc58-e2d6-4462-beb2-a856db550f3a",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:50:59Z",
+          "lease_epoch": 1,
+          "task_id": "58bc3383-55e9-4c64-b9ab-8087b695e76c",
+          "task_key": "deep-cell:4ed6866a094d83626c657d1799308837",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:52:16Z",
+          "lease_epoch": 1,
+          "task_id": "937bffdc-a4e4-411c-9590-a71f8639d8e2",
+          "task_key": "deep-cell:8c534fa8935c2186b382b9f2cd92edc1",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:53:03Z",
+          "lease_epoch": 1,
+          "task_id": "9c18aa95-b5a5-4c60-b24b-b0e714e9ee3f",
+          "task_key": "counterfactual:50c1b31bd2155fa76a91ef91ad910cb8",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:53:03Z",
+          "lease_epoch": 1,
+          "task_id": "a6ad4866-e487-419f-a1df-691226ad6f50",
+          "task_key": "counterfactual:e5c507077d246269aca943a4413a3b24",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:53:36Z",
+          "lease_epoch": 1,
+          "task_id": "c8364d50-8cdf-4511-8bbd-8a6fb8270e30",
+          "task_key": "counterfactual:6d273b2d63ff01ff72feebffb37b8461",
+          "worker_instance_id": "research-agent-worker-1-3",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:53:40Z",
+          "lease_epoch": 1,
+          "task_id": "7962050f-ef80-4db3-acda-41eeb22cabc0",
+          "task_key": "counterfactual:3bc4cd50c3357dc897830336bc392fae",
+          "worker_instance_id": "research-agent-worker-1-1",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "FAILED",
+          "lease_expires_at": "2026-10-17T12:53:40Z",
+          "lease_epoch": 1,
+          "task_id": "9d3e1708-973c-458a-8c3a-c573114780e4",
+          "task_key": "counterfactual:0b65f1c77cb70adfd4ac26bb16f298ee",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        },
+        {
+          "status": "SUBMITTED",
+          "lease_expires_at": "2026-10-17T12:53:45Z",
+          "lease_epoch": 1,
+          "task_id": "1b6bfd57-93ac-4a99-b2c2-af0439b88925",
+          "task_key": "synthesis:0ac3551c607012c5c8490747274ac59d",
+          "worker_instance_id": "research-agent-worker-1-2",
+          "fencing_token": 1,
+          "attempt_count": 1
+        }
+      ],
+      "candidates": [
+        {
+          "base_cell_version": 0,
+          "confidence": 0.75,
+          "candidate_id": "5bdb1377-2504-4f0d-9ea3-e305cbd5ff0e",
+          "cell_key": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21",
+          "task_id": "58bc3383-55e9-4c64-b9ab-8087b695e76c"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.9,
+          "candidate_id": "98dbe3b7-a86f-4ec1-8c90-5dbad6461b87",
+          "cell_key": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a",
+          "task_id": "937bffdc-a4e4-411c-9590-a71f8639d8e2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.72,
+          "candidate_id": "ed7ec595-789b-4f7a-87c8-85ff877ca6ae",
+          "cell_key": "entity-23fc07c4eee483ea:dim-e12c616e211975d4",
+          "task_id": "937bffdc-a4e4-411c-9590-a71f8639d8e2"
+        },
+        {
+          "base_cell_version": 0,
+          "confidence": 0.8,
+          "candidate_id": "4db4a1cf-505d-46b2-9bfb-20f864a4bda8",
+          "cell_key": "entity-23fc07c4eee483ea:dim-eed4310282d782fb",
+          "task_id": "c8364d50-8cdf-4511-8bbd-8a6fb8270e30"
+        }
+      ],
+      "candidate_count": 4,
+      "task_count": 9,
+      "merge_count": 4,
+      "execution_mode": "INCREMENTAL_V1",
+      "merges": [
+        {
+          "merge_id": "merge:e3af77ab9653ea81da1a7e82e043f3dd00d7172ce9e44125b68ea46b8357eac6",
+          "candidate_id": "5bdb1377-2504-4f0d-9ea3-e305cbd5ff0e",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21"
+        },
+        {
+          "merge_id": "merge:db6ea9efb22c86b35e4b7fcc2fe96b2299c4b7bfe5f732c931a1de5b8ee93265",
+          "candidate_id": "ed7ec595-789b-4f7a-87c8-85ff877ca6ae",
+          "decision": "REJECTED",
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "expected_cell_version": 0,
+          "result_cell_version": 0,
+          "cell_key": "entity-23fc07c4eee483ea:dim-e12c616e211975d4"
+        },
+        {
+          "merge_id": "merge:0fb21ac519af2fdbadde958fa0cd482f8cd6c07fabb510b6c27b0b5c448a6e5e",
+          "candidate_id": "98dbe3b7-a86f-4ec1-8c90-5dbad6461b87",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a"
+        },
+        {
+          "merge_id": "merge:c54b466392d127ae5e732343261ad57b9d184641943137877aa89c9221b85f23",
+          "candidate_id": "4db4a1cf-505d-46b2-9bfb-20f864a4bda8",
+          "decision": "ACCEPTED",
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "expected_cell_version": 0,
+          "result_cell_version": 1,
+          "cell_key": "entity-23fc07c4eee483ea:dim-eed4310282d782fb"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "task_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "candidate_high_water_mark": 3
+        },
+        {
+          "checkpoint_seq": 2,
+          "task_high_water_mark": 6,
+          "merge_high_water_mark": 4,
+          "candidate_high_water_mark": 4
+        },
+        {
+          "checkpoint_seq": 3,
+          "task_high_water_mark": 8,
+          "merge_high_water_mark": 4,
+          "candidate_high_water_mark": 4
+        }
+      ]
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "llm-matrix.v1",
+        "rows": [
+          {
+            "entity_key": "entity-23fc07c4eee483ea",
+            "label": "Server-side rendering (SSR)"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "dim-ac6fee4dbbbb231a",
+            "label": "Conflicting measurement results",
+            "description": "Reports where SSR improved Core Web Vitals and reports where it did not or worsened them, with sources and quoted values explaining the disagreement.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-b1b6935dd9d093da",
+            "label": "SSR impact on LCP",
+            "description": "Evidence on whether and under what conditions switching to server-side rendering improves or worsens Largest Contentful Paint, with quoted measurements from studies or experiments.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e12c616e211975d4",
+            "label": "SSR impact on CLS",
+            "description": "Evidence on how server-side rendering affects Cumulative Layout Shift, including hydration or streaming-related layout shifts, with quoted data.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-e99939cd9435ac21",
+            "label": "Conditions and mechanisms",
+            "description": "Conditions, mechanisms or confounders (TTFB, hydration, streaming, caching, third-party scripts, lab vs field data) that explain why SSR does or does not improve Core Web Vitals.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          },
+          {
+            "column_key": "dim-eed4310282d782fb",
+            "label": "SSR impact on INP/FID",
+            "description": "Evidence on whether SSR improves or degrades interaction responsiveness metrics (INP or legacy FID), including hydration cost effects, with quoted measurements.",
+            "answer_format": "LONG_TEXT",
+            "high_risk": false
+          }
+        ],
+        "brief": {
+          "scope": "SSR vs client-side rendering and hybrid approaches, measured against LCP, INP/FID and CLS, drawing on field and lab data from published studies and official documentation.",
+          "objective": "Determine whether server-side rendering necessarily improves Core Web Vitals, gathering quoted measurements that both support and contradict the claim and the conditions under which each holds.",
+          "exclusions": [
+            "Framework-specific migration tutorials without measurements",
+            "SEO ranking claims not tied to Core Web Vitals metrics"
+          ],
+          "time_range": "current",
+          "deliverable": "Markdown research report with citation audit, each conclusion backed by exact quote, snapshot and URL."
+        },
+        "effort_tier": "STANDARD",
+        "authoritative_domains": [
+          "web.dev",
+          "developers.google.com",
+          "support.google.com"
+        ],
+        "perspectives": [
+          {
+            "name": "Implementer",
+            "questions": [
+              "Which Core Web Vitals metric changes most with SSR and why?",
+              "Does hydration or TTFB offset SSR gains?"
+            ]
+          },
+          {
+            "name": "Decision maker",
+            "questions": [
+              "Is SSR guaranteed to improve Core Web Vitals?",
+              "Under which conditions is SSR worth adopting for Core Web Vitals?"
+            ]
+          }
+        ]
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "entity-23fc07c4eee483ea:dim-ac6fee4dbbbb231a",
+          "entity_label": "Server-side rendering (SSR)",
+          "column_label": "Conflicting measurement results",
+          "cell_status": "VERIFIED",
+          "candidate_value": "SSR 可显著改善 Core Web Vitals，并改善 LCP",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c6843e7701f5fbaa8b5a4d9b4314ae70583e962ee07c17c5",
+              "source_domain": "linkbot.com",
+              "claim_text": "SSR 可显著改善 Core Web Vitals，并改善 LCP"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-23fc07c4eee483ea:dim-b1b6935dd9d093da",
+          "entity_label": "Server-side rendering (SSR)",
+          "column_label": "SSR impact on LCP",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-23fc07c4eee483ea:dim-e12c616e211975d4",
+          "entity_label": "Server-side rendering (SSR)",
+          "column_label": "SSR impact on CLS",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-23fc07c4eee483ea:dim-e99939cd9435ac21",
+          "entity_label": "Server-side rendering (SSR)",
+          "column_label": "Conditions and mechanisms",
+          "cell_status": "VERIFIED",
+          "candidate_value": "TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:db2cc47ab58bb9b3e594f162ad8513751f23e7795cc0a7b8",
+              "source_domain": "web.dev",
+              "claim_text": "TTFB 是加载体验的关键方面，可用于诊断 LCP 问题（如服务器响应过慢），即服务端响应速度是 LCP 的制约机制"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 750000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "entity-23fc07c4eee483ea:dim-eed4310282d782fb",
+          "entity_label": "Server-side rendering (SSR)",
+          "column_label": "SSR impact on INP/FID",
+          "cell_status": "VERIFIED",
+          "candidate_value": "SSR 对用户交互较慢（需要往返请求），不适合交互场景",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f8bb2218a3b551d11a48e5cd213a97bfe94e00499c3c5ae3",
+              "source_domain": "jasminedirectory.com",
+              "claim_text": "SSR 对用户交互较慢（需要往返请求），不适合交互场景"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-23fc07c4eee483ea:dim-b1b6935dd9d093da",
+            "entity-23fc07c4eee483ea:dim-e12c616e211975d4",
+            "entity-23fc07c4eee483ea:dim-eed4310282d782fb"
+          ],
+          "strategy": "BROADEN",
+          "query_count": 6,
+          "created_at": "2026-10-17T12:51:32Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 2 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "entity-23fc07c4eee483ea:dim-b1b6935dd9d093da",
+            "entity-23fc07c4eee483ea:dim-e12c616e211975d4"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 0,
+          "created_at": "2026-10-17T12:52:40Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
