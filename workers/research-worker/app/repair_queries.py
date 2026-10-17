@@ -47,18 +47,21 @@ def plan_repair_queries(context, target, llm):
                     if not isinstance(item, str) or any(ord(c) < 32 for c in item):
                         raise ValueError("检索词必须是字符串，且不能包含控制字符")
                     query = normalize_query(item)
-                    reason = query_rejection_reason(query, specs, tried)
-                    if reason:
-                        raise ValueError(reason)
+                    # 与已试检索词重复的只跳过这一条，不让整份输出作废
+                    if query_rejection_reason(query, specs, tried):
+                        continue
                     specs.append(ResearchQuerySpec(query=query, family="counterfactual" if chosen == "COUNTER_EVIDENCE" else "coverage_gap",
                                                   search_angle="counterfactual" if chosen == "COUNTER_EVIDENCE" else "coverage_gap",
                                                   search_lane="COUNTERFACTUAL" if chosen == "COUNTER_EVIDENCE" else "DEEP_FOCUS"))
+                if not specs:
+                    raise ValueError("全部检索词都与已试检索词重复")
                 return CellQueryPlan(specs, "LLM"), chosen
             except Exception as exc:
                 errors = [str(exc)[:240]]
     claims = [str(c.get("claim_text", "")) for c in target.get("claims", []) if isinstance(c, dict)]
-    subject = " ".join([context.entity_label, *[c.label for c in context.columns]])
-    bases = claims or [subject]
+    # 规则检索词按列生成：优先用列的检索意图（多为英文），比中文列名更容易命中官方文档
+    bases = claims or [" ".join([context.entity_label, (c.search_intents[0] if c.search_intents else c.label)])
+                       for c in context.columns] or [context.entity_label]
     suffixes = {"COUNTER_EVIDENCE": ["exceptions errata", "version differences counterexample"],
                 "SWITCH_SOURCE_TYPE": ["official documentation", "technical report"],
                 "NARROW": ["implementation requirements", "documented limitations"],

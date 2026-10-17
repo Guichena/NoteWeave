@@ -120,7 +120,9 @@ def _call_model(
             "When the entity names a version (for example MySQL 8.4), keep that version in the queries so the "
             "matching version of the documentation is found.",
             "For empirical questions (whether X improves Y, results of studies or organizations), include queries "
-            "that target studies and data, such as 'empirical study', 'paper', 'case study' or 'survey results'.",
+            "that target studies and data, such as 'empirical study', 'paper', 'case study' or 'survey results'. "
+            "For a column asking for opposing or inconclusive evidence, search for null or negative results, "
+            "criticism and independent studies, not vendor pages.",
             "Never repeat or lightly reword a query listed in tried_queries.",
             "intent is one of: direct (find the answer), verify (find a primary or official confirmation), "
             "counter (find limitations, exceptions or contradicting evidence), coverage (find aspects not yet covered).",

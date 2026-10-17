@@ -275,7 +275,7 @@ def _extract_evidence_cards_detailed_with_llm(
             )
             continue
         if _is_external_window(window) and not _quote_matches_question_intent(
-            plan.normalized_question, quote
+            _intent_terms_text(plan), quote
         ):
             rejected.append(
                 RejectedEvidenceCard(
@@ -532,6 +532,14 @@ def _locate_whitespace_tolerant(text: str, quote: str) -> tuple[int, str] | None
 
 def _is_external_window(window: ResearchReadWindow) -> bool:
     return window.adapter == "external_url" or window.untrusted_content
+
+
+def _intent_terms_text(plan: ResearchPlan) -> str:
+    """判断原文是否切题时的参照词：问题加上列名、说明、检索意图和研究对象名。
+    只用问题时，中文问题里的拉丁词很少，英文文档里讲命令或参数的句子常被误判为答错列。"""
+    columns = " ".join(" ".join((column.label, column.description, *column.search_intents))
+                       for column in plan.research_schema.columns)
+    return " ".join((plan.normalized_question, columns, str(plan.stop_contract.get("deep_cell_entity_label") or "")))
 
 
 def _quote_matches_question_intent(question: str, quote: str) -> bool:
