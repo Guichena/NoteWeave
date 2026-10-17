@@ -107,3 +107,10 @@ def test_blank_titles_and_non_ascii_urls_are_normalized_for_the_archive(monkeypa
     assert len(rows) == 1
     assert rows[0]["title"] == "baike.baidu.com"
     assert rows[0]["url"] == "https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E7%BA%BF%E7%A8%8B%20x"
+
+
+def test_brackets_and_stray_percent_signs_are_encoded() -> None:
+    from app.search_adapters import _safe_result_url
+
+    assert _safe_result_url("https://example.com/a[1]/50%off?q=%E4%BD%A0") == \
+        "https://example.com/a%5B1%5D/50%25off?q=%E4%BD%A0"

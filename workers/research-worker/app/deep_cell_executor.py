@@ -8,6 +8,7 @@ consumer submits the single completion envelope to the Backend.
 from __future__ import annotations
 
 import hashlib
+import logging
 import unicodedata
 from copy import copy
 from dataclasses import dataclass, replace
@@ -22,6 +23,8 @@ from app.counter_checks import atomic_queries, judge_fact, MAX_FACTS
 from app.query_execution import capture_queries
 from app.claim_clustering import build_claim_clusters
 from app.json_repair import parse_json_payload
+
+_LOG = logging.getLogger(__name__)
 
 from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim, ArchivedExternalSnapshot
@@ -1066,16 +1069,24 @@ def _archive_external_windows(
         if not _external_archive_candidate(window):
             result.append(window)
             continue
-        receipt = permit_client.archive_external_snapshot(
-            snapshot,
-            window_id=str(getattr(window, "window_id", "")),
+        try:
+            receipt = permit_client.archive_external_snapshot(
+                snapshot,
+                window_id=str(getattr(window, "window_id", "")),
             source_id=str(getattr(window, "source_id", "")),
-            source_title=str(getattr(window, "source_title", "")),
-            source_url=str(getattr(window, "url", "")),
-            provider=str(getattr(window, "provider", "")),
-            adapter=str(getattr(window, "adapter", "")),
-            content_text=str(getattr(window, "window_text", "")),
-        )
+                source_title=str(getattr(window, "source_title", "")),
+                source_url=str(getattr(window, "url", "")),
+                provider=str(getattr(window, "provider", "")),
+                adapter=str(getattr(window, "adapter", "")),
+                content_text=str(getattr(window, "window_text", "")),
+            )
+        except Exception as exc:
+            # 后端判定这一页的归档请求无效（例如网址或标题不合规）时只丢掉这一页，不让整个任务失败重试
+            if getattr(exc, "error_code", "") != "RESEARCH_AGENT_EXTERNAL_ARCHIVE_INVALID":
+                raise
+            _LOG.warning("External snapshot rejected as invalid, window dropped host=%s",
+                         urlsplit(str(getattr(window, "url", ""))).hostname or "")
+            continue
         if (getattr(receipt, "snapshot_status", "") != "EXTERNAL_ARCHIVED"
                 or getattr(receipt, "task_id", "") != snapshot.task_id
                 or getattr(receipt, "window_id", "") != getattr(window, "window_id", "")

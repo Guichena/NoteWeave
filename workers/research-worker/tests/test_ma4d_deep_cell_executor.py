@@ -1079,3 +1079,43 @@ def test_answer_check_drops_claims_that_do_not_give_the_asked_value() -> None:
     assert _keep_answering_cards(snapshot, column, cards, CheckLlm()) == [cards[1]]
     # 模型不可用时保留原结论
     assert _keep_answering_cards(snapshot, column, cards, None) == cards
+
+
+def test_window_rejected_by_the_archive_is_dropped_instead_of_failing_the_task() -> None:
+    from types import SimpleNamespace
+
+    import pytest
+
+    from app.agent_task_client import AgentTaskApiError
+    from app.deep_cell_executor import _archive_external_windows
+
+    class Permit:
+        def archive_external_snapshot(self, snapshot, **kwargs):
+            if "bad" in kwargs["source_url"]:
+                raise AgentTaskApiError(400, "RESEARCH_AGENT_EXTERNAL_ARCHIVE_INVALID")
+            return SimpleNamespace(snapshot_status="EXTERNAL_ARCHIVED", task_id="t1", window_id=kwargs["window_id"],
+                                   source_id=kwargs["source_id"], snapshot_key="research/external/t1/key")
+
+    def window(window_id: str, url: str):
+        return SimpleNamespace(window_id=window_id, source_id="s-" + window_id, source_title="T", url=url,
+                               provider="deepseek", adapter="external_url", window_text="text",
+                               snapshot_status="FETCHED", untrusted_content=True,
+                               model_copy=lambda update: SimpleNamespace(window_id=window_id, **update))
+
+    snapshot = SimpleNamespace(task_id="t1")
+    import app.deep_cell_executor as module
+    original = module._external_archive_candidate
+    module._external_archive_candidate = lambda w: True
+    try:
+        kept, archived = _archive_external_windows(snapshot, [window("w1", "https://ok.example/a"),
+                                                              window("w2", "https://bad.example/a")], Permit())
+        assert archived == 1 and [item.window_id for item in kept] == ["w1"]
+
+        class Broken(Permit):
+            def archive_external_snapshot(self, snapshot, **kwargs):
+                raise AgentTaskApiError(500, "")
+
+        with pytest.raises(AgentTaskApiError):
+            _archive_external_windows(snapshot, [window("w1", "https://ok.example/a")], Broken())
+    finally:
+        module._external_archive_candidate = original

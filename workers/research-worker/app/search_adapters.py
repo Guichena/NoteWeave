@@ -269,7 +269,9 @@ def _safe_result_url(url: str) -> str:
     url = url.strip()
     if not url.lower().startswith(("http://", "https://")):
         return ""
-    return urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=%~")
+    # Java 的 URI 解析不接受路径里的方括号和不成对的百分号，这两类也一并编码
+    url = re.sub(r"%(?![0-9A-Fa-f]{2})", "%25", url)
+    return urllib.parse.quote(url, safe=":/?#@!$&'()*+,;=%~")
 
 
 class HttpGetSearchTransport:
