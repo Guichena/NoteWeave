@@ -1,0 +1,65 @@
+"""DeepSeek 搜索渠道：请求格式、结果映射、额度用尽识别与渠道链装配。"""
+
+from __future__ import annotations
+
+import io
+import json
+import urllib.error
+
+from app.search_adapters import DeepSeekSearchTransport, _build_external_search_adapters
+
+
+class _Response(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_request_and_result_mapping(monkeypatch) -> None:
+    seen = {}
+
+    def fake_urlopen(request, timeout):
+        seen["url"] = request.full_url
+        seen["headers"] = dict(request.header_items())
+        seen["body"] = json.loads(request.data.decode("utf-8"))
+        return _Response(json.dumps({"results": [{
+            "title": "JEP 491", "url": "https://openjdk.org/jeps/491", "snippet": "short",
+            "summary": "JEP 491 lets virtual threads release carriers in synchronized blocks.",
+            "rerank_score": 2.4, "authority": 4, "date": "2024-10-01T00:00:00Z"}]}).encode("utf-8"))
+
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", fake_urlopen)
+    rows = DeepSeekSearchTransport("key-1").search("JEP 491 " + "x" * 200, 5)
+
+    assert seen["url"] == "https://api.deepseek.com/v1/tools/search"
+    assert seen["headers"]["Authorization"] == "Bearer key-1"
+    assert seen["body"] == {"query": ("JEP 491 " + "x" * 200)[:128], "count": 5}
+    assert rows == [{"title": "JEP 491", "url": "https://openjdk.org/jeps/491",
+                     "snippet": "JEP 491 lets virtual threads release carriers in synchronized blocks.",
+                     "score": 0.8, "date": "2024-10-01T00:00:00Z"}]
+    # 没有翻页
+    assert DeepSeekSearchTransport("key-1").search("q", 5, page=2) == []
+
+
+def test_insufficient_balance_is_a_fatal_failure(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        raise urllib.error.HTTPError(request.full_url, 402, "Payment Required", {},
+                                     io.BytesIO(b'{"error":{"message":"Insufficient Balance"}}'))
+
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", fake_urlopen)
+    transport = DeepSeekSearchTransport("key-1")
+
+    assert transport.search("q", 5) == []
+    assert transport.last_fatal_failure == "QUOTA_EXHAUSTED"
+
+
+def test_chain_includes_deepseek_only_when_its_key_is_set(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN", "deepseek")
+    monkeypatch.delenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", raising=False)
+    assert _build_external_search_adapters() == []
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", "key-1")
+    adapters = _build_external_search_adapters()
+    assert [adapter.provider_name for adapter in adapters] == ["deepseek"]
+    assert isinstance(adapters[0].transport, DeepSeekSearchTransport)

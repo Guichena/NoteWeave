@@ -218,6 +218,48 @@ class McpSearchTransport:
         return []
 
 
+DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
+# DeepSeek 搜索的 query 最长 128 个字符
+DEEPSEEK_MAX_QUERY_CHARS = 128
+
+
+class DeepSeekSearchTransport(HttpJsonSearchTransport):
+    """DeepSeek 搜索接口：POST /v1/tools/search，Bearer 鉴权，按请求计费，没有翻页。
+
+    返回的 summary（约 600 到 800 字，供模型阅读）比 snippet 更完整，作为摘要使用；
+    rerank_score 为 0 到 3，换算成 0 到 1 的置信度。
+    """
+
+    def __init__(self, api_key: str, base_url: str = "", timeout_seconds: int = 20, max_retries: int = 3) -> None:
+        super().__init__("deepseek", api_key, base_url or DEEPSEEK_SEARCH_URL, timeout_seconds, max_retries)
+
+    def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        if page > 1:
+            return []
+        results = super().search(query[:DEEPSEEK_MAX_QUERY_CHARS], limit, page)
+        mapped: list[dict[str, object]] = []
+        for item in results:
+            try:
+                score = round(max(0.0, min(1.0, float(item.get("rerank_score") or 0) / 3)), 4)
+            except (TypeError, ValueError):
+                score = 0.0
+            mapped.append({
+                "title": item.get("title") or "",
+                "url": item.get("url") or "",
+                "snippet": item.get("summary") or item.get("snippet") or "",
+                "score": score,
+                "date": item.get("date") or "",
+            })
+        return mapped
+
+    def _headers(self) -> dict[str, str]:
+        return {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
+
+    def _payload(self, query: str, limit: int, page: int) -> dict[str, object]:
+        del page
+        return {"query": query, "count": max(1, min(limit, 50))}
+
+
 class HttpGetSearchTransport:
     """Fallback GET-based transport for providers that accept querystring search."""
 
@@ -1061,6 +1103,17 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
                 provider_name=provider_name.lower(),
                 transport=McpSearchTransport(provider_name, client),
                 max_provider_pages=_max_provider_pages(),
+                requires_api_key=False,
+            ))
+            continue
+        if provider_name.lower() == "deepseek":
+            api_key = _provider_env("deepseek_search", "API_KEY")
+            if not api_key:
+                continue
+            adapters.append(ExternalSearchAdapter(
+                provider_name="deepseek",
+                transport=DeepSeekSearchTransport(api_key, _provider_env("deepseek_search", "BASE_URL")),
+                max_provider_pages=1,
                 requires_api_key=False,
             ))
             continue
