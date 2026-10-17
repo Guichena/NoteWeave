@@ -4,6 +4,7 @@ import hashlib
 import html
 import gzip
 import http.client
+import json
 import ipaddress
 import logging
 import os
@@ -13,10 +14,11 @@ import ssl
 import time
 import urllib.error
 import urllib.parse
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
-from app.http_security import resolve_public_http_addresses
+from app.http_security import credential_safe_urlopen, resolve_public_http_addresses
 from app.mcp_search_client import (
     TAVILY_EXTRACT_TOOL,
     McpSearchClient,
@@ -660,6 +662,41 @@ def _tavily_extract_text(data: dict[str, object], url: str) -> str:
     return next((text for text in texts if text), "")
 
 
+DEEPSEEK_FETCH_URL = "https://api.deepseek.com/v1/tools/fetch"
+
+
+class DeepSeekFetchClient:
+    """调用 DeepSeek 的网页读取接口（POST /v1/tools/fetch），把结果整理成与 Tavily Extract 相同的结构，
+    这样可以直接复用 Tavily 读取的重试、相关段落截取与失败回退逻辑。"""
+
+    def __init__(self, api_key: str, base_url: str = "", timeout_seconds: int = 30) -> None:
+        self.api_key = api_key
+        self.base_url = base_url.strip() or DEEPSEEK_FETCH_URL
+        self.timeout_seconds = timeout_seconds
+
+    def call_tool(self, tool: str, arguments: dict[str, object]) -> dict[str, object]:
+        del tool
+        url = str((arguments.get("urls") or [""])[0])
+        request = urllib.request.Request(
+            self.base_url, data=json.dumps({"url": url}).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"})
+        with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        return {"results": [{"url": url, "raw_content": _unescape_markdown(str(data.get("content") or ""))}]}
+
+
+# DeepSeek 读取的 Markdown 会转义标点（如 pg\_basebackup、\#），不还原时引用原文和标识符都对不上检索词
+_MARKDOWN_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|:<>~=\"'])")
+
+
+def _unescape_markdown(text: str) -> str:
+    return _MARKDOWN_ESCAPE.sub(r"\1", text)
+
+
+class DeepSeekUrlSnapshotTransport(TavilyMcpUrlSnapshotTransport):
+    METHOD = "DEEPSEEK_FETCH"
+
+
 class CompositeUrlSnapshotTransport:
     def __init__(self, transports: list[UrlSnapshotTransport]) -> None:
         self.transports = transports
@@ -1276,6 +1313,16 @@ def _build_default_url_snapshot_transport() -> UrlSnapshotTransport | None:
     )
 
     transports: list[UrlSnapshotTransport] = []
+    # DeepSeek 读取优先，失败或没有正文时依次回退到 Tavily Extract、Jina 和直接抓取
+    deepseek_key = os.getenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", "").strip()
+    if deepseek_key and os.getenv("NOTEWEAVE_RESEARCH_DEEPSEEK_FETCH_ENABLED", "true").strip().lower() not in {
+        "0", "false", "no", "off"
+    }:
+        transports.append(DeepSeekUrlSnapshotTransport(
+            client=DeepSeekFetchClient(deepseek_key, os.getenv("NOTEWEAVE_RESEARCH_DEEPSEEK_FETCH_BASE_URL", "")),
+            max_retries=settings.fetch_max_retries,
+            requests_per_second=settings.fetch_requests_per_second,
+        ))
     mcp_client = default_mcp_search_client()
     if mcp_client is not None:
         transports.append(

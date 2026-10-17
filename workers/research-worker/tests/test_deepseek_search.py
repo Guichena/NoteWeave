@@ -63,3 +63,33 @@ def test_chain_includes_deepseek_only_when_its_key_is_set(monkeypatch) -> None:
     adapters = _build_external_search_adapters()
     assert [adapter.provider_name for adapter in adapters] == ["deepseek"]
     assert isinstance(adapters[0].transport, DeepSeekSearchTransport)
+
+
+def test_deepseek_fetch_returns_unescaped_text_through_the_tavily_shaped_client(monkeypatch) -> None:
+    from app.fetch_adapters import DeepSeekFetchClient, DeepSeekUrlSnapshotTransport
+
+    seen = {}
+
+    def fake_urlopen(request, timeout):
+        seen["body"] = json.loads(request.data.decode("utf-8"))
+        return _Response(json.dumps({"title": "JEP 491", "content": r"\# JEP 491\: Synchronize pg\_basebackup"}).encode("utf-8"))
+
+    monkeypatch.setattr("app.fetch_adapters.credential_safe_urlopen", fake_urlopen)
+    monkeypatch.setattr("app.fetch_adapters.validate_public_http_url", lambda url: None)
+    result = DeepSeekUrlSnapshotTransport(client=DeepSeekFetchClient("key-1")).read(
+        "https://openjdk.org/jeps/491", "pinning", 2000)
+
+    assert seen["body"] == {"url": "https://openjdk.org/jeps/491"}
+    assert result["fetch_method"] == "DEEPSEEK_FETCH"
+    assert result["text"] == "# JEP 491: Synchronize pg_basebackup"
+
+
+def test_fetch_chain_tries_deepseek_before_tavily(monkeypatch) -> None:
+    from app import fetch_adapters
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", "key-1")
+    monkeypatch.setattr(fetch_adapters, "default_mcp_search_client", lambda: object())
+    transport = fetch_adapters._build_default_url_snapshot_transport()
+
+    names = [type(item).__name__ for item in transport.transports]
+    assert names[:2] == ["DeepSeekUrlSnapshotTransport", "TavilyMcpUrlSnapshotTransport"]
