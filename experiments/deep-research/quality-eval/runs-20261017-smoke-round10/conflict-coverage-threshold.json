@@ -1,0 +1,1362 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "conflict-coverage-threshold",
+  "run_id": "1691ce77-8ecd-4abb-a0f9-a28818babf35",
+  "workspace_id": "49f3460b-9236-4a9c-a50f-327444512b0f",
+  "started_at": "2026-10-17T07:32:10.702840+00:00",
+  "finished_at": "2026-10-17T07:36:17.118165+00:00",
+  "wall_seconds": 246.4,
+  "run_detail": {
+    "research_run_id": "1691ce77-8ecd-4abb-a0f9-a28818babf35",
+    "workspace_id": "49f3460b-9236-4a9c-a50f-327444512b0f",
+    "task_id": "f8cea798-1d25-420c-87b6-07dd633d5f95",
+    "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "INSUFFICIENT_EVIDENCE",
+    "final_report_title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+    "final_report_markdown": "# 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。\n\n以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。\n\n## 研究对象 · 结论\n\n高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。 [evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d]\n\n## 研究对象 · 关键证据\n\n智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠 [evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd]\n\n## 局限\n\n- 研究对象 · 正式结论必须有 exact quote、snapshot 和 URL：必需研究项未找到足够证据\n- 研究对象 · 影响与启示：必需研究项未找到足够证据\n- 研究对象 · 局限与风险：必需研究项未找到足够证据\n\n**核验情况：** 已核验 2 项，未找到足够证据 3 项。\n\n## 结论汇总\n\n| 研究对象 | 结论 | 关键证据 | 正式结论必须有 exact quote、snapshot 和 URL |\n|---|---|---|---|\n| 研究对象 | 高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。 | 智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠 | 未找到证据 |\n\n## 引用核对\n\n### 研究对象 · 结论\n\n高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。\n\n- Evidence: `evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d`\n  - Exact quote: “高覆盖率（甚至100%）绝不等于零缺陷或高质量。”\n  - Snapshot: `research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb`\n  - URL: https://developer.cloud.tencent.com/article/2553361\n\n### 研究对象 · 关键证据\n\n智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠\n\n- Evidence: `evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd`\n  - Exact quote: “某风控引擎模块覆盖率82%，却因未覆盖「规则引擎热加载失败」这一关键路径，导致灰度期出现策略失效”\n  - Snapshot: `research/external/6c9ab1ed-4059-4800-9bcc-a6809f6d6948/c555a091a2a8bf43aa19b5a44c7c8342eb244906b6928d17982e90832f77ad68`\n  - URL: https://developer.cloud.tencent.com/article/2740207\n\n## 局限与未解决项\n\n- **研究对象 · 正式结论必须有 exact quote、snapshot 和 URL**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **研究对象 · 影响与启示**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- **研究对象 · 局限与风险**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n\n## 完成判定原因\n\n- 完成状态：`INSUFFICIENT_EVIDENCE`\n- INSUFFICIENT_EVIDENCE",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/49f3460b-9236-4a9c-a50f-327444512b0f/research/1691ce77-8ecd-4abb-a0f9-a28818babf35/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 2991,
+      "sha256": "81b2c727803021d196c20963714504d8245497742dc2b7c1797d5f6c29ffd5e5"
+    },
+    "research_artifact": {
+      "artifact_id": "1691ce77-8ecd-4abb-a0f9-a28818babf35",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "1691ce77-8ecd-4abb-a0f9-a28818babf35",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/49f3460b-9236-4a9c-a50f-327444512b0f/research/1691ce77-8ecd-4abb-a0f9-a28818babf35/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 2991,
+        "sha256": "81b2c727803021d196c20963714504d8245497742dc2b7c1797d5f6c29ffd5e5"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "提升测试覆盖率阈值对企业缺陷逃逸率的实证影响",
+          "test coverage threshold defect escape rate empirical study",
+          "代码覆盖率门槛 缺陷逃逸率 实证研究",
+          "minimum code coverage policy counterexample bugs found in production",
+          "测试覆盖率门槛 缺陷逃逸率",
+          "code coverage threshold defect escape rate empirical study",
+          "code coverage metrics post-release defects industry report",
+          "test coverage adequacy standards grey literature",
+          "code coverage and software quality outcomes systematic literature review",
+          "does increased test coverage reduce production defects longitudinal study",
+          "test coverage policy criticism industry practitioner retrospective lessons learned",
+          "code coverage threshold production defects Google Microsoft experience report engineering blog",
+          "Limitations primary research limitations",
+          "Limitations 官方说明 适用条件",
+          "正式结论必须有 exact quote、snapshot 和 URL 官方说明 适用条件",
+          "正式结论必须有 exact quote、snapshot 和 URL primary research limitations",
+          "Implications 官方说明 适用条件",
+          "Implications primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+            "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "column_label": "结论",
+            "candidate_value": "高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。",
+            "status": "VERIFIED",
+            "confidence": 0.6,
+            "evidence_refs": [
+              "evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "column_label": "影响与启示",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "column_label": "关键证据",
+            "candidate_value": "智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠",
+            "status": "VERIFIED",
+            "confidence": 0.8,
+            "evidence_refs": [
+              "evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "column_label": "局限与风险",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "subject:finding-30a32032a48c8d1b",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "finding-30a32032a48c8d1b",
+            "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "column_label": "结论",
+          "candidate_value": "高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。",
+          "status": "VERIFIED",
+          "confidence": 0.6,
+          "evidence_refs": [
+            "evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "column_label": "影响与启示",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "column_label": "关键证据",
+          "candidate_value": "智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠",
+          "status": "VERIFIED",
+          "confidence": 0.8,
+          "evidence_refs": [
+            "evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "column_label": "局限与风险",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "finding-30a32032a48c8d1b",
+          "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:33:18Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:34:35Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:36:06Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:1f02d503c5ab57a84f2c050c31059f35c9b9a64d6d6aeb83",
+          "window_id": "window-1",
+          "source_id": "web-0ccd22e33aaffff3",
+          "source_title": "团队转型：测试覆盖率优化实战 - 腾讯云",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2740207",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "提升测试覆盖率阈值对企业缺陷逃逸率的实证影响",
+          "read_focus": "Read external URL 团队转型：测试覆盖率优化实战 - 腾讯云 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "此举使该模块单元测试编写效率提升3倍，覆盖率从31%跃升至76%。",
+          "claim_text": "单模块覆盖率从31%提升至76%属个案例证，未给出缺陷逃逸率对比数据。",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.5,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6c9ab1ed-4059-4800-9bcc-a6809f6d6948/c555a091a2a8bf43aa19b5a44c7c8342eb244906b6928d17982e90832f77ad68"
+        },
+        {
+          "evidence_id": "evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd",
+          "window_id": "window-1",
+          "source_id": "web-0ccd22e33aaffff3",
+          "source_title": "团队转型：测试覆盖率优化实战 - 腾讯云",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2740207",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "提升测试覆盖率阈值对企业缺陷逃逸率的实证影响",
+          "read_focus": "Read external URL 团队转型：测试覆盖率优化实战 - 腾讯云 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "某风控引擎模块覆盖率82%，却因未覆盖「规则引擎热加载失败」这一关键路径，导致灰度期出现策略失效",
+          "claim_text": "智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6c9ab1ed-4059-4800-9bcc-a6809f6d6948/c555a091a2a8bf43aa19b5a44c7c8342eb244906b6928d17982e90832f77ad68"
+        },
+        {
+          "evidence_id": "evidence:ccc4b640e825b8b087ab1f1481d1ccf32a506c4eede89552",
+          "window_id": "window-1",
+          "source_id": "web-0ccd22e33aaffff3",
+          "source_title": "团队转型：测试覆盖率优化实战 - 腾讯云",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2740207",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "提升测试覆盖率阈值对企业缺陷逃逸率的实证影响",
+          "read_focus": "Read external URL 团队转型：测试覆盖率优化实战 - 腾讯云 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "某风控引擎模块覆盖率82%，却因未覆盖「规则引擎热加载失败」这一关键路径，导致灰度期出现策略失效",
+          "claim_text": "风控引擎模块覆盖率82%仍出现策略失效，说明高覆盖率并不必然降低缺陷逃逸。",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.0,
+          "conflict_score": 0.7,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/6c9ab1ed-4059-4800-9bcc-a6809f6d6948/c555a091a2a8bf43aa19b5a44c7c8342eb244906b6928d17982e90832f77ad68"
+        },
+        {
+          "evidence_id": "evidence:52f674afc05d079c5a6ff9bc861c6b672259e05d405f4f80",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "虚假的安全感： 高覆盖率数字可能让管理层误以为产品质量无忧，放松对其他质量保障活动的投入",
+          "claim_text": "该文认为提高覆盖率本身不等于降低缺陷逃逸，高覆盖率可能带来虚假安全感，且存在指标扭曲风险",
+          "relation_type": "WEAK_SUPPORT",
+          "support_score": 0.4,
+          "conflict_score": 0.1,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        },
+        {
+          "evidence_id": "evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "高覆盖率（甚至100%）绝不等于零缺陷或高质量。",
+          "claim_text": "高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.6,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        },
+        {
+          "evidence_id": "evidence:b6468f9fc5a6f0dbdd4155d435ac4c315a29ebff5d9434f1",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "覆盖率不直接衡量测试发现缺陷的能力。",
+          "claim_text": "覆盖率不直接衡量缺陷探测能力，总体覆盖率不高但设计精良的用例可能发现更多严重缺陷。",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.1,
+          "conflict_score": 0.7,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        },
+        {
+          "evidence_id": "evidence:6ab26bfb08eb9a118cbe6e673d40cc5960b7fd5a902d7871",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "缺陷探测能力： 覆盖率不直接衡量测试发现缺陷的能力。",
+          "claim_text": "覆盖率不直接衡量测试发现缺陷的能力。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.5,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        },
+        {
+          "evidence_id": "evidence:d93f98c20e29c3dc7648400feec3b4cc952eee5bace56f20",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "如果覆盖率过低，必然意味着存在大量未经测试的代码、功能或场景，遗漏缺陷的风险极高，测试质量无法保证。",
+          "claim_text": "覆盖率低必然意味着大量未经测试的代码，遗漏缺陷风险极高，因此提高覆盖率门槛可降低漏测风险。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.8,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        },
+        {
+          "evidence_id": "evidence:ee5284bdad0ed729d55d615cc3773d6252e7445184eb2832",
+          "window_id": "window-1",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "测试覆盖率门槛 缺陷逃逸率",
+          "read_focus": "Read external URL 聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区 for claims that answer: 提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "quote_text": "高覆盖率（甚至100%）绝不等于零缺陷或高质量。",
+          "claim_text": "高覆盖率甚至100%不等于零缺陷，关键缺陷仍可能逃逸。",
+          "relation_type": "CONFLICTS",
+          "support_score": 0.1,
+          "conflict_score": 0.8,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/32a779aa-8643-4ba0-bb16-a431ba69fe07/c4558c122106603e1c0738ce6023edf6a91dae02dd0b996ab574439de17b1dfb"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd",
+          "source_id": "web-0ccd22e33aaffff3",
+          "source_title": "团队转型：测试覆盖率优化实战 - 腾讯云",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2740207"
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d",
+          "source_id": "web-d6766f9797302a24",
+          "source_title": "聊聊测试覆盖率与测试质量之间的关系 - 腾讯云开发者社区",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://developer.cloud.tencent.com/article/2553361"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "98d9eafc-6702-4599-b7ee-6aa5d1c54a09",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "提高测试覆盖率门槛是否降低了缺陷逃逸率？比较不同组织的实证结果。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY"
+        },
+        "created_at": "2026-10-17T07:32:10Z"
+      },
+      {
+        "trace_id": "5bb2e57a-0888-46ab-9e92-b0108a131ebe",
+        "trace_type": "PLAN_FALLBACK",
+        "trace_message": "模型规划不可用，沿用规则生成的表格",
+        "payload": {
+          "detail": "PLANNER_PLANNING_LLM_OUTPUT_INVALID",
+          "reason_code": "PLANNER_FALLBACK_DETERMINISTIC"
+        },
+        "created_at": "2026-10-17T07:32:28Z"
+      },
+      {
+        "trace_id": "98082d89-934f-429f-bf85-611b3ece4327",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "INSUFFICIENT_EVIDENCE",
+        "payload": {},
+        "created_at": "2026-10-17T07:36:17Z"
+      }
+    ],
+    "created_at": "2026-10-17T07:32:10Z",
+    "updated_at": "2026-10-17T07:36:17Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "confidence": 0.8,
+          "base_cell_version": 0,
+          "task_id": "6c9ab1ed-4059-4800-9bcc-a6809f6d6948",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "a88d7cca-93b1-434b-b221-293b6aea03ae"
+        },
+        {
+          "confidence": 0.8,
+          "base_cell_version": 0,
+          "task_id": "32a779aa-8643-4ba0-bb16-a431ba69fe07",
+          "cell_key": "subject:implications",
+          "candidate_id": "1ad6025e-831d-4272-a7f1-cf7e1116f64c"
+        },
+        {
+          "confidence": 0.6,
+          "base_cell_version": 0,
+          "task_id": "32a779aa-8643-4ba0-bb16-a431ba69fe07",
+          "cell_key": "subject:answer",
+          "candidate_id": "4e27831c-77ea-4ba9-83d4-003cc90043dd"
+        }
+      ],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "planning:1691ce77-8ecd-4abb-a0f9-a28818babf35",
+          "task_id": "13885f43-c0b1-4abe-933c-e5de568aedc4",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:33:26Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "deep-cell:76f2f5a44854a87473e1c7a7512d3b30",
+          "task_id": "32a779aa-8643-4ba0-bb16-a431ba69fe07",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:34:14Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:021b47b7aabf9ddadee69653a090f10f",
+          "task_id": "6c9ab1ed-4059-4800-9bcc-a6809f6d6948",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:34:14Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:e5c551dea8322cab8bc8d92c7d66d071",
+          "task_id": "5d0dac2a-28ea-4328-b3e1-83b7d1954f02",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:35:26Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:93d1140e264d83a7dfdc3b1bcd8f09f1",
+          "task_id": "bc39ec4d-2bcd-465d-92da-535a154bc60a",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:34:50Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "counterfactual:867d5749c2721bf2fdc095cd9d618cf6",
+          "task_id": "e69fdb75-27bf-4c17-a081-a554f9a7c710",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:35:06Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:3eb41c487492e292b1cebc3313544b5d",
+          "task_id": "317d92f2-1590-4eb6-b756-b36e03c4044b",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:36:07Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "counterfactual:28e6484617d2df1f88bfd17de10022d1",
+          "task_id": "74eb777b-e9e6-4a2f-8a7f-85cdc37e582a",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:36:26Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "counterfactual:549f5451d7afcf4fc9a22ff3c28541c3",
+          "task_id": "af5e97a5-4291-4fbc-8424-cb4c1dd181c7",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:36:52Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "synthesis:358d96bc9c77fb72d7f67562854b498e",
+          "task_id": "cae6de36-dfc9-40dc-9598-aaab373b76d4",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:37:07Z",
+          "status": "SUBMITTED"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "candidate_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "task_high_water_mark": 3
+        },
+        {
+          "checkpoint_seq": 2,
+          "candidate_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "task_high_water_mark": 6
+        },
+        {
+          "checkpoint_seq": 3,
+          "candidate_high_water_mark": 3,
+          "merge_high_water_mark": 3,
+          "task_high_water_mark": 9
+        }
+      ],
+      "merges": [
+        {
+          "merge_id": "merge:32af3047ca63c379f92b90c023938d976ac520b4b753d596790c0494f0403c44",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "a88d7cca-93b1-434b-b221-293b6aea03ae"
+        },
+        {
+          "merge_id": "merge:5d275853be03b80c29a5873b4f84c8965a1137924f05c2d18391c09cfc058355",
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "4e27831c-77ea-4ba9-83d4-003cc90043dd"
+        },
+        {
+          "merge_id": "merge:bc85bfc9a6eaf31f9487ab0b1b9a36526743e6e33fcb0f4683126352e912cb46",
+          "cell_key": "subject:implications",
+          "result_cell_version": 0,
+          "expected_cell_version": 0,
+          "reason_code": "EVIDENCE_QUALIFICATION_REJECTED",
+          "decision": "REJECTED",
+          "candidate_id": "1ad6025e-831d-4272-a7f1-cf7e1116f64c"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 3,
+      "task_count": 10,
+      "candidate_count": 3
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "DETERMINISTIC",
+        "rows": [
+          {
+            "entity_key": "subject",
+            "label": "Subject"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "answer",
+            "label": "answer"
+          },
+          {
+            "column_key": "finding-30a32032a48c8d1b",
+            "label": "finding-30a32032a48c8d1b"
+          },
+          {
+            "column_key": "implications",
+            "label": "implications"
+          },
+          {
+            "column_key": "key_evidence",
+            "label": "key_evidence"
+          },
+          {
+            "column_key": "limitations",
+            "label": "limitations"
+          }
+        ],
+        "brief": {},
+        "effort_tier": "",
+        "authoritative_domains": [],
+        "perspectives": []
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "subject:answer",
+          "entity_label": "Subject",
+          "column_label": "answer",
+          "cell_status": "VERIFIED",
+          "candidate_value": "高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:75b613ecf58ca1eb0c3d8841183466829cecda37d78da12d",
+              "claim_text": "高覆盖率（甚至100%）绝不等于零缺陷或高质量，覆盖率不直接衡量测试发现缺陷的能力。",
+              "source_domain": "tencent.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 600000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "entity_label": "Subject",
+          "column_label": "finding-30a32032a48c8d1b",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:implications",
+          "entity_label": "Subject",
+          "column_label": "implications",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:key_evidence",
+          "entity_label": "Subject",
+          "column_label": "key_evidence",
+          "cell_status": "VERIFIED",
+          "candidate_value": "智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:3171b4450f292e217ea2c4d596c2cfe924fae43aa5769cdd",
+              "claim_text": "智信团队发现某风控引擎模块覆盖率达82%仍出现策略失效，因此认为固定覆盖率阈值不可靠",
+              "source_domain": "tencent.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 800000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:limitations",
+          "entity_label": "Subject",
+          "column_label": "limitations",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:finding-30a32032a48c8d1b",
+            "subject:implications",
+            "subject:limitations"
+          ],
+          "strategy": "SWITCH_SOURCE_TYPE",
+          "query_count": 6,
+          "created_at": "2026-10-17T07:33:18Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 3 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:finding-30a32032a48c8d1b",
+            "subject:implications",
+            "subject:limitations"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 6,
+          "created_at": "2026-10-17T07:34:35Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

@@ -214,6 +214,11 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
     if not str(response or "").strip():
         return None
     parsed = parse_json_payload(response)
+    if parsed is None:
+        # 区分模型输出被截断、格式错误和网关返回的错误页；只记录长度与开头，不记录完整输出
+        text = str(response)
+        logger.warning("Research planning output is not JSON chars=%s head=%r tail=%r",
+                       len(text), text[:160], text[-80:])
     return parsed if parsed is not None else {"_unparsable": True}
 
 

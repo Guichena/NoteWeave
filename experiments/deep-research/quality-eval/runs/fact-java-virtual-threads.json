@@ -1,0 +1,1097 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "fact-java-virtual-threads",
+  "run_id": "c22e65b8-710b-4bbb-a8f9-0ccc49316291",
+  "workspace_id": "b0bae3cf-efc7-406f-adb7-316d59b29257",
+  "started_at": "2026-10-17T08:07:55.853339+00:00",
+  "finished_at": "2026-10-17T08:15:28.284200+00:00",
+  "wall_seconds": 452.4,
+  "run_detail": {
+    "research_run_id": "c22e65b8-710b-4bbb-a8f9-0ccc49316291",
+    "workspace_id": "b0bae3cf-efc7-406f-adb7-316d59b29257",
+    "task_id": "2732b6d4-be6b-4075-841f-45ac8872d4e9",
+    "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_VERIFIED",
+    "final_report_title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+    "final_report_markdown": "# Java 虚拟线程的正式发布与 synchronized 线程固定问题的改善版本\n\n本次核验的资料显示，synchronized 导致的线程固定问题由 JDK 24 的 JEP 491 改善，使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程。至于虚拟线程在哪个 JDK 版本正式发布，现有资料未给出可引用的 JEP 编号与版本，尚无法回答。\n\n## 直接回答\n\n关于 synchronized 导致的线程固定问题：本次核验的资料显示，虚拟线程在 synchronized 方法内运行时无法卸载；JDK 24 的 JEP 491 改进了这一点，使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，从而消除了绝大多数由 synchronized 带来的 Pinning 场景。 [evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f] [evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00] [evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48]\n\n## 线程固定问题的表现\n\n本次核验的资料明确指出，在 synchronized 方法内执行代码时，虚拟线程无法卸载，这构成了虚拟线程在该场景下的局限。 [evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5] [evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792]\n\n## JDK 24 的改进\n\n本次核验的资料显示，JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。 [evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00] [evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48]\n\n## 对比表\n\n| 阶段 | 版本与 JEP | synchronized 中的虚拟线程行为 |\n| --- | --- | --- |\n| 改进前 | 资料未给出对应版本与 JEP | 虚拟线程在 synchronized 方法内运行时无法卸载 [evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f] [evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5] [evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792] |\n| 改进后 | JDK 24，JEP 491 | 在 synchronized 中阻塞时也能释放底层平台线程，消除绝大多数由 synchronized 带来的 Pinning 场景 [evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00] [evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48] |\n\n## Citation audit\n\n### 研究对象 · 结论\n\n- Evidence: `evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f`\n- Exact quote: “a virtual thread cannot unmount when it runs code inside a `synchronized` method”\n- Snapshot: `research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9`\n- URL: https://openjdk.org/jeps/491\n\n### 研究对象 · 正式结论必须有 exact quote、snapshot 和 URL\n\n- Evidence: `evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00`\n- Exact quote: “JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程”\n- Snapshot: `research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/f0c64de4c0f166cb23b4885f2a875046373292d2c8947b464afa50c0b7d95e45`\n- URL: https://javaguide.cn/java/concurrent/virtual-thread.html\n\n### 研究对象 · 影响与启示\n\n- Evidence: `evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48`\n- Exact quote: “JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。”\n- Snapshot: `research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/f0c64de4c0f166cb23b4885f2a875046373292d2c8947b464afa50c0b7d95e45`\n- URL: https://javaguide.cn/java/concurrent/virtual-thread.html\n\n### 研究对象 · 关键证据\n\n- Evidence: `evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5`\n- Exact quote: “Unfortunately, a virtual thread cannot unmount when it runs code inside a `synchronized` method.”\n- Snapshot: `research/external/feb8891f-5268-4520-bb54-9185fdea8446/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9`\n- URL: https://openjdk.org/jeps/491\n\n### 研究对象 · 局限与风险\n\n- Evidence: `evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792`\n- Exact quote: “Unfortunately, a virtual thread cannot unmount when it runs code inside a `synchronized` method.”\n- Snapshot: `research/external/2178e52a-c3ce-43fb-96a4-e1352a96e98b/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9`\n- URL: https://openjdk.org/jeps/491\n\n",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/b0bae3cf-efc7-406f-adb7-316d59b29257/research/c22e65b8-710b-4bbb-a8f9-0ccc49316291/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 4489,
+      "sha256": "c0bdf89ff3a636be6e210aec64111411b75c1586d7975b318eed674d7e48df3a"
+    },
+    "research_artifact": {
+      "artifact_id": "c22e65b8-710b-4bbb-a8f9-0ccc49316291",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "c22e65b8-710b-4bbb-a8f9-0ccc49316291",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/b0bae3cf-efc7-406f-adb7-316d59b29257/research/c22e65b8-710b-4bbb-a8f9-0ccc49316291/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 4489,
+        "sha256": "c0bdf89ff3a636be6e210aec64111411b75c1586d7975b318eed674d7e48df3a"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "JEP synchronized pinning fix JDK 24",
+          "Java virtual threads JDK synchronized pinning",
+          "JEP 444 Virtual Threads",
+          "JEP 491 synchronize virtual threads without pinning JDK 24",
+          "Java 虚拟线程 synchronized 固定 JEP",
+          "JEP 444 Virtual Threads Java 21",
+          "Java virtual threads monitor contention performance benchmarks",
+          "JDK 24 synchronized virtual thread unmounting"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 1,
+        "blocked_row_count": 0,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 0,
+        "guardrailed_row_count": 0,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 0,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [],
+        "guardrailed_row_samples": [],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+            "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "evidence_id": "",
+            "row_status": "VERIFIED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "column_label": "影响与启示",
+            "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "column_label": "局限与风险",
+            "candidate_value": "在 synchronized 方法中运行的虚拟线程无法卸载（fixed/pinned）",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:finding-30a32032a48c8d1b",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "finding-30a32032a48c8d1b",
+            "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+            "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程",
+            "status": "VERIFIED",
+            "confidence": 0.95,
+            "evidence_refs": [
+              "evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "column_label": "关键证据",
+            "candidate_value": "在 synchronized 方法内运行时，虚拟线程无法卸载。",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 1
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "column_label": "结论",
+            "candidate_value": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+            "status": "VERIFIED",
+            "confidence": 0.9,
+            "evidence_refs": [
+              "evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 1,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+          "evidence_id": "",
+          "row_status": "VERIFIED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "column_label": "影响与启示",
+          "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "column_label": "局限与风险",
+          "candidate_value": "在 synchronized 方法中运行的虚拟线程无法卸载（fixed/pinned）",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "finding-30a32032a48c8d1b",
+          "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+          "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程",
+          "status": "VERIFIED",
+          "confidence": 0.95,
+          "evidence_refs": [
+            "evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "column_label": "关键证据",
+          "candidate_value": "在 synchronized 方法内运行时，虚拟线程无法卸载。",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 1
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "column_label": "结论",
+          "candidate_value": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+          "status": "VERIFIED",
+          "confidence": 0.9,
+          "evidence_refs": [
+            "evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T08:10:38Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792",
+          "window_id": "window-1",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java virtual threads JDK synchronized pinning",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "Unfortunately, a virtual thread cannot unmount when it runs code inside a `synchronized` method.",
+          "claim_text": "在 synchronized 方法中运行的虚拟线程无法卸载（fixed/pinned）",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/2178e52a-c3ce-43fb-96a4-e1352a96e98b/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        },
+        {
+          "evidence_id": "evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00",
+          "window_id": "window-5",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 synchronized 固定 JEP",
+          "read_focus": "Read external URL 虚拟线程常见问题总结 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程",
+          "claim_text": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.95,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/f0c64de4c0f166cb23b4885f2a875046373292d2c8947b464afa50c0b7d95e45"
+        },
+        {
+          "evidence_id": "evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f",
+          "window_id": "window-1",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "JEP 491 synchronize virtual threads without pinning JDK 24",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+          "claim_text": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        },
+        {
+          "evidence_id": "evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48",
+          "window_id": "window-5",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 synchronized 固定 JEP",
+          "read_focus": "Read external URL 虚拟线程常见问题总结 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "JDK 24 的 [JEP 491](https://openjdk.org/jeps/491) 改进了这一点，使虚拟线程在 `synchronized` 中阻塞时也能释放底层平台线程，消除了绝大多数由 `synchronized` 带来的 Pinning 场景。",
+          "claim_text": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。",
+          "relation_type": "SUPPORTS",
+          "support_score": 1.0,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/f0c64de4c0f166cb23b4885f2a875046373292d2c8947b464afa50c0b7d95e45"
+        },
+        {
+          "evidence_id": "evidence:df8b53c1541d8940241c872010fc8dcea312107c08bfb9b1",
+          "window_id": "window-5",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "Java 虚拟线程 synchronized 固定 JEP",
+          "read_focus": "Read external URL 虚拟线程常见问题总结 for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "JDK 21 到 JDK 23 中，虚拟线程在 `synchronized` 代码块或方法中阻塞，会出现 Pinning，也就是被固定在载体线程上。",
+          "claim_text": "JDK 21 到 JDK 23 中，虚拟线程在 synchronized 代码块或方法中阻塞会出现 Pinning",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/e61fcf6e-788f-47f7-8412-8a08b60281a5/f0c64de4c0f166cb23b4885f2a875046373292d2c8947b464afa50c0b7d95e45"
+        },
+        {
+          "evidence_id": "evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5",
+          "window_id": "window-1",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "JDK 24 synchronized virtual thread unmounting",
+          "read_focus": "Read external URL JEP 491: Synchronize Virtual Threads without Pinning for claims that answer: Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "quote_text": "Unfortunately, a virtual thread cannot unmount when it runs code inside a `synchronized` method.",
+          "claim_text": "在 synchronized 方法内运行时，虚拟线程无法卸载。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.9,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/feb8891f-5268-4520-bb54-9185fdea8446/fb276e6efefd548d5929dd23c76ef0942b0da35dd6484b14c48e82eed2b49bc9"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "evidence_id": "evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491"
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "evidence_id": "evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html"
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "evidence_id": "evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48",
+          "source_id": "web-a2660197f574eaf4",
+          "source_title": "虚拟线程常见问题总结",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://javaguide.cn/java/concurrent/virtual-thread.html"
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491"
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5",
+          "source_id": "web-9a8f58c5a33283e5",
+          "source_title": "JEP 491: Synchronize Virtual Threads without Pinning",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openjdk.org/jeps/491"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "fb8df2fa-883e-4b53-b461-7c69fb837365",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY"
+        },
+        "created_at": "2026-10-17T08:07:55Z"
+      },
+      {
+        "trace_id": "67261d07-b372-45e9-8af5-7ee926070465",
+        "trace_type": "PLAN_FALLBACK",
+        "trace_message": "模型规划不可用，沿用规则生成的表格",
+        "payload": {
+          "detail": "PLANNER_PLANNING_LLM_OUTPUT_INVALID",
+          "reason_code": "PLANNER_FALLBACK_DETERMINISTIC"
+        },
+        "created_at": "2026-10-17T08:08:18Z"
+      },
+      {
+        "trace_id": "3d3bdc28-7f1e-49e0-b75a-2e533fe4ad4f",
+        "trace_type": "INCREMENTAL_FINALIZED",
+        "trace_message": "研究报告：Java 虚拟线程在哪个 JDK 版本正式发布，synchronized 导致的线程固定问题在哪个版本改善？引用 JEP。",
+        "payload": {
+          "cell_count": 5
+        },
+        "created_at": "2026-10-17T08:15:27Z"
+      }
+    ],
+    "created_at": "2026-10-17T08:07:55Z",
+    "updated_at": "2026-10-17T08:15:27Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "2178e52a-c3ce-43fb-96a4-e1352a96e98b",
+          "cell_key": "subject:limitations",
+          "candidate_id": "c921011a-3b29-4e66-a178-d214b402be2e"
+        },
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "e61fcf6e-788f-47f7-8412-8a08b60281a5",
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "candidate_id": "063e7620-9507-450b-b568-6ae62c6c7ff2"
+        },
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "e61fcf6e-788f-47f7-8412-8a08b60281a5",
+          "cell_key": "subject:answer",
+          "candidate_id": "dc155a58-7e18-4f2e-8266-c78376188056"
+        },
+        {
+          "confidence": 0.95,
+          "base_cell_version": 0,
+          "task_id": "e61fcf6e-788f-47f7-8412-8a08b60281a5",
+          "cell_key": "subject:implications",
+          "candidate_id": "f68ef286-6e48-4f2a-bd4a-33964d1e5145"
+        },
+        {
+          "confidence": 0.9,
+          "base_cell_version": 0,
+          "task_id": "feb8891f-5268-4520-bb54-9185fdea8446",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "5f7a3ebb-2173-45e5-a7a0-a2e5bdbe20ad"
+        }
+      ],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "planning:c22e65b8-710b-4bbb-a8f9-0ccc49316291",
+          "task_id": "582dfe97-bbae-4194-af42-ff13f6b25086",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T08:09:12Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "deep-cell:4eb1cd9324cdcf86b0f05c5cb28ccb6a",
+          "task_id": "2178e52a-c3ce-43fb-96a4-e1352a96e98b",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T08:10:51Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:0829a47a5b46401b2538e37bb785e7ab",
+          "task_id": "e61fcf6e-788f-47f7-8412-8a08b60281a5",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T08:11:23Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "counterfactual:11395207c14ed13d0e37b245be4bd101",
+          "task_id": "feb8891f-5268-4520-bb54-9185fdea8446",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T08:14:49Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "synthesis:e247857acac6e45b3297dabacc825fd6",
+          "task_id": "ad5bbccb-5610-4c46-9b48-66ea0764f9ef",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T08:16:22Z",
+          "status": "SUBMITTED"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "candidate_high_water_mark": 4,
+          "merge_high_water_mark": 4,
+          "task_high_water_mark": 3
+        }
+      ],
+      "merges": [
+        {
+          "merge_id": "merge:f339af4dc38c587ec8857de0de2b6410d21fb4cd8861e93021982ecd4afb07ff",
+          "cell_key": "subject:limitations",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "c921011a-3b29-4e66-a178-d214b402be2e"
+        },
+        {
+          "merge_id": "merge:54601d2798ce7f8d505aa92dd9821092efa6a8e44e4c6434cd7444f5537fc92f",
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "dc155a58-7e18-4f2e-8266-c78376188056"
+        },
+        {
+          "merge_id": "merge:8a923eda96c4c3e670ed544aa03fc0e03c68ff1f353692d50ea0f2a0d85a7031",
+          "cell_key": "subject:implications",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "f68ef286-6e48-4f2a-bd4a-33964d1e5145"
+        },
+        {
+          "merge_id": "merge:6c7e4a3a52e13e81412e4c3faf0ebc73b912d8a0b1d8e6d2bde553983d79b316",
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "063e7620-9507-450b-b568-6ae62c6c7ff2"
+        },
+        {
+          "merge_id": "merge:7a29fc9bed3dc75cea4180418cc51fe496da7010cee9792b2d96a6a747e2898c",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "5f7a3ebb-2173-45e5-a7a0-a2e5bdbe20ad"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 5,
+      "task_count": 5,
+      "candidate_count": 5
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "DETERMINISTIC",
+        "rows": [
+          {
+            "entity_key": "subject",
+            "label": "Subject"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "answer",
+            "label": "answer"
+          },
+          {
+            "column_key": "finding-30a32032a48c8d1b",
+            "label": "finding-30a32032a48c8d1b"
+          },
+          {
+            "column_key": "implications",
+            "label": "implications"
+          },
+          {
+            "column_key": "key_evidence",
+            "label": "key_evidence"
+          },
+          {
+            "column_key": "limitations",
+            "label": "limitations"
+          }
+        ],
+        "brief": {},
+        "effort_tier": "",
+        "authoritative_domains": [],
+        "perspectives": []
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "subject:answer",
+          "entity_label": "Subject",
+          "column_label": "answer",
+          "cell_status": "VERIFIED",
+          "candidate_value": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:6fb319f5ba15e1e4629a06b22db61407d07f6606cc4b480f",
+              "claim_text": "a virtual thread cannot unmount when it runs code inside a `synchronized` method",
+              "source_domain": "openjdk.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "entity_label": "Subject",
+          "column_label": "finding-30a32032a48c8d1b",
+          "cell_status": "VERIFIED",
+          "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:315e778b97f8ce1706968975131c4dd9bbf88177e637cb00",
+              "claim_text": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程",
+              "source_domain": "javaguide.cn"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:implications",
+          "entity_label": "Subject",
+          "column_label": "implications",
+          "cell_status": "VERIFIED",
+          "candidate_value": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:f1d26448ac0b35a3738e1d7a360746659d69da73d846df48",
+              "claim_text": "JDK 24 的 JEP 491 使虚拟线程在 synchronized 中阻塞时也能释放底层平台线程，消除了绝大多数由 synchronized 带来的 Pinning 场景。",
+              "source_domain": "javaguide.cn"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:key_evidence",
+          "entity_label": "Subject",
+          "column_label": "key_evidence",
+          "cell_status": "VERIFIED",
+          "candidate_value": "在 synchronized 方法内运行时，虚拟线程无法卸载。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:7fe0ceb4331dfbd36992c7485d8e033e478ca11661a622b5",
+              "claim_text": "在 synchronized 方法内运行时，虚拟线程无法卸载。",
+              "source_domain": "openjdk.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 900000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:limitations",
+          "entity_label": "Subject",
+          "column_label": "limitations",
+          "cell_status": "VERIFIED",
+          "candidate_value": "在 synchronized 方法中运行的虚拟线程无法卸载（fixed/pinned）",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:acaabb064c63f212a22b31fa06f55791970d5de720f1e792",
+              "claim_text": "在 synchronized 方法中运行的虚拟线程无法卸载（fixed/pinned）",
+              "source_domain": "openjdk.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 950000,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:key_evidence"
+          ],
+          "strategy": "BROADEN",
+          "query_count": 2,
+          "created_at": "2026-10-17T08:10:38Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}

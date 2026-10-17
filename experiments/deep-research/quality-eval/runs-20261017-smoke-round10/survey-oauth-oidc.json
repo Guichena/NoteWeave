@@ -1,0 +1,1284 @@
+{
+  "schema_version": "research-quality-run.v1",
+  "dataset_version": "1.0.0",
+  "case_key": "survey-oauth-oidc",
+  "run_id": "37fde422-ee21-4cd8-a559-5875ae71d46a",
+  "workspace_id": "49f3460b-9236-4a9c-a50f-327444512b0f",
+  "started_at": "2026-10-17T07:27:23.700390+00:00",
+  "finished_at": "2026-10-17T07:29:34.464239+00:00",
+  "wall_seconds": 130.8,
+  "run_detail": {
+    "research_run_id": "37fde422-ee21-4cd8-a559-5875ae71d46a",
+    "workspace_id": "49f3460b-9236-4a9c-a50f-327444512b0f",
+    "task_id": "94d26b1d-74aa-4985-8574-064a15251a5c",
+    "question": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+    "profile_key": "DEFAULT",
+    "research_intent": {
+      "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+      "deliverable_format": "Markdown research report with citation audit",
+      "constraints": [
+        "正式结论必须有 exact quote、snapshot 和 URL"
+      ],
+      "time_range": "current",
+      "depth": "STANDARD",
+      "research_type": "AUTO"
+    },
+    "resumed_from_research_run_id": "",
+    "resumed_from_checkpoint_no": null,
+    "status": "COMPLETED",
+    "completion_terminal_state": "COMPLETED_WITH_LIMITATIONS",
+    "final_report_title": "研究报告：OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+    "final_report_markdown": "# OAuth 2.1 的定位与相对 OAuth 2.0 的调整：基于已核验原文的说明\n\n已核验的草案原文显示，OAuth 2.1 并未新增任何特性，而是将既有规范合并进主文档，并在文档层面取代并废止 RFC 6749 所描述的 OAuth 2.0 授权框架（草案编号 draft-ietf-oauth-v2-1-16）；关于 OIDC 在其上增加了什么，以及 OAuth 2.0 到 2.1 的具体逐项调整内容，现有证据不足以回答。\n\n## 直接回答\n\n就“OAuth 2.1 相对 OAuth 2.0 做了哪些调整”而言，已核验原文给出的结论是方向性的：OAuth 2.1 没有增加任何新特性，而是把既有规范合并进主文档。 [evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521]\n\n在规范地位上，草案原文明确该规范取代并废止 RFC 6749 所描述的 OAuth 2.0 授权框架，所依据的文档为 draft-ietf-oauth-v2-1-16。 [evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca] [evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e]\n\n就“OIDC 在其上增加了什么”这一部分，现有冻结单元格中没有可支撑的原文证据，因此不在本节作答，详见局限说明。 [evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3]\n\n## 规范定位与影响\n\n从引用原文看，OAuth 2.1 的定位不是引入新能力，而是对既有规范的整理与合并；这一判断来自对官方草案的观察，限定于该草案文本本身。 [evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521] [evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3]\n\n同一观察被表述为把过去十年的安全最佳实践整合进单一规范；该表述同样以草案未新增特性为前提，与前述取代并废止 RFC 6749 的规范地位描述相互对应。 [evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3] [evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca]\n\n## 局限\n\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n**核验情况：** 已核验 4 项，未找到足够证据 1 项。\n\n## 结论汇总\n\n| 研究对象 | 结论 | 关键证据 | 正式结论必须有 exact quote、snapshot 和 URL |\n|---|---|---|---|\n| 研究对象 | OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档 | This specification replaces and obsoletes the OAuth 2.0 Authorization Framework … | OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16 |\n\n## 引用核对\n\n### OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档\n\n- 研究项：`研究对象 · 结论`\n- 候选：`06bb1faa-2288-473a-93b8-f36329617782`\n- Evidence: `evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521`\n  - Exact quote: “If you look at the official draft, OAuth 2.1 doesn’t add a single new feature.”\n  - Snapshot: `research/external/a94a01a2-055d-4209-8de9-b1356485a88c/11481b009ccc6de512ae346e7c5e92f13f531835235d9c7e79765fc5f2ba2d66`\n  - URL: https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1\n\n### OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16\n\n- 研究项：`研究对象 · 正式结论必须有 exact quote、snapshot 和 URL`\n- 候选：`9172624a-0414-4d2b-a0c8-3c490d9b0c61`\n- Evidence: `evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e`\n  - Exact quote: “# The OAuth 2.1 Authorization Framework draft-ietf-oauth-v2-1-16”\n  - Snapshot: `research/external/a94a01a2-055d-4209-8de9-b1356485a88c/74a2af638dcb58097e08f390d8f41e10bdfdf7ac0e9febdeec9a8c5ab40a72a6`\n  - URL: https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/\n\n### OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。\n\n- 研究项：`研究对象 · 影响与启示`\n- 候选：`ed4e6475-7d27-4aea-bba9-c453153d3bfc`\n- Evidence: `evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3`\n  - Exact quote: “If you look at the official draft, OAuth 2.1 doesn’t add a single new feature.”\n  - Snapshot: `research/external/a94a01a2-055d-4209-8de9-b1356485a88c/11481b009ccc6de512ae346e7c5e92f13f531835235d9c7e79765fc5f2ba2d66`\n  - URL: https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1\n\n### This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749\n\n- 研究项：`研究对象 · 关键证据`\n- 候选：`2405a790-d7f7-4a96-8f02-c1c801c81b19`\n- Evidence: `evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca`\n  - Exact quote: “This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749”\n  - Snapshot: `research/external/190eb4a3-8d42-4375-9505-d8d169087a7e/141c0fa069f21f31fec8a4e262eb188ed5b6ea692ed1d9d7d7c189c40226168a`\n  - URL: https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10\n\n## 局限与未解决项\n\n- **研究对象 · 局限与风险**：必需研究项未找到足够证据（`REQUIRED_CELL_UNRESOLVED`，`GAP`）\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN\n\n## 完成判定原因\n\n- 完成状态：`COMPLETED_WITH_LIMITATIONS`\n- REQUIRED_CELLS_PARTIALLY_RESOLVED\n- UNRESOLVED_CELLS_REMAIN",
+    "report_structure": null,
+    "counterfactual_summary": {
+      "has_counterfactual_recheck": false,
+      "counterfactual_branch_count": 0,
+      "conflicted_row_count": 0,
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "recovery_mode": "",
+      "counterfactual_branch_ids": [],
+      "counterfactual_session_ids": [],
+      "active_counterfactual_branch_ids": [],
+      "active_counterfactual_session_ids": [],
+      "branch_reasons": [],
+      "target_evidence_ids": [],
+      "branches": []
+    },
+    "research_artifact_candidate": null,
+    "report_file": {
+      "object_key": "workspace/49f3460b-9236-4a9c-a50f-327444512b0f/research/37fde422-ee21-4cd8-a559-5875ae71d46a/report/final.md",
+      "file_name": "final.md",
+      "mime_type": "text/markdown",
+      "content_size": 5082,
+      "sha256": "f4f6d511d8563f35ac30da4bd0a8ebfe20d3c3cd1c68453872ac83bc46fb59a4"
+    },
+    "research_artifact": {
+      "artifact_id": "37fde422-ee21-4cd8-a559-5875ae71d46a",
+      "artifact_type": "DEEP_RESEARCH_REPORT",
+      "artifact_version": "v1",
+      "title": "研究报告：OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+      "generated_by": "research_agent",
+      "generated_ref_type": "RESEARCH_RUN",
+      "generated_ref_id": "37fde422-ee21-4cd8-a559-5875ae71d46a",
+      "citation_count": 0,
+      "report_file": {
+        "object_key": "workspace/49f3460b-9236-4a9c-a50f-327444512b0f/research/37fde422-ee21-4cd8-a559-5875ae71d46a/report/final.md",
+        "file_name": "final.md",
+        "mime_type": "text/markdown",
+        "content_size": 5082,
+        "sha256": "f4f6d511d8563f35ac30da4bd0a8ebfe20d3c3cd1c68453872ac83bc46fb59a4"
+      }
+    },
+    "research_process_summary": {
+      "source_scope_count": 0,
+      "search_read_timeline": {
+        "loop_round_count": 0,
+        "total_search_hit_count": 0,
+        "total_read_window_count": 0,
+        "total_evidence_card_count": 0,
+        "all_search_queries": [
+          "OpenID Connect Core 1.0 ID Token authentication on top of OAuth 2.0",
+          "OAuth 2.1 规范 草案",
+          "OAuth 2.1 draft differences from OAuth 2.0 PKCE bearer tokens",
+          "OpenID Connect Core 1.0 specification OAuth 2.0 authorization layer additions",
+          "OAuth 2.1 OAuth 2.0 差异 OIDC",
+          "OAuth 2.1 draft specification changes from OAuth 2.0",
+          "Limitations 官方说明 适用条件",
+          "Limitations primary research limitations"
+        ],
+        "final_loop_decision": "",
+        "final_loop_reason": "",
+        "terminal_disposition": "",
+        "handoff_required": false,
+        "abandon_reason": "",
+        "rounds": []
+      },
+      "source_evidence_summary": {
+        "source_basis": "",
+        "primary_quality": "",
+        "quality_mix_label": "",
+        "read_strategy_mix_label": "",
+        "fetch_foundation_label": "",
+        "orchestration_foundation_label": "",
+        "verified_finding_count": 0,
+        "citation_count": 0
+      },
+      "audit_summary": {
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "final_loop_decision": "",
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "checkpoint_count": 3,
+        "blocked_row_count": 1,
+        "conflicted_row_count": 0,
+        "guardrailed_row_count": 1,
+        "recovery_target_count": 0
+      }
+    },
+    "harness_control_state": {},
+    "audit_summaries": {},
+    "toolbox_summary": {},
+    "resume_context_summary": null,
+    "resume_checkpoint": null,
+    "verifier_summary": {
+      "local_verifier_status": "",
+      "local_verifier_reason": "",
+      "global_verifier_decision": "",
+      "global_verifier_reason": "",
+      "final_loop_decision": "",
+      "final_loop_reason": "",
+      "research_intent_alignment_status": "",
+      "research_intent_alignment_reason": "",
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "verifier_gated_summary": {
+        "blocked_row_count": 1,
+        "guardrailed_row_count": 1,
+        "recovery_targeted_blocked_row_count": 0,
+        "uncovered_blocked_row_count": 1,
+        "requirement_partial_blocked_row_count": 0,
+        "blocked_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "guardrailed_row_samples": [
+          {
+            "row_id": "subject",
+            "source_id": "",
+            "source_title": "Subject",
+            "evidence_id": "",
+            "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "claim_text": "",
+            "row_status": "DISCOVERED",
+            "support_level": "",
+            "verification_status": "PENDING",
+            "requirement_completion_status": "",
+            "repair_hint": "",
+            "branch_id": "branch-main",
+            "matched_requirement_ids": [],
+            "ready_requirement_ids": [],
+            "missing_columns": []
+          }
+        ],
+        "need_more_evidence_row_samples": []
+      }
+    },
+    "trace_summary": "",
+    "source_scope": [],
+    "control_pack": {
+      "pack_type": "research",
+      "target_key": "DEFAULT",
+      "task_neighborhood": "RESEARCH_DEFAULT",
+      "style_constraints": [],
+      "structure_constraints": [],
+      "terminology_policy": [],
+      "forbidden_patterns": [],
+      "evidence_policy": [
+        "Memory 不作为研究证据",
+        "研究结论必须由搜索结果、工作台资料或验证证据支持"
+      ],
+      "interaction_policy": [],
+      "review_checklist": [],
+      "memory_object_ids": [],
+      "memory_references": [],
+      "compilation_trace": {
+        "policy_version": "memory-compiler-policy-v2",
+        "maximum_tokens": 480,
+        "selected_tokens": 35,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "dropped_count": 0,
+        "truncated": false,
+        "degraded": false,
+        "degradation_reasons": [],
+        "decisions": []
+      }
+    },
+    "wait_context": null,
+    "closed_loop_state": {
+      "active_branch_id": "branch-main",
+      "local_verifier_status": "",
+      "global_verifier_decision": "",
+      "final_loop_decision": "",
+      "loop_rounds_count": 0,
+      "ledger_row_count": 1,
+      "branch_count": 1,
+      "verifier_decision_count": 0,
+      "harness_summary": {},
+      "checkpoint_candidate": {},
+      "harness_control_state": {},
+      "audit_summaries": {},
+      "toolbox_summary": {},
+      "counterfactual_summary": {
+        "has_counterfactual_recheck": false,
+        "counterfactual_branch_count": 0,
+        "conflicted_row_count": 0,
+        "local_verifier_status": "",
+        "global_verifier_decision": "",
+        "recovery_mode": "",
+        "counterfactual_branch_ids": [],
+        "counterfactual_session_ids": [],
+        "active_counterfactual_branch_ids": [],
+        "active_counterfactual_session_ids": [],
+        "branch_reasons": [],
+        "target_evidence_ids": [],
+        "branches": []
+      },
+      "recovery_targets": {
+        "requirement_ids": [],
+        "requirement_types": [],
+        "requirement_labels": [],
+        "target_columns": [],
+        "target_queries": [],
+        "target_sources": [],
+        "requirement_count": 0,
+        "query_count": 0,
+        "source_count": 0,
+        "column_count": 0
+      },
+      "state_ledger": {
+        "active_branch_id": "branch-main",
+        "columns": [],
+        "branch_sessions": [],
+        "branches": [
+          {
+            "branch_id": "branch-main",
+            "parent_branch_id": "",
+            "branch_reason": "INITIAL_RESEARCH_MATRIX",
+            "status": "ACTIVE",
+            "hypothesis_summary": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "target_evidence_ids": [],
+            "created_round": 1
+          }
+        ],
+        "rows": [
+          {
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "source_id": "",
+            "source_title": "Subject",
+            "generated_by": "",
+            "generated_ref_id": "",
+            "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+            "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "evidence_id": "",
+            "row_status": "DISCOVERED",
+            "relation_type": "",
+            "support_score": null,
+            "conflict_score": null,
+            "support_level": "",
+            "verification_status": "PENDING",
+            "verifier_note": "",
+            "repair_hint": ""
+          }
+        ],
+        "cells": [
+          {
+            "cell_id": "subject:finding-30a32032a48c8d1b",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "finding-30a32032a48c8d1b",
+            "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+            "candidate_value": "OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16",
+            "status": "VERIFIED",
+            "confidence": 0.7,
+            "evidence_refs": [
+              "evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:limitations",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "limitations",
+            "column_label": "局限与风险",
+            "candidate_value": "",
+            "status": "GAP",
+            "confidence": null,
+            "evidence_refs": [],
+            "last_verifier_decision": "",
+            "repair_count": 2
+          },
+          {
+            "cell_id": "subject:key_evidence",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "key_evidence",
+            "column_label": "关键证据",
+            "candidate_value": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:implications",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "implications",
+            "column_label": "影响与启示",
+            "candidate_value": "OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          },
+          {
+            "cell_id": "subject:answer",
+            "row_id": "subject",
+            "branch_id": "branch-main",
+            "column_key": "answer",
+            "column_label": "结论",
+            "candidate_value": "OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档",
+            "status": "VERIFIED",
+            "confidence": 0.85,
+            "evidence_refs": [
+              "evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521"
+            ],
+            "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+            "repair_count": 0
+          }
+        ],
+        "verifier_decisions": [],
+        "required_finding_contract": [],
+        "required_finding_progress": [],
+        "verified_row_count": 0,
+        "conflicted_row_count": 0,
+        "requirement_ready_row_count": 0,
+        "requirement_partial_row_count": 0,
+        "recovery_targets": {
+          "requirement_ids": [],
+          "requirement_types": [],
+          "requirement_labels": [],
+          "target_columns": [],
+          "target_queries": [],
+          "target_sources": [],
+          "requirement_count": 0,
+          "query_count": 0,
+          "source_count": 0,
+          "column_count": 0
+        }
+      },
+      "local_verifier": {},
+      "global_verifier": {},
+      "branches": [
+        {
+          "branch_id": "branch-main",
+          "parent_branch_id": "",
+          "branch_reason": "INITIAL_RESEARCH_MATRIX",
+          "status": "ACTIVE",
+          "hypothesis_summary": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "target_evidence_ids": [],
+          "created_round": 1
+        }
+      ],
+      "rows": [
+        {
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "source_id": "",
+          "source_title": "Subject",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "search_query": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "read_focus": "形成可逐项引用的研究结论，证据不足时说明缺口",
+          "evidence_id": "",
+          "row_status": "DISCOVERED",
+          "relation_type": "",
+          "support_score": null,
+          "conflict_score": null,
+          "support_level": "",
+          "verification_status": "PENDING",
+          "verifier_note": "",
+          "repair_hint": ""
+        }
+      ],
+      "cells": [
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "finding-30a32032a48c8d1b",
+          "column_label": "正式结论必须有 exact quote、snapshot 和 URL",
+          "candidate_value": "OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16",
+          "status": "VERIFIED",
+          "confidence": 0.7,
+          "evidence_refs": [
+            "evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:limitations",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "limitations",
+          "column_label": "局限与风险",
+          "candidate_value": "",
+          "status": "GAP",
+          "confidence": null,
+          "evidence_refs": [],
+          "last_verifier_decision": "",
+          "repair_count": 2
+        },
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "key_evidence",
+          "column_label": "关键证据",
+          "candidate_value": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "implications",
+          "column_label": "影响与启示",
+          "candidate_value": "OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "branch_id": "branch-main",
+          "column_key": "answer",
+          "column_label": "结论",
+          "candidate_value": "OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档",
+          "status": "VERIFIED",
+          "confidence": 0.85,
+          "evidence_refs": [
+            "evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521"
+          ],
+          "last_verifier_decision": "MERGE_GATE:VERIFIED_AND_VERSION_MATCHED",
+          "repair_count": 0
+        }
+      ],
+      "verifier_decisions": [],
+      "checkpoints": [
+        {
+          "checkpoint_no": 1,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:28:39Z"
+        },
+        {
+          "checkpoint_no": 2,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:29:23Z"
+        },
+        {
+          "checkpoint_no": 3,
+          "snapshot_type": "LEDGER_HYDRATION",
+          "active_branch_id": "",
+          "final_loop_decision": "",
+          "local_verifier_status": "",
+          "global_verifier_decision": "",
+          "verified_row_count": 0,
+          "conflicted_row_count": 0,
+          "summary": {
+            "checkpoint_no": 0,
+            "snapshot_type": "",
+            "state_ledger": {
+              "active_branch_id": "",
+              "row_count": 0,
+              "column_count": 0,
+              "branch_count": 0,
+              "cell_count": 0,
+              "verified_row_count": 0,
+              "conflicted_row_count": 0,
+              "requirement_ready_row_count": 0,
+              "requirement_partial_row_count": 0,
+              "read_window_count": 0,
+              "evidence_card_count": 0,
+              "verified_row_samples": [],
+              "conflicted_row_samples": [],
+              "evidence_card_samples": [],
+              "read_window_samples": [],
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": [],
+              "intent_requirement_count": 0,
+              "intent_satisfied_requirement_count": 0,
+              "intent_pending_requirement_count": 0,
+              "missing_intent_requirements": []
+            },
+            "research_intent_alignment_status": "",
+            "research_intent_alignment_reason": "",
+            "intent_constraint_count": 0,
+            "intent_satisfied_constraint_count": 0,
+            "intent_requirement_count": 0,
+            "intent_satisfied_requirement_count": 0,
+            "intent_pending_requirement_count": 0,
+            "missing_intent_requirements": [],
+            "recovery_targets": {
+              "requirement_ids": [],
+              "requirement_types": [],
+              "requirement_labels": [],
+              "target_columns": [],
+              "target_queries": [],
+              "target_sources": [],
+              "requirement_count": 0,
+              "query_count": 0,
+              "source_count": 0,
+              "column_count": 0
+            },
+            "verifier_gated_summary": {
+              "blocked_row_count": 0,
+              "guardrailed_row_count": 0,
+              "recovery_targeted_blocked_row_count": 0,
+              "uncovered_blocked_row_count": 0,
+              "requirement_partial_blocked_row_count": 0,
+              "blocked_row_samples": [],
+              "guardrailed_row_samples": [],
+              "need_more_evidence_row_samples": []
+            }
+          },
+          "counterfactual_summary": null,
+          "recovery_targets": {
+            "requirement_ids": [],
+            "requirement_types": [],
+            "requirement_labels": [],
+            "target_columns": [],
+            "target_queries": [],
+            "target_sources": [],
+            "requirement_count": 0,
+            "query_count": 0,
+            "source_count": 0,
+            "column_count": 0
+          },
+          "created_at": "2026-10-17T07:29:28Z"
+        }
+      ],
+      "source_evidence": [
+        {
+          "evidence_id": "evidence:afc6af0f94deaeafd8edb26da60634b7bd096b553472d66c",
+          "window_id": "window-2",
+          "source_id": "web-cfd2790a544c9e6d",
+          "source_title": "OpenID Connect Core 1.0 incorporating errata set 2",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://openid.net/specs/openid-connect-core-1_0.html",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OpenID Connect Core 1.0 ID Token authentication on top of OAuth 2.0",
+          "read_focus": "Read external URL OpenID Connect Core 1.0 incorporating errata set 2 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "> :   OAuth 2.0 Authorization Request using extension parameters and scopes defined by OpenID Connect to request that the End-User be authenticated",
+          "claim_text": "OpenID Connect 定义认证请求为使用 OpenID Connect 扩展参数与作用域的 OAuth 2.0 授权请求",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.75,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/190eb4a3-8d42-4375-9505-d8d169087a7e/ee25a5e6058fc759e0d6c40b8fcf1a7452080b638151a39467cf4fdcda8ffbd9"
+        },
+        {
+          "evidence_id": "evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca",
+          "window_id": "window-1",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 规范 草案",
+          "read_focus": "Read external URL draft-ietf-oauth-v2-1-10 for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+          "claim_text": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/190eb4a3-8d42-4375-9505-d8d169087a7e/141c0fa069f21f31fec8a4e262eb188ed5b6ea692ed1d9d7d7c189c40226168a"
+        },
+        {
+          "evidence_id": "evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e",
+          "window_id": "window-1",
+          "source_id": "web-5c3b61a554c24e74",
+          "source_title": "The OAuth 2.1 Authorization Framework",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 draft specification changes from OAuth 2.0",
+          "read_focus": "Read external URL The OAuth 2.1 Authorization Framework for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "# The OAuth 2.1 Authorization Framework draft-ietf-oauth-v2-1-16",
+          "claim_text": "OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.7,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a94a01a2-055d-4209-8de9-b1356485a88c/74a2af638dcb58097e08f390d8f41e10bdfdf7ac0e9febdeec9a8c5ab40a72a6"
+        },
+        {
+          "evidence_id": "evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521",
+          "window_id": "window-7",
+          "source_id": "web-3d688f2f4f292681",
+          "source_title": "OAuth 2.0 vs OAuth 2.1: What Changed?",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 OAuth 2.0 差异 OIDC",
+          "read_focus": "Read external URL OAuth 2.0 vs OAuth 2.1: What Changed? for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "If you look at the official draft, OAuth 2.1 doesn’t add a single new feature.",
+          "claim_text": "OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a94a01a2-055d-4209-8de9-b1356485a88c/11481b009ccc6de512ae346e7c5e92f13f531835235d9c7e79765fc5f2ba2d66"
+        },
+        {
+          "evidence_id": "evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3",
+          "window_id": "window-7",
+          "source_id": "web-3d688f2f4f292681",
+          "source_title": "OAuth 2.0 vs OAuth 2.1: What Changed?",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1",
+          "provider": "serper_mcp",
+          "adapter": "external_url",
+          "search_query": "OAuth 2.1 OAuth 2.0 差异 OIDC",
+          "read_focus": "Read external URL OAuth 2.0 vs OAuth 2.1: What Changed? for claims that answer: OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "quote_text": "If you look at the official draft, OAuth 2.1 doesn’t add a single new feature.",
+          "claim_text": "OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。",
+          "relation_type": "SUPPORTS",
+          "support_score": 0.85,
+          "conflict_score": 0.0,
+          "snapshot_status": "EXTERNAL_ARCHIVED",
+          "snapshot_key": "research/external/a94a01a2-055d-4209-8de9-b1356485a88c/11481b009ccc6de512ae346e7c5e92f13f531835235d9c7e79765fc5f2ba2d66"
+        }
+      ],
+      "cell_evidence": [
+        {
+          "cell_id": "subject:key_evidence",
+          "row_id": "subject",
+          "evidence_id": "evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca",
+          "source_id": "web-726bec4437e4145a",
+          "source_title": "draft-ietf-oauth-v2-1-10",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/html/draft-ietf-oauth-v2-1-10"
+        },
+        {
+          "cell_id": "subject:answer",
+          "row_id": "subject",
+          "evidence_id": "evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521",
+          "source_id": "web-3d688f2f4f292681",
+          "source_title": "OAuth 2.0 vs OAuth 2.1: What Changed?",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1"
+        },
+        {
+          "cell_id": "subject:implications",
+          "row_id": "subject",
+          "evidence_id": "evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3",
+          "source_id": "web-3d688f2f4f292681",
+          "source_title": "OAuth 2.0 vs OAuth 2.1: What Changed?",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://www.loginradius.com/blog/engineering/oauth-2-0-vs-oauth-2-1"
+        },
+        {
+          "cell_id": "subject:finding-30a32032a48c8d1b",
+          "row_id": "subject",
+          "evidence_id": "evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e",
+          "source_id": "web-5c3b61a554c24e74",
+          "source_title": "The OAuth 2.1 Authorization Framework",
+          "generated_by": "",
+          "generated_ref_id": "",
+          "source_url": "https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/"
+        }
+      ],
+      "branch_decisions": [],
+      "loop_rounds": [],
+      "loop_decision_payload": {}
+    },
+    "traces": [
+      {
+        "trace_id": "a326a727-558d-4b73-9ac0-344917cfa3d9",
+        "trace_type": "RUN_CREATED",
+        "trace_message": "Research run 已入队",
+        "payload": {
+          "research_intent": {
+            "research_goal": "形成可逐项引用的研究结论，证据不足时说明缺口",
+            "deliverable_format": "Markdown research report with citation audit",
+            "constraints": [
+              "正式结论必须有 exact quote、snapshot 和 URL"
+            ],
+            "time_range": "current",
+            "depth": "STANDARD",
+            "research_type": "AUTO"
+          },
+          "profile_key": "DEFAULT",
+          "question": "OAuth 2.1 相对 OAuth 2.0 做了哪些调整，OIDC 在其上增加了什么？引用规范原文。",
+          "source_scope_count": 0,
+          "retrieval_mode": "WEB_ONLY"
+        },
+        "created_at": "2026-10-17T07:27:24Z"
+      },
+      {
+        "trace_id": "850c83d9-455b-4ae5-a0ee-1cabe6ec8df1",
+        "trace_type": "PLAN_FALLBACK",
+        "trace_message": "模型规划不可用，沿用规则生成的表格",
+        "payload": {
+          "detail": "PLANNER_PLANNING_LLM_OUTPUT_INVALID",
+          "reason_code": "PLANNER_FALLBACK_DETERMINISTIC"
+        },
+        "created_at": "2026-10-17T07:27:43Z"
+      },
+      {
+        "trace_id": "2274eeac-ace1-4e44-9c42-1b821fd30ae0",
+        "trace_type": "RUN_BUSINESS_COMPLETED",
+        "trace_message": "COMPLETED_WITH_LIMITATIONS",
+        "payload": {},
+        "created_at": "2026-10-17T07:29:34Z"
+      }
+    ],
+    "created_at": "2026-10-17T07:27:23Z",
+    "updated_at": "2026-10-17T07:29:34Z",
+    "saved_report_source": null,
+    "agent_execution_projection": {
+      "candidates": [
+        {
+          "confidence": 0.85,
+          "base_cell_version": 0,
+          "task_id": "190eb4a3-8d42-4375-9505-d8d169087a7e",
+          "cell_key": "subject:key_evidence",
+          "candidate_id": "2405a790-d7f7-4a96-8f02-c1c801c81b19"
+        },
+        {
+          "confidence": 0.85,
+          "base_cell_version": 0,
+          "task_id": "a94a01a2-055d-4209-8de9-b1356485a88c",
+          "cell_key": "subject:answer",
+          "candidate_id": "06bb1faa-2288-473a-93b8-f36329617782"
+        },
+        {
+          "confidence": 0.7,
+          "base_cell_version": 0,
+          "task_id": "a94a01a2-055d-4209-8de9-b1356485a88c",
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "candidate_id": "9172624a-0414-4d2b-a0c8-3c490d9b0c61"
+        },
+        {
+          "confidence": 0.85,
+          "base_cell_version": 0,
+          "task_id": "a94a01a2-055d-4209-8de9-b1356485a88c",
+          "cell_key": "subject:implications",
+          "candidate_id": "ed4e6475-7d27-4aea-bba9-c453153d3bfc"
+        }
+      ],
+      "tasks": [
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "planning:37fde422-ee21-4cd8-a559-5875ae71d46a",
+          "task_id": "56e80565-7baf-4229-b17e-0f19866e1965",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:28:40Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-3",
+          "task_key": "deep-cell:059795ab57e49fddb64f6c03aff510ad",
+          "task_id": "190eb4a3-8d42-4375-9505-d8d169087a7e",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:29:31Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "deep-cell:13503ab0e1c4e68d19d8f584ea86e40e",
+          "task_id": "a94a01a2-055d-4209-8de9-b1356485a88c",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:29:31Z",
+          "status": "SUBMITTED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "counterfactual:81b3a3c7b831b01cd4325cd76d9406ef",
+          "task_id": "41742188-727d-460b-a9f8-019b872489f2",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:30:10Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-1",
+          "task_key": "counterfactual:c7bb03385d6aa611837b15d602f11a07",
+          "task_id": "2414a085-a4b6-4234-9d22-5fb73a6fb88f",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:30:24Z",
+          "status": "FAILED"
+        },
+        {
+          "attempt_count": 1,
+          "fencing_token": 1,
+          "worker_instance_id": "research-agent-worker-1-2",
+          "task_key": "synthesis:265ec05ef948cc7f6b209c9617e2f338",
+          "task_id": "78058c9d-5594-43dd-8dc5-b9958294cecc",
+          "lease_epoch": 1,
+          "lease_expires_at": "2026-10-17T07:30:29Z",
+          "status": "SUBMITTED"
+        }
+      ],
+      "checkpoints": [
+        {
+          "checkpoint_seq": 1,
+          "candidate_high_water_mark": 4,
+          "merge_high_water_mark": 4,
+          "task_high_water_mark": 3
+        },
+        {
+          "checkpoint_seq": 2,
+          "candidate_high_water_mark": 4,
+          "merge_high_water_mark": 4,
+          "task_high_water_mark": 4
+        },
+        {
+          "checkpoint_seq": 3,
+          "candidate_high_water_mark": 4,
+          "merge_high_water_mark": 4,
+          "task_high_water_mark": 5
+        }
+      ],
+      "merges": [
+        {
+          "merge_id": "merge:e8dad643ea6bb8fa70fdc6050b73bf426be775e370044632dbdf6b3e7a0c015f",
+          "cell_key": "subject:key_evidence",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "2405a790-d7f7-4a96-8f02-c1c801c81b19"
+        },
+        {
+          "merge_id": "merge:41a53224878ab50e147332b7dc9f396d29428e2fd345746add3f6c3e0b0983e9",
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "9172624a-0414-4d2b-a0c8-3c490d9b0c61"
+        },
+        {
+          "merge_id": "merge:6e341bc822146f98b26c2532d27d5c78101afb1162551fbd6a153744ba1d8cb1",
+          "cell_key": "subject:implications",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "ed4e6475-7d27-4aea-bba9-c453153d3bfc"
+        },
+        {
+          "merge_id": "merge:1ffa9fe558a208910f2244f343305b89bb6901ae0056d771b663d6143fd54b7a",
+          "cell_key": "subject:answer",
+          "result_cell_version": 1,
+          "expected_cell_version": 0,
+          "reason_code": "VERIFIED_AND_VERSION_MATCHED",
+          "decision": "ACCEPTED",
+          "candidate_id": "06bb1faa-2288-473a-93b8-f36329617782"
+        }
+      ],
+      "execution_mode": "INCREMENTAL_V1",
+      "merge_count": 4,
+      "task_count": 6,
+      "candidate_count": 4
+    }
+  },
+  "resources": {
+    "plan": {
+      "available": true,
+      "data": {
+        "plan_status": "READY",
+        "review_deadline": null,
+        "planner": "DETERMINISTIC",
+        "rows": [
+          {
+            "entity_key": "subject",
+            "label": "Subject"
+          }
+        ],
+        "columns": [
+          {
+            "column_key": "answer",
+            "label": "answer"
+          },
+          {
+            "column_key": "finding-30a32032a48c8d1b",
+            "label": "finding-30a32032a48c8d1b"
+          },
+          {
+            "column_key": "implications",
+            "label": "implications"
+          },
+          {
+            "column_key": "key_evidence",
+            "label": "key_evidence"
+          },
+          {
+            "column_key": "limitations",
+            "label": "limitations"
+          }
+        ],
+        "brief": {},
+        "effort_tier": "",
+        "authoritative_domains": [],
+        "perspectives": []
+      }
+    },
+    "cells": {
+      "available": true,
+      "data": [
+        {
+          "cell_key": "subject:answer",
+          "entity_label": "Subject",
+          "column_label": "answer",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:c27d6952ec951da063f1782cf2c8fc0d628ea67e8bb7e521",
+              "claim_text": "OAuth 2.1 并未新增任何特性，而是把既有 RFC 合并进主文档",
+              "source_domain": "loginradius.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:finding-30a32032a48c8d1b",
+          "entity_label": "Subject",
+          "column_label": "finding-30a32032a48c8d1b",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:577f3b20c0d69108ca893424dfb45c30661a9c8c31afc02e",
+              "claim_text": "OAuth 2.1 框架草案文档编号为 draft-ietf-oauth-v2-1-16",
+              "source_domain": "ietf.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 700000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:implications",
+          "entity_label": "Subject",
+          "column_label": "implications",
+          "cell_status": "VERIFIED",
+          "candidate_value": "OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:57bf880fed473f6b93698139a011184fe272a44b3ae239c3",
+              "claim_text": "OAuth 2.1 并未添加新功能，而是把过去十年的安全最佳实践整合进单一规范。",
+              "source_domain": "loginradius.com"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:key_evidence",
+          "entity_label": "Subject",
+          "column_label": "key_evidence",
+          "cell_status": "VERIFIED",
+          "candidate_value": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+          "equivalent_claims": [
+            {
+              "evidence_key": "evidence:5a8d5003d4a9ce9592cfe7cd288bc9bb3517c9b9130141ca",
+              "claim_text": "This specification replaces and obsoletes the OAuth 2.0 Authorization Framework described in RFC 6749",
+              "source_domain": "ietf.org"
+            }
+          ],
+          "independent_source_count": 1,
+          "confidence_ppm": 850000,
+          "conflicts": []
+        },
+        {
+          "cell_key": "subject:limitations",
+          "entity_label": "Subject",
+          "column_label": "limitations",
+          "cell_status": "GAP",
+          "candidate_value": "",
+          "equivalent_claims": [],
+          "independent_source_count": 0,
+          "confidence_ppm": 0,
+          "conflicts": []
+        }
+      ]
+    },
+    "counter-checks": {
+      "available": true,
+      "data": []
+    },
+    "replans": {
+      "available": true,
+      "data": [
+        {
+          "plan_revision_from": 1,
+          "plan_revision_to": 2,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:limitations"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 2,
+          "created_at": "2026-10-17T07:28:39Z"
+        },
+        {
+          "plan_revision_from": 2,
+          "plan_revision_to": 3,
+          "deviation_type": "MARGINAL_GAIN_EXHAUSTED",
+          "repair_cause": "MARGINAL_GAIN_EXHAUSTED",
+          "observed_facts": "MA4 observed NO_VALID_QUOTE for 1 unresolved cell(s); only those cells were replanned.",
+          "affected_cells": [
+            "subject:limitations"
+          ],
+          "strategy": "SWITCH_LANGUAGE",
+          "query_count": 0,
+          "created_at": "2026-10-17T07:29:23Z"
+        }
+      ]
+    },
+    "discovery-proposals": {
+      "available": true,
+      "data": []
+    }
+  }
+}
