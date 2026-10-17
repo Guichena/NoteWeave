@@ -137,7 +137,8 @@ class ResearchAgentHonestReportService {
     }
 
     static String summaryValue(String[] cell) {
-        if (cell == null) return "-";
+        // 规划时标为不适用的组合不建单元格
+        if (cell == null) return "不适用";
         String status = cell[0] == null ? "" : cell[0];
         String value = cell[1] == null ? "" : cell[1].strip();
         if ("VERIFIED".equals(status) && !value.isBlank()) {

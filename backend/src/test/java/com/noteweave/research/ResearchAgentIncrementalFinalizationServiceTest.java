@@ -334,7 +334,7 @@ class ResearchAgentIncrementalFinalizationServiceTest {
                 "## 结论汇总",
                 "| 研究对象 | 索引类型 | 索引代价 |",
                 "| PostgreSQL 17 | Verified answer | 未找到证据 |",
-                "| MySQL 8.4 | 证据冲突 | - |");
+                "| MySQL 8.4 | 证据冲突 | 不适用 |");
         assertThat(report).doesNotContain("| 局限 |");
         assertThat(report.indexOf("## 结论汇总")).isLessThan(report.indexOf("## 已验证结论"));
     }

@@ -69,7 +69,8 @@ public class ResearchPlanningService {
             ResearchAgentTaskCoordinatorService coordinator,
             ResearchAgentCompletionCanonicalizer canonicalizer,
             @Value("${noteweave.research.llm-planning-v1:true}") boolean enabled,
-            @Value("${noteweave.research.plan-review-seconds:0}") long reviewSeconds
+            @Value("${noteweave.research.plan-review-seconds:0}") long reviewSeconds,
+            @Value("${noteweave.research.agent.high-risk-quorum-enabled:false}") boolean highRiskQuorumEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -77,7 +78,14 @@ public class ResearchPlanningService {
         this.canonicalizer = canonicalizer;
         this.enabled = enabled;
         this.reviewSeconds = Math.max(0, reviewSeconds);
+        this.highRiskQuorumEnabled = highRiskQuorumEnabled;
     }
+
+    /**
+     * 高风险单元格会走两路独立取证并要求两个独立来源，耗时与失败率都明显更高。
+     * 默认关闭：规划给出的 high_risk 只在开启时生效。
+     */
+    private final boolean highRiskQuorumEnabled;
 
     /** 新建的 Run 在骨架表格建好之后进入规划阶段；从断点恢复的 Run 已有表格，不经过这里。 */
     public void requirePlanning(String runId) {
@@ -263,7 +271,7 @@ public class ResearchPlanningService {
             List<String> intents = stringList(raw.get("search_intents")).stream()
                     .map(intent -> clean(intent, MAX_COLUMN_LABEL_CHARS)).filter(intent -> !intent.isBlank())
                     .distinct().limit(5).toList();
-            boolean highRisk = Boolean.TRUE.equals(raw.get("high_risk"));
+            boolean highRisk = highRiskQuorumEnabled && Boolean.TRUE.equals(raw.get("high_risk"));
             columns.add(new ValidatedColumn("dim-" + shortDigest(label), label,
                     clean(text(raw.get("description")), MAX_TEXT_CHARS),
                     ANSWER_FORMATS.contains(format) ? format : "SHORT_TEXT", highRisk,
@@ -296,9 +304,22 @@ public class ResearchPlanningService {
                         "questions", stringList(item.get("questions")).stream()
                                 .map(question -> clean(question, MAX_COLUMN_LABEL_CHARS)).limit(5).toList()))
                 .toList();
+        // 不适用的研究对象 · 列组合不建单元格；至少保留一个单元格，否则忽略这份标注
+        Map<String, String> entityKeys = new java.util.HashMap<>();
+        entities.forEach(entity -> entityKeys.put(normalizedKey(entity.label()), entity.key()));
+        Map<String, String> columnKeys = new java.util.HashMap<>();
+        columns.forEach(column -> columnKeys.put(normalizedKey(column.label()), column.key()));
+        Set<String> notApplicable = new java.util.TreeSet<>();
+        for (Map<String, Object> raw : listOfMaps(plan.get("not_applicable"))) {
+            String entityKey = entityKeys.get(normalizedKey(clean(text(raw.get("entity")), MAX_ENTITY_LABEL_CHARS)));
+            String columnKey = columnKeys.get(normalizedKey(clean(text(raw.get("dimension")), MAX_COLUMN_LABEL_CHARS)));
+            if (entityKey != null && columnKey != null) notApplicable.add(entityKey + ":" + columnKey);
+        }
+        if (notApplicable.size() >= entities.size() * columns.size()) notApplicable.clear();
         return new ValidatedPlan(List.copyOf(entities), List.copyOf(columns), domains,
                 EFFORT_TIERS.contains(effortTier) ? effortTier : "STANDARD",
-                clean(text(plan.get("research_type")), 64), Map.copyOf(brief), perspectives, List.copyOf(reasons));
+                clean(text(plan.get("research_type")), 64), Map.copyOf(brief), perspectives, List.copyOf(reasons),
+                Set.copyOf(notApplicable));
     }
 
     private void replaceMatrix(String runId, ValidatedPlan plan, String plannerVersion, List<String> workerReasons) {
@@ -327,6 +348,7 @@ public class ResearchPlanningService {
                     """, rowId, runId, entity.key(), branchId, entity.label(), question,
                     text(plan.brief().get("objective")).isBlank() ? question : text(plan.brief().get("objective")));
             for (ValidatedColumn column : plan.columns()) {
+                if (plan.notApplicable().contains(entity.key() + ":" + column.key())) continue;
                 jdbcTemplate.update("""
                         insert into research_cell(
                             id, research_run_id, research_row_id, cell_key, branch_id, column_key,
@@ -362,6 +384,7 @@ public class ResearchPlanningService {
         planJson.put("authoritative_domains", plan.authoritativeDomains());
         planJson.put("perspectives", plan.perspectives());
         planJson.put("reason_codes", plan.reasonCodes());
+        planJson.put("not_applicable", List.copyOf(new java.util.TreeSet<>(plan.notApplicable())));
         planJson.put("worker_degradation_reasons", workerReasons);
         int cellCount = plan.entities().size() * plan.columns().size();
         String digest = canonicalizer.domainSeparatedDigest("research-matrix-plan.v2", planJson);
@@ -508,5 +531,15 @@ public class ResearchPlanningService {
     record ValidatedPlan(List<ValidatedEntity> entities, List<ValidatedColumn> columns,
                          List<String> authoritativeDomains, String effortTier, String researchType,
                          Map<String, Object> brief, List<Map<String, Object>> perspectives,
-                         List<String> reasonCodes) { }
+                         List<String> reasonCodes, Set<String> notApplicable) {
+        ValidatedPlan {
+            notApplicable = notApplicable == null ? Set.of() : Set.copyOf(notApplicable);
+        }
+
+        ValidatedPlan(List<ValidatedEntity> entities, List<ValidatedColumn> columns,
+                      List<String> authoritativeDomains, String effortTier, String researchType,
+                      Map<String, Object> brief, List<Map<String, Object>> perspectives, List<String> reasonCodes) {
+            this(entities, columns, authoritativeDomains, effortTier, researchType, brief, perspectives, reasonCodes, Set.of());
+        }
+    }
 }

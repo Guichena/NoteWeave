@@ -176,7 +176,7 @@ class ResearchPlanningServiceTest {
 
     @Test
     void reviewWindowShouldWaitUntilApprovedAndAllowRevision() {
-        var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600);
+        var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600, true);
         reviewing.applyResult(planningTask(), result("PLANNED", plan(List.of("PostgreSQL"), List.of("a", "b"))));
 
         assertThat(planStatus()).isEqualTo("REVIEW");
@@ -216,6 +216,23 @@ class ResearchPlanningServiceTest {
         result.put("degradation_reasons", List.of());
         if (plan != null) result.put("plan", plan);
         return result;
+    }
+
+    @Test
+    void notApplicablePairsAreNotCreatedAndHighRiskNeedsTheQuorumSwitch() {
+        Map<String, Object> raw = plan(List.of("OAuth 2.1", "OpenID Connect"), List.of("Removed grants", "OIDC additions"));
+        raw.put("not_applicable", List.of(Map.of("entity", "OAuth 2.1", "dimension", "OIDC additions")));
+        raw.put("dimensions", List.of(
+                Map.of("label", "Removed grants", "description", "d", "high_risk", true),
+                Map.of("label", "OIDC additions", "description", "d")));
+        var defaults = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 0, false);
+
+        defaults.applyResult(planningTask(), result("PLANNED", raw));
+
+        // 2 × 2 去掉一个不适用的组合
+        assertThat(cellKeys()).hasSize(3);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_cell where research_run_id = ? and high_risk = true", Integer.class, runId)).isZero();
     }
 
     private Map<String, Object> plan(List<String> entities, List<String> dimensions) {

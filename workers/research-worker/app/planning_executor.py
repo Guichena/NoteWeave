@@ -164,9 +164,9 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "A version, release or date that the question asks for is an answer, not an entity: for 'which JDK "
             "version made X final' the entity is X and the version is a dimension. Never add dimensions the "
             "question does not ask about, such as support status or history.",
-            "Every dimension must make sense for every entity, because the table asks each entity every "
-            "dimension. When different parts of the question ask about different subjects (for example what "
-            "changed in A and what B adds), use one entity for the overall topic and make each part a dimension.",
+            "When a dimension does not apply to an entity (for example 'what OIDC adds' for the entity "
+            "'OAuth 2.1'), list that pair in not_applicable; those cells are not researched. Prefer one entity for "
+            "the overall topic when most dimensions would not apply to the separate entities.",
             "Requests about the report itself, such as citing the original text or giving sources, are output "
             "requirements, never dimensions.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
@@ -194,6 +194,7 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "dimensions": [{"label": "string", "description": "string", "answer_format": "string",
                             "high_risk": False, "search_intents": ["string"]}],
             "authoritative_domains": ["string"],
+            "not_applicable": [{"entity": "entity label", "dimension": "dimension label"}],
         },
         "planning_input": {key: value for key, value in planning_input.items() if key != "input_digest"},
         "conversation_summary": str(brief.get("conversation_summary") or "")[:MAX_CONTEXT_CHARS],
@@ -286,6 +287,10 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         "authoritative_domains": [
             str(item) for item in raw.get("authoritative_domains", []) if isinstance(item, str)
         ][:8] if isinstance(raw.get("authoritative_domains"), list) else [],
+        "not_applicable": [
+            {"entity": str(item.get("entity") or ""), "dimension": str(item.get("dimension") or "")}
+            for item in raw.get("not_applicable", []) if isinstance(item, dict)
+        ][:60] if isinstance(raw.get("not_applicable"), list) else [],
     }
     return PlanDraft(plan, [])
 
