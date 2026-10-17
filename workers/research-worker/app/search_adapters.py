@@ -243,9 +243,13 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
                 score = round(max(0.0, min(1.0, float(item.get("rerank_score") or 0) / 3)), 4)
             except (TypeError, ValueError):
                 score = 0.0
+            url = _safe_result_url(str(item.get("url") or ""))
+            if not url:
+                continue
+            title = " ".join(str(item.get("title") or "").split()) or (urllib.parse.urlsplit(url).hostname or url)
             mapped.append({
-                "title": item.get("title") or "",
-                "url": item.get("url") or "",
+                "title": title[:280],
+                "url": url,
                 "snippet": item.get("summary") or item.get("snippet") or "",
                 "score": score,
                 "date": item.get("date") or "",
@@ -258,6 +262,14 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
     def _payload(self, query: str, limit: int, page: int) -> dict[str, object]:
         del page
         return {"query": query, "count": max(1, min(limit, 50))}
+
+
+def _safe_result_url(url: str) -> str:
+    """把结果网址里的中文、空格等字符做百分号编码；归档接口要求标准 URI，标题也不能为空。"""
+    url = url.strip()
+    if not url.lower().startswith(("http://", "https://")):
+        return ""
+    return urllib.parse.quote(url, safe=":/?#[]@!$&'()*+,;=%~")
 
 
 class HttpGetSearchTransport:

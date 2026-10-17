@@ -93,3 +93,17 @@ def test_fetch_chain_tries_deepseek_before_tavily(monkeypatch) -> None:
 
     names = [type(item).__name__ for item in transport.transports]
     assert names[:2] == ["DeepSeekUrlSnapshotTransport", "TavilyMcpUrlSnapshotTransport"]
+
+
+def test_blank_titles_and_non_ascii_urls_are_normalized_for_the_archive(monkeypatch) -> None:
+    def fake_urlopen(request, timeout):
+        return _Response(json.dumps({"results": [
+            {"title": "", "url": "https://baike.baidu.com/item/Java虚拟线程 x", "summary": "s"},
+            {"title": "T", "url": "ftp://example.com/file", "summary": "s"}]}).encode("utf-8"))
+
+    monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", fake_urlopen)
+    rows = DeepSeekSearchTransport("key-1").search("q", 5)
+
+    assert len(rows) == 1
+    assert rows[0]["title"] == "baike.baidu.com"
+    assert rows[0]["url"] == "https://baike.baidu.com/item/Java%E8%99%9A%E6%8B%9F%E7%BA%BF%E7%A8%8B%20x"
