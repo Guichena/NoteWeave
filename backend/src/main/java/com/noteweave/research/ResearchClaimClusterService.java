@@ -126,11 +126,12 @@ class ResearchClaimClusterService {
             if (!represented) throw invalid();
         }
         String flags = jdbc.queryForObject("select agent_feature_flags_json from research_run where id = ?", String.class, task.runId());
+        // 语义审计关闭时多个候选簇也不再等待审计：单元格取合并选中的候选，否则这些单元格永远无法成文
         boolean auditEnabled = flags != null && read(flags).path("evidence_audit_v1").asBoolean();
         for (String cell : changed) jdbc.update("""
                 update research_cell set semantic_revision = semantic_revision + 1, semantic_audit_status = ?, updated_at = current_timestamp
                 where research_run_id = ? and cell_key = ?
-                """, auditEnabled || clusters(task.runId(), cell).size() > 1 ? "PENDING" : "NOT_REQUIRED", task.runId(), cell);
+                """, auditEnabled ? "PENDING" : "NOT_REQUIRED", task.runId(), cell);
     }
 
     List<Map<String, Object>> clusters(String runId, String cellKey) {

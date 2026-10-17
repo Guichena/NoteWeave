@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
     research_agent_evidence_audit_enabled: bool = True
-    research_agent_synthesis_enabled: bool = False
+    research_agent_synthesis_enabled: bool = True
     research_agent_wide_discovery_enabled: bool = True
     research_agent_planning_enabled: bool = True
     research_agent_fake_provider_enabled: bool = False

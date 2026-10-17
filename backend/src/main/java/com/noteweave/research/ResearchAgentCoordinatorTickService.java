@@ -212,7 +212,10 @@ public class ResearchAgentCoordinatorTickService {
      */
     private TickReceipt awaitPartialSynthesis(String runId, ResearchAgentCoordinatorSnapshotService.Snapshot snapshot,
                                               ResearchAgentRunCompletionGate.CompletionDecision decision) {
-        if (decision.terminalState() != ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS) {
+        // 完成判定只描述核验程度，不决定报告有没有回答：证据不足时也用已核验的单元格成文，
+        // 没有任何已核验单元格时 advancePartialSynthesis 会退回模板
+        if (decision.terminalState() != ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS
+                && decision.terminalState() != ResearchAgentRunCompletionGate.CompletionTerminalState.INSUFFICIENT_EVIDENCE) {
             return null;
         }
         ResearchAgentRoleWorkflowService.WorkflowReceipt workflow = roleWorkflow.advancePartialSynthesis(

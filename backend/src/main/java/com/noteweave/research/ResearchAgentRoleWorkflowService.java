@@ -69,9 +69,9 @@ class ResearchAgentRoleWorkflowService {
     }
 
     WorkflowReceipt advance(String runId, int waveNo) {
-        if (!auditEnabled || !featureFlags.enabledForRun(
-                runId, ResearchAgentFeatureFlagService.EVIDENCE_AUDIT)) {
-            return new WorkflowReceipt("FALLBACK_READY", null);
+        if (!auditActive(runId)) {
+            // 语义审计关闭时直接成文：单元格已经过引用、数字与来源的确定性检查
+            return advanceSynthesis(runId, waveNo, NO_AUDIT);
         }
         RoleResult audit = latestRoleResult(runId, "EVIDENCE_AUDIT");
         if (audit == null) {
@@ -80,6 +80,17 @@ class ResearchAgentRoleWorkflowService {
             return new WorkflowReceipt(taskization == null ? "AUDIT_BLOCKED" : "AUDIT_TASKIZED", taskization);
         }
         if (!"PASS".equals(audit.status())) return new WorkflowReceipt("AUDIT_BLOCKED", null);
+        return advanceSynthesis(runId, waveNo, audit);
+    }
+
+    /** 语义审计未开启时成文输入里的审计摘要占位值，只用于输入与结果的一致性比对。 */
+    private static final RoleResult NO_AUDIT = new RoleResult("NOT_RUN", "sha256:" + "0".repeat(64));
+
+    private boolean auditActive(String runId) {
+        return auditEnabled && featureFlags.enabledForRun(runId, ResearchAgentFeatureFlagService.EVIDENCE_AUDIT);
+    }
+
+    private WorkflowReceipt advanceSynthesis(String runId, int waveNo, RoleResult audit) {
         if (!synthesisEnabled || !featureFlags.enabledForRun(
                 runId, ResearchAgentFeatureFlagService.WORKER_SYNTHESIS)) {
             return new WorkflowReceipt("FALLBACK_READY", null);
@@ -117,7 +128,7 @@ class ResearchAgentRoleWorkflowService {
         if (finished != null && finished > 0) return new WorkflowReceipt("FALLBACK_READY", null);
         // 带局限时总会有单元格没通过审计（冲突、缺口），整体审计结论通常不是 PASS；
         // 成文只用 research_formal_eligible_cell 里逐格审计通过的单元格，所以只要求审计已经执行过
-        RoleResult audit = latestRoleResult(runId, "EVIDENCE_AUDIT");
+        RoleResult audit = auditActive(runId) ? latestRoleResult(runId, "EVIDENCE_AUDIT") : NO_AUDIT;
         if (audit == null || verifiedCells(runId).isEmpty()) {
             return new WorkflowReceipt("FALLBACK_READY", null);
         }

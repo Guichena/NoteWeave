@@ -60,13 +60,13 @@ class ResearchAgentHonestReportService {
         if (synthesis != null) {
             // 综合撰写的正文在前，后面保留结论汇总、逐条引用核对和局限说明
             report = new StringBuilder(synthesis.markdown().strip()).append("\n\n")
-                    .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+                    .append(verificationSummary(runId, decision)).append("\n\n");
             jdbcTemplate.update("update research_agent_synthesis_candidate set status = 'PROMOTED' where id = ? and status = 'VALIDATED'",
                     synthesis.id());
         } else {
             report = new StringBuilder("# 研究报告\n\n")
                     .append(question == null ? "" : question).append("\n\n")
-                    .append("**结果：** `").append(decision.terminalState().name()).append("`\n\n");
+                    .append(verificationSummary(runId, decision)).append("\n\n");
         }
         appendSummaryTable(report, runId);
         if (!decision.promotableClaims().isEmpty()) {
@@ -87,7 +87,7 @@ class ResearchAgentHonestReportService {
                 report.append('\n');
             }
         }
-        appendVerifiedFacts(report, runId, decision, labels);
+        appendVerifiedFacts(report, runId, decision, labels, synthesis != null);
         if (!decision.unresolvedCells().isEmpty() || !decision.limitations().isEmpty()) {
             report.append("## 局限与未解决项\n\n");
             for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
@@ -101,10 +101,9 @@ class ResearchAgentHonestReportService {
             }
             report.append('\n');
         }
-        if (!decision.reasonCodes().isEmpty()) {
-            report.append("## 完成判定原因\n\n");
-            decision.reasonCodes().forEach(reason -> report.append("- ").append(markdown(reason)).append("\n"));
-        }
+        // 内部完成状态与原因码放在末尾，供排查使用
+        report.append("## 完成判定原因\n\n- 完成状态：`").append(decision.terminalState().name()).append("`\n");
+        decision.reasonCodes().forEach(reason -> report.append("- ").append(markdown(reason)).append("\n"));
         return ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString());
     }
 
@@ -197,7 +196,7 @@ class ResearchAgentHonestReportService {
      */
     private void appendVerifiedFacts(StringBuilder report, String runId,
                                      ResearchAgentRunCompletionGate.CompletionDecision decision,
-                                     Map<String, String> labels) {
+                                     Map<String, String> labels, boolean synthesized) {
         java.util.Set<String> promoted = new java.util.HashSet<>();
         decision.promotableClaims().forEach(claim -> promoted.add(claim.cellKey()));
         List<String[]> cells = jdbcTemplate.query("""
@@ -206,8 +205,13 @@ class ResearchAgentHonestReportService {
                 """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2), rs.getString(3)}, runId);
         cells.removeIf(cell -> promoted.contains(cell[0]) || cell[1] == null || cell[1].isBlank());
         if (cells.isEmpty()) return;
-        report.append("## 已核验的部分事实\n\n")
-                .append("以下研究项已有原文证据支撑，但整体证据不足以形成完整结论，仅供参考。\n\n");
+        if (synthesized) {
+            // 正文已经基于这些单元格成文，这里只保留逐条原文供核对
+            report.append(decision.promotableClaims().isEmpty() ? "## 引用核对\n\n" : "");
+        } else {
+            report.append("## 已核验的部分事实\n\n")
+                    .append("以下研究项已有原文证据支撑，但整体证据不足以形成完整结论，仅供参考。\n\n");
+        }
         for (String[] cell : cells) {
             report.append("### ").append(markdown(heading(cell[0], labels))).append("\n\n")
                     .append(markdown(cell[1])).append("\n\n");
@@ -234,6 +238,23 @@ class ResearchAgentHonestReportService {
         } catch (Exception exception) {
             return List.of();
         }
+    }
+
+    /**
+     * 报告开头的核验说明：用中文写清楚几项已核验、几项没有找到证据或证据冲突，
+     * 不再直接写内部完成状态代码。完成状态仍记录在研究记录里，报告末尾的判定原因保留代码供排查。
+     */
+    String verificationSummary(String runId, ResearchAgentRunCompletionGate.CompletionDecision decision) {
+        Integer verified = jdbcTemplate.queryForObject("""
+                select count(*) from research_formal_eligible_cell where research_run_id = ? and cell_status = 'VERIFIED'
+                """, Integer.class, runId);
+        long conflicted = decision.unresolvedCells().stream()
+                .filter(cell -> cell.status() != null && cell.status().startsWith("CONFLICT")).count();
+        long missing = decision.unresolvedCells().size() - conflicted;
+        StringBuilder text = new StringBuilder("**核验情况：** 已核验 ").append(verified == null ? 0 : verified).append(" 项");
+        if (missing > 0) text.append("，未找到足够证据 ").append(missing).append(" 项");
+        if (conflicted > 0) text.append("，来源说法冲突 ").append(conflicted).append(" 项");
+        return text.append("。").toString();
     }
 
     private Synthesis validatedSynthesis(String runId) {

@@ -132,7 +132,7 @@ def _extract_evidence_cards_detailed_with_llm(
                 "quote_text must be one contiguous exact substring of window.text copied character-for-character",
                 "keep quote_text at 160 characters or fewer; copy one short sentence or clause and never use ellipses",
                 "every number, date, unit, and comparison in claim_text must appear verbatim in quote_text; never copy version numbers from the question into a claim",
-                "claim_text must equal quote_text exactly; do not summarize, paraphrase, translate, prefix, or suffix the quoted text",
+                "claim_text is a short direct answer to the column for target_entity, written in the language of question and based only on quote_text, for example 'JDK 21 正式发布（JEP 444）'; do not add facts that quote_text does not state",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
                 "for each (entity, column) in the schema, produce at most one SUPPORTS card and one CONFLICTS card",
@@ -166,7 +166,7 @@ def _extract_evidence_cards_detailed_with_llm(
                         "entity_name": "business entity name; the system owns persisted entity ids",
                         "entity_id": "optional; only echo an input counterfactual target entity id",
                         "column_key": "must be one of the schema_columns",
-                        "claim_text": "must be exactly identical to quote_text",
+                        "claim_text": "short answer to the column grounded only in quote_text",
                         "quote_text": "one contiguous character-for-character substring copied from window.text, including any Markdown/newlines",
                         "relation_type": "SUPPORTS | WEAK_SUPPORT | CONFLICTS",
                         "support_score": "0.0-1.0",
@@ -290,7 +290,7 @@ def _extract_evidence_cards_detailed_with_llm(
                 )
             )
             continue
-        claim = str(raw_card.get("claim_text") or "").strip()
+        claim = _grounded_claim(str(raw_card.get("claim_text") or "").strip(), quote)
         if not claim:
             # 缺关键字段,直接跳过
             rejected.append(
@@ -491,6 +491,19 @@ def _snap_to_boundaries(text: str, start: int, end: int) -> str:
 
 def _is_word_char(char: str) -> bool:
     return char.isascii() and char.isalnum()
+
+
+_CLAIM_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def _grounded_claim(claim: str, quote: str) -> str:
+    """结论写成对这一列的简短回答；其中的数字、版本号、日期必须都出现在引用原文里，
+    否则 Java 侧会按引用不支撑判为不合格，这时退回用原文本身作为结论。"""
+    if not claim:
+        return ""
+    if any(number not in quote for number in _CLAIM_NUMBER.findall(claim)):
+        return quote.strip()
+    return claim
 
 
 def _locate_whitespace_tolerant(text: str, quote: str) -> tuple[int, str] | None:

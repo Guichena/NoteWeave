@@ -35,3 +35,12 @@ def test_padded_or_too_short_quotes_are_not_relaxed() -> None:
     text = "Verifier gated synthesis must cite opened windows"
     assert _locate_whitespace_tolerant(text, " Verifier gated synthesis must cite opened windows ") is None
     assert _locate_whitespace_tolerant(text, "Verifier  gated") is None
+
+
+def test_claim_is_a_short_answer_but_falls_back_to_the_quote_when_numbers_are_not_quoted() -> None:
+    from app.extractor import _grounded_claim
+
+    quote = "This JEP proposes to finalize virtual threads in JDK 21."
+    assert _grounded_claim("虚拟线程在 JDK 21 正式发布", quote) == "虚拟线程在 JDK 21 正式发布"
+    # 结论里的 444 不在引用原文中，Java 侧会判为引用不支撑，退回原文
+    assert _grounded_claim("JDK 21 正式发布（JEP 444）", quote) == quote

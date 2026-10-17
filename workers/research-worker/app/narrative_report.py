@@ -65,6 +65,12 @@ class NarrativeReportPolisher:
                 "Every paragraph must cite at least one cell_key and evidence_key.",
                 "Do not add sources, numbers, dates, versions, names, or conclusions.",
                 "Write a cohesive professional research article, not an audit log.",
+                "executive_summary must directly answer research_question in one to three sentences using the "
+                "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
+                "instead of answering.",
+                "The first section must be headed '直接回答' (or 'Direct answer' for an English question) and give "
+                "one short paragraph per part of the question, each bound to the cells that answer it. A part that "
+                "no frozen cell answers is not written there; list it in limitations instead.",
                 "Return JSON only.",
                 "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
                 "Write title, summary, headings, prose and table in the same language as research_question; keep "

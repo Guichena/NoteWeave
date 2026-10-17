@@ -66,6 +66,9 @@ noteweave:
   kafka:
     enabled: false
   research:
+    # 现有测试按语义审计开启、综合撰写关闭编写；生产默认值相反，由专门的测试覆盖
+    evidence-audit-v1: true
+    worker-synthesis-v1: false
     agent:
       # 现有协调器测试按每个单元格一个任务、宽搜索不限投入等级编写；新默认值由专门的测试覆盖
       max-cells-per-task: 1
