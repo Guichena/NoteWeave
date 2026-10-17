@@ -513,7 +513,7 @@ def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[objec
     一手来源指工作台资料、规划给出的官方域名和官方文档、政府、学术来源；网址里的版本号与研究对象不一致时降一档。
     评审主要按来源权威性和版本是否对应打分，二手来源的引用即使内容正确也会拉低结论的可信度。
     """
-    if len(cards) <= 1:
+    if not cards:
         return cards
     by_window = {getattr(window, "window_id", ""): window for window in windows}
     domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
@@ -532,7 +532,20 @@ def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[objec
         return (0 if primary else 2) + _version_mismatch(versions, window)
 
     best = min(tier(card) for card in cards)
+    # 问题明确要求官方文档、RFC 或规范原文时，首轮只有二手来源的单元格按缺口处理，交给补查定向找官方来源；
+    # 补查仍找不到官方来源时才用二手来源，避免单元格空着
+    if best >= 2 and _official_sources_required(snapshot) and not isinstance(snapshot.query_policy.get("repair_target"), dict):
+        return []
     return [card for card in cards if tier(card) == best]
+
+
+_OFFICIAL_REQUEST = re.compile(r"官方|规范原文|标准原文|RFC|PEP|JEP|official|specification", re.IGNORECASE)
+
+
+def _official_sources_required(snapshot: ResearchAgentTaskSnapshot) -> bool:
+    brief = snapshot.query_policy.get("research_brief")
+    question = str(brief.get("current_question") or "") if isinstance(brief, dict) else ""
+    return bool(_OFFICIAL_REQUEST.search(question or str(snapshot.query_policy.get("query") or "")))
 
 
 def _merge_extractions(results: list[ExtractionResult], cards: list[object]) -> ExtractionResult:

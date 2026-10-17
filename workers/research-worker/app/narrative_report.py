@@ -69,6 +69,8 @@ class NarrativeReportPolisher:
                 "verified sources instead (for example '本次核验的资料显示').",
                 "When a cell's supporting_quotes contain several different facts or list items for its column, cover "
                 "each relevant one instead of only candidate_value.",
+                "Cite in each paragraph only the evidence_keys whose quotes directly support that paragraph's "
+                "statements, usually one to three; never list every key of a cell.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary must directly answer research_question in one to three sentences using the "

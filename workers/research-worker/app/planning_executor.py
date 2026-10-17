@@ -9,6 +9,7 @@ FALLBACK，Java 保留规则生成的骨架表格。Worker 只提出方案，是
 from __future__ import annotations
 
 import logging
+import re
 import unicodedata
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
@@ -261,7 +262,8 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
     formats = {str(item) for item in planning_input.get("answer_formats", [])} or {"SHORT_TEXT"}
 
     entities = _dedupe_by_label(raw.get("entities"))
-    dimensions = _dedupe_by_label(raw.get("dimensions"))
+    # 引用、来源、原文、可信度这类列描述的是报告格式，不是要研究的内容；提示里已禁止，这里再按名称过滤一次
+    dimensions = [item for item in _dedupe_by_label(raw.get("dimensions")) if not _META_DIMENSION.search(" ".join(str(item["label"]).split()))]
     # 答案格式不在允许范围内时 Java 会按 SHORT_TEXT 处理，这里同样处理，不因此拒绝整张表
     dimensions = [
         dimension if str(dimension.get("answer_format") or "").upper() in formats
@@ -313,6 +315,13 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         ][:60] if isinstance(raw.get("not_applicable"), list) else [],
     }
     return PlanDraft(plan, [])
+
+
+# 只过滤整列都在讲引用、来源、链接或可信度的列；"支持的证据与来源"这类研究内容列不受影响
+_META_DIMENSION = re.compile(
+    r"(?i)^(?:official\s+)?(?:quotes?|sources?|citations?|references?|links?)(?:\s+(?:and|&)\s+(?:quotes?|sources?|links?|urls?))?$"
+    r"|^(?:规范|官方)?(?:原文)?(?:引用|来源|出处|链接)(?:与|和)?(?:来源|出处|链接)?$"
+    r"|证据强度|可信度|置信度|(?i:confidence|evidence strength)")
 
 
 def _fitting_tier(declared: str, entity_count: int, dimension_count: int) -> str:

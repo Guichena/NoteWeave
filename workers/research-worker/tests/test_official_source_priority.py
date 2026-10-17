@@ -143,3 +143,22 @@ def test_cell_keeps_only_primary_source_evidence_when_both_kinds_exist() -> None
     assert [card.window_id for card in _prefer_primary_cards(snapshot, cards, windows)] == ["w-doc"]
     # 只有二手来源时照常保留，不因此丢掉单元格
     assert [card.window_id for card in _prefer_primary_cards(snapshot, cards[:1], windows)] == ["w-blog"]
+
+
+def test_secondary_only_cell_waits_for_repair_when_the_question_asks_for_official_sources() -> None:
+    from app.deep_cell_executor import _prefer_primary_cards
+
+    blog = SimpleNamespace(window_id="w-blog", adapter="external_url", source_domain="jamsql.com",
+                           source_quality="GENERAL_WEB", url="https://jamsql.com/blog/mysql-json")
+    cards = [SimpleNamespace(window_id="w-blog")]
+    brief = {"current_question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 索引，引用官方文档。"}
+
+    first_pass = SimpleNamespace(query_policy={"authoritative_domains": ["dev.mysql.com"], "research_brief": brief})
+    assert _prefer_primary_cards(first_pass, cards, [blog]) == []
+
+    repair = SimpleNamespace(query_policy={"authoritative_domains": ["dev.mysql.com"], "research_brief": brief,
+                                           "repair_target": {"cell_key": "e:c"}})
+    assert _prefer_primary_cards(repair, cards, [blog]) == cards
+
+    no_request = SimpleNamespace(query_policy={"research_brief": {"current_question": "微服务是否提高交付速度？"}})
+    assert _prefer_primary_cards(no_request, cards, [blog]) == cards

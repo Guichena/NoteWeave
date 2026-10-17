@@ -27,8 +27,10 @@ def plan_repair_queries(context, target, llm):
                      "both query wording and source type. Do not repeat tried queries. Use each column's label and "
                      "description to decide what is still missing. For software, standards and science topics write "
                      "English queries, include known identifiers (JEP, RFC, PEP, version numbers) and keep the "
-                     "entity's version. For empirical questions target studies and data. Return strategy and queries.",
+                     "entity's version. For empirical questions target studies and data. When authoritative domains are "
+                     "given, at least one query must add site:<domain> for the best matching one. Return strategy and queries.",
                      "repair_target": target, "entity": context.entity_label,
+                     "authoritative_domains": list(context.authoritative_domains),
                      "columns": [vars(c) for c in context.columns], "tried_queries": list(tried),
                      "output_schema": {"strategy": "|".join(sorted(STRATEGIES)), "queries": ["string"]},
                      "validation_errors": errors}))

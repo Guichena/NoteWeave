@@ -289,3 +289,14 @@ def test_echoed_request_is_rejected_with_a_specific_reason() -> None:
 
     assert draft.plan is None
     assert "repeated the request" in draft.problems[0]
+
+
+def test_meta_dimensions_are_dropped_but_evidence_content_columns_stay() -> None:
+    draft = validate_plan(_plan(dimensions=[
+        {"label": "Incompatible changes list"}, {"label": "Migration tooling"},
+        {"label": "Official quote and source"}, {"label": "规范原文引用"},
+    ]), PLANNING_INPUT)
+    assert [item["label"] for item in draft.plan["dimensions"]] == ["Incompatible changes list", "Migration tooling"]
+
+    conflict = validate_plan(_plan(dimensions=[{"label": "支持的证据与来源"}, {"label": "反对的证据与来源"}]), PLANNING_INPUT)
+    assert [item["label"] for item in conflict.plan["dimensions"]] == ["支持的证据与来源", "反对的证据与来源"]
