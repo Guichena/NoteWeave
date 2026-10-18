@@ -246,9 +246,9 @@ class ResearchAgentRunCompletionGateTest {
         String honestReport = jdbcTemplate.queryForObject(
                 "select final_report_markdown from research_run where id = ?", String.class, fixture.runId());
         assertThat(honestReport)
-                .contains("# 研究报告", "## 局限与未解决项", "INSUFFICIENT_EVIDENCE", "entity-1:answer",
-                        "REQUIRED_CELL_UNRESOLVED", "必需研究项未找到足够证据")
-                .doesNotContain("## 已验证结论");
+                .contains("# 研究报告", "## 局限与未解决项", "必需研究项未找到足够证据")
+                // 内部原因码和完成状态只记录在数据库里，不出现在给读者的报告中
+                .doesNotContain("## 已验证结论", "## 完成判定原因", "REQUIRED_CELL_UNRESOLVED", "`GAP`");
         assertThat(jdbcTemplate.queryForObject(
                 "select final_report_title from research_run where id = ?", String.class, fixture.runId()))
                 .startsWith("研究报告：");

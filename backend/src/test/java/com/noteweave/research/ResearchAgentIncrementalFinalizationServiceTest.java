@@ -245,14 +245,15 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         String report = honestReports.renderAndPersist(runId, decision);
 
         assertThat(report).startsWith("# 综合结论");
-        assertThat(report).contains("COMPLETED_WITH_LIMITATIONS", "## 引用核对",
-                "Exact quote: “Verified citation excerpt”", "OPTIONAL_CELL_UNRESOLVED");
-        assertThat(report).doesNotContain("## 已验证结论");
+        assertThat(report).contains("## 引用核对", "Exact quote: “Verified citation excerpt”", "可选研究项未找到足够证据");
+        // 完成状态和原因码只记录在数据库里，报告正文不显示
+        assertThat(report).doesNotContain("## 已验证结论", "COMPLETED_WITH_LIMITATIONS", "OPTIONAL_CELL_UNRESOLVED",
+                "UNRESOLVED_CELLS_REMAIN");
         assertThat(jdbcTemplate.queryForObject(
                 "select status from research_agent_synthesis_candidate where id = ?", String.class, synthesisId))
                 .isEqualTo("PROMOTED");
         assertThat(honestReports.limitationLines(runId, decision))
-                .containsExactly("entity-1:limitations：可选研究项未找到足够证据", "UNRESOLVED_CELLS_REMAIN");
+                .containsExactly("entity-1:limitations：可选研究项未找到足够证据");
     }
 
     @Test
@@ -286,14 +287,13 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         String report = honestReports.renderAndPersist(runId, decision);
 
         assertThat(report).contains(
-                "COMPLETED_WITH_LIMITATIONS",
                 "Verified answer",
                 "研究项：`entity-1:claim`",
                 "候选：`" + candidateId + "`",
                 "Evidence: `evidence-1`",
                 "Exact quote: “Verified citation excerpt”",
                 "https://example.com/research",
-                "OPTIONAL_CELL_UNRESOLVED");
+                "可选研究项未找到足够证据");
         assertThat(report).doesNotContain("research/external/finalization-test/snapshot-1");
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_report_artifact where research_run_id = ?",

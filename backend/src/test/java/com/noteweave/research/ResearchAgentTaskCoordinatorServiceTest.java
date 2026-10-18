@@ -666,7 +666,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 "select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
         assertThat(jdbcTemplate.queryForObject(
                 "select final_report_markdown from research_run where id = ?", String.class, runId))
-                .contains("# 研究报告", "INSUFFICIENT_EVIDENCE");
+                .contains("# 研究报告", "## 局限与未解决项").doesNotContain("INSUFFICIENT_EVIDENCE");
     }
 
     @Test

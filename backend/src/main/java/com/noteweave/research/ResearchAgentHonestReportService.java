@@ -48,7 +48,29 @@ class ResearchAgentHonestReportService {
         for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
             lines.add(heading(cell.cellKey(), labels) + "：" + reasonText(cell.reasonCode()));
         }
-        lines.addAll(decision.limitations());
+        lines.addAll(readableLimitations(decision.limitations()));
+        return lines;
+    }
+
+    /**
+     * 整次研究层面的局限原因码换成读者看得懂的说明；逐个单元格的原因已经单独列出，
+     * 只是重复说明的原因码和不认识的内部原因码直接略去，不在报告里显示代码。
+     */
+    static List<String> readableLimitations(List<String> codes) {
+        List<String> lines = new java.util.ArrayList<>();
+        for (String code : codes == null ? List.<String>of() : codes) {
+            String text = switch (code == null ? "" : code.strip()) {
+                case "REQUIRED_CELLS_PARTIALLY_RESOLVED" -> "部分必答研究项未能核验，结论只覆盖已核验的部分";
+                case "INSUFFICIENT_EVIDENCE" -> "没有找到足够的可核验证据";
+                case "BUDGET_EXHAUSTED" -> "研究预算已用完，部分研究项未能继续补查";
+                case "VERIFIER_DISAGREEMENT" -> "独立核验对部分结论的判断不一致";
+                case "EVIDENCE_CONFLICT", "CONFLICTED_CELL" -> "部分研究项的不同来源相互矛盾";
+                case "CONFLICT_REPAIR_EXHAUSTED" -> "证据冲突经补充检索后仍未解决";
+                case "UNRESOLVED_CELLS_REMAIN", "" -> "";
+                default -> code.strip().matches("[A-Z0-9_]+") ? "" : code.strip();
+            };
+            if (!text.isEmpty() && !lines.contains(text)) lines.add(text);
+        }
         return lines;
     }
 
@@ -59,7 +81,8 @@ class ResearchAgentHonestReportService {
         StringBuilder report;
         if (synthesis != null) {
             // 综合撰写的正文在前，后面保留结论汇总、逐条引用核对和局限说明
-            report = new StringBuilder(synthesis.markdown().strip()).append("\n\n")
+            // 成文里的局限一节只摘了部分条目，去掉后统一用下面完整的局限与未解决项
+            report = new StringBuilder(withoutSection(synthesis.markdown(), "## 局限", "## Limitations").strip()).append("\n\n")
                     .append(verificationSummary(runId, decision)).append("\n\n");
             jdbcTemplate.update("update research_agent_synthesis_candidate set status = 'PROMOTED' where id = ? and status = 'VALIDATED'",
                     synthesis.id());
@@ -68,7 +91,8 @@ class ResearchAgentHonestReportService {
                     .append(question == null ? "" : question).append("\n\n")
                     .append(verificationSummary(runId, decision)).append("\n\n");
         }
-        appendSummaryTable(report, runId);
+        // 成文已经带对比表时不再追加一张结论汇总表，避免同一组结论出现两张表
+        if (synthesis == null || !synthesis.markdown().contains("## 对比表")) appendSummaryTable(report, runId);
         if (!decision.promotableClaims().isEmpty()) {
             report.append(synthesis != null ? "## 引用核对\n\n" : "## 已验证结论\n\n");
             for (ResearchAgentRunCompletionGate.PromotableClaim claim : decision.promotableClaims()) {
@@ -92,20 +116,29 @@ class ResearchAgentHonestReportService {
             report.append("## 局限与未解决项\n\n");
             for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
                 report.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
-                        .append(reasonText(cell.reasonCode())).append("（`")
-                        .append(markdown(cell.reasonCode())).append("`，`")
-                        .append(markdown(cell.status())).append("`）\n");
+                        .append(reasonText(cell.reasonCode())).append("\n");
             }
-            for (String limitation : decision.limitations()) {
+            for (String limitation : readableLimitations(decision.limitations())) {
                 report.append("- ").append(markdown(limitation)).append("\n");
             }
             report.append('\n');
         }
-        // 内部完成状态与原因码放在末尾，供排查使用
-        report.append("## 完成判定原因\n\n- 完成状态：`").append(decision.terminalState().name()).append("`\n");
-        decision.reasonCodes().forEach(reason -> report.append("- ").append(markdown(reason)).append("\n"));
+        // 完成状态与原因码已经写入 research_run 和完成判定记录，报告正文只给读者看得懂的内容
         return ResearchReportCitations.consolidate(jdbcTemplate, runId,
                 ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString()));
+    }
+
+    /** 去掉以这些二级标题开头的小节，到下一个二级标题为止。 */
+    static String withoutSection(String markdown, String... headings) {
+        StringBuilder kept = new StringBuilder();
+        boolean skipping = false;
+        for (String line : markdown.split("\n", -1)) {
+            if (line.startsWith("## ")) {
+                skipping = java.util.Arrays.stream(headings).anyMatch(line::startsWith);
+            }
+            if (!skipping) kept.append(line).append('\n');
+        }
+        return kept.toString();
     }
 
     /**
