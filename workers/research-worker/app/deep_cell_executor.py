@@ -516,20 +516,15 @@ def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[objec
     if not cards:
         return cards
     by_window = {getattr(window, "window_id", ""): window for window in windows}
-    domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
-               if isinstance(item, str) and item.strip()] if isinstance(
-        snapshot.query_policy.get("authoritative_domains"), list) else []
     versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
 
     def tier(card: object) -> int:
         window = by_window.get(getattr(card, "window_id", ""))
-        if window is None or str(getattr(window, "adapter", "")) == "workspace":
+        if window is None:
             return 0
-        host = str(getattr(window, "source_domain", "") or "").strip().lower().rstrip(".") or (
-            urlsplit(str(getattr(window, "url", "") or "")).hostname or "").lower().rstrip(".")
-        primary = (str(getattr(window, "source_quality", "")) in _HIGH_TRUST_QUALITIES
-                   or any(host == domain or host.endswith("." + domain) for domain in domains))
-        return (0 if primary else 2) + _version_mismatch(versions, window)
+        source_tier = _source_tier(snapshot, window)
+        # 只把二手来源判为第 2 档；规划域名之外的官方文档（如云厂商托管服务的文档）排在规划域名之后
+        return (2 if source_tier >= 2 else source_tier) + _version_mismatch(versions, window)
 
     best = min(tier(card) for card in cards)
     # 问题明确要求官方文档、RFC 或规范原文时，首轮只有二手来源的单元格按缺口处理，交给补查定向找官方来源；
@@ -694,28 +689,45 @@ _HIGH_TRUST_QUALITIES = frozenset({"OFFICIAL_DOC", "GOVERNMENT_SOURCE", "ACADEMI
 
 def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: list[object]) -> list[object]:
     """抓取和阅读只处理前几条结果，把规划给出的官方域名和高可信来源排到前面，其余保持原顺序。"""
-    domains = [str(item).strip().lower().rstrip(".") for item in snapshot.query_policy.get("authoritative_domains", [])
-               if isinstance(item, str) and item.strip()] if isinstance(
-        snapshot.query_policy.get("authoritative_domains"), list) else []
-
-    def tier(hit: object) -> int:
-        if str(getattr(hit, "adapter", "")) == "workspace":
-            return 0
-        host = str(getattr(hit, "source_domain", "") or "").strip().lower().rstrip(".")
-        if not host:
-            host = (urlsplit(str(getattr(hit, "url", "") or "")).hostname or "").lower().rstrip(".")
-        if host and any(host == domain or host.endswith("." + domain) for domain in domains):
-            return 1
-        if str(getattr(hit, "source_quality", "")) in _HIGH_TRUST_QUALITIES:
-            return 2
-        return 3
-
     versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
-    ordered = sorted(hits, key=lambda hit: (tier(hit), _version_mismatch(versions, hit)))
+    ordered = sorted(hits, key=lambda hit: (_source_tier(snapshot, hit), _version_mismatch(versions, hit)))
     return [
         hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
         for index, hit in enumerate(ordered, start=1)
     ]
+
+
+# 代码托管站点上谁都能建仓库，只有仓库所有者与研究对象或规划域名同名时才算官方来源
+_CODE_HOSTS = frozenset({"github.com", "raw.githubusercontent.com", "gitlab.com", "gist.github.com"})
+
+
+def _source_tier(snapshot: ResearchAgentTaskSnapshot, item: object) -> int:
+    """来源档次：0 工作台资料或规划给出的官方域名；1 其他官方文档、政府、学术来源；2 二手来源。
+
+    规划没有给出官方域名时，官方文档、政府和学术来源直接算第 0 档。
+    """
+    if str(getattr(item, "adapter", "")) == "workspace":
+        return 0
+    raw_domains = snapshot.query_policy.get("authoritative_domains")
+    domains = [str(value).strip().lower().rstrip(".") for value in raw_domains
+               if isinstance(value, str) and value.strip()] if isinstance(raw_domains, list) else []
+    url = str(getattr(item, "url", "") or "")
+    host = str(getattr(item, "source_domain", "") or "").strip().lower().rstrip(".") or (
+        urlsplit(url).hostname or "").lower().rstrip(".")
+    if host in _CODE_HOSTS:
+        owner = urlsplit(url).path.strip("/").split("/")[0].lower()
+        names = {name for domain in domains if domain not in _CODE_HOSTS for name in domain.split(".")[:-1]
+                 if len(name) >= 3 and name not in {"www", "docs", "developer", "developers", "api"}}
+        names |= {token for token in re.findall(r"[a-z0-9]{4,}",
+                                                 str(snapshot.query_policy.get("entity_label") or "").lower())}
+        if len(owner) >= 3 and any(name in owner for name in names):
+            return 0
+        return 2
+    if host and any(host == domain or host.endswith("." + domain) for domain in domains if domain not in _CODE_HOSTS):
+        return 0
+    if str(getattr(item, "source_quality", "")) in _HIGH_TRUST_QUALITIES:
+        return 1 if domains else 0
+    return 2
 
 
 def _entity_versions(label: str) -> set[str]:

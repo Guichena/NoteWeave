@@ -34,3 +34,22 @@ def test_quote_without_markdown_marks_resolves_to_the_original_span() -> None:
     assert span == "Claude returns a `tool_use` block with an **id**,\n  `name` and `input`."
     assert text[start:start + len(span)] == span
     assert _locate_whitespace_tolerant(text, "Claude returns a tool_result block") is None
+
+
+def test_source_tier_trusts_github_only_for_the_project_owner_and_ranks_planned_domains_first() -> None:
+    from types import SimpleNamespace
+
+    from app.deep_cell_executor import _source_tier
+
+    snapshot = SimpleNamespace(query_policy={
+        "authoritative_domains": ["redis.io", "valkey.io", "github.com"], "entity_label": "Valkey 8"})
+
+    def item(url: str, quality: str = "") -> SimpleNamespace:
+        return SimpleNamespace(adapter="external_url", url=url, source_domain="", source_quality=quality)
+
+    assert _source_tier(snapshot, item("https://valkey.io/topics/persistence/")) == 0
+    assert _source_tier(snapshot, item("https://github.com/valkey-io/valkey/blob/unstable/valkey.conf")) == 0
+    assert _source_tier(snapshot, item("https://github.com/someone/redis-notes")) == 2
+    # 云厂商托管服务的文档是官方文档，但不是研究对象自己的文档
+    assert _source_tier(snapshot, item("https://docs.cloud.google.com/memorystore/docs/valkey", "OFFICIAL_DOC")) == 1
+    assert _source_tier(snapshot, item("https://www.loginradius.com/blog/oauth")) == 2
