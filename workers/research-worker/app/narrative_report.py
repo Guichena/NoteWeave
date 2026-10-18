@@ -34,7 +34,9 @@ class NarrativeReportPolisher:
 
     def polish(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
         cells = _validated_cells(synthesis_input)
-        limitations = _clean_strings(synthesis_input.get("limitations"))
+        # 后端偶尔把整次研究的原因码（如 UNRESOLVED_CELLS_REMAIN）放进局限列表，读者看不懂，成文时略去
+        limitations = [item for item in _clean_strings(synthesis_input.get("limitations"))
+                       if not re.fullmatch(r"[A-Z0-9_]+", item)]
         question = str(synthesis_input.get("question") or "").strip()
         comparison_required = _comparison_table_required(question)
         if self.llm_client is None:
@@ -110,7 +112,7 @@ class NarrativeReportPolisher:
         failure = ""
         for attempt in range(1, 3):
             payload = request_payload if not failure else {**request_payload, "previous_attempt_error": failure}
-            parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload))
+            parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload), allow_truncated=True)
             try:
                 narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required)
             except ValueError as exc:
@@ -163,33 +165,29 @@ def _normalize_narrative(
     summary = _limit_citations(summary, {key for cell in cells for key in cell["evidence_keys"]}, 2)  # type: ignore[union-attr]
     sections: list[dict[str, object]] = []
     for raw_section in payload.get("sections", []):
+        # 格式不对的小节、段落只去掉这一处，其余内容照常保留，避免一处小错让整篇退回模板
         if not isinstance(raw_section, dict):
-            raise ValueError("NARRATIVE_SECTION_INVALID")
+            continue
         heading = str(raw_section.get("heading") or "").strip()
         paragraphs: list[dict[str, object]] = []
         if not heading:
-            raise ValueError("NARRATIVE_SECTION_HEADING_MISSING")
+            continue
         for raw_paragraph in raw_section.get("paragraphs", []):
             if not isinstance(raw_paragraph, dict):
-                raise ValueError("NARRATIVE_PARAGRAPH_INVALID")
+                continue
             text = str(raw_paragraph.get("text") or "").strip()
-            cell_keys = _clean_strings(raw_paragraph.get("cell_keys"))
+            cell_keys = [key for key in _clean_strings(raw_paragraph.get("cell_keys")) if key in cells_by_key]
             evidence_keys = _clean_strings(raw_paragraph.get("evidence_keys"))
             if not text or not cell_keys or not (evidence_keys or _INLINE_CITATION.search(text)):
-                raise ValueError("NARRATIVE_PARAGRAPH_UNBOUND")
-            if any(key not in cells_by_key for key in cell_keys):
-                raise ValueError("NARRATIVE_UNKNOWN_CELL")
+                continue
             bound_cells = [cells_by_key[key] for key in cell_keys]
             allowed_evidence = {
                 key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
             }
             text, inline_keys = _bind_inline_citations(text, allowed_evidence)
-            if inline_keys:
-                evidence_keys = inline_keys
-            elif any(key not in allowed_evidence for key in evidence_keys):
-                raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
+            # 不属于本段单元格的引用去掉；一个可用引用都不剩时去掉这一段
+            evidence_keys = inline_keys or [key for key in evidence_keys if key in allowed_evidence]
             if not evidence_keys:
-                # 内联引用全部不属于本段的单元格时，这一段没有可用的引用，去掉即可
                 continue
             source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
             source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
@@ -204,9 +202,7 @@ def _normalize_narrative(
                 "evidence_keys": evidence_keys,
             })
         if not paragraphs:
-            if dropped_unsupported:
-                continue
-            raise ValueError("NARRATIVE_SECTION_EMPTY")
+            continue
         sections.append({"heading": heading, "paragraphs": paragraphs})
     if not sections:
         raise ValueError("NARRATIVE_UNSUPPORTED_TYPED_FACT" if dropped_unsupported else "NARRATIVE_SECTIONS_MISSING")
@@ -214,7 +210,8 @@ def _normalize_narrative(
         payload.get("comparison_table"), cells_by_key, trusted_context
     )
     if comparison_required and not comparison_table:
-        raise ValueError("NARRATIVE_COMPARISON_TABLE_REQUIRED")
+        # 模型给的对比表整张不可用时，用已核验的单元格直接排出对比表，不让整篇退回模板
+        comparison_table = _cells_table(cells, question_chinese=_writes_chinese(title))
     requested_limitations = _clean_strings(payload.get("limitations"))
     limitations = [item for item in requested_limitations if item in known_limitations]
     return {
@@ -230,28 +227,77 @@ def _normalize_narrative(
 def _fallback(
     cells: list[dict[str, object]], limitations: list[str], reason: str, question: str = ""
 ) -> NarrativeReportResult:
+    """模型成文两次都不可用时的确定性报告：按问题的各个方面分节，每节列出各研究对象的已核验结论，
+    多个研究对象时附对比表。每句话都来自已核验的单元格，并带上对应引用。"""
+    chinese = _writes_chinese(question) if question else True
+    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in cells))
     sections = []
-    for cell in cells:
-        value = str(cell["candidate_value"])
-        if cell["guarded"]:
-            value += " (limited by unresolved evidence)"
-        sections.append({
-            "heading": _cell_heading(cell),
-            "paragraphs": [{
-                "text": value,
-                "cell_keys": [str(cell["cell_key"])],
-                "evidence_keys": list(cell["evidence_keys"]),
-            }],
-        })
+    for column in dict.fromkeys(str(cell.get("column_label") or "") for cell in cells):
+        column_cells = [cell for cell in cells if str(cell.get("column_label") or "") == column]
+        paragraphs = []
+        for cell in column_cells:
+            value = str(cell["candidate_value"]).strip()
+            if cell["guarded"]:
+                value += "（该结论的证据仍有分歧）" if chinese else " (evidence still disputed)"
+            entity = str(cell.get("entity_label") or "")
+            text = f"{entity}：{value}" if chinese and entity and len(entities) > 1 else (
+                f"{entity}: {value}" if entity and len(entities) > 1 else value)
+            paragraphs.append({"text": text, "cell_keys": [str(cell["cell_key"])],
+                               "evidence_keys": list(cell["evidence_keys"])[:2]})
+        sections.append({"heading": column or _cell_heading(column_cells[0]), "paragraphs": paragraphs})
+    covered = "、".join(name for name in entities if name) if chinese else ", ".join(name for name in entities if name)
+    if chinese:
+        summary = f"本次研究核验了 {len(cells)} 项结论" + (f"，涉及{covered}" if covered else "") + "，下文按问题的各个方面列出。"
+        if limitations:
+            summary += "部分问题尚未找到可核验的来源，见文末局限。"
+    else:
+        summary = f"This report lists {len(cells)} verified findings" + (f" on {covered}" if covered else "") + " by aspect."
+        if limitations:
+            summary += " Some parts remain unanswered; see Limitations."
     narrative: dict[str, object] = {
         "schema_version": "research-reader-report.v1",
         "title": question or "研究报告",
-        "executive_summary": "以下报告仅综合已通过核验的研究结论，并为每项事实保留可回溯的证据引用。",
+        "executive_summary": summary,
         "sections": sections,
-        "comparison_table": {},
+        "comparison_table": _cells_table(cells, question_chinese=chinese) if len(entities) > 1 else {},
         "limitations": limitations,
     }
     return NarrativeReportResult(narrative, _render_markdown(narrative), "FALLBACK", reason)
+
+
+def _cells_table(cells: list[dict[str, object]], *, question_chinese: bool = True) -> dict[str, object]:
+    """用已核验的单元格直接排出对比表：每行一个方面，每列一个研究对象，格子里是结论和第一条引用。"""
+    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in cells))[:5]
+    if not entities:
+        return {}
+    by_position = {(str(cell.get("entity_label") or ""), str(cell.get("column_label") or "")): cell for cell in cells}
+    rows = []
+    for column in dict.fromkeys(str(cell.get("column_label") or "") for cell in cells):
+        row_cells = [column or "-"]
+        cell_keys: list[str] = []
+        evidence_keys: list[str] = []
+        for entity in entities:
+            cell = by_position.get((entity, column))
+            if cell is None:
+                row_cells.append("-")
+                continue
+            key = str(list(cell["evidence_keys"])[0])
+            row_cells.append(f"{_first_sentence(str(cell['candidate_value']))} [{key}]")
+            cell_keys.append(str(cell["cell_key"]))
+            evidence_keys.append(key)
+        if cell_keys:
+            rows.append({"cells": row_cells, "cell_keys": cell_keys, "evidence_keys": evidence_keys})
+    if not rows:
+        return {}
+    header = "方面" if question_chinese else "Aspect"
+    return {"columns": [header, *(entity or "-" for entity in entities)], "rows": rows}
+
+
+def _first_sentence(value: str) -> str:
+    """表格里只放结论的第一句，避免整段长文挤进一个格子。"""
+    value = " ".join(value.split())
+    match = re.search(r"[。；;](?=.)|\.\s", value)
+    return value[: match.start() + 1].strip() if match and match.start() < 200 else value
 
 
 def _render_markdown(narrative: dict[str, object]) -> str:
@@ -333,11 +379,11 @@ def _normalize_comparison_table(
     if value in (None, {}):
         return {}
     if not isinstance(value, dict):
-        raise ValueError("NARRATIVE_COMPARISON_TABLE_INVALID")
+        return {}
     columns = _string_items(value.get("columns"))
     raw_rows = value.get("rows")
     if len(columns) < 2 or len(columns) > 6 or not isinstance(raw_rows, list) or not raw_rows:
-        raise ValueError("NARRATIVE_COMPARISON_TABLE_INVALID")
+        return {}
     rows: list[dict[str, object]] = []
     for raw_row in raw_rows:
         # 列数不对或没有绑定单元格的行只是格式问题，去掉这一行即可，不必让整篇退回模板；
@@ -350,8 +396,10 @@ def _normalize_comparison_table(
         cited_inline = any(_INLINE_CITATION.search(cell) for cell in row_cells)
         if len(row_cells) != len(columns) or not cell_keys or not (evidence_keys or cited_inline):
             continue
-        if any(key not in cells_by_key for key in cell_keys):
-            raise ValueError("NARRATIVE_UNKNOWN_CELL")
+        # 行里有问题（未知单元格、越界引用、来源没有的数字）只去掉这一行
+        cell_keys = [key for key in cell_keys if key in cells_by_key]
+        if not cell_keys:
+            continue
         bound_cells = [cells_by_key[key] for key in cell_keys]
         allowed_evidence = {
             key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
@@ -364,10 +412,7 @@ def _normalize_comparison_table(
         if row_cells and _INLINE_CITATION.search(row_cells[0]) and any(
                 _INLINE_CITATION.search(cell) for cell in row_cells[1:]):
             row_cells[0] = _limit_citations(row_cells[0], set(), 0)
-        if inline_keys:
-            evidence_keys = inline_keys
-        elif any(key not in allowed_evidence for key in evidence_keys):
-            raise ValueError("NARRATIVE_UNKNOWN_EVIDENCE")
+        evidence_keys = inline_keys or [key for key in evidence_keys if key in allowed_evidence]
         if not evidence_keys:
             continue
         source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
@@ -377,7 +422,7 @@ def _normalize_comparison_table(
             for token in _TYPED_TOKEN.findall(" ".join(row_cells))
         }
         if not row_tokens.issubset(source_tokens):
-            raise ValueError("NARRATIVE_UNSUPPORTED_TYPED_FACT")
+            continue
         rows.append({
             "cells": row_cells,
             "cell_keys": cell_keys,

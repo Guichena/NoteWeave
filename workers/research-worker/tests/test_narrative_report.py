@@ -39,7 +39,7 @@ def test_polishes_frozen_cells_into_evidence_bound_article() -> None:
     assert len(client.calls) == 1
 
 
-def test_unknown_evidence_forces_deterministic_fallback() -> None:
+def test_paragraph_citing_only_unknown_evidence_is_dropped_and_empty_article_falls_back() -> None:
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "Untrusted",
         "executive_summary": "Summary",
@@ -55,8 +55,9 @@ def test_unknown_evidence_forces_deterministic_fallback() -> None:
 
     result = NarrativeReportPolisher(client).polish(INPUT)
 
+    # 唯一的段落只引用了不存在的证据，去掉后没有内容，才退回确定性报告
     assert result.mode == "FALLBACK"
-    assert result.reason == "NARRATIVE_UNKNOWN_EVIDENCE"
+    assert result.reason == "NARRATIVE_SECTIONS_MISSING"
     assert "invented-evidence" not in result.markdown
     assert "[evidence-a]" in result.markdown
 
@@ -112,7 +113,7 @@ def test_renders_evidence_bound_comparison_table() -> None:
     assert result.narrative["comparison_table"]["columns"] == ["Dimension", "Result"]
 
 
-def test_comparison_table_with_unbound_fact_forces_fallback() -> None:
+def test_comparison_row_with_unbound_fact_is_dropped_and_the_article_kept() -> None:
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "Latency comparison",
         "executive_summary": "Summary",
@@ -136,9 +137,10 @@ def test_comparison_table_with_unbound_fact_forces_fallback() -> None:
 
     result = NarrativeReportPolisher(client).polish(INPUT)
 
-    assert result.mode == "FALLBACK"
-    assert result.reason == "NARRATIVE_UNSUPPORTED_TYPED_FACT"
+    assert result.mode == "LLM"
     assert "40 ms" not in result.markdown
+    assert result.narrative["comparison_table"] == {}
+    assert "Version 2.1 records a measured latency of 50 ms." in result.markdown
 
 
 def test_invalid_json_and_missing_client_have_stable_fallback() -> None:
@@ -213,7 +215,7 @@ def test_comparison_report_allows_versions_from_trusted_question_and_requires_ta
     assert "## 对比表" in result.markdown
 
 
-def test_comparison_report_falls_back_when_llm_omits_required_table() -> None:
+def test_required_comparison_table_is_built_from_cells_when_llm_omits_it() -> None:
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "对比报告",
         "executive_summary": "结论摘要",
@@ -230,8 +232,9 @@ def test_comparison_report_falls_back_when_llm_omits_required_table() -> None:
         "limitations": [],
     })
 
-    assert result.mode == "FALLBACK"
-    assert result.reason == "NARRATIVE_COMPARISON_TABLE_REQUIRED"
+    assert result.mode == "LLM"
+    assert "## 对比表" in result.markdown
+    assert result.narrative["comparison_table"]["rows"][0]["evidence_keys"] == ["evidence:answer"]
 
 
 def test_supporting_quotes_and_labels_are_trusted_and_reach_the_model() -> None:
@@ -281,7 +284,8 @@ def test_fallback_headings_use_entity_and_column_labels() -> None:
                    "entity_label": "MySQL 8.4", "column_label": "索引类型"}],
     })
 
-    assert "## MySQL 8.4 · 索引类型" in result.markdown
+    # 确定性报告按问题的各个方面分节
+    assert "## 索引类型" in result.markdown
 
 
 def test_malformed_comparison_row_is_dropped_instead_of_failing_the_article() -> None:
@@ -396,3 +400,62 @@ def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None
     assert result.mode == "LLM"
     assert "Pulsar 按 key 保证顺序 [evidence:aa01][evidence:aa02]。" in result.markdown
     assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
+
+
+def test_one_bad_paragraph_does_not_discard_the_rest_of_the_article() -> None:
+    client = FakeLlmClient({"research.synthesis": json.dumps({
+        "title": "Latency findings",
+        "executive_summary": "Version 2.1 has a measured baseline.",
+        "sections": [{"heading": "Findings", "paragraphs": [
+            {"text": "Version 2.1 records a measured latency of 50 ms.", "cell_keys": ["latency"],
+             "evidence_keys": ["evidence-a"]},
+            {"text": "An unrelated claim.", "cell_keys": ["missing-cell"], "evidence_keys": ["evidence-a"]},
+            "not a paragraph",
+        ]}, {"heading": "", "paragraphs": []}],
+    })})
+
+    result = NarrativeReportPolisher(client).polish(INPUT)
+
+    assert result.mode == "LLM"
+    assert "Version 2.1 records a measured latency of 50 ms." in result.markdown
+    assert "An unrelated claim." not in result.markdown
+
+
+def test_fallback_groups_findings_by_aspect_with_a_comparison_table() -> None:
+    result = NarrativeReportPolisher(None).polish({
+        "question": "比较 Kafka 与 Pulsar 的顺序保证",
+        "cells": [
+            {"cell_key": "k:order", "candidate_value": "分区内有序。其余细节略。", "evidence_keys": ["evidence:k1"],
+             "entity_label": "Kafka", "column_label": "顺序范围"},
+            {"cell_key": "p:order", "candidate_value": "Key_Shared 按 key 有序", "evidence_keys": ["evidence:p1"],
+             "entity_label": "Pulsar", "column_label": "顺序范围"},
+        ],
+        "limitations": ["重平衡的影响没有找到可核验的来源"],
+    })
+
+    assert result.mode == "FALLBACK"
+    assert "## 顺序范围" in result.markdown
+    assert "Kafka：分区内有序。其余细节略。 [evidence:k1]" in result.markdown
+    assert "| 顺序范围 | 分区内有序。 [evidence:k1] | Key_Shared 按 key 有序 [evidence:p1] |" in result.markdown
+    assert "本次研究核验了 2 项结论，涉及Kafka、Pulsar" in result.markdown
+    assert "## 局限" in result.markdown
+
+
+def test_truncated_model_output_keeps_the_completed_paragraphs() -> None:
+    full = json.dumps({
+        "title": "Latency findings",
+        "executive_summary": "Version 2.1 has a measured baseline.",
+        "sections": [{"heading": "Findings", "paragraphs": [
+            {"text": "Version 2.1 records a measured latency of 50 ms.", "cell_keys": ["latency"],
+             "evidence_keys": ["evidence-a"]},
+            {"text": "This second paragraph was cut off by the output limit", "cell_keys": ["latency"],
+             "evidence_keys": ["evidence-a"]},
+        ]}],
+    })
+    truncated = full[: full.index("This second paragraph") + 20]
+
+    result = NarrativeReportPolisher(FakeLlmClient({"research.synthesis": truncated})).polish(INPUT)
+
+    assert result.mode == "LLM"
+    assert "Version 2.1 records a measured latency of 50 ms." in result.markdown
+    assert "cut off" not in result.markdown
