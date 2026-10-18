@@ -324,7 +324,9 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
 _META_DIMENSION = re.compile(
     r"(?i)^(?:official\s+)?(?:quotes?|sources?|citations?|references?|links?)(?:\s+(?:and|&)\s+(?:quotes?|sources?|links?|urls?))?$"
     r"|^(?:规范|官方)?(?:原文)?(?:引用|来源|出处|链接)(?:与|和)?(?:来源|出处|链接)?$"
-    r"|证据强度|可信度|置信度|(?i:confidence|evidence strength)")
+    r"|证据强度|可信度|置信度|(?i:confidence|evidence strength)"
+    # 以引用、参考文献结尾的列（如 Relevant RFC references、发布与改善原始引用）也是在要求列出处
+    r"|(?i:\b(?:references?|citations?))$|引用$")
 
 
 def _fitting_tier(declared: str, entity_count: int, dimension_count: int) -> str:
