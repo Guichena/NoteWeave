@@ -29,7 +29,7 @@ describe("ResearchReportView", () => {
 
     expect(screen.getByRole("heading", { name: "Research report" })).toBeTruthy();
     expect(screen.getByRole("navigation", { name: "报告目录" })).toBeTruthy();
-    expect(screen.getByText("引用与研究审计")).toBeTruthy();
+    expect(screen.getByText("引用来源")).toBeTruthy();
     expect(document.querySelector(".research-reader-body")?.textContent).not.toContain("snapshot-a");
     expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("snapshot-a");
     expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("快照：");

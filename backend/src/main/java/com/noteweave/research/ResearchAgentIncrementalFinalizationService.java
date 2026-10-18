@@ -81,7 +81,7 @@ public class ResearchAgentIncrementalFinalizationService {
         String markdown = synthesis == null ? render(run.question(), cells, matrixLabels(jdbcTemplate, runId)) : synthesis.markdown();
         markdown = appendCitationAudit(runId, markdown, cells);
         markdown = ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, markdown);
-        markdown = ResearchReportCitations.renumber(jdbcTemplate, runId, markdown);
+        markdown = ResearchReportCitations.consolidate(jdbcTemplate, runId, markdown);
         String title = ResearchDisplayLabels.reportTitle(run.question());
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);

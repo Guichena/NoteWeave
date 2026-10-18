@@ -123,8 +123,8 @@ export function ResearchReportView({
       {audit ? (
         <details className="research-audit-disclosure">
           <summary>
-            <span>引用与研究审计</span>
-            <small>查看原始证据、网页快照和引用链</small>
+            <span>引用来源</span>
+            <small>按正文角标编号列出每条引用的原文摘录和来源链接</small>
           </summary>
           <MarkdownSurface content={localizeResearchAudit(audit)} className="research-audit-markdown" />
         </details>
