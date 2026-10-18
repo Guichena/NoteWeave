@@ -173,10 +173,16 @@ public class ResearchAgentIncrementalFinalizationService {
                             id, manifest_id, rank_no, evidence_id, source_id, source_snapshot_id,
                             passage_id, title, excerpt, content_hash, location_info
                         ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, Ids.newId(), manifestId, rank, item.key(), item.sourceId(), item.snapshotKey(),
-                        item.windowId(), item.title(), excerpt, contentHash(excerpt), cell.key());
+                        """, Ids.newId(), manifestId, rank, clip(item.key(), 200), clip(item.sourceId(), 255),
+                        clip(item.snapshotKey(), 512), clip(item.windowId(), 512), clip(item.title(), 500), excerpt,
+                        contentHash(excerpt), clip(cell.key(), 1000));
             }
         }
+    }
+
+    /** 证据清单只是报告的附属记录，超长的值按列宽截断，不让一条写入失败把整次研究卡在收尾。 */
+    private static String clip(String value, int maxLength) {
+        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     private List<Cell> loadVerifiedCells(String runId) {
