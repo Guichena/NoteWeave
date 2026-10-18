@@ -73,7 +73,8 @@ class NarrativeReportPolisher:
                 "Cite inline like a research article: right after each sentence (or inside each table cell) write "
                 "the one or two evidence keys whose quotes directly support it, for example "
                 "'虚拟线程在 JDK 21 正式发布 [evidence:ab12]。'; never pile every key of a cell at the end. "
-                "evidence_keys must list exactly the keys cited inline.",
+                "evidence_keys must list exactly the keys cited inline. The summary cites at most two keys, and "
+                "the first table column names the row without citations.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary is the bottom line: one or two sentences that answer research_question with the "
@@ -154,6 +155,8 @@ def _normalize_narrative(
         raise ValueError("NARRATIVE_HEADER_MISSING")
     dropped_unsupported = 0
     cells_by_key = {str(cell["cell_key"]): cell for cell in cells}
+    # 摘要只是一两句结论，最多保留前两个引用；不属于任何已核验单元格的引用删掉
+    summary = _limit_citations(summary, {key for cell in cells for key in cell["evidence_keys"]}, 2)  # type: ignore[union-attr]
     sections: list[dict[str, object]] = []
     for raw_section in payload.get("sections", []):
         if not isinstance(raw_section, dict):
@@ -295,6 +298,25 @@ def _bind_inline_citations(text: str, allowed: set[str]) -> tuple[str, list[str]
     return cleaned, keys
 
 
+def _limit_citations(text: str, allowed: set[str], max_keys: int) -> str:
+    """只保留属于 allowed 的前 max_keys 个不同引用，其余引用标记删掉。"""
+    kept: list[str] = []
+
+    def keep(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key in kept:
+            return match.group(0)
+        if key in allowed and len(kept) < max_keys:
+            kept.append(key)
+            return match.group(0)
+        return ""
+
+    cleaned = _INLINE_CITATION.sub(keep, text)
+    if len(cleaned) != len(text):
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).replace(" 。", "。").strip()
+    return cleaned
+
+
 def _clean_strings(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -334,6 +356,10 @@ def _normalize_comparison_table(
         for index, cell_text in enumerate(row_cells):
             row_cells[index], keys = _bind_inline_citations(cell_text, allowed_evidence)
             inline_keys.extend(key for key in keys if key not in inline_keys)
+        # 第一列是行名，其他格已有引用时行名上的引用只是重复，去掉
+        if row_cells and _INLINE_CITATION.search(row_cells[0]) and any(
+                _INLINE_CITATION.search(cell) for cell in row_cells[1:]):
+            row_cells[0] = _limit_citations(row_cells[0], set(), 0)
         if inline_keys:
             evidence_keys = inline_keys
         elif any(key not in allowed_evidence for key in evidence_keys):

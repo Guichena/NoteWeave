@@ -381,3 +381,18 @@ def test_inline_citation_outside_bound_cells_is_removed_instead_of_failing_the_a
     assert "evidence:zz99" not in result.markdown
     assert "Kafka 在单个分区内保证顺序 [evidence:aa01]。" in result.markdown
     assert "| 顺序范围 | 单个分区 | 按 key [evidence:bb01] |" in result.markdown
+
+
+def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None:
+    article = json.loads(_inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围 [evidence:aa01]", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
+    article["executive_summary"] = ("Kafka 按分区保证顺序，Pulsar 按 key 保证顺序 "
+                                    "[evidence:aa01][evidence:aa02][evidence:bb01][evidence:zz99]。")
+    client = FakeLlmClient({"research.synthesis": json.dumps(article)})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    assert "Pulsar 按 key 保证顺序 [evidence:aa01][evidence:aa02]。" in result.markdown
+    assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
