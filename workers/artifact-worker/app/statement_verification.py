@@ -288,10 +288,14 @@ def verify_statement_support(sections, material_passages, *, llm_client=None,
                 supported_citations += sum(c["label"] in {"SUPPORTED", "PARTIAL"} for c in statement["citations"])
             if statement["label"] != "NON_FACTUAL" and not statement["sufficiently_supported"]:
                 detail = f"章节 {heading} 的陈述 {statement['statement_id']} 缺少充分证据：{statement['label']}"
-                (failed if required else warnings).append(detail)
+                # 判断不出结论（UNDETERMINED）只说明校验没有结论，记为警告，不触发修复也不阻止交付
+                undetermined = statement["label"] == "UNDETERMINED"
+                (failed if required and not undetermined else warnings).append(detail)
         if reasons or not statements:
             detail = f"章节 {heading} 无法完成证据判断：" + ("；".join(reasons) if reasons else "没有可判断的正文陈述")
-            (failed if required else warnings).append(detail)
+            # 引用了素材之外的资料或引用原文冲突是内容错误，需要修复；只是超出判断上限时记为警告
+            only_limits = bool(reasons) and all("超过证据判断上限" in reason for reason in reasons)
+            (warnings if only_limits else failed if required else warnings).append(detail)
         results.append({"heading": heading, "support": _section_support(statements),
             "chunk_ids": chunks, "statements": statements})
     if not sections:

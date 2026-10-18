@@ -8,7 +8,7 @@ from app.models import ArtifactSectionDraft, ArtifactSkillNodePlan, ArtifactSkil
 from app.node_contracts import node_contract_for_skill
 from app.node_executor import NodeExecutor, NodeExecutionError
 from app.repair_runtime import repair_failed_sections
-from app.verification_runtime import verify_draft
+from app.verification_runtime import blocking_failures, verify_draft
 from app.retrieval_runtime import execute_retrieve_node
 from app.registry import resolve_skill_definition
 from app.runtime_node_registry import ensure_runtime_node_contract_registered
@@ -195,7 +195,11 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
             verification["repair_rounds"] = state["repair_trace"]["rounds"]
             state["verification"] = verification
     sections = [ArtifactSectionDraft.model_validate(item) for item in state.get("sections", [])]
-    if not sections or verification.get("status") == "FAIL":
+    blocking = blocking_failures(verification.get("failed_checks", []))
+    if sections and verification.get("status") == "FAIL" and not blocking:
+        # 修复轮次用完后剩下的证据或契约问题不再让整个任务失败：产物照常交付，校验结果附在版本上
+        verification["delivery"] = "DELIVERED_WITH_UNRESOLVED_CHECKS"
+    if not sections or blocking:
         failure = {"status": "FAILED", "reason_code": "ARTIFACT_NODE_CONTRACT_FAILED",
             "failed_checks": verification.get("failed_checks", []),
             "verification": verification, "repair_trace": state.get("repair_trace", {}),

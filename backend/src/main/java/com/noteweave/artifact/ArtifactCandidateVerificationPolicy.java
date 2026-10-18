@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 final class ArtifactCandidateVerificationPolicy {
     private ArtifactCandidateVerificationPolicy() {}
 
+    static final String DELIVERED_WITH_UNRESOLVED_CHECKS = "DELIVERED_WITH_UNRESOLVED_CHECKS";
     private static final Set<String> SECTION_SUPPORT = Set.of("SUPPORTED", "PARTIAL", "UNSUPPORTED", "NOT_RUN");
     private static final Set<String> STATEMENT_LABELS = Set.of(
             "SUPPORTED", "CONTRADICTED", "UNSUPPORTED", "NON_FACTUAL", "UNDETERMINED");
@@ -29,13 +30,18 @@ final class ArtifactCandidateVerificationPolicy {
         }
         boolean semantic = verification.keySet().stream().anyMatch(SEMANTIC_FIELDS::contains);
         if (!candidate && !semantic) return;
-        require(verification.get("status") instanceof String status && Set.of("PASS", "WARN").contains(status), "候选产物未通过最终校验");
+        // Worker 在修复轮次用完后仍有证据或契约问题时照常交付并标记；这类版本只核对诊断格式，
+        // 校验结果随版本展示给用户，含有明确禁止内容的产物在 Worker 侧已经拦下
+        boolean deliveredWithIssues = DELIVERED_WITH_UNRESOLVED_CHECKS.equals(payload.get("delivery_status"));
+        require(deliveredWithIssues || verification.get("status") instanceof String status
+                && Set.of("PASS", "WARN").contains(status), "候选产物未通过最终校验");
         if (!semantic && !requireSemantic) return;
-        require("PASS".equals(verification.get("contract_status")), "候选产物未通过声明式契约");
-        require(verification.get("evidence_status") instanceof String evidenceStatus
+        require(deliveredWithIssues || "PASS".equals(verification.get("contract_status")), "候选产物未通过声明式契约");
+        require(deliveredWithIssues || verification.get("evidence_status") instanceof String evidenceStatus
                 && Set.of("PASS", "WARN").contains(evidenceStatus), "候选产物未通过证据校验");
-        require(verification.get("failed_checks") == null
+        require(deliveredWithIssues || verification.get("failed_checks") == null
                 || (verification.get("failed_checks") instanceof List<?> failed && failed.isEmpty()), "候选产物仍有失败检查项");
+        requireEvidence = requireEvidence && !deliveredWithIssues;
         validateMetric(verification.get("citation_recall"));
         validateMetric(verification.get("citation_precision"));
         if (requireSemantic) {

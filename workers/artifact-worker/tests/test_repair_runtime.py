@@ -97,25 +97,27 @@ def test_second_round_can_recover_without_erasing_first_failure(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["unchanged", "overwrite_passed"])
-def test_two_failed_rounds_never_export_or_modify_passed_sections(monkeypatch, mode):
+def test_two_failed_rounds_are_delivered_without_modifying_passed_sections(monkeypatch, mode):
     provider = configured(monkeypatch, mode=mode)
-    prevent_export(monkeypatch)
-    with pytest.raises(NodeExecutionError) as caught:
-        runner.run_artifact_task(task())
-    assert len(caught.value.trace["repair_trace"]["rounds"]) == 2
+    _, result = runner.run_artifact_task(task())
+    state = result.result_payload["generation_trace"]["state"]
+    # 修复轮次用完后剩下的证据问题不再让任务失败，产物带着校验结果交付
+    assert state["verification"]["delivery"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
+    assert len(state["repair_trace"]["rounds"]) == 2
     assert provider.repair_count == (4 if mode == "overwrite_passed" else 2)
     if mode == "overwrite_passed":
-        steps = caught.value.trace["repair_trace"]["execution_traces"]
+        steps = state["repair_trace"]["execution_traces"]
         assert all("不能遗漏或改写已通过章节" in step["validation_errors"][0] for step in steps)
 
 
 def test_repair_is_not_success_until_new_statement_verification_passes(monkeypatch):
     provider = configured(monkeypatch, corrupt_after_repair=True)
-    prevent_export(monkeypatch)
-    with pytest.raises(NodeExecutionError) as caught:
-        runner.run_artifact_task(task())
+    _, result = runner.run_artifact_task(task())
+    state = result.result_payload["generation_trace"]["state"]
+    # 修复轮次用完后剩下的证据问题不再让任务失败，产物带着校验结果交付
+    assert state["verification"]["delivery"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
     assert provider.repair_count == 2
-    assert caught.value.trace["verification"]["evidence_status"] == "FAIL"
+    assert state["verification"]["evidence_status"] == "FAIL"
 
 
 def test_missing_required_section_is_generated_without_rewriting_present_sections(monkeypatch):
@@ -150,9 +152,8 @@ def test_multiple_verify_repair_nodes_share_global_two_round_limit():
     repair = next(node for node in plan.node_sequence if node.node_kind == "REPAIR")
     plan.node_sequence.extend([verifier.model_copy(update={"node_id": "second_verify"}),
                                repair.model_copy(update={"node_id": "second_repair"})])
-    with pytest.raises(NodeExecutionError) as caught:
-        execute_skill_graph(input_task, plan, llm_client=provider)
+    _, traces, generation_trace = execute_skill_graph(input_task, plan, llm_client=provider)
     assert provider.repair_count == 2
-    assert [record["round"] for record in caught.value.trace["repair_trace"]["rounds"]] == [1, 2]
-    second = caught.value.trace["completed_nodes"][-1]
-    assert second["llm_calls"] == 0 and not second["repaired"] and not second["repair_actions"]
+    assert [record["round"] for record in generation_trace["state"]["repair_trace"]["rounds"]] == [1, 2]
+    second = next(trace for trace in reversed(traces) if trace.node_id == "second_repair")
+    assert second.llm_calls == 0 and not second.repaired and not second.repair_actions

@@ -274,12 +274,25 @@ def test_failed_final_content_gate_never_invokes_renderer(monkeypatch: pytest.Mo
                         lambda **kwargs: render_calls.append("render"))
     monkeypatch.setattr(runner_module, "verify_artifact_output",
                         lambda *args, **kwargs: ArtifactVerificationResult(
-                            status="FAIL", failed_checks=["missing evidence"]))
+                            status="FAIL", failed_checks=["章节 简历亮点 包含明确禁止的内容"]))
 
     with pytest.raises(runner_module.ArtifactOutputContractViolationError):
         run_artifact_task(task_input)
 
     assert render_calls == []
+
+
+def test_unresolved_evidence_checks_are_delivered_with_the_verification_attached(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    """修复后仍缺少依据的产物照常交付，校验结果附在版本上，由界面标出缺少依据的章节。"""
+    monkeypatch.setattr(runner_module, "verify_artifact_output",
+                        lambda *args, **kwargs: ArtifactVerificationResult(
+                            status="FAIL", failed_checks=["missing evidence"]))
+
+    _, result = run_artifact_task(_build_resume_task_input())
+
+    assert result.result_payload["delivery_status"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
+    assert result.result_payload["verification"]["status"] == "FAIL"
 
 
 def test_candidate_is_bound_to_task_snapshot_and_markdown() -> None:
@@ -1627,7 +1640,7 @@ def test_run_artifact_task_should_generate_resume_highlight_artifact() -> None:
     assert result.citations[0]["title"] == "产物生成 Agent 编排升级设计"
 
 
-def test_resume_with_one_bullet_should_fail_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resume_with_one_bullet_is_delivered_with_unresolved_checks_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
     class IncompleteResumeProvider(ContractArtifactTestProvider):
         def complete_json(self, purpose, payload):
             raw = super().complete_json(purpose, payload)
@@ -1641,12 +1654,12 @@ def test_resume_with_one_bullet_should_fail_without_count_backfill(monkeypatch: 
     fake = IncompleteResumeProvider()
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
     render_calls = []
-    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs))
+    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs) or {"status": "NOT_REQUIRED", "format": "MARKDOWN", "file_name": "", "download_path": "", "notes": []})
 
-    with pytest.raises((NodeExecutionError, runner_module.ArtifactOutputContractViolationError)):
-        run_artifact_task(_build_resume_task_input())
+    # 条数不够时不补造条目，按实际生成的内容交付并附上未通过的检查
+    _, result = run_artifact_task(_build_resume_task_input())
+    assert result.result_payload["delivery_status"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
 
-    assert render_calls == []
     assert any(purpose == "artifact.node.resume_bullet_writer" for purpose, _ in fake.calls)
 
 
@@ -3501,7 +3514,7 @@ def test_final_contract_should_reject_missing_resume_sections_and_keywords() -> 
     assert any("用户重点" in check for check in verification.failed_checks)
 
 
-def test_quiz_with_one_question_should_fail_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_quiz_with_one_question_is_delivered_with_unresolved_checks_without_count_backfill(monkeypatch: pytest.MonkeyPatch) -> None:
     class IncompleteQuizProvider(ContractArtifactTestProvider):
         def complete_json(self, purpose, payload):
             raw = super().complete_json(purpose, payload)
@@ -3514,12 +3527,12 @@ def test_quiz_with_one_question_should_fail_without_count_backfill(monkeypatch: 
     fake = IncompleteQuizProvider()
     monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: fake)
     render_calls = []
-    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs))
+    monkeypatch.setattr(runner_module, "export_artifact_if_required", lambda **kwargs: render_calls.append(kwargs) or {"status": "NOT_REQUIRED", "format": "MARKDOWN", "file_name": "", "download_path": "", "notes": []})
 
-    with pytest.raises((NodeExecutionError, runner_module.ArtifactOutputContractViolationError)):
-        run_artifact_task(_build_generic_task_input("quiz", style_profile_key="teaching"))
+    # 条数不够时不补造条目，按实际生成的内容交付并附上未通过的检查
+    _, result = run_artifact_task(_build_generic_task_input("quiz", style_profile_key="teaching"))
+    assert result.result_payload["delivery_status"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
 
-    assert render_calls == []
 
 
 def test_final_contract_should_reject_incomplete_quiz_structure() -> None:

@@ -59,6 +59,10 @@ export type ArtifactSectionSupport = "SUPPORTED" | "PARTIAL" | "UNSUPPORTED" | "
 
 /** 4D 之前生成的版本只有旧的 status 与检查列表，contract_status 和 sections 为空。 */
 export type ArtifactVerification = {
+  /** 最终校验状态；FAIL 表示修复轮次用完后仍有未通过的检查，产物照常交付 */
+  status?: "PASS" | "WARN" | "FAIL" | string | null;
+  evidence_status?: "PASS" | "WARN" | "FAIL" | string | null;
+  failed_checks?: string[] | null;
   contract_status?: "PASS" | "FAIL" | string | null;
   repair_rounds?: Array<{ round: number; failed_checks: string[]; repaired_sections: string[] }> | null;
   citation_recall?: number | null;

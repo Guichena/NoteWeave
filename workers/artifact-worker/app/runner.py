@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.verification_runtime import blocking_failures
 from app.acquisition_runtime import get_acquisition_result_payload, register_acquisition_runtime
 from app.artifact_repository import commit_artifact_result, reserve_next_artifact_version
 from app.artifact_skill_catalog import CATALOG_DIGEST
@@ -447,7 +448,11 @@ def _run_artifact_task(
     verification = verify_artifact_output(result, plan, repaired_checks)
     result.result_payload["verification"] = verification.model_dump(mode="json")
     if verification.status == "FAIL":
-        raise ArtifactOutputContractViolationError(verification.failed_checks)
+        blocking = blocking_failures(verification.failed_checks)
+        if blocking or not repaired_sections or not rendered_markdown.strip():
+            raise ArtifactOutputContractViolationError(blocking or verification.failed_checks)
+        # 证据或契约问题在节点修复后仍有剩余时照常交付，界面按附带的校验结果标出缺少依据的章节
+        result.result_payload["delivery_status"] = "DELIVERED_WITH_UNRESOLVED_CHECKS"
     content_ir = build_content_ir(
         artifact_type=plan.artifact_type, title=artifact_title,
         sections=repaired_sections, markdown=rendered_markdown,

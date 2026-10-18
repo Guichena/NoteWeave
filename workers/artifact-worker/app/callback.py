@@ -1008,6 +1008,8 @@ def failure_detail(trace: object, limit: int = 600) -> str:
             parts.append(f"{name} {reason}".strip())
         else:
             parts.append(str(check))
+    parts.extend(f"{trace.get('node_id', '')} {error}".strip()
+                 for error in (trace.get("validation_errors") or [])[:2])
     for step in (trace.get("execution_traces") or trace.get("steps") or [])[:3]:
         if isinstance(step, dict):
             parts.extend(str(error) for error in (step.get("validation_errors") or [])[:2])

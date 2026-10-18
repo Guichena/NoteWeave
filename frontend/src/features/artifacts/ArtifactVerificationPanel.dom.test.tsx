@@ -26,6 +26,18 @@ describe("ArtifactVerificationPanel", () => {
     expect(screen.getByText("第 1 轮：未通过 缺少引用；重写 小结")).toBeTruthy();
   });
 
+  it("修复后仍未通过校验的产物照常展示，并提醒核对缺少依据的章节", () => {
+    render(<ArtifactVerificationPanel verification={{
+      status: "FAIL",
+      evidence_status: "FAIL",
+      contract_status: "PASS",
+      repair_rounds: [{ round: 1, failed_checks: ["缺少引用"], repaired_sections: ["小结"] }],
+      sections: [{ heading: "小结", support: "UNSUPPORTED" }]
+    }} />);
+
+    expect(screen.getByRole("note").textContent).toContain("产物已照常生成");
+  });
+
   it("模型不可用导致未校验的章节单独提示，缺少指标时显示占位", () => {
     render(<ArtifactVerificationPanel verification={{
       contract_status: "FAIL", repair_rounds: [], citation_recall: null, citation_precision: null,

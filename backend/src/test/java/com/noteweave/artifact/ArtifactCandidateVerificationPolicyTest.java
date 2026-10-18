@@ -78,6 +78,25 @@ class ArtifactCandidateVerificationPolicyTest {
     }
 
     @Test
+    void flaggedDeliveryWithUnresolvedEvidenceIsAcceptedButStillFormatChecked() {
+        var payload = payload();
+        verification(payload).put("status", "FAIL");
+        verification(payload).put("evidence_status", "FAIL");
+        verification(payload).put("failed_checks", List.of("章节 概览 的陈述 s-1 缺少充分证据：UNSUPPORTED"));
+        section(payload).put("support", "UNSUPPORTED");
+        section(payload).put("statements", List.of(statement("UNSUPPORTED", "ASSESSED")));
+        assertThatThrownBy(() -> ArtifactCandidateVerificationPolicy.validate(payload, true, true))
+                .isInstanceOf(BusinessException.class);
+
+        payload.put("delivery_status", ArtifactCandidateVerificationPolicy.DELIVERED_WITH_UNRESOLVED_CHECKS);
+        assertThatCode(() -> ArtifactCandidateVerificationPolicy.validate(payload, true, true)).doesNotThrowAnyException();
+
+        section(payload).put("support", "BROKEN");
+        assertThatThrownBy(() -> ArtifactCandidateVerificationPolicy.validate(payload, true, true))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
     void contradictoryCitationCannotBeCombinedWithSupportedClaim() {
         var payload = payload();
         var statement = statement("SUPPORTED", "ASSESSED");

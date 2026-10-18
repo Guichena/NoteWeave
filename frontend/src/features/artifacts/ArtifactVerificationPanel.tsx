@@ -35,6 +35,11 @@ export function ArtifactVerificationPanel({ verification }: { verification?: Art
         <span>{rounds.length > 0 ? `修复 ${rounds.length} 轮` : "未经修复"}</span>
         {unsupported > 0 ? <span className="artifact-verification-alert">{unsupported} 个章节缺少依据</span> : null}
       </div>
+      {verification.status === "FAIL" || verification.evidence_status === "FAIL" ? (
+        <p className="artifact-verification-alert-note" role="note">
+          自动修复后仍有内容没有通过校验，产物已照常生成。标为缺少依据的章节请对照引用的原文核对后再使用。
+        </p>
+      ) : null}
       {notRun > 0 ? (
         <p className="artifact-verification-note">{notRun} 个章节因模型不可用没有完成证据校验，阅读时请自行核对引用。</p>
       ) : null}

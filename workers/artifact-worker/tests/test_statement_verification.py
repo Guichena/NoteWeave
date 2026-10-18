@@ -142,7 +142,7 @@ def test_quote_outside_chapter_selected_length_is_rejected():
         lambda out: out["assessments"][0]["citations"][0].update(quote="后部秘密")])
     result = verify_statement_support([section()], [passage(content="前部资料。后部秘密")], llm_client=client,
         section_materials=[{"heading": "章节甲", "passages": [{"chunk_id": "chunk-1", "selected_chars": 5}]}])
-    assert result["status"] == "FAIL" and result["llm_calls"] == 2
+    assert result["status"] == "WARN" and result["llm_calls"] == 2
     assert result["sections"][0]["support"] == "NOT_RUN"
 
 
@@ -160,7 +160,7 @@ def test_quote_outside_chapter_selected_length_is_rejected():
 def test_invalid_judge_structure_or_source_links_retry_once_then_not_run(change):
     client = JudgeClient(changes=[change, change])
     result = verify_statement_support([section()], [passage()], llm_client=client)
-    assert result["status"] == "FAIL" and result["llm_calls"] == 2
+    assert result["status"] == "WARN" and result["llm_calls"] == 2
     assert result["sections"][0]["statements"][0]["assessment_status"] == "NOT_RUN"
     assert client.calls[1][1]["validation_errors"]
     assert result["citation_recall"] == result["citation_precision"] == 0.0
@@ -173,7 +173,7 @@ def test_invalid_quote_retry_can_be_repaired_by_real_continuous_quote():
     assert "连续原文" in client.calls[1][1]["validation_errors"][0]
 
 
-@pytest.mark.parametrize("density,status", [("PER_SECTION", "FAIL"), ("OPTIONAL", "WARN")])
+@pytest.mark.parametrize("density,status", [("PER_SECTION", "WARN"), ("OPTIONAL", "WARN")])
 def test_unavailable_model_preserves_unknown_label_and_does_not_raise_metrics(density, status):
     result = verify_statement_support([section()], [passage()], citation_density=density)
     assert result["status"] == status and result["llm_calls"] == 0
@@ -185,7 +185,7 @@ def test_unavailable_model_preserves_unknown_label_and_does_not_raise_metrics(de
 def test_provider_failure_empty_or_two_invalid_outputs_are_explicitly_not_run(failure):
     client = JudgeClient(changes=[failure, failure])
     result = verify_statement_support([section()], [passage()], llm_client=client)
-    assert result["status"] == "FAIL"
+    assert result["status"] == "WARN"
     assert result["sections"][0]["support"] == "NOT_RUN"
     assert result["llm_calls"] == (2 if failure == "invalid JSON" else 1)
     assert "连接密钥" not in json.dumps(result, ensure_ascii=False)
@@ -195,7 +195,7 @@ def test_sdk_budget_exhaustion_does_not_count_a_new_call_or_report_supported():
     client = OpenAICompatibleLlmClient(api_key="test", model="test", max_total_calls=1)
     client.reserve_prior_calls(1)
     result = verify_statement_support([section()], [passage()], llm_client=client)
-    assert result["status"] == "FAIL" and result["llm_calls"] == 0
+    assert result["status"] == "WARN" and result["llm_calls"] == 0
     assert client.usage_summary()["call_count"] == 1
 
 
@@ -221,7 +221,7 @@ def test_multiple_partial_citations_conservatively_cannot_prove_full_support():
     client = JudgeClient(citation_label="PARTIAL")
     result = verify_statement_support([section(refs=["资料甲", "资料乙"])], [
         passage(), passage("chunk-2", "资料乙", "另一份资料只说明部分流程。")], llm_client=client)
-    assert result["status"] == "FAIL" and result["llm_calls"] == 2
+    assert result["status"] == "WARN" and result["llm_calls"] == 2
     assert result["sections"][0]["support"] == "NOT_RUN"
     assert "至少有一个充分支持" in client.calls[1][1]["validation_errors"][0]
 
@@ -237,7 +237,7 @@ def test_unjudged_facts_remain_in_denominator_when_another_chapter_is_supported(
     client = JudgeClient(changes=[lambda _: None, ""])
     result = verify_statement_support([section("延迟降低20%。"), section("延迟降低30%。", "章节乙")],
         [passage(content="延迟降低20%。延迟降低30%。")], llm_client=client)
-    assert result["status"] == "FAIL"
+    assert result["status"] == "WARN"
     assert result["citation_recall"] == result["citation_precision"] == 0.5
 
 
@@ -252,7 +252,7 @@ def test_limits_preserve_all_statements_but_never_truncate_to_pass(monkeypatch, 
         monkeypatch.setattr(verification, "MAX_CONTEXT_CHARS", 1)
     client = JudgeClient()
     result = verify_statement_support(sections, [passage()], llm_client=client)
-    assert result["status"] == "FAIL" and client.calls == []
+    assert result["status"] == "WARN" and client.calls == []
     assert sum(len(s["statements"]) for s in result["sections"]) == 2
     assert all(s["support"] == "NOT_RUN" for s in result["sections"])
     assert result["execution_traces"] and result["execution_traces"][0]["status"] == "NOT_RUN"

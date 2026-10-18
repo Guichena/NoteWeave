@@ -1362,3 +1362,13 @@ button.artifact-output-row:hover {
   padding-left: 20px;
   color: var(--ink-2);
 }
+
+/* 修复后仍有未通过的检查时，提醒读者核对缺少依据的章节 */
+.artifact-verification-alert-note {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-sm);
+}

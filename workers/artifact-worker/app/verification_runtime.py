@@ -10,6 +10,16 @@ from app.output_contract import evaluate_output_contract
 from app.statement_verification import verify_statement_support
 
 
+# 这些检查没通过时内容不能交给用户；其余检查（证据不足、主题词缺失、章节缺失等）在修复轮次用完后
+# 随产物一起交付，校验结果附在版本上，由界面标出缺少依据的章节
+BLOCKING_FAILURE_MARKERS = ("包含明确禁止的内容",)
+
+
+def blocking_failures(failed_checks) -> list[str]:
+    """修复轮次用完后仍阻止交付的检查项。"""
+    return [str(item) for item in failed_checks or [] if any(marker in str(item) for marker in BLOCKING_FAILURE_MARKERS)]
+
+
 def verify_draft(inputs, task, plan, llm_client):
     raw_sections = inputs["sections"]
     sections = [ArtifactSectionDraft.model_validate(item) for item in raw_sections]

@@ -109,20 +109,18 @@ def test_sectioned_repair_preserves_passed_chapters_and_rechecks_evidence(monkey
         purpose.startswith("artifact.node.") for purpose, _ in provider.calls)
 
 
-def test_sectioned_two_failed_repairs_never_export_or_publish(monkeypatch):
+def test_sectioned_two_failed_repairs_are_delivered_with_the_verification(monkeypatch):
     provider = FaultProvider(runner.build_default_llm_client(), mode="unchanged")
     monkeypatch.setattr(runner, "build_default_llm_client", lambda: provider)
-    def forbidden(*args, **kwargs):
-        raise AssertionError("章节校验失败不能导出或发布")
-    monkeypatch.setattr(runner, "export_artifact_if_required", forbidden)
-    monkeypatch.setattr(runner, "commit_artifact_result", forbidden)
 
-    with pytest.raises(NodeExecutionError) as caught:
-        runner.run_artifact_task(task())
+    _, result = runner.run_artifact_task(task())
+    state = result.result_payload["generation_trace"]["state"]
+    # 修复轮次用完后剩下的证据问题不再让任务失败，产物带着校验结果交付
+    assert state["verification"]["delivery"] == "DELIVERED_WITH_UNRESOLVED_CHECKS"
 
-    assert len(caught.value.trace["repair_trace"]["rounds"]) == 2
+    assert len(state["repair_trace"]["rounds"]) == 2
     assert len([purpose for purpose, _ in provider.calls if purpose == "artifact.node.section_repair"]) == 2
-    assert caught.value.trace["verification"]["evidence_status"] == "FAIL"
+    assert state["verification"]["evidence_status"] == "FAIL"
 
 
 def test_sectioned_consistency_patch_changes_only_identified_paragraph(monkeypatch):
