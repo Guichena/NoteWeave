@@ -28,7 +28,8 @@ def plan_repair_queries(context, target, llm):
                      "description to decide what is still missing. For software, standards and science topics write "
                      "English queries, include known identifiers (JEP, RFC, PEP, version numbers) and keep the "
                      "entity's version. For empirical questions target studies and data. When authoritative domains are "
-                     "given, at least one query must add site:<domain> for the best matching one. Return strategy and queries.",
+                     "given, at least one query must add site:<domain> for the best matching one. "
+                     f"Return strategy and 1 to {context.max_queries} queries.",
                      "repair_target": target, "entity": context.entity_label,
                      "authoritative_domains": list(context.authoritative_domains),
                      "columns": [vars(c) for c in context.columns], "tried_queries": list(tried),
@@ -38,8 +39,10 @@ def plan_repair_queries(context, target, llm):
                 items = raw.get("queries") if isinstance(raw, dict) else None
                 # 只要求包含 strategy 与 queries，模型附带的其他字段忽略，不因此退回规则检索词
                 if (not isinstance(raw, dict) or not {"strategy", "queries"} <= set(raw)
-                        or chosen not in STRATEGIES or not isinstance(items, list) or not 1 <= len(items) <= context.max_queries):
+                        or chosen not in STRATEGIES or not isinstance(items, list) or not items):
                     raise ValueError("策略、输出字段或查询条数不符合约定")
+                # 模型常多给几条；按顺序保留前几条，不因条数超出而整份作废
+                items = items[:context.max_queries]
                 if cause == "EVIDENCE_CONFLICT" and chosen != "COUNTER_EVIDENCE":
                     raise ValueError("冲突修复必须使用 COUNTER_EVIDENCE")
                 if cause in {"FETCH_FAILED", "PROVIDER_FAILED"} and chosen != "SWITCH_SOURCE_TYPE":
@@ -68,7 +71,7 @@ def plan_repair_queries(context, target, llm):
     suffixes = {"COUNTER_EVIDENCE": ["exceptions errata", "version differences counterexample"],
                 "SWITCH_SOURCE_TYPE": ["official documentation", "technical report"],
                 "NARROW": ["implementation requirements", "documented limitations"],
-                "SWITCH_LANGUAGE": ["empirical study", "report data"],
+                "SWITCH_LANGUAGE": ["documentation", "study"],
                 "BROADEN": ["overview", "survey"]}[strategy]
     candidates = ([context.question] if strategy == "SWITCH_LANGUAGE" and context.question else [])
     if not claims:

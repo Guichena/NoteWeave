@@ -21,3 +21,16 @@ def test_kept_cards_report_accepted_cards() -> None:
     merged = _merge_extractions([ExtractionResult(accepted_cards=[card])], [card])
 
     assert merged.termination_reason == ExtractionTerminationReason.ACCEPTED_CARDS
+
+
+def test_quote_without_markdown_marks_resolves_to_the_original_span() -> None:
+    from app.extractor import _locate_whitespace_tolerant
+
+    text = "Claude returns a `tool_use` block with an **id**,\n  `name` and `input`. Then you reply."
+    located = _locate_whitespace_tolerant(text, "Claude returns a tool_use block with an id, name and input.")
+
+    assert located is not None
+    start, span = located
+    assert span == "Claude returns a `tool_use` block with an **id**,\n  `name` and `input`."
+    assert text[start:start + len(span)] == span
+    assert _locate_whitespace_tolerant(text, "Claude returns a tool_result block") is None

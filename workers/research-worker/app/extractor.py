@@ -518,16 +518,42 @@ def _grounded_claim(claim: str, quote: str) -> str:
     return claim
 
 
+# 比对引用时忽略的 Markdown 标记：模型摘录 `tool_use`、**required** 这类文字时常去掉反引号和星号
+_QUOTE_IGNORED = frozenset("`*")
+_QUOTE_EQUIVALENT = {"\u201c": '"', "\u201d": '"', "\u2018": "'", "\u2019": "'", "\u00a0": " "}
+
+
+def _normalized_with_positions(value: str) -> tuple[str, list[int]]:
+    """折叠空白、去掉 Markdown 强调和代码标记、统一弯引号，同时记下每个字符在原文中的位置。"""
+    chars: list[str] = []
+    positions: list[int] = []
+    for index, char in enumerate(value):
+        if char in _QUOTE_IGNORED:
+            continue
+        char = _QUOTE_EQUIVALENT.get(char, char)
+        if char.isspace():
+            if not chars or chars[-1] == " ":
+                continue
+            char = " "
+        chars.append(char)
+        positions.append(index)
+    return "".join(chars), positions
+
+
 def _locate_whitespace_tolerant(text: str, quote: str) -> tuple[int, str] | None:
-    # 首尾带空白的引用按原规则拒绝，只放宽句子内部的换行与连续空白
-    tokens = quote.split()
-    if len(tokens) < 3 or quote != quote.strip():
+    """在原文中找出与引用只差空白、Markdown 标记或引号样式的那一段，返回原文里的这段文字。"""
+    # 首尾带空白的引用按原规则拒绝，只放宽句子内部的差异
+    if len(quote.split()) < 3 or quote != quote.strip():
         return None
-    pattern = r"\s+".join(re.escape(token) for token in tokens)
-    match = re.search(pattern, text)
-    if match is None:
+    normalized_quote, _ = _normalized_with_positions(quote)
+    normalized_quote = normalized_quote.strip()
+    normalized_text, positions = _normalized_with_positions(text)
+    start = normalized_text.find(normalized_quote)
+    if not normalized_quote or start < 0:
         return None
-    return match.start(), match.group(0)
+    begin = positions[start]
+    end = positions[start + len(normalized_quote) - 1] + 1
+    return begin, text[begin:end]
 
 
 def _is_external_window(window: ResearchReadWindow) -> bool:
