@@ -160,10 +160,13 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "fully answers the question.",
             "Start with required_points: the 3 to 5 points an expert reviewer would check in a complete answer, "
             "covering every part of the question plus what a complete answer obviously needs (the identifier the "
-            "question asks to cite, the release that made a change effective, the production counterpart of a "
-            "development tool, the cause of a fixed problem, concurrent or parallel behaviour of an API). Each point "
+            "question asks to cite, the release that made a change effective, the production build when comparing "
+            "development servers or tooling, the cause of a fixed problem, or for an API comparison whether calls can "
+            "run in parallel); use only the examples that fit this question. Each point "
             "names the dimension label that answers it. Every point must map to one of your dimensions; drop "
-            "dimensions that answer none of the points before dropping a point.",
+            "dimensions that answer none of the points before dropping a point. Points are about the subject "
+            "matter only: citing official docs, RFCs, URLs or original text is already done by every cell and is "
+            "never a point.",
             "Every part of the question must map to at least one dimension. Also cover what an expert reviewer "
             "would expect in a complete answer to each part, such as behaviour on failure or rebalance when "
             "asking about ordering, each product's locking when asking about concurrency, the production "
@@ -347,6 +350,9 @@ def _cover_required_points(
         if not isinstance(item, dict) or not str(item.get("point") or "").strip():
             continue
         point = " ".join(str(item["point"]).split())
+        if _META_POINT.search(point):
+            # 要求引用官方文档、给出链接的要点是报告格式，每个单元格本来就带引用，不算必查要点
+            continue
         index = labels.get(" ".join(str(item.get("dimension") or "").split()).casefold())
         if index is None:
             missing.append(point)
@@ -378,7 +384,13 @@ _META_DIMENSION = re.compile(
     r"|^(?:规范|官方)?(?:原文)?(?:引用|来源|出处|链接)(?:与|和)?(?:来源|出处|链接)?$"
     r"|证据强度|可信度|置信度|(?i:confidence|evidence strength)"
     # 以引用、参考文献结尾的列（如 Relevant RFC references、发布与改善原始引用）也是在要求列出处
-    r"|(?i:\b(?:references?|citations?))$|引用$")
+    r"|(?i:\b(?:references?|citations?))$|引用$"
+    # 只讲“官方文档说明”“官方文档条目或链接”的列
+    r"|^(?:官方)?(?:文档|规范)(?:说明|页面|链接|原文|条目)$|^(?i:cite)\b|^引用"
+    r"|(?i:^(?:the\s+)?official\s+(?:documentation|docs)\b.*\b(?:entry|entries|url|urls|page|pages|links?|explanation|says?)\b)")
+_META_POINT = re.compile(
+    r"(?i)\b(?:urls?|links?)\b|official\s+(?:documentation|docs)\s+(?:urls?|entry|entries|pages?)"
+    r"|原文引用|引用原始|引用原文|链接|文档页面|文档说明")
 
 
 def _fitting_tier(declared: str, entity_count: int, dimension_count: int) -> str:
