@@ -556,8 +556,14 @@ def _merge_extractions(results: list[ExtractionResult], cards: list[object]) -> 
         "response_chars": sum(item.response_chars for item in receipts),
         "response_digest": receipts[-1].response_digest,
     })
-    reason = (ExtractionTerminationReason.ACCEPTED_CARDS
-              if any(result.accepted_cards for result in results) else results[-1].termination_reason)
+    # 终止原因按合并后真正保留的卡片判断：各列的卡片还会按来源优先级和是否切题再筛一遍，
+    # 抽到过卡片但全被筛掉时不能报 ACCEPTED_CARDS，否则完成回执不合契约，任务会被反复重试直到失败
+    if cards:
+        reason = ExtractionTerminationReason.ACCEPTED_CARDS
+    elif any(result.accepted_cards for result in results):
+        reason = ExtractionTerminationReason.ALL_CARDS_REJECTED
+    else:
+        reason = results[-1].termination_reason
     return ExtractionResult(
         accepted_cards=list(cards),
         rejected_cards=[card for result in results for card in result.rejected_cards],
