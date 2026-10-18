@@ -100,7 +100,7 @@ export function buildResearchTable(state: Pick<ResearchClosedLoopState, "cells" 
   const counts = { verified: 0, filled: 0, conflict: 0, repair: 0, missing: 0, queued: 0, pending: 0, total: 0 };
   const evidenceById = new Map<string, ResearchEvidence>();
   for (const item of state?.source_evidence ?? []) {
-    const id = text(item.evidence_id);
+    const id = evidenceKey(text(item.evidence_id));
     if (!id) continue;
     evidenceById.set(id, {
       evidenceId: id,
@@ -145,7 +145,7 @@ export function buildResearchTable(state: Pick<ResearchClosedLoopState, "cells" 
       verifierDecision: text(raw.last_verifier_decision).toUpperCase(),
       repairCount: num(raw.repair_count) ?? 0,
       branchId: text(raw.branch_id),
-      evidenceIds: Array.isArray(raw.evidence_refs) ? raw.evidence_refs.map(text).filter(Boolean) : []
+      evidenceIds: Array.isArray(raw.evidence_refs) ? raw.evidence_refs.map((item) => evidenceKey(text(item))).filter(Boolean) : []
     });
   }
 
@@ -157,11 +157,19 @@ export function buildResearchTable(state: Pick<ResearchClosedLoopState, "cells" 
   };
 }
 
+/**
+ * 证据编号统一去掉 evidence: 或 evidence- 前缀：后端的证据记录带前缀，报告正文的角标在解析时去掉了前缀，
+ * 两边不一致时点击角标会找不到原文。
+ */
+export function evidenceKey(id: string) {
+  return id.replace(/^evidence[:-]/, "").trim();
+}
+
 /** 按报告中首次引用的顺序排列 evidence id，用于给引用角标编号 [1]、[2]。 */
 export function orderReportEvidence(markdown: string) {
   const order: string[] = [];
   for (const match of markdown.matchAll(/\[evidence[:-]([^\]]+)\]/g)) {
-    const id = match[1].trim();
+    const id = evidenceKey(match[1]);
     if (!order.includes(id)) order.push(id);
   }
   return order;

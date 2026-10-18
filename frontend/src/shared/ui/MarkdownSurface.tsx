@@ -277,7 +277,8 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
           </button>
         );
       }
-      return <sup className="research-citation-ref" title={token.slice(1, -1)} key={index}>[证据]</sup>;
+      const order = evidenceOrder?.indexOf(evidenceId) ?? -1;
+      return <sup className="research-citation-ref" title={token.slice(1, -1)} key={index}>{order >= 0 ? `[${order + 1}]` : "[证据]"}</sup>;
     }
     if (numberedCitations && /^\[\d{1,2}\]$/.test(token)) {
       const citationNumber = Number(token.slice(1, -1));

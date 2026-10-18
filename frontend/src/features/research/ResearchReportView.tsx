@@ -116,7 +116,7 @@ export function ResearchReportView({
         className="research-markdown-report research-reader-body"
         compactCitations
         onEvidenceClick={onEvidenceClick}
-        evidenceOrder={onEvidenceClick ? orderReportEvidence(body) : undefined}
+        evidenceOrder={orderReportEvidence(body)}
         activeEvidence={activeEvidence}
       />
 

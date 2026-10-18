@@ -74,3 +74,18 @@ describe("orderReportEvidence", () => {
     expect(orderReportEvidence("A [evidence:ev-2] B [evidence:ev-1] C [evidence-ev-2]")).toEqual(["ev-2", "ev-1"]);
   });
 });
+
+describe("evidence id prefixes", () => {
+  it("lets report citations find evidence recorded with the evidence: prefix", () => {
+    const table = buildResearchTable({
+      rows: [{ row_id: "r1", source_title: "Terraform" }],
+      cells: [{ cell_id: "c1", row_id: "r1", column_key: "lock", candidate_value: "auto lock",
+        status: "VERIFIED", evidence_refs: ["evidence:ab12"] }],
+      source_evidence: [{ evidence_id: "evidence:ab12", source_title: "Backends", quote_text: "locks state" }]
+    } as never);
+    const [cited] = orderReportEvidence("Terraform locks state [evidence:ab12].");
+
+    expect(table.evidenceById.get(cited)?.quote).toBe("locks state");
+    expect(table.rows[0].cells.get("lock")?.evidenceIds).toEqual([cited]);
+  });
+});

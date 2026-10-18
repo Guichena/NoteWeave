@@ -34,7 +34,7 @@ describe("ResearchReportView", () => {
     expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("snapshot-a");
     expect(document.querySelector(".research-audit-markdown")?.textContent).toContain("快照：");
     expect(document.querySelector(".research-audit-markdown")?.textContent).not.toContain("Snapshot:");
-    expect(document.querySelector(".research-citation-ref")?.textContent).toBe("[证据]");
+    expect(document.querySelector(".research-citation-ref")?.textContent).toBe("[1]");
   });
 
   it("localizes audit field names for display only", () => {
