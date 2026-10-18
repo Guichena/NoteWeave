@@ -86,10 +86,11 @@ class ResearchAgentAutomaticRunBootstrapTest {
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_cell where research_run_id = ?", Integer.class, created.researchRunId()))
                 .isGreaterThanOrEqualTo(3);
+        // 兜底表格按子问题生成列，不再有固定的 answer 列；普通技术问题的单元格都不应标为高风险
         assertThat(jdbcTemplate.queryForObject("""
-                select high_risk from research_cell
-                where research_run_id = ? and column_key = 'answer'
-                """, Boolean.class, created.researchRunId())).isFalse();
+                select count(*) from research_cell
+                where research_run_id = ? and high_risk = true
+                """, Integer.class, created.researchRunId())).isZero();
 
         // 规划失败后沿用规则表格，新 Run 默认先执行宽搜索，再填表。
         assertThat(coordinatorTick.tick(created.researchRunId(), "bootstrap-test").outcome()).isEqualTo("PLANNING_TASKIZED");
