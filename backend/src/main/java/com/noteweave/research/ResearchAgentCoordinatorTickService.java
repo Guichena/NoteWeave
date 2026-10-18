@@ -129,14 +129,12 @@ public class ResearchAgentCoordinatorTickService {
                 // 缺口补查没派出任务（预算用完或没有可换的来源）时，照常走后面的宽搜索与收尾判断
                 snapshot = snapshots.snapshot(runId);
             } else if (!taskized) {
-                // Tasks that only failed to find usable evidence, with the bounded repair budget
-                // spent, are the same honest evidence outcome as the verifier-only case below: the
-                // verified cells still deserve a report.  Runtime failures (lease exhaustion,
-                // delivery errors) and an empty counterfactual source scope still fail the Run.
+                // 补查预算用完后：失败的任务都只是找不到证据，或者已有核验通过的单元格（其余失败可能是
+                // 个别任务租约重试耗尽、反证没有可用来源），都带局限完成并给出报告；
+                // 只有存在运行故障且没有任何核验通过的单元格，或者用户取消时，才让研究失败。
                 boolean evidenceOnlyStop = snapshot.failedTaskCount() > 0
-                        && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
                         && receipt.decisionKind() != ResearchAgentRepairStopPolicy.DecisionKind.STOPPED_CANCELLED
-                        && completionGate.failedTasksAreEvidenceOutcomes(runId);
+                        && (completionGate.failedTasksAreEvidenceOutcomes(runId) || completionGate.hasVerifiedCells(runId));
                 if (snapshot.failedTaskCount() > 0 && !evidenceOnlyStop && !discoveryLoop.budgetStopped(runId)) {
                     String terminalReason = receipt.decisionKind() == ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL
                             ? "RESEARCH_AGENT_COUNTERFACTUAL_SOURCE_SCOPE_EMPTY"

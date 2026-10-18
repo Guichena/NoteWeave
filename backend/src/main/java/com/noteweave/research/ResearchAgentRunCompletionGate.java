@@ -507,6 +507,16 @@ public class ResearchAgentRunCompletionGate {
         return !reasons.isEmpty() && EVIDENCE_TERMINATION_REASONS.containsAll(reasons);
     }
 
+    /** 是否已有核验通过、带证据的单元格；有的话即使部分任务因运行故障失败，也应给出带局限的报告。 */
+    public boolean hasVerifiedCells(String runId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from research_cell
+                where research_run_id = ? and cell_status = 'VERIFIED'
+                  and evidence_refs_json is not null and evidence_refs_json <> '[]'
+                """, Integer.class, runId);
+        return count != null && count > 0;
+    }
+
     public TableState loadTableState(String runId) {
         List<CellState> cells = jdbcTemplate.query("""
                 select cell_key, column_key,

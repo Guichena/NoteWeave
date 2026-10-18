@@ -610,6 +610,34 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldStillReportVerifiedCellsWhenAnotherTaskExhaustedItsLeaseRetries() {
+        coordinator.planAndEnqueueForWave(runId, 1);
+        jdbcTemplate.update("""
+                update research_agent_task
+                set status = 'FAILED', terminal_reason = 'LEASE_RETRY_EXHAUSTED',
+                    terminal_at = current_timestamp
+                where research_run_id = ?
+                """, runId);
+        jdbcTemplate.update("""
+                update research_cell set repair_count = 2, active_task_id = null
+                where research_run_id = ?
+                """, runId);
+        jdbcTemplate.update("""
+                update research_cell
+                set cell_status = 'VERIFIED', candidate_value = 'settled method',
+                    evidence_refs_json = '["evidence-settled"]'
+                where research_run_id = ? and cell_key = 'entity-1:method'
+                """, runId);
+
+        var receipt = coordinatorTick.tick(runId, "scheduler-partial-lease-loss");
+
+        // 个别任务的基础设施失败不应让已核验的单元格失去报告
+        assertThat(receipt.outcome()).isEqualTo("FAILED_WAVE_STOPPED_COMPLETED");
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from research_run where id = ?", String.class, runId)).isEqualTo("COMPLETED");
+    }
+
+    @Test
     void shouldCompleteHonestlyWhenFailedTasksOnlyLackedEvidenceAndNoRepairTargetRemains() {
         coordinator.planAndEnqueueForWave(runId, 1);
         jdbcTemplate.update("""
