@@ -257,6 +257,39 @@ class ResearchAgentIncrementalFinalizationServiceTest {
     }
 
     @Test
+    void sourcedCandidateThatFailedQualificationIsShownAsAnUnverifiedLead() {
+        String candidateId = Ids.newId();
+        jdbcTemplate.update("""
+                insert into research_agent_candidate(
+                    id, research_run_id, task_id, execution_id, idempotency_key,
+                    cell_key, base_cell_version, plan_revision, entity_set_version,
+                    lease_epoch, fencing_token, candidate_value, evidence_ids_json, confidence_score)
+                values (?, ?, 'task-lead', 'execution-lead', 'candidate-lead',
+                    'entity-1:limitations', 0, 1, 1, 1, 1, 'Coverage above 75% found 30% more defects', '["evidence-1"]', 0.6000)
+                """, candidateId, runId);
+        jdbcTemplate.update("""
+                insert into research_cell_merge(
+                    id, research_run_id, candidate_id, merge_key, cell_key,
+                    expected_cell_version, result_cell_version, verdict, decision,
+                    reason_code, accepted_evidence_ids_json)
+                values (?, ?, ?, 'merge-lead', 'entity-1:limitations', 0, 0,
+                    'NOT_ENOUGH_INFO', 'REJECTED', 'EVIDENCE_QUALIFICATION_REJECTED', '[]')
+                """, Ids.newId(), runId, candidateId);
+        var decision = new ResearchAgentRunCompletionGate.CompletionDecision(
+                ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_WITH_LIMITATIONS,
+                java.util.List.of(),
+                java.util.List.of(new ResearchAgentRunCompletionGate.UnresolvedCell(
+                        "entity-1:limitations", "limitations", "GAP", "REQUIRED_CELL_UNRESOLVED")),
+                java.util.List.of(), java.util.List.of());
+
+        String report = honestReports.renderAndPersist(runId, decision);
+
+        assertThat(report).contains("## 未经核实的线索", "Coverage above 75% found 30% more defects [evidence-1]",
+                "找到了相关原文但未通过核验");
+        assertThat(report.indexOf("## 未经核实的线索")).isLessThan(report.indexOf("## 局限与未解决项"));
+    }
+
+    @Test
     void limitationReportShouldTraceAClaimThroughCandidateEvidenceSnapshotAndUrl() {
         String candidateId = Ids.newId();
         jdbcTemplate.update("""

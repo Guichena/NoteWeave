@@ -29,4 +29,14 @@ class ResearchAgentHonestReportTextTest {
 
         assertThat(result).contains("正文", "## 对比表", "| a | b |").doesNotContain("## 局限", "部分条目");
     }
+
+    @Test
+    void verificationSummaryGoesRightAfterTheLeadParagraph() {
+        String result = ResearchAgentHonestReportService.afterLead(
+                "# 标题\n\n摘要。\n\n## 直接回答\n\n正文", "**核验情况：** 已核验 3 项。");
+
+        assertThat(result).isEqualTo("# 标题\n\n摘要。\n\n**核验情况：** 已核验 3 项。\n\n## 直接回答\n\n正文");
+        assertThat(ResearchAgentHonestReportService.afterLead("# 标题\n\n摘要。", "x"))
+                .isEqualTo("# 标题\n\n摘要。\n\nx");
+    }
 }

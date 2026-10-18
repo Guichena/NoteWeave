@@ -77,6 +77,9 @@ class NarrativeReportPolisher:
                 "'虚拟线程在 JDK 21 正式发布 [evidence:ab12]。'; never pile every key of a cell at the end. "
                 "evidence_keys must list exactly the keys cited inline. The summary cites at most two keys, and "
                 "the first table column names the row without citations.",
+                "Like a published research report, cite every specific fact (a number, version, name, default or "
+                "behaviour) but leave background, transitions and explanations of why a fact matters uncited; such "
+                "sentences must not introduce facts that no frozen cell supports.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary is the bottom line: one or two sentences that answer research_question with the "

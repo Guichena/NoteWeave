@@ -82,8 +82,9 @@ class ResearchAgentHonestReportService {
         if (synthesis != null) {
             // 综合撰写的正文在前，后面保留结论汇总、逐条引用核对和局限说明
             // 成文里的局限一节只摘了部分条目，去掉后统一用下面完整的局限与未解决项
-            report = new StringBuilder(withoutSection(synthesis.markdown(), "## 局限", "## Limitations").strip()).append("\n\n")
-                    .append(verificationSummary(runId, decision)).append("\n\n");
+            // 核验情况放在摘要下面，读者先看到有多少结论已核实、多少仍缺，和主流研究报告开头的研究概况一致
+            report = new StringBuilder(afterLead(withoutSection(synthesis.markdown(), "## 局限", "## Limitations").strip(),
+                    verificationSummary(runId, decision))).append("\n\n");
             jdbcTemplate.update("update research_agent_synthesis_candidate set status = 'PROMOTED' where id = ? and status = 'VALIDATED'",
                     synthesis.id());
         } else {
@@ -111,11 +112,13 @@ class ResearchAgentHonestReportService {
             }
         }
         appendVerifiedFacts(report, runId, decision, labels, synthesis != null);
+        java.util.Set<String> withLeads = appendTentativeFindings(report, runId, decision, labels);
         if (!decision.unresolvedCells().isEmpty() || !decision.limitations().isEmpty()) {
             report.append("## 局限与未解决项\n\n");
             for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
                 report.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
-                        .append(reasonText(cell.reasonCode())).append("\n");
+                        .append(withLeads.contains(cell.cellKey()) ? "找到了相关原文但未通过核验，见上方未经核实的线索"
+                                : reasonText(cell.reasonCode())).append("\n");
             }
             for (String limitation : readableLimitations(decision.limitations())) {
                 report.append("- ").append(markdown(limitation)).append("\n");
@@ -125,6 +128,51 @@ class ResearchAgentHonestReportService {
         // 完成状态与原因码已经写入 research_run 和完成判定记录，报告正文只给读者看得懂的内容
         return ResearchReportCitations.consolidate(jdbcTemplate, runId,
                 ResearchRepairExecutionService.appendCounterAudit(jdbcTemplate, runId, report.toString()));
+    }
+
+    /**
+     * 未通过核验但有原文出处的线索：单元格最后一个因证据资格被拒的候选（引用原文确实存在、关系为支持，
+     * 只是结论里的数字或版本与引用片段对不上等）。参考主流研究报告的做法，关键结论仍只用已核验的内容，
+     * 这些线索单独成节并注明未经核实，附上原文引用，由读者自行判断。返回列出了线索的单元格。
+     */
+    private java.util.Set<String> appendTentativeFindings(StringBuilder report, String runId,
+                                                          ResearchAgentRunCompletionGate.CompletionDecision decision,
+                                                          Map<String, String> labels) {
+        java.util.Set<String> listed = new java.util.LinkedHashSet<>();
+        StringBuilder section = new StringBuilder();
+        for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
+            List<String[]> rows = jdbcTemplate.query("""
+                    select a.candidate_value, a.evidence_ids_json from research_agent_candidate a
+                    join research_cell_merge m on m.candidate_id = a.id
+                    where a.research_run_id = ? and a.cell_key = ? and m.decision = 'REJECTED'
+                      and m.reason_code = 'EVIDENCE_QUALIFICATION_REJECTED'
+                    order by m.merged_at desc, m.id desc limit 1
+                    """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2)}, runId, cell.cellKey());
+            if (rows.isEmpty() || rows.get(0)[0] == null || rows.get(0)[0].isBlank()) continue;
+            List<String> citations = new java.util.ArrayList<>();
+            for (String key : evidenceKeys(rows.get(0)[1]).stream().distinct().limit(3).toList()) {
+                Evidence evidence = evidence(runId, key);
+                if (evidence != null && evidence.quote() != null && !evidence.quote().isBlank()) citations.add("[" + key + "]");
+            }
+            if (citations.isEmpty()) continue;
+            section.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
+                    .append(markdown(rows.get(0)[0].strip())).append(' ').append(String.join("", citations)).append('\n');
+            listed.add(cell.cellKey());
+        }
+        if (!listed.isEmpty()) {
+            report.append("## 未经核实的线索\n\n")
+                    .append("以下内容找到了原文出处，但没有通过自动核验（例如结论中的数字或版本与引用片段对不上），")
+                    .append("仅供参考，请以引用的原文为准。\n\n")
+                    .append(section).append('\n');
+        }
+        return listed;
+    }
+
+    /** 把一段文字插到标题和摘要之后、第一个二级标题之前；没有二级标题时追加到末尾。 */
+    static String afterLead(String markdown, String text) {
+        int section = markdown.indexOf("\n## ");
+        if (section < 0) return markdown.stripTrailing() + "\n\n" + text;
+        return markdown.substring(0, section).stripTrailing() + "\n\n" + text + "\n" + markdown.substring(section);
     }
 
     /** 去掉以这些二级标题开头的小节，到下一个二级标题为止。 */

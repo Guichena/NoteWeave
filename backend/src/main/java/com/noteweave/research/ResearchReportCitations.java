@@ -52,7 +52,8 @@ final class ResearchReportCitations {
             if (!url.isEmpty()) audit.append("  - URL: ").append(url).append("\n");
             audit.append("\n");
         }
-        return withoutSections(markdown).stripTrailing() + audit.toString().stripTrailing() + "\n";
+        // 模板报告的已验证结论里也有快照路径行，未经核实的线索带来内联引用后同样要去掉
+        return withoutSnapshotLines(withoutSections(markdown)).stripTrailing() + audit.toString().stripTrailing() + "\n";
     }
 
     /** 去掉引用核对类小节：从这些标题开始，到下一个二级标题为止。 */
