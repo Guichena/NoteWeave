@@ -148,3 +148,73 @@ def test_fallback_mode_moves_on_when_the_first_provider_is_empty_and_skips_the_s
 
 def test_unknown_mode_falls_back_to_merge() -> None:
     assert CompositeSearchAdapter([], mode="other").mode == "merge"
+
+
+class _PerQueryTransport(_Transport):
+    """前 empty_calls 次调用没有结果（或 fatal），之后正常返回。"""
+
+    def __init__(self, results, empty_calls: int, fatal_after: int | None = None) -> None:
+        super().__init__(results)
+        self.empty_calls = empty_calls
+        self.fatal_after = fatal_after
+
+    def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
+        del page
+        self.calls += 1
+        self.last_fatal_failure = ""
+        if self.fatal_after is not None and self.calls > self.fatal_after:
+            self.last_fatal_failure = "QUOTA_EXHAUSTED"
+            return []
+        if self.calls <= self.empty_calls:
+            return []
+        return [_hit(f"https://deepseek.example/{query[:20].replace(' ', '-')}-{self.calls}")][:limit]
+
+
+@pytest.fixture
+def three_queries(monkeypatch) -> None:
+    from app.search_adapters import SearchQueryPlanItem
+
+    items = [SearchQueryPlanItem(query=f"virtual threads q{index}", family="direct", lane="general", priority=index)
+             for index in range(1, 4)]
+    monkeypatch.setattr("app.search_adapters.build_search_query_plan", lambda plan, remaining_budget=None: items)
+
+
+def test_fallback_is_decided_per_query_so_the_backup_only_fills_queries_the_primary_missed(three_queries) -> None:
+    task_input = _task_input()
+    plan = build_research_plan(task_input)
+    deepseek = _PerQueryTransport([], empty_calls=1)
+    tavily = _Transport(results=[_hit("https://example.com/backup")])
+    composite = CompositeSearchAdapter([_adapter("deepseek", deepseek), _adapter("tavily_mcp", tavily)], mode="fallback")
+
+    hits = composite.search(task_input, plan)
+
+    # 第一条检索词 DeepSeek 没有结果，由 Tavily 补位；其余检索词仍只用 DeepSeek
+    assert tavily.calls == 1
+    assert deepseek.calls == 3
+    backup = [hit for hit in hits if hit.provider == "tavily_mcp"]
+    assert backup and backup[0].provider_attempts == ["deepseek", "tavily_mcp"]
+    assert "deepseek" in backup[0].provider_fallback_reason
+    assert any(hit.provider == "deepseek" and hit.provider_attempts == ["deepseek"] for hit in hits)
+
+
+def test_primary_that_runs_out_of_quota_mid_search_is_not_called_again(three_queries) -> None:
+    task_input = _task_input()
+    deepseek = _PerQueryTransport([], empty_calls=0, fatal_after=1)
+    tavily = _Transport(results=[_hit("https://example.com/backup")])
+    composite = CompositeSearchAdapter([_adapter("deepseek", deepseek), _adapter("tavily_mcp", tavily)], mode="fallback")
+
+    hits = composite.search(task_input, build_research_plan(task_input))
+
+    assert deepseek.calls == 2
+    assert tavily.calls == 2
+    assert {hit.provider for hit in hits} == {"deepseek", "tavily_mcp"}
+
+
+def test_deepseek_goes_first_whenever_its_key_is_configured(monkeypatch) -> None:
+    from app.search_adapters import _build_external_search_adapters
+
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_SEARCH_PROVIDER_CHAIN", "wikipedia")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_PUBLIC_SEARCH_ENABLED", "true")
+    monkeypatch.setenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", "key-1")
+
+    assert [adapter.provider_name for adapter in _build_external_search_adapters()] == ["deepseek", "wikipedia"]

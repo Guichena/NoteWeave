@@ -35,6 +35,7 @@ from app.models import (
 from app.source_profile import infer_source_domain, infer_source_quality
 from app.config import load_settings
 from app.rate_limit import FixedIntervalRateLimiter
+from app.search_adapters import _QUOTA_MARKERS
 from app.trace_security import sanitize_error_message
 
 
@@ -583,12 +584,16 @@ class TavilyMcpUrlSnapshotTransport:
         self.client = client
         self.max_retries = max(1, max_retries)
         self.rate_limiter = FixedIntervalRateLimiter(requests_per_second)
+        # 额度用尽或密钥失效后记录原因，之后的网址直接交给下一个读取方式，不再白白请求
+        self.unavailable_reason = ""
 
     def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
         try:
             validate_public_http_url(url)
         except ValueError as exc:
             return _blocked_url_result(self.METHOD, str(exc))
+        if self.unavailable_reason:
+            return self._failed("PROVIDER_UNAVAILABLE", self.unavailable_reason)
         failure_code = "EMPTY_FETCH_TEXT"
         reason = "tavily extract returned no readable text"
         for attempt in range(1, self.max_retries + 1):
@@ -624,10 +629,15 @@ class TavilyMcpUrlSnapshotTransport:
                 retryable = exc.retryable
                 failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else "FETCH_REJECTED"
                 reason = "tavily extract failed after retries" if retryable else "tavily extract rejected"
+                if _provider_unusable(None, str(exc)):
+                    self.unavailable_reason = f"{self.METHOD.lower()} quota exhausted or key rejected"
+                    retryable = False
             except urllib.error.HTTPError as exc:
                 retryable = exc.code in {408, 429} or exc.code >= 500
                 failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else "FETCH_REJECTED"
                 reason = f"tavily extract http {exc.code}"
+                if _provider_unusable(exc.code, ""):
+                    self.unavailable_reason = f"{self.METHOD.lower()} quota exhausted or key rejected"
             except (OSError, TimeoutError, ValueError, http.client.HTTPException) as exc:
                 retryable = _is_retryable_fetch_error(exc)
                 failure_code = "FETCH_RETRY_EXHAUSTED" if retryable else _non_retryable_fetch_failure_code(exc)
@@ -635,6 +645,9 @@ class TavilyMcpUrlSnapshotTransport:
             if not retryable or attempt >= self.max_retries:
                 break
             time.sleep(min(2 ** (attempt - 1), 4))
+        return self._failed(failure_code, reason)
+
+    def _failed(self, failure_code: str, reason: str) -> dict[str, object]:
         return {
             "snapshot_status": "FETCH_FAILED",
             "fetch_status": "FALLBACK_USED",
@@ -646,6 +659,13 @@ class TavilyMcpUrlSnapshotTransport:
             "fetch_attempts": [self.METHOD],
             "transport_fallback_code": failure_code,
         }
+
+
+def _provider_unusable(status: int | None, text: str) -> bool:
+    """读取服务本身的额度用尽（402）或密钥失效（401）；403 可能只是目标网站拒绝访问，不算在内。"""
+    lowered = text.lower()
+    return status in {401, 402} or "http 401" in lowered or "http 402" in lowered or any(
+        marker in lowered for marker in _QUOTA_MARKERS)
 
 
 def _tavily_extract_text(data: dict[str, object], url: str) -> str:

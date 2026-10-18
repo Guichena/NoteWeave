@@ -145,3 +145,26 @@ def test_chunk_duplicates_and_foreign_locale_pages_are_skipped(monkeypatch) -> N
         "https://docs.amazonaws.cn/en_us/lambda/latest/dg/snapstart.md",
         "https://techdocs.broadcom.com/tw/zh-tw/vmware-cis/vsphere/drs.html",
     ]
+
+
+def test_deepseek_fetch_out_of_balance_is_skipped_for_later_urls(monkeypatch) -> None:
+    from app.fetch_adapters import DeepSeekFetchClient, DeepSeekUrlSnapshotTransport
+
+    calls = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        raise urllib.error.HTTPError(request.full_url, 402, "Payment Required", {},
+                                     io.BytesIO(b'{"error":{"message":"Insufficient Balance"}}'))
+
+    monkeypatch.setattr("app.fetch_adapters.credential_safe_urlopen", fake_urlopen)
+    monkeypatch.setattr("app.fetch_adapters.validate_public_http_url", lambda url: None)
+    transport = DeepSeekUrlSnapshotTransport(client=DeepSeekFetchClient("key-1"), max_retries=3)
+
+    first = transport.read("https://openjdk.org/jeps/491", "pinning", 2000)
+    second = transport.read("https://openjdk.org/jeps/444", "virtual threads", 2000)
+
+    assert first["snapshot_status"] == second["snapshot_status"] == "FETCH_FAILED"
+    assert second["fetch_failure_code"] == "PROVIDER_UNAVAILABLE"
+    # 第一次 402 不重试，第二个网址不再请求
+    assert len(calls) == 1

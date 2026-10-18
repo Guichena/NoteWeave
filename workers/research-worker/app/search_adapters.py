@@ -435,6 +435,8 @@ class ExternalSearchAdapter:
         self.last_attempt_count = 0
         # 最近一次搜索因额度用尽或鉴权失败而完全没有结果时记录原因，否则为空
         self.last_fatal_failure = ""
+        # 最近一条检索词遇到的额度或鉴权失败
+        self.query_fatal_failure = ""
 
     def search(
         self,
@@ -452,53 +454,52 @@ class ExternalSearchAdapter:
 
         hits: list[ResearchSearchHit] = []
         self.last_attempt_count = 0
-        query_plan = build_search_query_plan(plan, remaining_budget)
-        per_query_result_limit = _per_query_result_limit(plan)
-        for query_item in query_plan:
+        for query_item in build_search_query_plan(plan, remaining_budget):
             if len(hits) >= budget:
                 break
-            query_limit = budget - len(hits)
-            page_limit = min(query_limit, per_query_result_limit, 10)
-            if page_limit <= 0:
+            query_hits = self.search_query(plan, query_item.query, budget - len(hits), rank_offset=len(hits))
+            if self.query_fatal_failure:
+                # 额度和鉴权问题与查询内容无关，继续发后续查询只会重复失败
+                if not hits:
+                    self.last_fatal_failure = self.query_fatal_failure
                 break
-            page_budget = min(self.max_provider_pages, _pages_for_query_limit(page_limit))
-            for page in range(1, page_budget + 1):
-                if len(hits) >= budget:
-                    break
-                record_query(query_item.query)
-                raw_results = _transport_search_page(
-                    self.transport,
-                    query=query_item.query,
-                    limit=page_limit,
-                    page=page,
-                )
-                self.last_attempt_count += max(
-                    1, int(getattr(self.transport, "last_attempt_count", 1) or 1)
-                )
-                fatal_failure = str(getattr(self.transport, "last_fatal_failure", "") or "")
-                if fatal_failure and not raw_results:
-                    # 额度和鉴权问题与查询内容无关，继续发后续查询只会重复失败
-                    if not hits:
-                        self.last_fatal_failure = fatal_failure
-                    return [
-                        hit.model_copy(update={"provider_attempt_count": max(1, self.last_attempt_count)})
-                        for hit in _prioritize_hits_for_recovery(plan, hits)
-                    ]
-                for raw_result in raw_results:
-                    if len(hits) >= budget:
-                        break
-                    normalized_hit = self._normalize_raw_result(
-                        raw_result,
-                        plan=plan,
-                        query=query_item.query,
-                        rank=len(hits) + 1,
-                    )
-                    if normalized_hit is not None:
-                        hits.append(normalized_hit)
+            hits.extend(query_hits)
         return [
             hit.model_copy(update={"provider_attempt_count": max(1, self.last_attempt_count)})
             for hit in _prioritize_hits_for_recovery(plan, hits)
         ]
+
+    def search_query(
+        self,
+        plan: ResearchPlan,
+        query: str,
+        query_limit: int,
+        rank_offset: int = 0,
+    ) -> list[ResearchSearchHit]:
+        """执行一条检索词；遇到额度或鉴权失败时记录在 query_fatal_failure 并停止翻页。"""
+        self.query_fatal_failure = ""
+        page_limit = min(query_limit, _per_query_result_limit(plan), 10)
+        if page_limit <= 0:
+            return []
+        hits: list[ResearchSearchHit] = []
+        for page in range(1, min(self.max_provider_pages, _pages_for_query_limit(page_limit)) + 1):
+            if len(hits) >= query_limit:
+                break
+            record_query(query)
+            raw_results = _transport_search_page(self.transport, query=query, limit=page_limit, page=page)
+            self.last_attempt_count += max(1, int(getattr(self.transport, "last_attempt_count", 1) or 1))
+            fatal_failure = str(getattr(self.transport, "last_fatal_failure", "") or "")
+            if fatal_failure and not raw_results:
+                self.query_fatal_failure = fatal_failure
+                break
+            for raw_result in raw_results:
+                if len(hits) >= query_limit:
+                    break
+                normalized_hit = self._normalize_raw_result(
+                    raw_result, plan=plan, query=query, rank=rank_offset + len(hits) + 1)
+                if normalized_hit is not None:
+                    hits.append(normalized_hit)
+        return hits
 
     def _normalize_raw_result(
         self,
@@ -565,9 +566,10 @@ class ExternalSearchAdapter:
 class CompositeSearchAdapter:
     """组合多个搜索渠道。
 
-    merge（默认）：每个外部渠道各分一部分名额，名额有剩余时再让所有渠道补一轮。
-    fallback：外部渠道按顺序尝试，某个渠道返回结果后不再调用后面的渠道，也不补第二轮；
-    按调用计费的搜索服务用这种方式，避免每条检索词被多个渠道重复计费。
+    merge：每个外部渠道各分一部分名额，名额有剩余时再让所有渠道补一轮。
+    fallback：外部渠道按优先级排列，每条检索词先交给第一个渠道，
+    只有它失败或没有结果时才依次交给后面的渠道；额度用尽或鉴权失败的渠道在本次检索中不再调用。
+    按调用计费的搜索服务用这种方式，每条检索词通常只计费一次。
     """
 
     def __init__(self, adapters: list[SearchAdapter], mode: str = "merge") -> None:
@@ -581,20 +583,87 @@ class CompositeSearchAdapter:
         remaining_budget: int | None = None,
     ) -> list[ResearchSearchHit]:
         global_limit = _resolve_budget(plan, remaining_budget)
+        external_adapters = [adapter for adapter in self.adapters if isinstance(adapter, ExternalSearchAdapter)]
+        if self.mode == "fallback":
+            merged = self._search_with_fallback(task_input, plan, global_limit, remaining_budget)
+        else:
+            merged = self._search_with_merge(task_input, plan, global_limit)
+        if not merged and external_adapters and all(
+                getattr(adapter, "last_fatal_failure", "") for adapter in external_adapters):
+            # 所有外部搜索渠道都因额度用尽或鉴权失败不可用，继续研究只会得到空结论。
+            # 抛出后 Worker 上报投递失败，后端按该原因码让整次研究立即失败。
+            raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
+        return _finalize_ranking(merged[:global_limit])
+
+    def _search_with_fallback(
+        self,
+        task_input: ResearchTaskInput,
+        plan: ResearchPlan,
+        global_limit: int,
+        remaining_budget: int | None,
+    ) -> list[ResearchSearchHit]:
+        merged: list[ResearchSearchHit] = []
+        external_adapters: list[ExternalSearchAdapter] = []
+        for adapter in self.adapters:
+            if isinstance(adapter, ExternalSearchAdapter):
+                external_adapters.append(adapter)
+                continue
+            merged = _merge_hits(merged, adapter.search(task_input, plan, remaining_budget=global_limit - len(merged)),
+                                 global_limit)
+        for adapter in external_adapters:
+            adapter.last_fatal_failure = ""
+            adapter.last_attempt_count = 0
+            if adapter.requires_api_key and not adapter.api_key:
+                adapter.last_fatal_failure = "AUTH_FAILED"
+        retained = {adapter.provider_name: False for adapter in external_adapters}
+        unavailable: set[str] = set()
+        for query_item in build_search_query_plan(plan, remaining_budget):
+            if len(merged) >= global_limit:
+                break
+            attempted: list[str] = []
+            for adapter in external_adapters:
+                if adapter.last_fatal_failure or adapter.provider_name in unavailable:
+                    continue
+                query_hits = adapter.search_query(plan, query_item.query, global_limit - len(merged),
+                                                  rank_offset=len(merged))
+                attempted.append(adapter.provider_name)
+                if adapter.query_fatal_failure:
+                    unavailable.add(adapter.provider_name)
+                    if not retained[adapter.provider_name]:
+                        adapter.last_fatal_failure = adapter.query_fatal_failure
+                if not query_hits:
+                    continue
+                retained[adapter.provider_name] = True
+                reason = f"{', '.join(attempted[:-1])} returned no results for this query" if len(attempted) > 1 else ""
+                merged = _merge_hits(merged, [
+                    hit.model_copy(update={
+                        "provider_attempts": attempted,
+                        "provider_resolution": adapter.provider_name,
+                        "provider_fallback_reason": reason,
+                        "provider_attempt_count": max(1, adapter.last_attempt_count),
+                    })
+                    for hit in _prioritize_hits_for_recovery(plan, query_hits)
+                ], global_limit)
+                break
+        return merged
+
+    def _search_with_merge(
+        self,
+        task_input: ResearchTaskInput,
+        plan: ResearchPlan,
+        global_limit: int,
+    ) -> list[ResearchSearchHit]:
         merged: list[ResearchSearchHit] = []
         attempted_external_providers: list[str] = []
         provider_quota = max(1, global_limit // max(1, len(self.adapters)))
         overflow: list[ResearchSearchHit] = []
-        fallback = self.mode == "fallback"
-        for adapter_index, adapter in enumerate(self.adapters):
+        for adapter in self.adapters:
             if len(merged) >= global_limit:
                 break
-            is_external = isinstance(adapter, ExternalSearchAdapter)
             adapter_hits = adapter.search(
                 task_input,
                 plan,
-                remaining_budget=(global_limit - len(merged)) if fallback
-                else min(provider_quota, global_limit - len(merged)),
+                remaining_budget=min(provider_quota, global_limit - len(merged)),
             )
             adapter_hits = _annotate_provider_orchestration(
                 adapter_hits,
@@ -604,11 +673,9 @@ class CompositeSearchAdapter:
             provider_name = _adapter_provider_name(adapter)
             if provider_name:
                 attempted_external_providers.append(provider_name)
-            if fallback and is_external and adapter_hits:
-                break
         # If provider quotas leave capacity unused, let adapters contribute
         # overflow in a second pass without sacrificing the first diverse slot.
-        if len(merged) < global_limit and not fallback:
+        if len(merged) < global_limit:
             for adapter in self.adapters:
                 if getattr(adapter, "last_fatal_failure", ""):
                     continue
@@ -619,13 +686,7 @@ class CompositeSearchAdapter:
                 )
                 overflow = _merge_hits(overflow, adapter_hits, global_limit)
             merged = _merge_hits(merged, overflow, global_limit)
-        external_adapters = [adapter for adapter in self.adapters if isinstance(adapter, ExternalSearchAdapter)]
-        if not merged and external_adapters and all(
-                getattr(adapter, "last_fatal_failure", "") for adapter in external_adapters):
-            # 所有外部搜索渠道都因额度用尽或鉴权失败不可用，继续研究只会得到空结论。
-            # 抛出后 Worker 上报投递失败，后端按该原因码让整次研究立即失败。
-            raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
-        return _finalize_ranking(merged[:global_limit])
+        return merged
 
 
 def build_default_search_adapter() -> SearchAdapter:
@@ -653,8 +714,8 @@ def build_web_plus_seed_search_adapter() -> SearchAdapter:
 
 
 def _search_chain_mode() -> str:
-    """NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE：merge（默认）或 fallback。"""
-    return os.getenv("NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE", "merge").strip().lower() or "merge"
+    """NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE：fallback（默认，按优先级逐条回退）或 merge。"""
+    return os.getenv("NOTEWEAVE_RESEARCH_SEARCH_CHAIN_MODE", "fallback").strip().lower() or "fallback"
 
 
 def run_research_search(
@@ -1123,6 +1184,9 @@ def _build_external_search_adapters() -> list[ExternalSearchAdapter]:
     ]
     if not provider_chain:
         provider_chain = ["serper"]
+    if _provider_env("deepseek_search", "API_KEY"):
+        # 配置了 DeepSeek 密钥时它始终排在第一位，其他渠道只在它失败或没有结果时补位
+        provider_chain = ["deepseek", *(item for item in provider_chain if item.lower() != "deepseek")]
 
     adapters: list[ExternalSearchAdapter] = []
     authenticated_provider_index = 0
