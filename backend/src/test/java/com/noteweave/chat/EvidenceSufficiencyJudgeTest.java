@@ -50,6 +50,22 @@ class EvidenceSufficiencyJudgeTest {
     }
 
     @Test
+    void lowFusionScoresDoNotDowngradeTheVerdictWhenRerankIsUnavailable() {
+        ChatLlmClient llm = enabledClient();
+        when(llm.streamChat(any(), any(), anyInt(), any())).thenReturn("{\"verdict\":\"SUFFICIENT\"}");
+        EvidenceBundle degraded = new EvidenceBundle("bundle", "plan-v1", List.of(passage(0.1)), true,
+                List.of("NOTE_SOURCE_RERANK_UNAVAILABLE"), Instant.now());
+
+        EvidenceSufficiencyJudge.Judgement judgement = judge(llm, true).judge("帮我整理一份学习笔记", degraded);
+
+        assertThat(judgement.verdict()).isEqualTo(EvidenceSufficiency.SUFFICIENT);
+        assertThat(judgement.reasons()).containsExactly(EvidenceSufficiencyJudge.REASON_RERANK_UNAVAILABLE);
+        // 重排正常时同样的低分仍然按阈值降级
+        assertThat(judge(llm, true).judge("问题", bundle(passage(0.1))).verdict())
+                .isEqualTo(EvidenceSufficiency.INSUFFICIENT);
+    }
+
+    @Test
     void invalidOutputIsRetriedOnceThenAccepted() {
         ChatLlmClient llm = enabledClient();
         when(llm.streamChat(any(), any(), anyInt(), any()))

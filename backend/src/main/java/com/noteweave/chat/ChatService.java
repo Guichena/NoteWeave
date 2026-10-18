@@ -298,7 +298,7 @@ public class ChatService {
         EvidenceSufficiencyJudge.Judgement sufficiency = evidenceSufficiencyJudge.judge(
                 context.query(), bundle);
         PromptSpec prompt = EvidenceSufficiencyPrompts.apply(
-                strategy.compose(context, bundle), sufficiency.verdict(), bundle);
+                strategy.compose(context, bundle), sufficiency.verdict(), bundle, request.content());
         AnswerPolicy policy = strategy.policy();
         strategyContractValidator.validatePromptAndPolicy(
                 plan, bundle, prompt, policy);

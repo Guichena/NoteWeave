@@ -46,18 +46,12 @@ class WikiAnswerModeStrategyTest {
 
         assertThat(prompt.referencedEvidenceIds()).containsExactly("knowledge-version:version");
         assertThat(prompt.userPrompt())
-                .contains("## 相关 Wiki 页面")
-                .contains("《Wiki Page》v2")
-                .contains("## 关键页面关系")
-                .contains("Related：RESOLVED，1 次提及")
-                .contains("## 反向引用关系")
-                .contains("## 来源回链")
-                .contains("Source：quote（chunk:0）")
-                .contains("## 页面关系")
-                .contains("## 会话上下文")
+                .contains("用户问题：")
+                .contains("[[Wiki Page]]")
+                .contains("链接到的页面：Related")
+                .contains("用 [[页面名]] 标注页面")
                 .contains("## 表达控制")
-                .contains("/workspaces/workspace/wiki")
-                .doesNotContain("到达路径");
+                .doesNotContain("关联路径", "我优先检索", "出链", "反链");
         assertThat(strategy.plan(answerContext).budget().maxGraphHops()).isEqualTo(3);
         assertThat(strategy.plan(answerContext).budget().maxEvidence()).isEqualTo(35);
         assertThat(strategy.plan(answerContext).budget().maxGraphEdges()).isEqualTo(60);
@@ -129,7 +123,7 @@ class WikiAnswerModeStrategyTest {
 
         var prompt = strategy.compose(context, bundle);
 
-        assertThat(prompt.userPrompt()).contains("到达路径 Seed → Wiki Page");
+        assertThat(prompt.userPrompt()).contains("与问题相关页面的关联路径：Seed → Wiki Page");
     }
 
     private WikiPageContext pageContext() {

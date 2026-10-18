@@ -59,14 +59,12 @@ class NoteAnswerModeStrategyTest {
 
         assertThat(prompt.referencedEvidenceIds()).containsExactly("note-window:chunk:0");
         assertThat(prompt.userPrompt())
-                .contains("Marginalia 式结构化检索漏斗")
-                .contains("【Journal 信号】")
-                .contains("【候选资料】")
-                .contains("【关系扩展】")
-                .contains("verify_batch_sources: 1")
-                .contains("## 深读窗口")
+                .contains("用户请求：")
+                .contains("## 直接回答")
+                .contains("## 资料定位")
                 .contains("## 摘录证据")
-                .contains("本轮还应用了工作台级 Chat Control Pack。")
+                .contains("[1] 《")
+                .doesNotContain("verify_batch_sources", "【关系扩展】", "Marginalia 式结构化检索漏斗")
                 .contains("## 表达控制\n- 风格约束：简洁");
         assertThat(strategy.plan(context).version()).isEqualTo("note-marginalia-funnel-v1");
     }

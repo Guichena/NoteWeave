@@ -14,6 +14,10 @@ final class EvidenceSufficiencyPrompts {
     }
 
     static PromptSpec apply(PromptSpec prompt, EvidenceSufficiency verdict, EvidenceBundle bundle) {
+        return apply(prompt, verdict, bundle, "");
+    }
+
+    static PromptSpec apply(PromptSpec prompt, EvidenceSufficiency verdict, EvidenceBundle bundle, String question) {
         if (prompt == null || verdict == null
                 || verdict == EvidenceSufficiency.SUFFICIENT
                 || verdict == EvidenceSufficiency.NOT_RUN
@@ -31,20 +35,26 @@ final class EvidenceSufficiencyPrompts {
                     prompt.promptVersion(),
                     false);
         }
-        return refusal(prompt.promptVersion(), bundle);
+        return refusal(prompt.promptVersion(), bundle, question);
     }
 
-    private static PromptSpec refusal(String promptVersion, EvidenceBundle bundle) {
+    private static PromptSpec refusal(String promptVersion, EvidenceBundle bundle, String question) {
         StringBuilder user = new StringBuilder();
-        user.append("现有资料不足以回答这个问题。请说明资料不足，不要编造结论。\n");
+        if (question != null && !question.isBlank()) {
+            user.append("用户问题：").append(question.strip()).append("\n\n");
+        }
+        user.append("现有资料不足以回答这个问题。请用两三句话告诉用户：资料里是否有与问题相关的内容（有的话简要说明涉及什么），")
+                .append("还缺哪方面的信息，以及可以补充什么资料。不要编造结论，不要描述检索过程。\n");
         user.append("已选资料标题：\n");
         List<EvidenceBundle.Evidence> evidence = bundle == null ? List.of() : bundle.evidence();
+        java.util.Set<String> titles = new java.util.LinkedHashSet<>();
         for (EvidenceBundle.Evidence item : evidence) {
-            String title = item == null || item.title() == null || item.title().isBlank()
+            titles.add(item == null || item.title() == null || item.title().isBlank()
                     ? "未命名资料"
-                    : item.title();
-            user.append("- ").append(title).append("\n");
+                    : item.title());
         }
+        // 同一份资料的多个片段只列一次标题
+        titles.forEach(title -> user.append("- ").append(title).append("\n"));
         return new PromptSpec(
                 "说明现有资料不足以回答，不要编造结论。",
                 user.toString(),

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnswerEvidence } from "./evidence";
 import type { Message } from "./messageTypes";
-import { MessageBubble } from "./MessageBubble";
+import { MessageBubble, splitCitedViews } from "./MessageBubble";
 
 afterEach(cleanup);
 
@@ -261,5 +261,19 @@ describe("MessageBubble 检索改写、证据充分性与反馈", () => {
     render(<MessageBubble onRegenerate={onRegenerate} message={completedAnswer()} />);
     fireEvent.click(screen.getByRole("button", { name: "重新生成回答" }));
     expect(onRegenerate).toHaveBeenCalledWith("run-9");
+  });
+});
+
+describe("splitCitedViews", () => {
+  it("puts sources cited inline first and keeps the rest apart", () => {
+    const views = [1, 2, 3, 4].map((index) => ({ index }));
+    const { cited, uncited } = splitCitedViews(views, "第一步是召回 [3]，第二步是重排 [1][3]。");
+    expect(cited.map((view) => view.index)).toEqual([1, 3]);
+    expect(uncited.map((view) => view.index)).toEqual([2, 4]);
+  });
+
+  it("treats every source as uncited when the answer has no numbered citations", () => {
+    const { cited } = splitCitedViews([{ index: 1 }], "Wiki 回答引用页面 [[Memory]]。");
+    expect(cited).toEqual([]);
   });
 });

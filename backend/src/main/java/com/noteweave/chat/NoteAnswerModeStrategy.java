@@ -77,12 +77,16 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         Set<String> selectedEvidenceIds = bundle.evidence().stream()
                 .map(EvidenceBundle.Evidence::evidenceId)
                 .collect(java.util.stream.Collectors.toSet());
+        // 窗口按证据顺序排列：引用卡片按证据顺序保存，回答里的 [n] 才能对应第 n 张卡片
+        java.util.Map<String, ReadingWindow> windowsById = new java.util.LinkedHashMap<>();
+        snapshot.windows().stream()
+                .filter(window -> selectedEvidenceIds.contains(windowEvidenceId(window)))
+                .forEach(window -> windowsById.putIfAbsent(windowEvidenceId(window), window));
         snapshot = new NoteRetrievalSnapshot(
                 snapshot.recallPlan(),
                 snapshot.metadataEntries(),
-                snapshot.windows().stream()
-                        .filter(window -> selectedEvidenceIds.contains(windowEvidenceId(window)))
-                        .toList()
+                bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId)
+                        .map(windowsById::get).filter(java.util.Objects::nonNull).toList()
         );
         List<CandidateSource> candidates = snapshot.recallPlan().candidateSources();
         List<ReadingWindow> windows = snapshot.windows();
@@ -117,185 +121,55 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         return "note-window:" + window.chunkId() + ":" + window.windowNo();
     }
 
+    /**
+     * Note 回答的生成提示：用户请求、写作要求和编号的原文窗口。
+     *
+     * <p>原来的草稿把候选打分、覆盖率、窗口定位等检索细节整段交给模型润色，原文窗口只给 120 到 220 个字，
+     * 模型写不出真正的笔记。现在由模型在直接回答一节写出完整内容，资料定位只列资料名，
+     * 摘录证据给出足够长的原文；检索细节仍记录在回答的检索轨迹里，不再进入提示。</p>
+     */
     private String render(AnswerContext context, NoteRetrievalSnapshot snapshot) {
         var recallPlan = snapshot.recallPlan();
-        List<CandidateSource> candidates = recallPlan.candidateSources();
-        List<NoteJournalHit> journalHits = recallPlan.journalHits();
-        List<CandidateSource> relationExpansionSources = recallPlan.relationExpansionSources();
-        List<CandidateSource> verifySources = recallPlan.verifySources();
-        List<NoteEntryMetadata> metadataEntries = snapshot.metadataEntries();
         List<ReadingWindow> windows = snapshot.windows();
+        String request = context.attributes().getOrDefault(ATTRIBUTE_REQUEST_CONTENT, context.query());
         StringBuilder builder = new StringBuilder();
-        builder.append("## 直接回答\n");
-        builder.append(buildNoteSynthesis(context, windows, journalHits)).append("\n\n");
-        builder.append("## 资料定位\n");
-        builder.append("【定位说明】\n");
-        builder.append("本轮按 Marginalia 式结构化检索漏斗先定位资料，再决定深读窗口；对外以正常聊天回答为主，资料依据通过可展开卡片展示。\n");
-        builder.append("- 当前问题：").append(context.attributes().getOrDefault(
-                ATTRIBUTE_REQUEST_CONTENT, context.query())).append("\n");
+        builder.append("用户请求：").append(request).append("\n");
+        if (!context.query().equals(request)) {
+            builder.append("结合上文理解后的完整请求：").append(context.query()).append("\n");
+        }
+        builder.append("\n写作要求：\n")
+                .append("- 在直接回答一节写出完整的回答。用户要整理笔记、总结或提纲时，写成结构清晰的笔记：用三级标题（###）分主题，")
+                .append("每个主题下列出要点和必要的解释；用户提问时先用一两句话直接回答，再展开。\n")
+                .append("- 只使用摘录证据一节中的原文，不补写原文里没有的事实；与请求无关的内容不要写进来。\n")
+                .append("- 依据原文的句子末尾用方括号标注摘录编号，例如 [2] 或 [1][3]，不要编造编号。\n")
+                .append("- 资料定位和摘录证据两节保持原样，不要改写。\n")
+                .append("- 不要描述你如何检索或组织这次回答。\n\n");
         if (contextApplied(context)) {
-            builder.append("- 会话上下文：已纳入最近连续对话窗口，避免把这轮追问当成孤立查询\n");
-            builder.append("- 连续对话窗口：最近 ")
-                    .append(context.attributes().getOrDefault(ATTRIBUTE_WINDOW_TURN_COUNT, "0"))
-                    .append(" 轮相关对话\n");
-            String topicAnchor = context.attributes().getOrDefault(ATTRIBUTE_TOPIC_ANCHOR, "");
-            if (!topicAnchor.isBlank()) {
-                builder.append("- 主题锚点：").append(topicAnchor).append("\n");
-            }
-            String topicSummary = context.attributes().getOrDefault(ATTRIBUTE_TOPIC_SUMMARY, "");
-            if (!topicSummary.isBlank()) {
-                builder.append("- 前序主题摘要：").append(topicSummary).append("\n");
-            }
             ConversationWindow.append(builder, context);
         }
-        builder.append("- 呈现策略：聊天正文只保留直接回答，检索细节以下挂卡片折叠展示。\n");
-        if (!journalHits.isEmpty()) {
-            builder.append("\n【Journal 信号】\n");
-            for (NoteJournalHit hit : journalHits) {
-                builder.append("- 历史 Note《").append(hit.title()).append("》：")
-                        .append(trim(hit.summary().isBlank() ? hit.content() : hit.summary(), 140))
-                        .append("，引用数 ").append(hit.citationCount())
-                        .append("，匹配分 ").append(hit.score());
-                if (!"fresh".equals(hit.freshnessStatus())) {
-                    builder.append("，状态 ").append(hit.freshnessStatus())
-                            .append("（").append(hit.freshnessNote()).append("）");
-                    if (hit.staleSourceCount() > 0) {
-                        builder.append("，stale_sources=").append(hit.staleSourceCount());
-                    }
-                    if (hit.unavailableSourceCount() > 0) {
-                        builder.append("，unavailable_sources=").append(hit.unavailableSourceCount());
-                    }
-                }
-                builder.append("\n");
-            }
-        }
-        builder.append("\n【候选资料】\n");
-        for (CandidateSource candidate : candidates) {
-            builder.append("- 《").append(formatCandidateSourceTitle(candidate)).append("》：")
-                    .append(candidate.sourceType()).append("，可读片段数 ").append(candidate.chunkCount())
-                    .append("，可读窗口数 ").append(candidate.windowCount())
-                    .append("，匹配分 ").append(candidate.score())
-                    .append("，召回信号：").append(candidate.recallSignals());
-            if (candidate.totalQueryTerms() > 0) {
-                builder.append("，query_coverage=").append(candidate.coveredQueryTerms()).append("/").append(candidate.totalQueryTerms());
-            }
-            if (!candidate.coverageTerms().isEmpty()) {
-                builder.append("，coverage_terms=").append(String.join("/", candidate.coverageTerms()));
-            }
-            if (!candidate.matchedFields().isEmpty()) {
-                builder.append("，matched_fields=").append(String.join("/", candidate.matchedFields()));
-            }
-            if (candidate.selectionReason() != null && !candidate.selectionReason().isBlank()) {
-                builder.append("，selection_reason=").append(candidate.selectionReason());
-            }
-            if (!candidate.summary().isBlank()) {
-                builder.append("，摘要：").append(trim(candidate.summary(), 120));
-            }
+        builder.append("## 直接回答\n");
+        builder.append("（在这里写回答）\n\n");
+        builder.append("## 资料定位\n");
+        Set<String> listed = new LinkedHashSet<>();
+        for (CandidateSource candidate : recallPlan.candidateSources()) {
+            if (!listed.add(formatCandidateSourceTitle(candidate))) continue;
+            builder.append("- 《").append(formatCandidateSourceTitle(candidate)).append("》");
+            if (!candidate.summary().isBlank()) builder.append("：").append(trim(candidate.summary(), 120));
             builder.append("\n");
         }
-        builder.append("\n【关系扩展】\n");
-        if (relationExpansionSources.isEmpty()) {
-            builder.append("本轮没有新增关系扩展资料，系统直接进入原文验证批次。\n");
-        } else {
-            builder.append("系统会把命中资料的标题、摘要、标签、历史 Note 引用和资料窗口可读性作为轻量关系信号，并把相邻资料加入扩展候选：\n");
-            for (CandidateSource candidate : relationExpansionSources) {
-                builder.append("- 《").append(formatCandidateSourceTitle(candidate)).append("》：")
-                        .append(candidate.sourceType())
-                        .append("，召回信号：").append(candidate.recallSignals())
-                        .append("，匹配分 ").append(candidate.score()).append("\n");
-            }
-        }
-        builder.append("\n【验证摘要】\n");
-        builder.append("- candidate_sources: ").append(candidates.size()).append("\n");
-        builder.append("- relation_expansion_sources: ").append(relationExpansionSources.size()).append("\n");
-        builder.append("- verify_batch_sources: ").append(verifySources.size()).append("\n");
-        builder.append("- candidate_quota_trace: ").append(summarizeCandidateSelection(candidates)).append("\n");
-        builder.append("- verify_admission_trace: ").append(summarizeVerifyAdmission(verifySources)).append("\n");
-        builder.append("- trace: metadata=").append(recallPlan.trace().metadataScoreSum())
-                .append(", semantic=").append(recallPlan.trace().semanticScoreSum())
-                .append(", journal=").append(recallPlan.trace().noteScoreSum())
-                .append(", relation=").append(recallPlan.trace().relationScoreSum())
-                .append(", readiness=").append(recallPlan.trace().readinessScoreSum()).append("\n");
-        for (CandidateSource candidate : verifySources) {
-            builder.append("- verify《").append(formatCandidateSourceTitle(candidate)).append("》：")
-                    .append(candidate.sourceType())
-                    .append("，window_count=").append(candidate.windowCount())
-                    .append("，召回信号：").append(candidate.recallSignals());
-            if (candidate.totalQueryTerms() > 0) {
-                builder.append("，query_coverage=").append(candidate.coveredQueryTerms()).append("/").append(candidate.totalQueryTerms());
-            }
-            if (!candidate.matchedFields().isEmpty()) {
-                builder.append("，matched_fields=").append(String.join("/", candidate.matchedFields()));
-            }
-            if (candidate.verifyAdmissionReason() != null && !candidate.verifyAdmissionReason().isBlank()) {
-                builder.append("，verify_admission_reason=").append(candidate.verifyAdmissionReason());
-            }
+        for (NoteJournalHit hit : recallPlan.journalHits()) {
+            builder.append("- 历史笔记《").append(hit.title()).append("》");
+            if (!"fresh".equals(hit.freshnessStatus())) builder.append("（来源已更新，以当前原文为准）");
             builder.append("\n");
-        }
-        builder.append("\n## 深读窗口\n");
-        builder.append("【资料元信息】\n");
-        for (NoteEntryMetadata entry : metadataEntries) {
-            builder.append("- 《").append(formatNoteEntryTitle(entry)).append("》：")
-                    .append(entry.sourceType())
-                    .append("，parse=").append(entry.parseStatus())
-                    .append("，index=").append(entry.indexStatus())
-                    .append("，chunk=").append(entry.chunkCount())
-                    .append("，window=").append(entry.windowCount())
-                    .append("，tags=").append(String.join(" / ", entry.tags())).append("\n");
-            if (!entry.metadataSignals().isEmpty()) {
-                builder.append("  metadata_signals=")
-                        .append(String.join(" | ", entry.metadataSignals()))
-                        .append("\n");
-            }
-            if (!entry.windowLocators().isEmpty()) {
-                builder.append("  window_locators=").append(summarizeWindowLocators(entry.windowLocators())).append("\n");
-                if (entry.hasMoreWindows()) {
-                    builder.append("  window_has_more=true\n");
-                }
-            }
-            if (!entry.relatedEntries().isEmpty()) {
-                builder.append("  related_entries=").append(summarizeRelatedEntries(entry.relatedEntries())).append("\n");
-            }
-        }
-        builder.append("\n【原文窗口】\n");
-        for (int index = 0; index < windows.size(); index++) {
-            ReadingWindow window = windows.get(index);
-            builder.append("- read ").append(index + 1)
-                    .append("：").append(formatReadingWindowTitle(window))
-                    .append(" / chunk=").append(window.chunkNo())
-                    .append(" / window=").append(window.windowNo())
-                    .append(" / read_role=").append(window.readRole());
-            if (window.readObjective() != null && !window.readObjective().isBlank()) {
-                builder.append(" / read_objective=").append(window.readObjective());
-            }
-            if ("continuation-window".equals(window.readRole())) {
-                builder.append(" / anchor_window=").append(window.anchorWindowNo());
-            }
-            if (window.heading() != null && !window.heading().isBlank()) {
-                builder.append(" / heading=").append(window.heading());
-            }
-            builder.append(" / locator=").append(window.locationInfo())
-                    .append(" / score=").append(window.score())
-                    .append("\n");
         }
         builder.append("\n## 摘录证据\n");
-        builder.append("【摘录证据】\n");
         for (int index = 0; index < windows.size(); index++) {
             ReadingWindow window = windows.get(index);
-            builder.append("- 摘录卡 ").append(index + 1).append("：")
-                    .append(trim(window.content(), 220))
-                    .append("（来源：").append(formatReadingWindowTitle(window));
+            builder.append("[").append(index + 1).append("] 《").append(formatReadingWindowTitle(window));
             if (window.heading() != null && !window.heading().isBlank()) {
                 builder.append(" / ").append(window.heading());
             }
-            builder.append(" / ").append(window.locationInfo());
-            if (window.readRole() != null && !window.readRole().isBlank()) {
-                builder.append(" / ").append(window.readRole());
-            }
-            if (window.readObjective() != null && !window.readObjective().isBlank()) {
-                builder.append(" / ").append(window.readObjective());
-            }
-            builder.append("）\n");
+            builder.append("》：").append(trim(window.content(), 1_200)).append("\n");
         }
         builder.append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
         return builder.toString();

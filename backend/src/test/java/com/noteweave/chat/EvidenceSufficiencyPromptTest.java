@@ -28,7 +28,7 @@ class EvidenceSufficiencyPromptTest {
                 original, EvidenceSufficiency.PARTIAL, bundle);
 
         assertThat(adjusted.refusal()).isFalse();
-        assertThat(adjusted.userPrompt()).contains("资料不足时，明确说明缺少哪一类信息");
+        assertThat(adjusted.userPrompt()).contains("资料只覆盖问题的一部分时，先回答能回答的部分");
         assertThat(adjusted.userPrompt()).contains(EvidenceSufficiencyPrompts.PARTIAL_INSTRUCTION);
         assertThat(adjusted.referencedEvidenceIds()).containsExactly("passage:alpha");
         assertThat(adjusted.promptVersion()).isEqualTo(original.promptVersion());

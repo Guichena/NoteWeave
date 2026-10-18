@@ -76,7 +76,9 @@ class QaAnswerModeStrategyTest {
                 .contains("将最近连续对话仅用于理解追问语境")
                 .contains("遵循下方表达控制，但不要提及 Chat Control Pack")
                 .contains("内部检索边界：当前 workspace 内已解析资料。不要在回答中提及。")
-                .contains("- 《title》：excerpt")
+                .contains("[1] 《title》：excerpt")
+                .contains("用户问题：")
+                .contains("每个依据资料的句子末尾用方括号标注")
                 .contains("## 表达控制\n- 风格约束：简洁")
                 .doesNotContain("score=", "reason=", "weighted-rrf", "citation.upsert", "[passage:one]", "[passage:two]");
         assertThat(strategy.policy().citationRequired()).isTrue();

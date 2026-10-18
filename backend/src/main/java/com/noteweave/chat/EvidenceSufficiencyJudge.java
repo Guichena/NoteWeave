@@ -24,6 +24,7 @@ public class EvidenceSufficiencyJudge {
     static final String REASON_FAILED = "EVIDENCE_SUFFICIENCY_LLM_CALL_FAILED";
     static final String REASON_INVALID = "EVIDENCE_SUFFICIENCY_OUTPUT_INVALID";
     static final String REASON_ABSENT = "RERANK_SCORE_ABSENT";
+    static final String REASON_RERANK_UNAVAILABLE = "RERANK_UNAVAILABLE_MODEL_VERDICT_ONLY";
     static final String REASON_BELOW_015 = "RERANK_SCORE_BELOW_0_15";
     static final String REASON_BELOW_035 = "RERANK_SCORE_BELOW_0_35";
 
@@ -43,6 +44,8 @@ public class EvidenceSufficiencyJudge {
             SUFFICIENT 表示已选资料足以直接回答问题。
             PARTIAL 表示资料只覆盖问题的一部分。
             INSUFFICIENT 表示资料不能支撑回答。
+            用户的请求也可能是整理笔记、总结、列提纲、比较等任务：资料覆盖了任务涉及的主题时判 SUFFICIENT，
+            只覆盖部分主题时判 PARTIAL，资料与主题无关时才判 INSUFFICIENT。
             不要使用资料之外的知识。
             """;
 
@@ -83,6 +86,10 @@ public class EvidenceSufficiencyJudge {
             }
             if (parsed.verdict() == null) {
                 return new Judgement(EvidenceSufficiency.NOT_RUN, List.of(REASON_INVALID));
+            }
+            // 重排不可用时证据上的分数来自融合阶段（量级约 0.01），不能按重排分数的阈值降级
+            if (rerankUnavailable(bundle)) {
+                return new Judgement(parsed.verdict(), List.of(REASON_RERANK_UNAVAILABLE));
             }
             return combine(parsed.verdict(), bundle.evidence());
         } catch (RuntimeException ex) {
@@ -141,6 +148,11 @@ public class EvidenceSufficiencyJudge {
             return null;
         }
         return normalized;
+    }
+
+    static boolean rerankUnavailable(EvidenceBundle bundle) {
+        return bundle.degradationReasons().stream()
+                .anyMatch(reason -> reason != null && reason.endsWith("RERANK_UNAVAILABLE"));
     }
 
     private static boolean hasGraphPath(EvidenceBundle.Evidence evidence) {

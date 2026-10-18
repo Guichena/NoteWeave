@@ -80,10 +80,38 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
   const citationViews = buildCitationViews(sourceItems, manifest?.evidence ?? null);
+  // 正文里标注过的引用排在前面，其余检索到但没被引用的资料折叠在后面
+  const { cited: citedViews, uncited: uncitedViews } = splitCitedViews(citationViews, body);
   const rewrite = manifest?.retrieval_rewrite;
   const route = routes.find((item) => item.key === message.answerMode) ?? routes[0];
   const ModeIcon = MODE_ICONS[route.key];
   const answerRunId = message.answerRunId;
+
+  const renderSourceItem = (view: (typeof citationViews)[number]) => (
+    <li
+      key={view.index}
+      className={activeCitation === view.index ? "is-active" : undefined}
+    >
+      <button type="button" className="citation-chip" onClick={() => focusCitation(view.index)}>
+        {view.index}
+      </button>
+      <div className="message-source-body">
+        <strong>{view.title}</strong>
+        {view.kindLabel || view.location ? (
+          <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
+        ) : null}
+        {view.quote ? <p>{view.quote}</p> : null}
+        {view.ocrNote ? (
+          <small className={`message-source-ocr${view.ocrLowConfidence ? " is-low" : ""}`}>
+            {view.ocrNote}{view.ocrLowConfidence ? "，识别可能有误，请对照原文核对" : ""}
+          </small>
+        ) : null}
+        {view.graphPath.length > 1 ? (
+          <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
+        ) : null}
+      </div>
+    </li>
+  );
 
   if (isGenerating) sawGenerating.current = true;
   // 历史消息在第一次展开引用时才读取证据清单，避免每条消息都发请求；
@@ -187,7 +215,11 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
         >
           <summary>
             <strong>{sources.title}</strong>
-            <span>{sourceItems.length > 0 ? `${sourceItems.length} 条来源` : "说明"}</span>
+            <span>{sourceItems.length > 0
+              ? (citedViews.length > 0 && uncitedViews.length > 0
+                ? `引用 ${citedViews.length} 条 · 另检索到 ${uncitedViews.length} 条`
+                : `${sourceItems.length} 条来源`)
+              : "说明"}</span>
             {sourceItems.length > 0 ? (
               <span className="message-sources-peek" aria-hidden="true">
                 {Array.from(new Set(citationViews.map((view) => view.title))).slice(0, 3).map((title) => (
@@ -198,33 +230,19 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
             <ChevronDown className="message-card-chevron" size={15} aria-hidden="true" />
           </summary>
           {sourceItems.length > 0 ? (
-            <ol className="message-source-list">
-              {citationViews.map((view) => (
-                <li
-                  key={view.index}
-                  className={activeCitation === view.index ? "is-active" : undefined}
-                >
-                  <button type="button" className="citation-chip" onClick={() => focusCitation(view.index)}>
-                    {view.index}
-                  </button>
-                  <div className="message-source-body">
-                    <strong>{view.title}</strong>
-                    {view.kindLabel || view.location ? (
-                      <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
-                    ) : null}
-                    {view.quote ? <p>{view.quote}</p> : null}
-                    {view.ocrNote ? (
-                      <small className={`message-source-ocr${view.ocrLowConfidence ? " is-low" : ""}`}>
-                        {view.ocrNote}{view.ocrLowConfidence ? "，识别可能有误，请对照原文核对" : ""}
-                      </small>
-                    ) : null}
-                    {view.graphPath.length > 1 ? (
-                      <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
-                    ) : null}
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <>
+              <ol className="message-source-list">
+                {(citedViews.length > 0 ? citedViews : citationViews).map((view) => renderSourceItem(view))}
+              </ol>
+              {citedViews.length > 0 && uncitedViews.length > 0 ? (
+                <details className="message-sources-uncited">
+                  <summary>其余检索到的资料（{uncitedViews.length} 条，回答中没有引用）</summary>
+                  <ol className="message-source-list">
+                    {uncitedViews.map((view) => renderSourceItem(view))}
+                  </ol>
+                </details>
+              ) : null}
+            </>
           ) : null}
           {rewrite && !rewrite.is_standalone && rewrite.standalone_query ? (
             <p className="message-retrieval-rewrite">
@@ -564,4 +582,13 @@ function countSectionBullets(content: string, sectionTitle: string) {
 
 function trimText(value: string, limit: number) {
   return value.length <= limit ? value : `${value.slice(0, Math.max(0, limit - 1))}…`;
+}
+
+/** 按正文里出现的 [n] 把引用分成已引用和未引用两组，已引用的按编号排列。 */
+export function splitCitedViews<T extends { index: number }>(views: T[], body: string) {
+  const cited = new Set(Array.from(body.matchAll(/\[(\d{1,3})\]/g), (match) => Number(match[1])));
+  return {
+    cited: views.filter((view) => cited.has(view.index)),
+    uncited: views.filter((view) => !cited.has(view.index))
+  };
 }

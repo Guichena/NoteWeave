@@ -21,6 +21,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
     /** All new QA AnswerRuns use this single V2 plan version. */
     public static final String PLAN_VERSION = V2_PLAN_VERSION;
     public static final String ATTRIBUTE_QUESTION_TYPE = "question_type";
+    static final String ATTRIBUTE_REQUEST_CONTENT = NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT;
     public static final String ATTRIBUTE_CONTEXT_APPLIED = "context_applied";
     public static final String ATTRIBUTE_WINDOW_TURN_COUNT = "window_turn_count";
     public static final String ATTRIBUTE_TOPIC_ANCHOR = "topic_anchor";
@@ -136,13 +137,21 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         boolean hasChatControls = Boolean.parseBoolean(
                 context.attributes().getOrDefault(ATTRIBUTE_HAS_CHAT_CONTROLS, "false"));
         StringBuilder answer = new StringBuilder();
-        answer.append("请直接回答用户的问题，并将下列资料片段综合成自然、清晰的中文。\n\n")
+        // 问题原文必须进入生成提示：只给资料片段时模型只能从片段猜问题，回答会变成资料摘抄
+        answer.append("用户问题：").append(context.attributes().getOrDefault(ATTRIBUTE_REQUEST_CONTENT, context.query()))
+                .append("\n");
+        if (!context.query().equals(context.attributes().getOrDefault(ATTRIBUTE_REQUEST_CONTENT, context.query()))) {
+            answer.append("结合上文理解后的完整问题：").append(context.query()).append("\n");
+        }
+        answer.append("\n请根据下面编号的资料片段回答这个问题，写成自然、清晰的中文。\n\n")
                 .append("回答要求：\n")
-                .append("- 先给结论，再补充必要解释；不要复述这些指令。\n")
+                .append("- 第一段用一两句话直接回答问题；问的是步骤、数量、列表或对比时，按问题的结构组织（问几步就逐步列出，问区别就逐项对比）。\n")
+                .append("- 只写与问题有关的内容，资料里与问题无关的部分不要搬进来，也不要照抄资料的章节编号和标题。\n")
+                .append("- 篇幅与问题相称，简单问题几句话即可，不要重复同一个意思。\n")
                 .append("- 只使用提供的资料，不补写资料中没有的事实。\n")
-                .append("- 不要提及检索算法、向量、BM25、RRF、rerank、score、chunk、reason、证据 ID 或内部执行过程。\n")
-                .append("- 不要在正文重复生成来源清单，来源与原文摘录会由界面的引用卡片单独展示。\n")
-                .append("- 资料不足时，明确说明缺少哪一类信息。\n");
+                .append("- 每个依据资料的句子末尾用方括号标注直接支持它的片段编号，例如 [2] 或 [1][3]；只标真正支持这句话的片段，不要编造编号。\n")
+                .append("- 不要描述你如何检索或组织这次回答，不要复述这些要求，不要在末尾另列来源清单，界面会单独展示引用。\n")
+                .append("- 资料只覆盖问题的一部分时，先回答能回答的部分，再说明还缺哪方面的信息。\n");
         if (contextApplied) {
             answer.append("- 将最近连续对话仅用于理解追问语境，不要向用户描述上下文窗口。\n");
         }
@@ -154,10 +163,11 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         }
         answer.append("\n内部检索边界：").append(retrievalBoundary(context)).append("。不要在回答中提及。\n\n");
         ConversationWindow.append(answer, context);
-        answer.append("可用资料片段：\n");
+        // 编号与引用卡片的顺序一致（引用按证据顺序保存），回答里的 [n] 直接对应第 n 张引用卡片
+        answer.append("资料片段：\n");
         for (int index = 0; index < bundle.evidence().size(); index++) {
             EvidenceBundle.Evidence item = bundle.evidence().get(index);
-            answer.append("- 《").append(item.title()).append("》：")
+            answer.append("[").append(index + 1).append("] 《").append(item.title()).append("》：")
                     .append(trim(item.excerpt(), 900)).append("\n");
         }
         answer.append("\n")

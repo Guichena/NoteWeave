@@ -1171,3 +1171,14 @@ details[open] > summary .message-sources-peek {
 .message-source-ocr.is-low {
   color: var(--warning);
 }
+
+/* 回答中没有引用的检索结果折叠在已引用来源之后 */
+.message-sources-uncited {
+  margin-top: 8px;
+}
+
+.message-sources-uncited > summary {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}

@@ -120,77 +120,52 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
         return fallback.toString();
     }
 
+    /**
+     * Wiki 回答的生成提示：用户问题、命中页面的正文和页面之间的关系。
+     *
+     * <p>原来的草稿只有固定的过程说明、页面清单和拼出来的综合结论，没有用户问题，模型只能润色这段文字，
+     * 回答常常答非所问。现在把问题和页面正文交给模型，先直接回答，再用 [[页面名]] 标注依据的页面。</p>
+     */
     private String renderAnswer(
             AnswerContext context,
             List<WikiPageContext> contexts,
             Map<String, List<String>> paths
     ) {
         StringBuilder builder = new StringBuilder();
-        builder.append("## 基于全量 Wiki 的回答\n");
-        builder.append("我优先检索当前工作台已经沉淀的 Wiki Index、页面正文、页面链接、反向链接和来源回链，再基于多页面知识网络综合回答，而不是退回普通资料 chunk 问答。\n\n");
-        if (contextApplied(context)) {
-            builder.append("本轮已结合最近连续对话窗口理解这次追问。");
-            String topicAnchor = context.attributes().getOrDefault(ATTRIBUTE_TOPIC_ANCHOR, "");
-            if (!topicAnchor.isBlank()) {
-                builder.append(" 当前主题锚点是“").append(topicAnchor).append("”。");
-            }
-            builder.append("\n\n");
+        builder.append("用户问题：").append(context.attributes().getOrDefault(
+                NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT, context.query())).append("\n");
+        if (!context.query().equals(context.attributes().getOrDefault(
+                NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT, context.query()))) {
+            builder.append("结合上文理解后的完整问题：").append(context.query()).append("\n");
         }
-        if (Boolean.parseBoolean(context.attributes().getOrDefault(ATTRIBUTE_HAS_CHAT_CONTROLS, "false"))) {
-            builder.append("本轮还应用了工作台级 Chat Control Pack。\n\n");
-        }
-        builder.append("## 相关 Wiki 页面\n");
+        builder.append("\n请根据下面工作台 Wiki 中的页面回答这个问题，写成自然、清晰的中文。\n\n")
+                .append("回答要求：\n")
+                .append("- 第一段用一两句话直接回答问题，再按问题的结构展开；需要综合多个页面时，说明它们之间的联系。\n")
+                .append("- 只使用下面页面中的内容，不补写页面里没有的事实；与问题无关的页面内容不要写进来。\n")
+                .append("- 依据某个页面的句子末尾用 [[页面名]] 标注页面，页面名必须与下面给出的完全一致。\n")
+                .append("- 不要描述你如何检索或组织这次回答，不要列出页面版本、链接数量等统计，不要在末尾另列来源清单。\n")
+                .append("- 页面只覆盖问题的一部分时，先回答能回答的部分，再说明还缺哪方面的信息。\n\n");
+        ConversationWindow.append(builder, context);
+        builder.append("Wiki 页面：\n");
         for (WikiPageContext pageContext : contexts) {
             KnowledgePageHit page = pageContext.page();
-            builder.append("- 《").append(page.title()).append("》v").append(page.versionNo())
-                    .append("：").append(trim(page.summary().isBlank() ? page.content() : page.summary(), 180))
-                    .append("，出链 ").append(pageContext.outgoingLinks().size())
-                    .append("，反链 ").append(pageContext.backlinks().size())
-                    .append("，来源 ").append(pageContext.citations().size());
+            builder.append("[[").append(page.title()).append("]]\n");
+            if (!page.summary().isBlank()) {
+                builder.append("摘要：").append(trim(page.summary(), 300)).append("\n");
+            }
+            builder.append("正文：").append(trim(page.content(), 1_500)).append("\n");
+            List<String> related = pageContext.outgoingLinks().stream().map(WikiLinkResponse::targetTitle)
+                    .filter(title -> title != null && !title.isBlank()).distinct().limit(8).toList();
+            if (!related.isEmpty()) {
+                builder.append("链接到的页面：").append(String.join("、", related)).append("\n");
+            }
             List<String> path = paths.get(page.versionId());
-            if (path != null && !path.isEmpty()) {
-                builder.append("，到达路径 ").append(String.join(" → ", path));
+            if (path != null && path.size() > 1) {
+                builder.append("与问题相关页面的关联路径：").append(String.join(" → ", path)).append("\n");
             }
             builder.append("\n");
-        }
-        builder.append("\n## 综合结论\n");
-        builder.append(buildWikiSynthesis(contexts)).append("\n\n");
-        builder.append("## 关键页面关系\n");
-        appendWikiLinks(builder, collectNetworkLinks(contexts, true), "当前命中的 Wiki 页面之间还没有足够显式的页面关系。");
-        builder.append("\n## 反向引用关系\n");
-        appendWikiLinks(builder, collectNetworkLinks(contexts, false), "当前命中的 Wiki 页面暂时没有明显反向引用网络。");
-        builder.append("\n## 来源回链\n");
-        List<KnowledgeCitationResponse> citations = collectNetworkCitations(contexts);
-        if (citations.isEmpty()) {
-            builder.append("当前命中页面暂时没有绑定来源引用。\n");
-        } else {
-            for (KnowledgeCitationResponse citation : citations) {
-                builder.append("- ").append(formatKnowledgeCitationTitle(citation))
-                        .append("：").append(trim(citation.quoteText(), 120))
-                        .append("（").append(citation.locationInfo()).append("）\n");
-            }
-        }
-        builder.append("\n## 页面关系\n");
-        builder.append("相关页面关系、图谱、待处理任务、问题分层和治理动作都可以在默认 Wiki 工作台中继续查看。\n\n");
-        if (contextApplied(context)) {
-            builder.append("## 会话上下文\n");
-            builder.append("- 连续对话窗口：最近 ")
-                    .append(context.attributes().getOrDefault(ATTRIBUTE_WINDOW_TURN_COUNT, "0"))
-                    .append(" 轮相关对话\n");
-            String topicAnchor = context.attributes().getOrDefault(ATTRIBUTE_TOPIC_ANCHOR, "");
-            if (!topicAnchor.isBlank()) {
-                builder.append("- 主题锚点：").append(topicAnchor).append("\n");
-            }
-            String topicSummary = context.attributes().getOrDefault(ATTRIBUTE_TOPIC_SUMMARY, "");
-            if (!topicSummary.isBlank()) {
-                builder.append("- 前序主题摘要：").append(topicSummary).append("\n");
-            }
-            builder.append("\n");
-            ConversationWindow.append(builder, context);
         }
         builder.append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
-        builder.append("## 默认 Wiki 工作台\n");
-        builder.append("/workspaces/").append(context.workspaceId()).append("/wiki\n");
         return builder.toString();
     }
 
