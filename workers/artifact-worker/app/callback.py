@@ -995,6 +995,26 @@ def _task_callback_token(secret: str, task_type: str, task_id: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
+def failure_detail(trace: object, limit: int = 600) -> str:
+    """从节点失败轨迹里取出未通过的检查和校验错误，拼成一行摘要。"""
+    if not isinstance(trace, dict):
+        return ""
+    parts: list[str] = []
+    checks = trace.get("failed_checks") or (trace.get("verification") or {}).get("failed_checks") or []
+    for check in checks[:4] if isinstance(checks, list) else []:
+        if isinstance(check, dict):
+            name = check.get("check") or check.get("name") or check.get("rule") or ""
+            reason = check.get("reason") or check.get("message") or check.get("detail") or ""
+            parts.append(f"{name} {reason}".strip())
+        else:
+            parts.append(str(check))
+    for step in (trace.get("execution_traces") or trace.get("steps") or [])[:3]:
+        if isinstance(step, dict):
+            parts.extend(str(error) for error in (step.get("validation_errors") or [])[:2])
+    text = "；".join(part for part in parts if part)
+    return text[:limit]
+
+
 def _report_execution_failure(
     callback_client: ArtifactCallbackClient,
     task_id: str,
@@ -1003,12 +1023,17 @@ def _report_execution_failure(
 ) -> bool:
     try:
         error_code = str(getattr(exc, "error_code", type(exc).__name__.upper()))
+        # 节点失败时只回报一句概括，排查不到是哪项检查没过；把未通过的检查摘要写进日志和失败说明
+        detail = failure_detail(getattr(exc, "trace", None))
+        if detail:
+            logger.warning("Artifact node failure detail: task_id=%s phase=%s detail=%s", task_id, phase, detail)
+        message = sanitize_error_message(f"{exc}：{detail}" if detail else str(exc))
         try:
             callback_client.send_fail(
                 task_id,
                 phase=phase,
                 error_code=error_code,
-                error_message=sanitize_error_message(str(exc)),
+                error_message=message,
                 retryable=is_retryable_failure(exc),
             )
         except TypeError:
@@ -1017,7 +1042,7 @@ def _report_execution_failure(
                 task_id,
                 phase=phase,
                 error_code=error_code,
-                error_message=sanitize_error_message(str(exc)),
+                error_message=message,
             )
         return True
     except Exception:
