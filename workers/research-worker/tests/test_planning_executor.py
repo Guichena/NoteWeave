@@ -301,3 +301,26 @@ def test_meta_dimensions_are_dropped_but_evidence_content_columns_stay() -> None
 
     conflict = validate_plan(_plan(dimensions=[{"label": "支持的证据与来源"}, {"label": "反对的证据与来源"}]), PLANNING_INPUT)
     assert [item["label"] for item in conflict.plan["dimensions"]] == ["支持的证据与来源", "反对的证据与来源"]
+
+
+def test_required_point_without_a_dimension_is_sent_back_then_filled_on_the_last_attempt() -> None:
+    raw = _plan(dimensions=[{"label": "Dev server model"}, {"label": "HMR mechanism"}, {"label": "Failure fallback"}])
+    raw["required_points"] = [
+        {"point": "Whether the dev server bundles", "dimension": "Dev server model"},
+        {"point": "HMR granularity and mechanism", "dimension": "HMR mechanism"},
+        {"point": "Tool used for production builds", "dimension": "Production build"},
+    ]
+
+    first = validate_plan(raw, PLANNING_INPUT)
+    assert first.plan is None
+    assert any("Tool used for production builds" in problem for problem in first.problems)
+
+    final = validate_plan(raw, PLANNING_INPUT, final_attempt=True)
+    labels = [item["label"] for item in final.plan["dimensions"]]
+    # 不回答任何要点的 Failure fallback 被替换为生产构建这一要点
+    assert labels == ["Dev server model", "HMR mechanism", "Tool used for production builds"]
+
+
+def test_plan_without_required_points_is_not_checked() -> None:
+    draft = validate_plan(_plan(dimensions=[{"label": "A"}, {"label": "B"}]), PLANNING_INPUT)
+    assert draft.plan is not None

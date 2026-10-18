@@ -158,6 +158,12 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "Keep only dimensions needed to answer the question, including the expert-expected ones described "
             "next; perspectives help choose them but must not add other dimensions. Prefer the smallest table that "
             "fully answers the question.",
+            "Start with required_points: the 3 to 5 points an expert reviewer would check in a complete answer, "
+            "covering every part of the question plus what a complete answer obviously needs (the identifier the "
+            "question asks to cite, the release that made a change effective, the production counterpart of a "
+            "development tool, the cause of a fixed problem, concurrent or parallel behaviour of an API). Each point "
+            "names the dimension label that answers it. Every point must map to one of your dimensions; drop "
+            "dimensions that answer none of the points before dropping a point.",
             "Every part of the question must map to at least one dimension. Also cover what an expert reviewer "
             "would expect in a complete answer to each part, such as behaviour on failure or rebalance when "
             "asking about ordering, each product's locking when asking about concurrency, the production "
@@ -201,6 +207,7 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
         # 字段顺序即期望的输出顺序：表格结构在前，输出被截断时也能先拿到研究对象和列
         "output_schema": {
             "effort_tier": "SIMPLE|STANDARD|COMPLEX",
+            "required_points": [{"point": "string", "dimension": "dimension label"}],
             "entities": [{"label": "string", "aliases": ["string"]}],
             "dimensions": [{"label": "string", "description": "string", "answer_format": "string",
                             "high_risk": False, "search_intents": ["string"]}],
@@ -267,6 +274,9 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
     entities = _dedupe_by_label(raw.get("entities"))
     # 引用、来源、原文、可信度这类列描述的是报告格式，不是要研究的内容；提示里已禁止，这里再按名称过滤一次
     dimensions = [item for item in _dedupe_by_label(raw.get("dimensions")) if not _META_DIMENSION.search(" ".join(str(item["label"]).split()))]
+    dimensions, coverage_problems = _cover_required_points(raw.get("required_points"), dimensions, max_columns,
+                                                           repair=final_attempt)
+    problems.extend(coverage_problems)
     # 答案格式不在允许范围内时 Java 会按 SHORT_TEXT 处理，这里同样处理，不因此拒绝整张表
     dimensions = [
         dimension if str(dimension.get("answer_format") or "").upper() in formats
@@ -318,6 +328,48 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         ][:60] if isinstance(raw.get("not_applicable"), list) else [],
     }
     return PlanDraft(plan, [])
+
+
+def _cover_required_points(
+    raw_points: object, dimensions: list[dict[str, object]], max_columns: int, *, repair: bool
+) -> tuple[list[dict[str, object]], list[str]]:
+    """检查专家必查要点是否都有对应的列。
+
+    第一次输出有要点没有对应列时，带着原因让模型重新规划；最后一次仍缺时直接用要点补一列，
+    列数已满时替换掉不回答任何要点的列。模型没有给出要点时不做检查。
+    """
+    if not isinstance(raw_points, list):
+        return dimensions, []
+    labels = {" ".join(str(item["label"]).split()).casefold(): index for index, item in enumerate(dimensions)}
+    answered: set[int] = set()
+    missing: list[str] = []
+    for item in raw_points[:6]:
+        if not isinstance(item, dict) or not str(item.get("point") or "").strip():
+            continue
+        point = " ".join(str(item["point"]).split())
+        index = labels.get(" ".join(str(item.get("dimension") or "").split()).casefold())
+        if index is None:
+            missing.append(point)
+        else:
+            answered.add(index)
+    if not missing:
+        return dimensions, []
+    if not repair:
+        return dimensions, [f"required point '{point}' maps to no dimension; add a dimension for it or replace a "
+                            "dimension that answers no required point" for point in missing]
+    dimensions = list(dimensions)
+    for point in missing:
+        added = {"label": point[:80], "description": point, "answer_format": "LONG_TEXT", "high_risk": False,
+                 "search_intents": [point[:120]]}
+        # 先替换不回答任何要点的列，保持列数不变，避免之后按单元格上限裁掉末尾时把补上的列裁掉
+        spare = [index for index in range(len(dimensions) - 1, -1, -1) if index not in answered]
+        if spare:
+            dimensions[spare[0]] = added
+            answered.add(spare[0])
+        elif len(dimensions) < max_columns:
+            dimensions.insert(0, added)
+            answered = {index + 1 for index in answered} | {0}
+    return dimensions, []
 
 
 # 只过滤整列都在讲引用、来源、链接或可信度的列；"支持的证据与来源"这类研究内容列不受影响
