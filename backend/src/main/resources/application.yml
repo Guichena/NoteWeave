@@ -278,6 +278,8 @@ noteweave:
     max-document-characters: ${NOTEWEAVE_RERANK_MAX_DOCUMENT_CHARACTERS:1800}
     timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:20}
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
+    # 重排服务关闭或调用失败时改用对话模型给候选打相关度分
+    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:true}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
