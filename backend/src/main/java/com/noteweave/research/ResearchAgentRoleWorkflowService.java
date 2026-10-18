@@ -271,7 +271,8 @@ class ResearchAgentRoleWorkflowService {
                 Integer.class, runId, evidenceKey);
         return present != null && present > 0 && (rejected == null || rejected == 0);
     }
-    private static final int MAX_QUOTE_CHARS = 400;
+    // 与 Worker 扩展引用的上限一致，答案的关键名称常在扩展出的后一句里
+    private static final int MAX_QUOTE_CHARS = 700;
 
     private List<String> supportingQuotes(String runId, List<String> evidenceKeys) {
         List<String> quotes = new ArrayList<>();

@@ -288,7 +288,9 @@ def _extract_evidence_cards_detailed_with_llm(
                 )
             )
             continue
-        claim = _grounded_claim(str(raw_card.get("claim_text") or "").strip(), quote)
+        raw_claim = str(raw_card.get("claim_text") or "").strip()
+        quote_start, quote = _extend_quote_for_claim(window.window_text, quote_start, quote, raw_claim)
+        claim = _grounded_claim(raw_claim, quote)
         if not claim:
             # 缺关键字段,直接跳过
             rejected.append(
@@ -508,12 +510,46 @@ def _is_word_char(char: str) -> bool:
 _CLAIM_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
 
 
+# 结论里的标识符：命令、参数、函数名这类带下划线、连字符前缀或点号的英文词，如 pg_combinebackup、--incremental
+_CLAIM_IDENTIFIER = re.compile(r"(?<![\w-])(?:--?[a-z][\w-]*|[A-Za-z][A-Za-z0-9]*(?:[_.][A-Za-z0-9]+)+)")
+_SENTENCE_END = re.compile(r"(?<=[.!?。！？])\s+|\n+")
+_MAX_EXTENDED_QUOTE_CHARS = 700
+
+
+def _claim_tokens(claim: str) -> set[str]:
+    return set(_CLAIM_NUMBER.findall(claim)) | set(_CLAIM_IDENTIFIER.findall(claim))
+
+
+def _extend_quote_for_claim(text: str, quote_start: int, quote: str, claim: str) -> tuple[int, str]:
+    """结论里的数字或标识符不在引用里、但在紧邻的前后一两句里时，把引用扩到这几句，仍是原文中连续的一段。
+
+    模型常只摘录一句，而答案的关键名称在下一句（例如“还需要更早的备份”后面紧跟“见 pg_combinebackup”）。
+    """
+    missing = {token for token in _claim_tokens(claim) if token not in quote}
+    if not missing or quote_start < 0:
+        return quote_start, quote
+    boundaries = [0, *(match.end() for match in _SENTENCE_END.finditer(text)), len(text)]
+    end = quote_start + len(quote)
+    before = [b for b in boundaries if b <= quote_start]
+    after = [b for b in boundaries if b >= end]
+    for extra_after in range(0, 3):
+        for extra_before in range(0, 2):
+            start = before[max(0, len(before) - 1 - extra_before)] if extra_before else quote_start
+            stop = after[min(len(after) - 1, extra_after)] if extra_after else end
+            span = text[start:stop].strip()
+            if not span or len(span) > _MAX_EXTENDED_QUOTE_CHARS:
+                continue
+            if all(token in span for token in missing):
+                return text.find(span, start), span
+    return quote_start, quote
+
+
 def _grounded_claim(claim: str, quote: str) -> str:
-    """结论写成对这一列的简短回答；其中的数字、版本号、日期必须都出现在引用原文里，
-    否则 Java 侧会按引用不支撑判为不合格，这时退回用原文本身作为结论。"""
+    """结论写成对这一列的简短回答；其中的数字、版本号、日期和命令、参数名必须都出现在引用原文里，
+    否则 Java 侧会按引用不支撑判为不合格，或者成文时因原文没有而略去，这时退回用原文本身作为结论。"""
     if not claim:
         return ""
-    if any(number not in quote for number in _CLAIM_NUMBER.findall(claim)):
+    if any(token not in quote for token in _claim_tokens(claim)):
         return quote.strip()
     return claim
 

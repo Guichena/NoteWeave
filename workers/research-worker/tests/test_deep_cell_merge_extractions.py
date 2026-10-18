@@ -53,3 +53,23 @@ def test_source_tier_trusts_github_only_for_the_project_owner_and_ranks_planned_
     # 云厂商托管服务的文档是官方文档，但不是研究对象自己的文档
     assert _source_tier(snapshot, item("https://docs.cloud.google.com/memorystore/docs/valkey", "OFFICIAL_DOC")) == 1
     assert _source_tier(snapshot, item("https://www.loginradius.com/blog/oauth")) == 2
+
+
+def test_quote_extends_to_the_next_sentence_that_names_the_tool_in_the_claim() -> None:
+    from app.extractor import _extend_quote_for_claim, _grounded_claim
+
+    text = ("Intro. When restoring an incremental backup, it will be necessary to have not only the incremental "
+            "backup itself but also all earlier backups. Use pg_combinebackup to combine them. Unrelated tail.")
+    quote = ("When restoring an incremental backup, it will be necessary to have not only the incremental "
+             "backup itself but also all earlier backups.")
+    claim = "恢复时需要更早的备份，并用 pg_combinebackup 合并"
+
+    start, extended = _extend_quote_for_claim(text, text.find(quote), quote, claim)
+
+    assert extended == quote + " Use pg_combinebackup to combine them."
+    assert text[start:start + len(extended)] == extended
+    assert _grounded_claim(claim, extended) == claim
+    # 附近也找不到时引用不变，结论退回原文
+    _, unchanged = _extend_quote_for_claim(text, text.find(quote), quote, "用 pg_restore_incremental 恢复")
+    assert unchanged == quote
+    assert _grounded_claim("用 pg_restore_incremental 恢复", quote) == quote
