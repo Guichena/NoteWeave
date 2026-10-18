@@ -699,6 +699,8 @@ def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: li
 
 # 代码托管站点上谁都能建仓库，只有仓库所有者与研究对象或规划域名同名时才算官方来源
 _CODE_HOSTS = frozenset({"github.com", "raw.githubusercontent.com", "gitlab.com", "gist.github.com"})
+_COMMUNITY_SUBDOMAINS = frozenset({"community", "forum", "forums", "discuss", "discussions", "discourse", "talk",
+                                   "answers", "support-community", "bbs", "users"})
 
 
 def _source_tier(snapshot: ResearchAgentTaskSnapshot, item: object) -> int:
@@ -722,6 +724,9 @@ def _source_tier(snapshot: ResearchAgentTaskSnapshot, item: object) -> int:
                                                  str(snapshot.query_policy.get("entity_label") or "").lower())}
         if len(owner) >= 3 and any(name in owner for name in names):
             return 0
+        return 2
+    if host.split(".", 1)[0] in _COMMUNITY_SUBDOMAINS:
+        # 官方域名下的社区论坛是用户发帖，不是官方说明
         return 2
     if host and any(host == domain or host.endswith("." + domain) for domain in domains if domain not in _CODE_HOSTS):
         return 0

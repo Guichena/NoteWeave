@@ -53,6 +53,8 @@ def test_source_tier_trusts_github_only_for_the_project_owner_and_ranks_planned_
     # 云厂商托管服务的文档是官方文档，但不是研究对象自己的文档
     assert _source_tier(snapshot, item("https://docs.cloud.google.com/memorystore/docs/valkey", "OFFICIAL_DOC")) == 1
     assert _source_tier(snapshot, item("https://www.loginradius.com/blog/oauth")) == 2
+    # 官方域名下的社区论坛按二手来源处理
+    assert _source_tier(snapshot, item("https://community.redis.io/t/aof-question/12")) == 2
 
 
 def test_quote_extends_to_the_next_sentence_that_names_the_tool_in_the_claim() -> None:
