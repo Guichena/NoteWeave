@@ -466,12 +466,15 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 Integer.class, runId)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_run_advancement where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(4);
+        // 同一研究对象的两个单元格合并为一个补查任务
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select target_cells_json from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", String.class, runId))
+                .contains("entity-1:method", "entity-1:evidence");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
     }
 
     @Test
-    void submittedTasksThatLeftCellsWithoutAnswersGetOneRepairEach() {
+    void submittedTasksThatLeftCellsWithoutAnswersGetOneMergedRepairPerEntity() {
         coordinator.planAndEnqueueForWave(runId, 1);
         // 合并任务提交成功，但部分单元格没有拿到候选，任务本身不算失败
         jdbcTemplate.update("update research_agent_task set status = 'SUBMITTED', terminal_reason = 'CANDIDATES_PROPOSED', terminal_at = current_timestamp where research_run_id = ?", runId);
@@ -488,9 +491,14 @@ class ResearchAgentTaskCoordinatorServiceTest {
         var afterRepair = coordinatorTick.tick(runId, "scheduler-b");
 
         assertThat(first.outcome()).isEqualTo("GAP_REPAIR_TASKIZED");
+        // 同一研究对象的缺口单元格合并为一个补查任务，任务覆盖全部缺口单元格
+        assertThat(gapCells).isEqualTo(2);
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId))
-                .isEqualTo(gapCells);
+                .isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select target_cells_json from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", String.class, runId))
+                .contains("entity-1:method", "entity-1:evidence");
         // 每个单元格只补查一次，补查后仍无结论就如实收尾
         assertThat(afterRepair.outcome()).isEqualTo("RUN_COMPLETED");
         assertThat(jdbcTemplate.queryForObject(
@@ -832,13 +840,16 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         assertThat(first.decisionKind()).isEqualTo(ResearchAgentRepairStopPolicy.DecisionKind.COUNTERFACTUAL);
         assertThat(first.advancement().checkpointSeq()).isEqualTo(1);
-        assertThat(first.taskization().createdTaskCount()).isEqualTo(2);
+        assertThat(first.taskization().createdTaskCount()).isEqualTo(1);
         assertThat(replay.advancement().idempotentReplay()).isTrue();
         assertThat(replay.taskization().createdTaskCount()).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_run_advancement where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_checkpoint where research_run_id = ?", Integer.class, runId)).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(2);
-        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(4);
+        // 同一研究对象的两个单元格合并为一个补查任务
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", Integer.class, runId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select target_cells_json from research_agent_task where research_run_id = ? and role = 'COUNTERFACTUAL'", String.class, runId))
+                .contains("entity-1:method", "entity-1:evidence");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isEqualTo(3);
     }
 
     @Test

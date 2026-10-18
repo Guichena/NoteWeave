@@ -193,7 +193,32 @@ public class ResearchAgentTaskCoordinatorService {
         int created = 0;
         int replayed = 0;
         int enqueued = 0;
+        // 同一研究对象的普通缺口补查合并为一个任务：检索、读取共用，抽取仍逐列进行。
+        // 冲突补查和高风险单元格需要针对单条结论的反证，仍按单元格分别建任务。
+        Map<String, List<CounterfactualTarget>> mergeable = new LinkedHashMap<>();
         for (CounterfactualTarget target : targets) {
+            if (!target.conflictAnchored() && !"EVIDENCE_CONFLICT".equals(target.repairCause()))
+                mergeable.computeIfAbsent(entityId(target.cellKey()), key -> new ArrayList<>()).add(target);
+        }
+        Set<String> mergedCells = new LinkedHashSet<>();
+        for (List<CounterfactualTarget> group : mergeable.values()) {
+            List<CellScope> cells = new ArrayList<>();
+            List<CounterfactualTarget> groupTargets = new ArrayList<>();
+            for (CounterfactualTarget target : group) {
+                CellScope cell = lockRepairableCell(run.id(), target.cellKey());
+                if (cell.highRisk() || "EVIDENCE_CONFLICT".equals(repairCause(run.id(), cell.cellKey(), target))) continue;
+                cells.add(cell);
+                groupTargets.add(target);
+            }
+            if (cells.size() < 2) continue;
+            MergedRepairReceipt merged = planMergedRepair(run, brief, sources, command, cells, groupTargets);
+            if (merged == null) continue;
+            cells.forEach(cell -> mergedCells.add(cell.cellKey()));
+            if (merged.existed()) replayed++; else created++;
+            if (merged.enqueued()) enqueued++;
+        }
+        for (CounterfactualTarget target : targets) {
+            if (mergedCells.contains(target.cellKey())) continue;
             CellScope cell = lockRepairableCell(run.id(), target.cellKey());
             List<Map<String, Object>> independentSources = sources.stream()
                     .filter(source -> !target.excludedSourceIds().contains(String.valueOf(source.get("source_id"))))
@@ -251,6 +276,76 @@ public class ResearchAgentTaskCoordinatorService {
             if (!outbox.idempotentReplay()) enqueued++;
         }
         return new CoordinatorReceipt(created, replayed, enqueued, targets.size());
+    }
+
+    private record MergedRepairReceipt(boolean existed, boolean enqueued) { }
+
+    /** 为同一研究对象的多个缺口单元格建一个补查任务；预算不足或没有可用来源时返回 null，交给逐个单元格的路径处理。 */
+    private MergedRepairReceipt planMergedRepair(
+            RunScope run, ResearchBriefCompiler.CompiledBrief brief, List<Map<String, Object>> sources,
+            CounterfactualRepairCommand command, List<CellScope> cells, List<CounterfactualTarget> targets
+    ) {
+        List<String> excluded = targets.stream().flatMap(target -> target.excludedSourceIds().stream())
+                .distinct().sorted().toList();
+        List<Map<String, Object>> independentSources = sources.stream()
+                .filter(source -> !excluded.contains(String.valueOf(source.get("source_id"))))
+                .toList();
+        if (independentSources.isEmpty() && run.retrievalMode().usesSeeds()) return null;
+        Map<String, Long> repairBudget = deepCellBudget(cells.size());
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(run.id(), repairBudget, 1)) return null;
+        String fingerprint;
+        try {
+            StringBuilder text = new StringBuilder("merged-repair");
+            for (int index = 0; index < cells.size(); index++) {
+                text.append('|').append(repairFingerprint(run.id(), command.parentCheckpointSeq(), command.waveNo(),
+                        cells.get(index), targets.get(index)));
+            }
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(text.toString().getBytes(StandardCharsets.UTF_8));
+            StringBuilder output = new StringBuilder();
+            for (byte item : hash) output.append(String.format("%02x", item));
+            fingerprint = output.substring(0, 32);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Cannot create merged repair fingerprint", exception);
+        }
+        CellScope first = cells.get(0);
+        List<String> cellKeys = cells.stream().map(CellScope::cellKey).toList();
+        String reasonDigest = targets.get(0).reasonDigest();
+        Map<String, Object> queryPolicy = withRepairTarget(run.id(), first.cellKey(), targets.get(0),
+                withCellScope(repairQueryPolicy(brief, reasonDigest, command.parentCheckpointSeq(), null, List.of()),
+                        run.id(), entityId(first.cellKey()), cellKeys));
+        TaskPriority priority = cells.stream().map(this::repairPriority)
+                .max(java.util.Comparator.comparingInt(TaskPriority::score)).orElse(repairPriority(first));
+        String logicalKey = "counterfactual:" + fingerprint;
+        ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
+                run.id(), logicalKey, "repair:" + fingerprint, command.waveNo(), "COUNTERFACTUAL",
+                entityId(first.cellKey()), "branch-counterfactual", first.planRevision(), first.entitySetVersion(),
+                cellKeys, new LinkedHashMap<>(repairBudget),
+                cells.stream().map(cell -> new ResearchAgentTaskService.TargetCellBinding(cell.cellKey(), cell.version())).toList(),
+                new ResearchAgentTaskService.TaskExecutionContext("research-default",
+                        repairSourcePolicy(run, independentSources, excluded), queryPolicy,
+                        run.researchIntent(), run.controlPack())));
+        jdbcTemplate.update("""
+                update research_agent_task
+                set logical_task_key = ?, quorum_group_key = null, candidate_quorum = 1, candidate_slot = 1,
+                    snapshot_schema_version = 'research-agent-task-snapshot.v3', snapshot_digest = null,
+                    priority_score = ?, priority_reason = ?,
+                    updated_at = current_timestamp
+                where id = ?
+                """, logicalKey, priority.score(), priority.reason(), task.taskId());
+        boolean existed = jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_agent_task_id = ?", Integer.class, task.taskId()) > 0;
+        budgetService.reserve(new ResearchBudgetAndCheckpointService.ReserveCommand(
+                run.id(), task.taskId(), "repair-reserve:" + fingerprint, repairBudget));
+        ResearchAgentCommandOutboxService.CommandReceipt outbox = outboxService.enqueue(task.taskId());
+        if (!existed) {
+            for (CellScope cell : cells) {
+                int updated = jdbcTemplate.update("""
+                        update research_cell set repair_count = repair_count + 1, updated_at = current_timestamp
+                        where research_run_id = ? and cell_key = ? and cell_version = ? and active_task_id is null
+                        """, run.id(), cell.cellKey(), cell.version());
+                if (updated != 1) throw new BusinessException("RESEARCH_AGENT_REPAIR_TARGET_INVALID", "Counterfactual target changed while taskizing");
+            }
+        }
+        return new MergedRepairReceipt(existed, !outbox.idempotentReplay());
     }
 
     /** 宽搜索读取整个当前表格，任务仅能提交范围提案。 */

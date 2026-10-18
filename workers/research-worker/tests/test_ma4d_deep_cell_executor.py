@@ -1119,3 +1119,23 @@ def test_window_rejected_by_the_archive_is_dropped_instead_of_failing_the_task()
             _archive_external_windows(snapshot, [window("w1", "https://ok.example/a")], Broken())
     finally:
         module._external_archive_candidate = original
+
+
+def test_merged_repair_task_for_two_cells_of_one_entity_completes() -> None:
+    """后端把同一研究对象的缺口补查合并为一个任务，Worker 按多个目标单元格照常执行。"""
+    from app.deep_cell_executor import DeepCellExecutor
+    from app.deterministic_fake_toolchain import DeterministicFakeToolchain
+
+    payload = _counterfactual_repair_snapshot()
+    payload.pop("snapshot_digest")
+    payload["logical_task_key"] = "counterfactual:merged-repair-1"
+    payload["target_cells"] = [{"cell_id": "entity-1:method", "expected_version": 3},
+                               {"cell_id": "entity-1:evidence", "expected_version": 3}]
+    snapshot = {**payload, "snapshot_digest": snapshot_digest(payload)}
+
+    completion = DeepCellExecutor(
+        _Permit(), "worker-a", toolchain=DeterministicFakeToolchain(), enable_llm=False
+    )(_command(), _claim(snapshot))
+
+    assert completion.termination_reason == "CANDIDATES_PROPOSED"
+    assert {candidate.cell_key for candidate in completion.candidates} == {"entity-1:method", "entity-1:evidence"}
