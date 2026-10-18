@@ -66,7 +66,8 @@ class ResearchAgentCompletionServiceTest {
         String workspace = jdbcTemplate.queryForObject("select workspace_id from research_run where id = ?", String.class, fixture.runId());
         var cells = new ResearchCellInsightsService(jdbcTemplate, mapper, clusters).cells(workspace, fixture.runId());
         assertThat(cells).singleElement().satisfies(cell -> {
-            assertThat(cell.keySet()).containsExactlyInAnyOrder("cell_key", "entity_label", "column_label", "cell_status", "candidate_value", "equivalent_claims", "independent_source_count", "confidence_ppm", "conflicts");
+            assertThat(cell.keySet()).containsExactlyInAnyOrder("cell_key", "entity_label", "column_label", "cell_status", "candidate_value", "equivalent_claims", "independent_source_count", "confidence_ppm", "conflicts",
+                    "evidence_level", "lead_value", "lead_quotes");
             assertThat(cell.get("independent_source_count")).isEqualTo(2);
             assertThat(cell.get("equivalent_claims")).asList().hasSize(2);
             assertThat(cell.get("cell_status")).isEqualTo("SEMANTIC_PENDING");

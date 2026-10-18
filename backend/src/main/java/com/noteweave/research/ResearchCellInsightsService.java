@@ -17,13 +17,15 @@ class ResearchCellInsightsService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
     private final ResearchClaimClusterService clusters;
+    private final ResearchCellLevels levels;
     ResearchCellInsightsService(JdbcTemplate jdbc, ObjectMapper mapper, ResearchClaimClusterService clusters) {
-        this.jdbc = jdbc; this.mapper = mapper; this.clusters = clusters;
+        this.jdbc = jdbc; this.mapper = mapper; this.clusters = clusters; this.levels = new ResearchCellLevels(jdbc, mapper);
     }
 
     List<Map<String, Object>> cells(String workspaceId, String runId) {
         Integer count = jdbc.queryForObject("select count(*) from research_run where id = ? and workspace_id = ?", Integer.class, runId, workspaceId);
         if (count == null || count != 1) throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
+        Map<String, ResearchCellLevels.Lead> leads = levels.leads(runId);
         return jdbc.query("""
                 select cell.*, coalesce(rr.source_title, cell.cell_key) as entity_label,
                     coalesce(col.label, cell.column_key) as column_label
@@ -57,6 +59,13 @@ class ResearchCellInsightsService {
             cell.put("independent_source_count", score.independentSources());
             cell.put("confidence_ppm", claims.isEmpty() ? 0 : score.confidencePpm());
             cell.put("conflicts", conflicts(runId, cellKey, value));
+            // 没通过核验的单元格按依据强弱分级，并带上保留下来的线索原文，供研究表格展示
+            ResearchCellLevels.Lead lead = leads.get(cellKey);
+            cell.put("evidence_level", ResearchCellLevels.levelOf(rs.getString("cell_status"), lead));
+            cell.put("lead_value", lead == null ? "" : lead.value());
+            cell.put("lead_quotes", lead == null ? List.of() : lead.quotes().stream().map(quote -> Map.of(
+                    "evidence_key", quote.evidenceKey(), "quote_text", text(quote.quote()),
+                    "source_title", text(quote.sourceTitle()), "source_url", text(quote.sourceUrl()))).toList());
             return cell;
         }, runId);
     }

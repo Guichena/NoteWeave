@@ -31,6 +31,34 @@ class ResearchAgentHonestReportTextTest {
     }
 
     @Test
+    void rejectedCandidatesAreGradedBySourceStrength() {
+        var weak = new ResearchCellLevels.EvidenceRow("e1", "WEAK_SUPPORT", 800_000, "q", "t", "u");
+        var background = new ResearchCellLevels.EvidenceRow("e2", "WEAK_SUPPORT", 0, "q", "t", "u");
+        var supports = new ResearchCellLevels.EvidenceRow("e3", "SUPPORTS", 900_000, "q", "t", "u");
+
+        assertThat(ResearchCellLevels.level("EVIDENCE_QUALIFICATION_REJECTED", List.of(supports)))
+                .isEqualTo(ResearchCellLevels.SOURCED);
+        assertThat(ResearchCellLevels.level("NOT_ENOUGH_INFO", List.of(weak, background)))
+                .isEqualTo(ResearchCellLevels.SOURCED);
+        assertThat(ResearchCellLevels.level("NOT_ENOUGH_INFO", List.of(background)))
+                .isEqualTo(ResearchCellLevels.RELATED);
+        // 支持关系的候选被拒是结论与证据对不上，不当作线索
+        assertThat(ResearchCellLevels.level("NOT_ENOUGH_INFO", List.of(supports))).isNull();
+        assertThat(ResearchCellLevels.levelOf("VERIFIED", null)).isEqualTo(ResearchCellLevels.VERIFIED);
+        assertThat(ResearchCellLevels.levelOf("GAP", null)).isEqualTo(ResearchCellLevels.NOT_FOUND);
+    }
+
+    @Test
+    void limitationLinePointsToWhereTheLeadIsShown() {
+        assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.SOURCED, "NO_SUPPORTED_CANDIDATE"))
+                .contains("未经核实的线索");
+        assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.RELATED, "NO_SUPPORTED_CANDIDATE"))
+                .contains("相关材料");
+        assertThat(ResearchAgentHonestReportService.leadText(null, "NO_SUPPORTED_CANDIDATE"))
+                .isEqualTo(ResearchAgentHonestReportService.reasonText("NO_SUPPORTED_CANDIDATE"));
+    }
+
+    @Test
     void verificationSummaryGoesRightAfterTheLeadParagraph() {
         String result = ResearchAgentHonestReportService.afterLead(
                 "# 标题\n\n摘要。\n\n## 直接回答\n\n正文", "**核验情况：** 已核验 3 项。");

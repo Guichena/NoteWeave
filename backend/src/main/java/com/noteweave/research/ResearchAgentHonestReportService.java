@@ -12,9 +12,11 @@ import org.springframework.stereotype.Service;
 @Service
 class ResearchAgentHonestReportService {
     private final JdbcTemplate jdbcTemplate;
+    private final ResearchCellLevels cellLevels;
 
-    ResearchAgentHonestReportService(JdbcTemplate jdbcTemplate) {
+    ResearchAgentHonestReportService(JdbcTemplate jdbcTemplate, ResearchCellLevels cellLevels) {
         this.jdbcTemplate = jdbcTemplate;
+        this.cellLevels = cellLevels;
     }
 
     String renderAndPersist(String runId, ResearchAgentRunCompletionGate.CompletionDecision decision) {
@@ -112,13 +114,12 @@ class ResearchAgentHonestReportService {
             }
         }
         appendVerifiedFacts(report, runId, decision, labels, synthesis != null);
-        java.util.Set<String> withLeads = appendTentativeFindings(report, runId, decision, labels);
+        Map<String, String> withLeads = appendTentativeFindings(report, runId, decision, labels);
         if (!decision.unresolvedCells().isEmpty() || !decision.limitations().isEmpty()) {
             report.append("## 局限与未解决项\n\n");
             for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
                 report.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
-                        .append(withLeads.contains(cell.cellKey()) ? "找到了相关原文但未通过核验，见上方未经核实的线索"
-                                : reasonText(cell.reasonCode())).append("\n");
+                        .append(leadText(withLeads.get(cell.cellKey()), cell.reasonCode())).append("\n");
             }
             for (String limitation : readableLimitations(decision.limitations())) {
                 report.append("- ").append(markdown(limitation)).append("\n");
@@ -131,41 +132,48 @@ class ResearchAgentHonestReportService {
     }
 
     /**
-     * 未通过核验但有原文出处的线索：单元格最后一个因证据资格被拒的候选（引用原文确实存在、关系为支持，
-     * 只是结论里的数字或版本与引用片段对不上等）。参考主流研究报告的做法，关键结论仍只用已核验的内容，
-     * 这些线索单独成节并注明未经核实，附上原文引用，由读者自行判断。返回列出了线索的单元格。
+     * 未通过核验的单元格里保留下来的线索，按 {@link ResearchCellLevels} 分为有出处和相关材料两类。
+     * 参考主流研究报告的做法，关键结论仍只用已核验的内容，这些线索单独成节并注明未经核实，
+     * 附上原文引用，由读者自行判断。返回列出了线索的单元格及其级别。
      */
-    private java.util.Set<String> appendTentativeFindings(StringBuilder report, String runId,
-                                                          ResearchAgentRunCompletionGate.CompletionDecision decision,
-                                                          Map<String, String> labels) {
-        java.util.Set<String> listed = new java.util.LinkedHashSet<>();
-        StringBuilder section = new StringBuilder();
+    private Map<String, String> appendTentativeFindings(StringBuilder report, String runId,
+                                                        ResearchAgentRunCompletionGate.CompletionDecision decision,
+                                                        Map<String, String> labels) {
+        Map<String, ResearchCellLevels.Lead> leads = cellLevels.leads(runId);
+        Map<String, String> listed = new java.util.LinkedHashMap<>();
+        StringBuilder sourced = new StringBuilder();
+        StringBuilder related = new StringBuilder();
         for (ResearchAgentRunCompletionGate.UnresolvedCell cell : decision.unresolvedCells()) {
-            List<String[]> rows = jdbcTemplate.query("""
-                    select a.candidate_value, a.evidence_ids_json from research_agent_candidate a
-                    join research_cell_merge m on m.candidate_id = a.id
-                    where a.research_run_id = ? and a.cell_key = ? and m.decision = 'REJECTED'
-                      and m.reason_code = 'EVIDENCE_QUALIFICATION_REJECTED'
-                    order by m.merged_at desc, m.id desc limit 1
-                    """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2)}, runId, cell.cellKey());
-            if (rows.isEmpty() || rows.get(0)[0] == null || rows.get(0)[0].isBlank()) continue;
-            List<String> citations = new java.util.ArrayList<>();
-            for (String key : evidenceKeys(rows.get(0)[1]).stream().distinct().limit(3).toList()) {
-                Evidence evidence = evidence(runId, key);
-                if (evidence != null && evidence.quote() != null && !evidence.quote().isBlank()) citations.add("[" + key + "]");
-            }
-            if (citations.isEmpty()) continue;
-            section.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
-                    .append(markdown(rows.get(0)[0].strip())).append(' ').append(String.join("", citations)).append('\n');
-            listed.add(cell.cellKey());
+            ResearchCellLevels.Lead lead = leads.get(cell.cellKey());
+            if (lead == null) continue;
+            listed.put(cell.cellKey(), lead.level());
+            // 成文正文已经引用并注明未经核实的线索不再重复列出
+            if (lead.quotes().stream().anyMatch(quote -> report.indexOf("[" + quote.evidenceKey() + "]") >= 0)) continue;
+            String citations = lead.quotes().stream().map(quote -> "[" + quote.evidenceKey() + "]")
+                    .collect(java.util.stream.Collectors.joining());
+            StringBuilder target = ResearchCellLevels.SOURCED.equals(lead.level()) ? sourced : related;
+            target.append("- **").append(markdown(heading(cell.cellKey(), labels))).append("**：")
+                    .append(markdown(lead.value())).append(' ').append(citations).append('\n');
         }
-        if (!listed.isEmpty()) {
-            report.append("## 未经核实的线索\n\n")
-                    .append("以下内容找到了原文出处，但没有通过自动核验（例如结论中的数字或版本与引用片段对不上），")
-                    .append("仅供参考，请以引用的原文为准。\n\n")
-                    .append(section).append('\n');
+        if (sourced.isEmpty() && related.isEmpty()) return listed;
+        report.append("## 未经核实的线索\n\n");
+        if (!sourced.isEmpty()) {
+            report.append("以下内容找到了原文出处，但没有通过自动核验，例如只找到第三方资料，")
+                    .append("或结论中的数字、版本与引用片段对不上。仅供参考，请以引用的原文为准。\n\n")
+                    .append(sourced).append('\n');
+        }
+        if (!related.isEmpty()) {
+            report.append("### 相关材料\n\n")
+                    .append("以下原文与研究对象有关，但没有直接回答对应的研究项，可作为进一步查阅的起点。\n\n")
+                    .append(related).append('\n');
         }
         return listed;
+    }
+
+    static String leadText(String level, String reasonCode) {
+        if (ResearchCellLevels.SOURCED.equals(level)) return "找到了有出处的线索但未通过核验，已在正文或未经核实的线索中注明";
+        if (ResearchCellLevels.RELATED.equals(level)) return "只找到相关材料，没有直接回答，已在正文或相关材料中列出";
+        return reasonText(reasonCode);
     }
 
     /** 把一段文字插到标题和摘要之后、第一个二级标题之前；没有二级标题时追加到末尾。 */
@@ -353,7 +361,7 @@ class ResearchAgentHonestReportService {
         return ResearchAgentIncrementalFinalizationService.cellHeading(cellKey, labels);
     }
 
-    private static String reasonText(String reasonCode) {
+    static String reasonText(String reasonCode) {
         if (reasonCode == null) return "未解决";
         return switch (reasonCode) {
             case "REQUIRED_CELL_UNRESOLVED" -> "必需研究项未找到足够证据";
