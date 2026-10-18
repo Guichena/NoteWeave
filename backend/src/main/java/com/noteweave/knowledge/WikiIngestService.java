@@ -43,6 +43,14 @@ public class WikiIngestService {
     static final String SELECTED_CONCEPTS_HEADING = "## 关联概念";
     private static final Logger log = LoggerFactory.getLogger(WikiIngestService.class);
     private WikiConceptSuggester conceptSuggester = WikiConceptSuggester.ruleBasedOnly();
+    private WikiConceptWriter conceptWriter = WikiConceptWriter.disabled();
+    /** 概念页构建说明里记录摘要所依据原文指纹的前缀，原文没变时沿用已有摘要，不再调用模型。 */
+    static final String SUMMARY_FINGERPRINT_LABEL = "- summary_fingerprint: `";
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setConceptWriter(WikiConceptWriter conceptWriter) {
+        if (conceptWriter != null) this.conceptWriter = conceptWriter;
+    }
 
     /** 概念页的选题：有大模型时由模型挑选核心术语，否则按规则抽取。 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -326,16 +334,27 @@ public class WikiIngestService {
             if (relatedSources.isEmpty()) {
                 relatedSources = List.of(source);
             }
-            List<ChunkForWiki> relatedChunks = loadChunksForSources(
+            List<ChunkForWiki> relatedChunks = loadConceptChunks(
                     workspaceId,
                     relatedSources.stream().map(SourceForWiki::sourceId).toList(),
+                    concept,
                     6
             );
             List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks, 4);
+            String summaryFingerprint = summaryFingerprint(concept, relatedChunks);
+            String summary = reusableSummary(workspaceId, concept, summaryFingerprint);
+            if (summary == null) {
+                List<WikiConceptWriter.Excerpt> excerpts = new ArrayList<>();
+                for (ChunkForWiki chunk : relatedChunks) {
+                    excerpts.add(new WikiConceptWriter.Excerpt(
+                            titleOfChunkSource(relatedSources, chunk.sourceId()), chunk.content()));
+                }
+                summary = conceptWriter.summarize(concept, excerpts);
+            }
             knowledgeCommandService.upsertWikiPageForInternalExecution(
                     workspaceId,
                     concept,
-                    buildConceptPageContent(concept, relatedSources, relatedChunks, concepts),
+                    buildConceptPageContent(concept, relatedSources, relatedChunks, concepts, summary, summaryFingerprint),
                     conceptCitationIds
             );
         }
@@ -493,6 +512,87 @@ public class WikiIngestService {
         ), params.toArray());
     }
 
+    /**
+     * 概念页的关键依据：先取正文或小标题里提到这个概念的片段，不够时再按资料顺序补齐。
+     * 原来直接取相关资料的前几个片段，常常与概念无关。
+     */
+    private List<ChunkForWiki> loadConceptChunks(String workspaceId, List<String> sourceIds, String concept, int limit) {
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = String.join(",", sourceIds.stream().map(ignored -> "?").toList());
+        String keyword = "%" + concept.toLowerCase(Locale.ROOT) + "%";
+        List<Object> params = new ArrayList<>();
+        params.add(workspaceId);
+        params.addAll(sourceIds);
+        params.add(keyword);
+        params.add(keyword);
+        params.add(limit);
+        List<ChunkForWiki> mentioning = jdbcTemplate.query("""
+                select c.id, c.source_id, c.source_snapshot_id, c.heading, c.content, c.location_info
+                from source_chunk c
+                where c.workspace_id = ? and c.source_id in (%s)
+                  and (lower(c.content) like ? or lower(coalesce(c.heading, '')) like ?)
+                order by c.chunk_no asc
+                limit ?
+                """.formatted(placeholders), (rs, rowNum) -> new ChunkForWiki(
+                rs.getString("id"),
+                rs.getString("source_id"),
+                rs.getString("source_snapshot_id"),
+                rs.getString("heading"),
+                rs.getString("content"),
+                rs.getString("location_info")
+        ), params.toArray());
+        if (mentioning.size() >= limit) {
+            return mentioning;
+        }
+        List<ChunkForWiki> result = new ArrayList<>(mentioning);
+        java.util.Set<String> seen = new java.util.HashSet<>(mentioning.stream().map(ChunkForWiki::chunkId).toList());
+        for (ChunkForWiki chunk : loadChunksForSources(workspaceId, sourceIds, limit)) {
+            if (result.size() >= limit) break;
+            if (seen.add(chunk.chunkId())) result.add(chunk);
+        }
+        return result;
+    }
+
+    /** 概念摘要所依据原文的指纹：概念名和所选片段都没变时可以沿用上次的摘要。 */
+    static String summaryFingerprint(String concept, List<ChunkForWiki> chunks) {
+        StringBuilder input = new StringBuilder(concept);
+        for (ChunkForWiki chunk : chunks) input.append('\n').append(chunk.chunkId()).append('\n').append(chunk.content());
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(input.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest).substring(0, 16);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 unavailable", ex);
+        }
+    }
+
+    /** 已有概念页的摘要指纹与本次一致时返回其中的摘要正文；否则返回 null。 */
+    private String reusableSummary(String workspaceId, String concept, String fingerprint) {
+        List<String> contents = jdbcTemplate.queryForList("""
+                select v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE' and i.title = ?
+                """, String.class, workspaceId, concept);
+        if (contents.isEmpty() || !contents.get(0).contains(SUMMARY_FINGERPRINT_LABEL + fingerprint + "`")) {
+            return null;
+        }
+        return conceptSummary(contents.get(0));
+    }
+
+    /** 读取概念页概念摘要一节的正文。 */
+    static String conceptSummary(String content) {
+        String heading = "## 概念摘要\n\n";
+        int start = content == null ? -1 : content.indexOf(heading);
+        if (start < 0) return "";
+        int bodyStart = start + heading.length();
+        int end = content.indexOf("\n## ", bodyStart);
+        String body = content.substring(bodyStart, end < 0 ? content.length() : end).strip();
+        return body.startsWith(CONCEPT_PAGE_MARKER) ? "" : body;
+    }
+
     private List<SourceForWiki> loadRelatedSourcesForConcept(String workspaceId, String concept, int limit) {
         String keyword = "%" + concept.toLowerCase(Locale.ROOT) + "%";
         return jdbcTemplate.query("""
@@ -562,12 +662,18 @@ public class WikiIngestService {
             String concept,
             List<SourceForWiki> relatedSources,
             List<ChunkForWiki> relatedChunks,
-            List<String> siblingConcepts
+            List<String> siblingConcepts,
+            String summary,
+            String summaryFingerprint
     ) {
         StringBuilder builder = new StringBuilder();
         builder.append("# ").append(concept).append("\n\n");
         builder.append("## 概念摘要\n\n");
-        builder.append(CONCEPT_PAGE_MARKER).append("，与 `").append(concept).append("` 相关的资料页和片段会持续回流到这里。\n\n");
+        if (summary != null && !summary.isBlank()) {
+            builder.append(summary.strip()).append("\n\n");
+        } else {
+            builder.append(CONCEPT_PAGE_MARKER).append("，与 `").append(concept).append("` 相关的资料页和片段会持续回流到这里。\n\n");
+        }
         builder.append("## 相关资料\n\n");
         builder.append("- [[Wiki Index]]\n");
         for (SourceForWiki related : relatedSources) {
@@ -594,7 +700,11 @@ public class WikiIngestService {
             }
         }
         builder.append("\n## 构建说明\n\n");
-        builder.append("该页面由工作台级 Wiki ingest 自动维护，会随着相关资料的上传、重建和删除持续更新。\n");
+        // 固定说明用来识别自动概念页，摘要由模型写出时也要保留
+        builder.append(CONCEPT_PAGE_MARKER).append("，会随着相关资料的上传、重建和删除持续更新。\n");
+        if (summary != null && !summary.isBlank()) {
+            builder.append(SUMMARY_FINGERPRINT_LABEL).append(summaryFingerprint).append("`\n");
+        }
         return builder.toString();
     }
 
