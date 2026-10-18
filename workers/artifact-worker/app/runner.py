@@ -39,7 +39,7 @@ from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
 from app.generation_runtime import ArtifactConfigurationRequiredError, generate_artifact_sections
 from app.export_runtime import export_artifact_if_required
-from app.llm_client import build_default_llm_client
+from app.llm_client import bind_llm_session, build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
 
@@ -105,7 +105,9 @@ def _run_artifact_task(
     checkpoint_context_pack: ContextPack | None = None,
     resume_stage: str = "",
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
-    llm_client = build_default_llm_client()
+    llm_client = bind_llm_session(
+        build_default_llm_client(), "artifact", task_input.workspace_id, task_input.target_id,
+    )
     has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
     if llm_client is None and not task_input.source_scope and not has_direct_input:
         raise ArtifactConfigurationRequiredError(

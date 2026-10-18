@@ -75,6 +75,17 @@ public class HttpChatLlmClient implements ChatLlmClient {
             int maximumOutputTokens,
             Consumer<String> onToken
     ) {
+        return streamChatInSession(null, systemPrompt, userPrompt, maximumOutputTokens, onToken);
+    }
+
+    @Override
+    public String streamChatInSession(
+            String sessionId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens,
+            Consumer<String> onToken
+    ) {
         if (!enabled) {
             throw new IllegalStateException("HttpChatLlmClient is not enabled; check noteweave.llm.* configuration");
         }
@@ -82,13 +93,16 @@ public class HttpChatLlmClient implements ChatLlmClient {
                 systemPrompt, userPrompt, maximumOutputTokens);
         try {
             String body = objectMapper.writeValueAsString(requestBody);
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
                     .timeout(timeout)
                     .header("Content-Type", "application/json")
                     .header("Accept", "text/event-stream")
-                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8));
+            if (sessionId != null && !sessionId.isBlank()) {
+                requestBuilder.header("X-Session-ID", sessionId);
+            }
+            HttpRequest request = requestBuilder.build();
             if (!apiKey.isBlank()) {
                 request = HttpRequest.newBuilder(request, (n, v) -> true)
                         .header("Authorization", "Bearer " + apiKey)

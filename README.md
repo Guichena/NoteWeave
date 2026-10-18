@@ -61,6 +61,16 @@ docker compose --profile app ps
 .\scripts\smoke-compose-provider-readiness.ps1 -EnvFile .env -RequireFullDemo
 ```
 
+### CPA 会话路由
+
+Chat、Research Worker 和 Artifact Worker 会自动向兼容模型端点发送 `X-Session-ID`，无需在界面中额外填写：
+
+- 聊天使用 Workspace 与持久化 Conversation ID，多轮消息保持一致。
+- Research 使用 Research Run ID；分布式子 Agent 使用 Research Run 与逻辑 Task ID，租约重试不会更换 ID。
+- Artifact 使用 Artifact Job ID，生成、修订和同一 Job 的恢复共享 ID。
+
+发送的值经过 SHA-256 摘要，不包含原始业务 ID。不同 Workspace、对话和并行子任务互相隔离；共享 LLM 客户端不会保存其他任务的会话状态。原有 URL、Key 和模型配置保持原用法。端点侧仍需支持会话固定路由，该请求头本身不保证模型缓存命中。
+
 ## 本地开发
 
 Backend：

@@ -6,6 +6,7 @@ import logging
 import time
 import urllib.error
 import urllib.request
+from copy import copy
 from typing import Callable, Protocol
 
 from app.config import load_settings
@@ -96,6 +97,7 @@ class OpenAICompatibleLlmClient:
         purpose_options: dict[str, dict[str, object]] | None = None,
         max_input_chars: int = 120000,
         context_safety_buffer_chars: int = 8000,
+        session_id: str = "",
     ) -> None:
         self.api_key = api_key
         self.model = model
@@ -110,6 +112,7 @@ class OpenAICompatibleLlmClient:
         self.context_safety_buffer_chars = max(0, context_safety_buffer_chars)
         self.call_records: list[dict[str, object]] = []
         self.cancellation_checker: Callable[[], None] | None = None
+        self.session_id = session_id
 
     def set_cancellation_checker(self, checker: Callable[[], None] | None) -> None:
         self.cancellation_checker = checker
@@ -171,6 +174,7 @@ class OpenAICompatibleLlmClient:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
+                **({"X-Session-ID": self.session_id} if self.session_id else {}),
             },
             method="POST",
         )
@@ -292,6 +296,27 @@ class OpenAICompatibleLlmClient:
             ),
             "calls": list(self.call_records),
         }
+
+
+def routing_session_id(kind: str, workspace_id: str, stable_id: str) -> str:
+    if not workspace_id.strip() or not stable_id.strip():
+        raise ValueError("routing session requires workspace and stable task identity")
+    digest = hashlib.sha256(f"{kind}\0{workspace_id}\0{stable_id}".encode("utf-8")).hexdigest()
+    return f"noteweave-{kind}-{digest}"
+
+
+def bind_llm_session(
+    client: LlmClient | None, kind: str, workspace_id: str, stable_id: str,
+) -> LlmClient | None:
+    """Bind a task-local client; shared executors must never mutate session state."""
+    if isinstance(client, QuoteTamperFaultLlmClient):
+        return QuoteTamperFaultLlmClient(bind_llm_session(client.delegate, kind, workspace_id, stable_id))
+    if not isinstance(client, OpenAICompatibleLlmClient):
+        return client
+    bound = copy(client)
+    bound.session_id = routing_session_id(kind, workspace_id, stable_id)
+    bound.call_records = []
+    return bound
 
 
 def build_default_llm_client() -> LlmClient | None:

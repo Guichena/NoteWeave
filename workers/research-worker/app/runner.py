@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Callable
 
 from app.harness import build_harness, build_step_trace
-from app.llm_client import build_default_llm_client
+from app.llm_client import bind_llm_session, build_default_llm_client
 from app.loop_runtime import evaluate_premature_commitment_guard, run_research_loop
 from app.models import ResearchProgressEvent, ResearchTaskInput, ResearchTaskResult
 from app.reporter import (
@@ -314,7 +314,9 @@ def run_research_task(
             progress_callback(event)
 
     harness = build_harness(task_input)
-    llm_client = build_default_llm_client()
+    llm_client = bind_llm_session(
+        build_default_llm_client(), "research", task_input.workspace_id, task_input.target_id,
+    )
     plan, harness_trace = harness.plan(task_input)
     planning_event = ResearchProgressEvent(
         phase="PLANNING",

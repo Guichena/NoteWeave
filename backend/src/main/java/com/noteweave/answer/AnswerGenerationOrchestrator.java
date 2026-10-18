@@ -79,10 +79,12 @@ public class AnswerGenerationOrchestrator {
         try (BufferedAnswerDeltaEmitter deltaEmitter = new BufferedAnswerDeltaEmitter(
                 eventScheduler,
                 batch -> emitDelta(consumer, fallbackSequence, batch, run, streamOwner, firstToken, leaseValid))) {
-            streamed = generationGateway.generate(
-                    generationGateway.prepareDraft(material.content()),
-                    material.maximumOutputTokens(),
-                    deltaEmitter::accept);
+            String draft = generationGateway.prepareDraft(material.content());
+            streamed = run == null
+                    ? generationGateway.generate(draft, material.maximumOutputTokens(), deltaEmitter::accept)
+                    : generationGateway.generateInConversation(
+                            run.workspaceId(), run.conversationId(), draft,
+                            material.maximumOutputTokens(), deltaEmitter::accept);
             deltaEmitter.flush();
         } catch (AnswerRunCancelledException ex) {
             persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);

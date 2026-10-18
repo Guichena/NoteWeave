@@ -12,6 +12,13 @@ public interface AnswerGenerationGateway {
 
     String generate(String draft, int maximumOutputTokens, Consumer<String> tokenConsumer);
 
+    default String generateInConversation(
+            String workspaceId, String conversationId, String draft,
+            int maximumOutputTokens, Consumer<String> tokenConsumer
+    ) {
+        return generate(draft, maximumOutputTokens, tokenConsumer);
+    }
+
     List<String> replayChunks(String content);
 
     void persistContent(String workspaceId, String messageId, String content);

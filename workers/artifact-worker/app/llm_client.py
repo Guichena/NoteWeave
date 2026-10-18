@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import urllib.error
 import urllib.request
+from copy import copy
 from typing import Protocol
 
 from app.config import load_settings
@@ -63,11 +65,13 @@ class OpenAICompatibleLlmClient:
         model: str,
         base_url: str = "",
         timeout_seconds: int = 60,
+        session_id: str = "",
     ) -> None:
         self.api_key = api_key
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.session_id = session_id
 
     def complete_json(self, purpose: str, payload: dict[str, object]) -> str:
         request_payload = {
@@ -99,6 +103,7 @@ class OpenAICompatibleLlmClient:
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}",
+                **({"X-Session-ID": self.session_id} if self.session_id else {}),
             },
             method="POST",
         )
@@ -120,6 +125,23 @@ class OpenAICompatibleLlmClient:
         if not isinstance(message, dict):
             return ""
         return str(message.get("content") or "")
+
+
+def routing_session_id(kind: str, workspace_id: str, stable_id: str) -> str:
+    if not workspace_id.strip() or not stable_id.strip():
+        raise ValueError("routing session requires workspace and stable task identity")
+    digest = hashlib.sha256(f"{kind}\0{workspace_id}\0{stable_id}".encode("utf-8")).hexdigest()
+    return f"noteweave-{kind}-{digest}"
+
+
+def bind_llm_session(
+    client: LlmClient | None, kind: str, workspace_id: str, stable_id: str,
+) -> LlmClient | None:
+    if not isinstance(client, OpenAICompatibleLlmClient):
+        return client
+    bound = copy(client)
+    bound.session_id = routing_session_id(kind, workspace_id, stable_id)
+    return bound
 
 
 def build_default_llm_client() -> LlmClient | None:
