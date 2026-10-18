@@ -76,12 +76,14 @@ class NarrativeReportPolisher:
                 "evidence_keys must list exactly the keys cited inline.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
-                "executive_summary must directly answer research_question in one to three sentences using the "
+                "executive_summary is the bottom line: one or two sentences that answer research_question with the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
                 "instead of answering.",
                 "The first section must be headed '直接回答' (or 'Direct answer' for an English question) and give "
-                "one short paragraph per part of the question, each bound to the cells that answer it. A part that "
-                "no frozen cell answers is not written there; list it in limitations instead.",
+                "one short paragraph per part of the question, each bound to the cells that answer it. These "
+                "paragraphs add what the summary leaves out (versions, numbers, conditions, exceptions) and must not "
+                "repeat the summary sentence. A part that no frozen cell answers is not written there; list it in "
+                "limitations instead.",
                 "Return JSON only.",
                 "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
                 "Write title, summary, headings, prose and table in the same language as research_question; keep "
