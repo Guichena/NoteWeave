@@ -98,8 +98,7 @@ class ResearchAgentHonestReportService {
             for (ResearchAgentRunCompletionGate.PromotableClaim claim : decision.promotableClaims()) {
                 report.append("### ").append(markdown(claim.value())).append("\n\n")
                         .append("- 研究项：`").append(markdown(heading(claim.cellKey(), labels))).append("`\n");
-                String candidateId = acceptedCandidateId(runId, claim.cellKey());
-                if (!candidateId.isBlank()) report.append("- 候选：`").append(candidateId).append("`\n");
+                // 候选编号只用于排查，记录在 research_cell_merge 里，不写进给读者的报告
                 for (String evidenceKey : claim.evidenceKeys()) {
                     Evidence evidence = evidence(runId, evidenceKey);
                     if (evidence == null) continue;
@@ -315,15 +314,6 @@ class ResearchAgentHonestReportService {
             case "CONFLICT_REPAIR_EXHAUSTED" -> "证据冲突且补充检索后仍未解决";
             default -> "未解决";
         };
-    }
-
-    private String acceptedCandidateId(String runId, String cellKey) {
-        List<String> rows = jdbcTemplate.query("""
-                select candidate_id from research_cell_merge
-                where research_run_id = ? and cell_key = ? and decision = 'ACCEPTED'
-                order by merged_at desc, id desc limit 1
-                """, (rs, rowNum) -> rs.getString(1), runId, cellKey);
-        return rows.isEmpty() ? "" : rows.get(0);
     }
 
     private Evidence evidence(String runId, String evidenceKey) {

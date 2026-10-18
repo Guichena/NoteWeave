@@ -289,12 +289,11 @@ class ResearchAgentIncrementalFinalizationServiceTest {
         assertThat(report).contains(
                 "Verified answer",
                 "研究项：`entity-1:claim`",
-                "候选：`" + candidateId + "`",
                 "Evidence: `evidence-1`",
                 "Exact quote: “Verified citation excerpt”",
                 "https://example.com/research",
                 "可选研究项未找到足够证据");
-        assertThat(report).doesNotContain("research/external/finalization-test/snapshot-1");
+        assertThat(report).doesNotContain("research/external/finalization-test/snapshot-1", candidateId);
         assertThat(jdbcTemplate.queryForObject(
                 "select count(*) from research_agent_report_artifact where research_run_id = ?",
                 Integer.class, runId)).isEqualTo(1);
