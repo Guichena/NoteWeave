@@ -87,6 +87,7 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 MAX_EVIDENCE_CARDS_PER_CELL = 6
 # 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分
 MAX_EVIDENCE_PER_COMPLETION = 12
+MAX_CANDIDATES_PER_COMPLETION = 3
 # 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大
 BASE_DOCUMENTS_PER_TASK = 4
 MAX_DOCUMENTS_PER_TASK = 10
@@ -282,8 +283,9 @@ class DeepCellExecutor:
         context.toolbox.require("extract")
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
+        retained_cards: list[object] = []
         extraction, cards, trusted_evidence = _extract_per_target_column(
-            self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active)
+            self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active, retained_cards)
         context.usage.add("extract_calls")
         require_active()
         claim_clusters = []
@@ -303,6 +305,11 @@ class DeepCellExecutor:
             originals = list(dict.fromkeys(originals))
             self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
                                  llm_client, context, trusted_evidence, report, require_active)
+        # 反证检索之后再补低级别材料，反证证据优先占用证据条数
+        retained_evidence, retained_candidates = _retained_payload(
+            snapshot, retained_cards, windows, trusted_evidence, candidates)
+        trusted_evidence = trusted_evidence + retained_evidence
+        candidates = candidates + retained_candidates
         termination = "CANDIDATES_PROPOSED" if candidates else "EVIDENCE_ONLY" if trusted_evidence else "NO_SUPPORTED_CANDIDATE"
         # DR-102: keep the reproducibility-safe extraction outcome in the trace
         # digest (reason codes and counts only, never the model response text).
@@ -431,18 +438,25 @@ class DeepCellExecutor:
                     "refuting_evidence_keys": refs if verdict == "REFUTED" else []})
 def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, task_input: ResearchTaskInput,
                                plan: ResearchPlan, windows: list[object], llm_client: object | None,
-                               require_active) -> tuple[ExtractionResult, list[object], list[dict[str, object]]]:
+                               require_active, retained_out: list[object] | None = None,
+                               ) -> tuple[ExtractionResult, list[object], list[dict[str, object]]]:
     """一个任务覆盖同一研究对象的多个单元格时，检索、抓取与阅读共用一次，抽取按单元格逐个进行。
 
     一次抽取同时面对多个字段时，模型容易只顾最显著的字段，其余单元格拿不到候选，
     所以每次抽取只给一个字段；证据卡上限也按单元格分别计算。
+    按来源档次或是否切题筛掉的卡片放进 retained_out，由调用方作为低级别材料提交。
     """
+    if retained_out is None:
+        retained_out = []
     columns = list(plan.research_schema.columns)
     if len(columns) <= 1:
         extraction = toolchain.extract(task_input, plan, windows, llm_client=llm_client)
-        cards = _prefer_primary_cards(snapshot, list(extraction.accepted_cards), windows)
+        raw = list(extraction.accepted_cards)
+        cards = _prefer_primary_cards(snapshot, raw, windows)
         if columns:
+            primary = cards
             cards = _keep_answering_cards(snapshot, columns[0], cards, llm_client)
+            retained_out.extend(_retained_cards(raw, primary, cards))
         return extraction, cards, _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
     results: list[ExtractionResult] = []
     cards: list[object] = []
@@ -456,9 +470,10 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
         })
         result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
         results.append(result)
-        column_cards = _prefer_primary_cards(
-            snapshot, [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key], windows)
-        column_cards = _keep_answering_cards(snapshot, column, column_cards, llm_client)
+        raw = [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key]
+        primary = _prefer_primary_cards(snapshot, raw, windows)
+        column_cards = _keep_answering_cards(snapshot, column, primary, llm_client)
+        retained_out.extend(_retained_cards(raw, primary, column_cards))
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -470,6 +485,76 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
 
 
 ANSWER_CHECK_PURPOSE = "research.answer_check"
+# 每个缺口单元格最多保留的低级别材料条数
+MAX_RETAINED_CARDS_PER_CELL = 3
+
+
+def _retained_cards(raw: list[object], primary: list[object], answering: list[object]) -> list[object]:
+    """单元格最终没有可用结论时，把筛掉的卡片改成弱支持关系保留下来。
+
+    只因来源档次被筛掉的卡片原文确实回答了这一列，按有出处保留，支持分不变；
+    判为没有直接回答这一列的卡片按相关材料保留，支持分记 0。单元格有可用结论时什么都不保留。
+    """
+    if answering or not raw:
+        return []
+    if primary:
+        kept = [card.model_copy(update={"relation_type": "WEAK_SUPPORT", "support_score": 0.0}) for card in primary]
+    else:
+        # 支持分是区分有出处与相关材料的依据，模型给 0 分时也要记成大于 0
+        kept = [card.model_copy(update={"relation_type": "WEAK_SUPPORT",
+                                        "support_score": max(float(card.support_score), 0.01)}) for card in raw]
+    return kept[:MAX_RETAINED_CARDS_PER_CELL]
+
+
+def _retained_payload(snapshot: ResearchAgentTaskSnapshot, retained: list[object], windows: list[object],
+                      evidence: list[dict[str, object]], candidates: list[dict[str, object]]
+                      ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """缺口单元格的低级别材料按单元格提交成一个候选，证据关系是弱支持。
+
+    后端合并时弱支持候选不会通过核验，单元格仍是缺口、补查照常进行；候选与原文带着所属单元格被记录下来，
+    报告和研究表格据此展示有出处的线索。证据与候选条数不超过完成协议的上限，需要多候选投票的任务不提交。
+    """
+    if snapshot.candidate_quorum != 1 or not retained:
+        return [], []
+    targets = {item.cell_id: item.expected_version for item in snapshot.target_cells}
+    taken_cells = {str(item["cell_key"]) for item in candidates}
+    seen = {str(item["evidence_key"]) for item in evidence}
+    room = MAX_EVIDENCE_PER_COMPLETION - len(evidence)
+    by_cell: dict[str, list[dict[str, object]]] = {}
+    for card in retained:
+        payload = _trusted_evidence_payload(snapshot, [card], windows)
+        if not payload:
+            continue
+        item = payload[0]
+        cell_id = f"{getattr(card, 'entity_id', '')}:{getattr(card, 'column_key', '')}"
+        if cell_id not in targets or cell_id in taken_cells or str(item["evidence_key"]) in seen:
+            continue
+        by_cell.setdefault(cell_id, []).append(item)
+    extra_evidence: list[dict[str, object]] = []
+    extra_candidates: list[dict[str, object]] = []
+    for cell_id in sorted(by_cell):
+        if len(candidates) + len(extra_candidates) >= MAX_CANDIDATES_PER_COMPLETION:
+            break
+        items = [item for item in by_cell[cell_id] if str(item["evidence_key"]) not in seen][:max(0, room)]
+        if not items:
+            continue
+        room -= len(items)
+        for item in items:
+            seen.add(str(item["evidence_key"]))
+        extra_evidence.extend(items)
+        keys = sorted(str(item["evidence_key"]) for item in items)
+        value = unicodedata.normalize("NFC", str(items[0]["claim_text"]))
+        stable = _stable_hex(snapshot.task_id, str(snapshot.lease_epoch), str(snapshot.fencing_token),
+                             cell_id, str(targets[cell_id]), value, "WEAK_SUPPORT", *keys)
+        extra_candidates.append({
+            "candidate_key": "candidate:" + stable[:48],
+            "cell_key": cell_id,
+            "base_cell_version": targets[cell_id],
+            "candidate_value": value,
+            "evidence_keys": keys,
+            "confidence_ppm": min(int(item["support_score_ppm"]) for item in items),
+        })
+    return extra_evidence, extra_candidates
 
 
 def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, cards: list[object],

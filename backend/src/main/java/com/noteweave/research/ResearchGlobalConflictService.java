@@ -158,6 +158,8 @@ class ResearchGlobalConflictService {
      * lineage ({@code research_cell_evidence}) and candidate-bound evidence
      * ({@code research_evidence_validation.cell_id}); the latter is the only link that can carry a
      * {@code CONFLICTS} relation, which a promoted candidate never has.
+     * 弱支持证据是缺口单元格保留下来的低级别材料，没有通过核验，不参与冲突判定，
+     * 否则二手来源或不切题的原文会被误判成与已核实结论冲突。
      */
     List<ResearchGlobalConflictDetector.EvidenceFact> loadEvidence(String runId, String cellId) {
         return jdbcTemplate.query("""
@@ -165,6 +167,7 @@ class ResearchGlobalConflictService {
                        se.source_domain, se.lineage_digest
                 from source_evidence se
                 where se.research_run_id = ?
+                  and se.relation_type <> 'WEAK_SUPPORT'
                   and (exists (
                         select 1 from research_evidence_validation rev
                         where rev.research_run_id = se.research_run_id
