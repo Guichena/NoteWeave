@@ -85,6 +85,10 @@ class NarrativeReportPolisher:
                 "paragraphs add what the summary leaves out (versions, numbers, conditions, exceptions) and must not "
                 "repeat the summary sentence. A part that no frozen cell answers is not written there; list it in "
                 "limitations instead.",
+                "State each fact once in the prose: when two parts of the question share a fact, write it in the "
+                "first paragraph and refer back instead of repeating it (the comparison table may restate it briefly).",
+                "For a comparison question the summary names the key difference between the compared subjects; "
+                "the direct-answer section then gives the details without restating that difference.",
                 "Return JSON only.",
                 "For a comparison question, comparison_table is required and must contain at least two evidence-bound rows.",
                 "Write title, summary, headings, prose and table in the same language as research_question; keep "
