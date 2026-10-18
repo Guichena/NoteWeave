@@ -234,9 +234,36 @@ class ResearchAgentRoleWorkflowService {
                 "ledger_digest", ledgerDigest,
                 "audit_digest", audit.digest(),
                 "cells", synthesisCells,
+                "leads", synthesisLeads(runId, labels),
                 "limitations", List.copyOf(limitations));
         return createRoleTask(run, cells, waveNo, "SYNTHESIS", "synthesis:" + ledgerDigest.substring(7, 39),
                 Map.of("allowed_tools", List.of(), "synthesis_input", synthesisInput));
+    }
+
+    /** 交给成文的线索最多条数，避免线索挤占已核验结论的篇幅。 */
+    private static final int MAX_SYNTHESIS_LEADS = 12;
+
+    /**
+     * 没通过核验但有原文出处的单元格线索。成文只在已核验的结论没覆盖到的方面使用，并在句子里写明未经核实；
+     * 引用编号只能是线索自己的证据。
+     */
+    private List<Map<String, Object>> synthesisLeads(String runId, Map<String, String> labels) {
+        List<Map<String, Object>> leads = new ArrayList<>();
+        for (ResearchCellLevels.Lead lead : new ResearchCellLevels(jdbcTemplate, objectMapper).leads(runId).values()) {
+            if (leads.size() >= MAX_SYNTHESIS_LEADS) break;
+            String[] parts = lead.cellKey().split(":", 2);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("cell_key", lead.cellKey());
+            item.put("candidate_value", lead.value());
+            item.put("evidence_level", lead.level());
+            item.put("evidence_keys", lead.quotes().stream().map(ResearchCellLevels.Quote::evidenceKey).toList());
+            item.put("entity_label", labels.getOrDefault(parts[0], ""));
+            item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
+            item.put("supporting_quotes", lead.quotes().stream()
+                    .map(quote -> withTitle(quote.sourceTitle(), quote.quote())).filter(quote -> !quote.isEmpty()).toList());
+            leads.add(item);
+        }
+        return leads;
     }
 
     private static final int MAX_SUPPORTING_QUOTES = 6;

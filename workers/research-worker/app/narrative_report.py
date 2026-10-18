@@ -34,11 +34,12 @@ class NarrativeReportPolisher:
 
     def polish(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
         cells = _validated_cells(synthesis_input)
+        leads = _validated_leads(synthesis_input, {str(cell["cell_key"]) for cell in cells})
         # 后端偶尔把整次研究的原因码（如 UNRESOLVED_CELLS_REMAIN）放进局限列表，读者看不懂，成文时略去
         limitations = [item for item in _clean_strings(synthesis_input.get("limitations"))
                        if not re.fullmatch(r"[A-Z0-9_]+", item)]
         question = str(synthesis_input.get("question") or "").strip()
-        comparison_required = _comparison_table_required(question)
+        comparison_required = _comparison_table_required(question, [*cells, *leads])
         if self.llm_client is None:
             return _fallback(cells, limitations, "LLM_UNAVAILABLE", question)
         request_payload: dict[str, object] = {
@@ -106,8 +107,17 @@ class NarrativeReportPolisher:
                 "class, version or mode must not be generalized to the whole product or topic.",
                 "When known_limitations is not empty, say briefly in the summary which parts of the question remain "
                 "unanswered, and copy the relevant items into limitations.",
+                "tentative_cells have a real source quote but did not pass automatic verification. evidence_level "
+                "SOURCED means the quote answers the aspect but the source is third-party or a number or version "
+                "did not match exactly; RELATED means the quote is related background that does not directly "
+                "answer. When no frozen cell answers a part of the question, you may write a SOURCED tentative "
+                "cell's finding in the body or the comparison table, citing it like other cells, and the same "
+                "sentence must say it is unverified, for example '据第三方资料（未经核实），……'. Use RELATED cells "
+                "only as background. Never use tentative cells in executive_summary and never let them contradict "
+                "or replace a frozen cell.",
             ],
             "frozen_cells": cells,
+            "tentative_cells": leads,
             "research_question": question,
             "known_limitations": limitations,
         }
@@ -117,7 +127,7 @@ class NarrativeReportPolisher:
             payload = request_payload if not failure else {**request_payload, "previous_attempt_error": failure}
             parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload), allow_truncated=True)
             try:
-                narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required)
+                narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required, leads)
             except ValueError as exc:
                 failure = str(exc)
                 continue
@@ -149,12 +159,56 @@ def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, objec
     return sorted(cells, key=lambda item: str(item["cell_key"]))
 
 
+_LEAD_LEVELS = ("SOURCED", "RELATED")
+# 成文引用未经核实的线索时句子里要有的说明，没有时由程序补上
+_UNVERIFIED_MARKERS = ("未经核实", "待核实", "未核实", "第三方", "unverified", "third-party", "third party")
+
+
+def _validated_leads(synthesis_input: dict[str, object], verified_keys: set[str]) -> list[dict[str, object]]:
+    """未通过核验但有原文出处的线索。格式不对或与已核验单元格重复的线索直接略去，不影响成文。"""
+    leads: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for raw in synthesis_input.get("leads", []) or []:
+        if not isinstance(raw, dict):
+            continue
+        cell_key = str(raw.get("cell_key") or "").strip()
+        value = str(raw.get("candidate_value") or "").strip()
+        evidence_keys = _clean_strings(raw.get("evidence_keys"))
+        level = str(raw.get("evidence_level") or "").strip()
+        if (not cell_key or not value or not evidence_keys or level not in _LEAD_LEVELS
+                or cell_key in verified_keys or cell_key in seen):
+            continue
+        seen.add(cell_key)
+        leads.append({
+            "cell_key": cell_key,
+            "candidate_value": value,
+            "evidence_keys": evidence_keys,
+            "evidence_level": level,
+            "entity_label": str(raw.get("entity_label") or "").strip(),
+            "column_label": str(raw.get("column_label") or "").strip(),
+            "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
+        })
+    return sorted(leads, key=lambda item: str(item["cell_key"]))
+
+
+def _mark_unverified(text: str, lead_keys: set[str], chinese: bool) -> str:
+    """引用了线索却没有说明未经核实时，在第一个线索引用前补上说明。"""
+    if not any(f"[{key}]" in text for key in lead_keys):
+        return text
+    if any(marker in text.casefold() for marker in _UNVERIFIED_MARKERS):
+        return text
+    marker = "（未经核实）" if chinese else " (unverified)"
+    first = min(text.index(f"[{key}]") for key in lead_keys if f"[{key}]" in text)
+    return text[:first].rstrip() + marker + " " + text[first:]
+
+
 def _normalize_narrative(
     payload: object,
     cells: list[dict[str, object]],
     known_limitations: list[str],
     trusted_context: str = "",
     comparison_required: bool = False,
+    leads: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("NARRATIVE_INVALID_JSON")
@@ -163,7 +217,11 @@ def _normalize_narrative(
     if not title or not summary:
         raise ValueError("NARRATIVE_HEADER_MISSING")
     dropped_unsupported = 0
-    cells_by_key = {str(cell["cell_key"]): cell for cell in cells}
+    leads = leads or []
+    chinese = _writes_chinese(title)
+    lead_evidence = {key for lead in leads for key in lead["evidence_keys"]}  # type: ignore[union-attr]
+    # 正文和对比表可以引用线索，摘要只用已核验的单元格
+    cells_by_key = {str(cell["cell_key"]): cell for cell in [*cells, *leads]}
     # 摘要只是一两句结论，最多保留前两个引用；不属于任何已核验单元格的引用删掉
     summary = _limit_citations(summary, {key for cell in cells for key in cell["evidence_keys"]}, 2)  # type: ignore[union-attr]
     sections: list[dict[str, object]] = []
@@ -199,6 +257,7 @@ def _normalize_narrative(
                 # 只去掉写了来源里没有的数字或版本号的那一段，其余段落照常保留；全部去掉时才退回模板
                 dropped_unsupported += 1
                 continue
+            text = _mark_unverified(text, lead_evidence, chinese)
             paragraphs.append({
                 "text": text,
                 "cell_keys": cell_keys,
@@ -212,9 +271,14 @@ def _normalize_narrative(
     comparison_table = _normalize_comparison_table(
         payload.get("comparison_table"), cells_by_key, trusted_context
     )
+    if comparison_table:
+        for row in comparison_table["rows"]:  # type: ignore[index]
+            row["cells"] = [row["cells"][0], *(_mark_unverified(cell, lead_evidence, chinese)
+                                               for cell in row["cells"][1:])]
     if comparison_required and not comparison_table:
-        # 模型给的对比表整张不可用时，用已核验的单元格直接排出对比表，不让整篇退回模板
-        comparison_table = _cells_table(cells, question_chinese=_writes_chinese(title))
+        # 模型给的对比表整张不可用时，用已核验的单元格和有出处的线索直接排出对比表，不让整篇退回模板
+        comparison_table = _cells_table(cells, question_chinese=chinese,
+                                        leads=[lead for lead in leads if lead["evidence_level"] == "SOURCED"])
     requested_limitations = _clean_strings(payload.get("limitations"))
     limitations = [item for item in requested_limitations if item in known_limitations]
     return {
@@ -268,14 +332,19 @@ def _fallback(
     return NarrativeReportResult(narrative, _render_markdown(narrative), "FALLBACK", reason)
 
 
-def _cells_table(cells: list[dict[str, object]], *, question_chinese: bool = True) -> dict[str, object]:
-    """用已核验的单元格直接排出对比表：每行一个方面，每列一个研究对象，格子里是结论和第一条引用。"""
-    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in cells))[:5]
+def _cells_table(cells: list[dict[str, object]], *, question_chinese: bool = True,
+                 leads: list[dict[str, object]] | None = None) -> dict[str, object]:
+    """用已核验的单元格直接排出对比表：每行一个方面，每列一个研究对象，格子里是结论和第一条引用。
+    已核验的单元格空着的位置用有出处的线索填上，并标明待核实。"""
+    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in [*cells, *(leads or [])]))[:5]
     if not entities:
         return {}
     by_position = {(str(cell.get("entity_label") or ""), str(cell.get("column_label") or "")): cell for cell in cells}
+    lead_keys = {str(lead["cell_key"]) for lead in leads or []}
+    for lead in leads or []:
+        by_position.setdefault((str(lead.get("entity_label") or ""), str(lead.get("column_label") or "")), lead)
     rows = []
-    for column in dict.fromkeys(str(cell.get("column_label") or "") for cell in cells):
+    for column in dict.fromkeys(str(cell.get("column_label") or "") for cell in [*cells, *(leads or [])]):
         row_cells = [column or "-"]
         cell_keys: list[str] = []
         evidence_keys: list[str] = []
@@ -285,7 +354,8 @@ def _cells_table(cells: list[dict[str, object]], *, question_chinese: bool = Tru
                 row_cells.append("-")
                 continue
             key = str(list(cell["evidence_keys"])[0])
-            row_cells.append(f"{_first_sentence(str(cell['candidate_value']))} [{key}]")
+            pending = ("（待核实）" if question_chinese else " (unverified)") if str(cell["cell_key"]) in lead_keys else ""
+            row_cells.append(f"{_first_sentence(str(cell['candidate_value']))}{pending} [{key}]")
             cell_keys.append(str(cell["cell_key"]))
             evidence_keys.append(key)
         if cell_keys:
@@ -436,11 +506,15 @@ def _normalize_comparison_table(
     return {"columns": columns, "rows": rows}
 
 
-def _comparison_table_required(question: str) -> bool:
-    normalized = question.casefold()
-    comparison_markers = ("compare", "comparison", "versus", " vs ", "比较", "对比", "差异")
-    products = [product for product in ("postgresql", "mysql", "mongodb", "redis", "openai", "anthropic") if product in normalized]
-    return any(marker in normalized for marker in comparison_markers) and len(products) >= 2
+_COMPARISON_MARKERS = ("compare", "comparison", "versus", " vs ", " vs.", "比较", "对比", "差异", "区别", "异同")
+
+
+def _comparison_table_required(question: str, cells: list[dict[str, object]]) -> bool:
+    """问题是比较类、且已核验的结论与线索涉及至少两个研究对象时必须给对比表，与 Java 侧判断一致。"""
+    normalized = f" {question.casefold()} "
+    entities = {str(cell.get("entity_label") or "").strip().casefold() for cell in cells}
+    entities.discard("")
+    return any(marker in normalized for marker in _COMPARISON_MARKERS) and len(entities) >= 2
 
 
 def _escape_table_cell(value: object) -> str:

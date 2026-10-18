@@ -134,17 +134,21 @@ class ResearchAgentRoleResultService {
                 text(result.get("markdown")),
                 mapValue(result.get("narrative")),
                 text(input.get("question")),
-                comparisonTableRequired(text(input.get("question"))),
-                "research-synthesis-candidate.v2".equals(schema));
+                comparisonTableRequired(text(input.get("question")), java.util.stream.Stream.concat(
+                        listOfMaps(input.get("cells")).stream(), listOfMaps(input.get("leads")).stream()).toList()),
+                "research-synthesis-candidate.v2".equals(schema),
+                listOfMaps(input.get("leads")));
     }
 
-    private boolean comparisonTableRequired(String question) {
-        String normalized = question.toLowerCase();
-        boolean comparison = List.of("compare", "comparison", "versus", " vs ", "比较", "对比", "差异")
-                .stream().anyMatch(normalized::contains);
-        long products = List.of("postgresql", "mysql", "mongodb", "redis", "openai", "anthropic")
-                .stream().filter(normalized::contains).count();
-        return comparison && products >= 2;
+    private static final List<String> COMPARISON_MARKERS =
+            List.of("compare", "comparison", "versus", " vs ", " vs.", "比较", "对比", "差异", "区别", "异同");
+
+    /** 问题是比较类、且已核验的结论与线索涉及至少两个研究对象时必须有对比表，与 Worker 的判断一致。 */
+    boolean comparisonTableRequired(String question, List<Map<String, Object>> cells) {
+        String normalized = " " + question.toLowerCase(java.util.Locale.ROOT) + " ";
+        long entities = cells.stream().map(cell -> text(cell.get("entity_label")).toLowerCase(java.util.Locale.ROOT))
+                .filter(label -> !label.isBlank()).distinct().count();
+        return COMPARISON_MARKERS.stream().anyMatch(normalized::contains) && entities >= 2;
     }
 
     private void persistAuditDecisions(

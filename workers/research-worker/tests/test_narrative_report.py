@@ -228,13 +228,18 @@ def test_required_comparison_table_is_built_from_cells_when_llm_omits_it() -> No
     })})
     result = NarrativeReportPolisher(client).polish({
         "question": "比较 PostgreSQL 17 与 MySQL 8.4 的 JSON 能力",
-        "cells": [{"cell_key": "subject:answer", "candidate_value": "提供 JSON 能力", "evidence_keys": ["evidence:answer"], "guarded": False}],
+        "cells": [
+            {"cell_key": "subject:answer", "candidate_value": "提供 JSON 能力", "evidence_keys": ["evidence:answer"],
+             "guarded": False, "entity_label": "PostgreSQL 17", "column_label": "JSON"},
+            {"cell_key": "other:answer", "candidate_value": "支持 JSON 类型", "evidence_keys": ["evidence:other"],
+             "guarded": False, "entity_label": "MySQL 8.4", "column_label": "JSON"},
+        ],
         "limitations": [],
     })
 
     assert result.mode == "LLM"
     assert "## 对比表" in result.markdown
-    assert result.narrative["comparison_table"]["rows"][0]["evidence_keys"] == ["evidence:answer"]
+    assert result.narrative["comparison_table"]["rows"][0]["evidence_keys"] == ["evidence:other", "evidence:answer"]
 
 
 def test_supporting_quotes_and_labels_are_trusted_and_reach_the_model() -> None:

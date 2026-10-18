@@ -212,4 +212,59 @@ class ResearchAgentSynthesisValidationServiceTest {
                 true,
                 true)).isInstanceOf(BusinessException.class);
     }
+
+    private static Map<String, Object> leadNarrative(String prose) {
+        return Map.of(
+                "schema_version", "research-reader-report.v1",
+                "title", "Report",
+                "executive_summary", "Verified findings.",
+                "sections", List.of(Map.of("heading", "Result", "paragraphs", List.of(
+                        Map.of("text", "The measured latency is 50 ms.", "cell_keys", List.of("cell-a"),
+                                "evidence_keys", List.of("evidence-a")),
+                        Map.of("text", prose, "cell_keys", List.of("cell-b"),
+                                "evidence_keys", List.of("evidence-b"))))));
+    }
+
+    private static final List<Map<String, Object>> LEADS = List.of(Map.of(
+            "cell_key", "cell-b", "candidate_value", "Throughput is 900 rps", "evidence_level", "SOURCED",
+            "evidence_keys", List.of("evidence-b"), "supporting_quotes", List.of("[Vendor blog] Throughput is 900 rps")));
+
+    @Test
+    void narrativeMayCiteSourcedLeadsWithTheirOwnEvidence() {
+        String prose = "据第三方资料（未经核实），吞吐量为 900 rps。";
+        validator.validate(
+                Set.of("cell-a"),
+                List.of(Map.of("cell_key", "cell-a", "candidate_value", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                List.of(Map.of("cell_key", "cell-a", "claim_text", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                "# Report\nThe measured latency is 50 ms. [evidence-a]\n" + prose + " [evidence-b]",
+                leadNarrative(prose), "", false, true, LEADS);
+    }
+
+    @Test
+    void leadParagraphStillNeedsItsNumbersInTheLeadQuote() {
+        String prose = "据第三方资料（未经核实），吞吐量为 1200 rps。";
+        assertThatThrownBy(() -> validator.validate(
+                Set.of("cell-a"),
+                List.of(Map.of("cell_key", "cell-a", "candidate_value", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                List.of(Map.of("cell_key", "cell-a", "claim_text", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                "# Report\nThe measured latency is 50 ms. [evidence-a]\n" + prose + " [evidence-b]",
+                leadNarrative(prose), "", false, true, LEADS)).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void withoutLeadsAParagraphOnAnUnverifiedCellIsRejected() {
+        String prose = "据第三方资料（未经核实），吞吐量为 900 rps。";
+        assertThatThrownBy(() -> validator.validate(
+                Set.of("cell-a"),
+                List.of(Map.of("cell_key", "cell-a", "candidate_value", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                List.of(Map.of("cell_key", "cell-a", "claim_text", "Latency is 50 ms",
+                        "evidence_keys", List.of("evidence-a"), "guarded", false)),
+                "# Report\nThe measured latency is 50 ms. [evidence-a]\n" + prose + " [evidence-b]",
+                leadNarrative(prose), "", false, true)).isInstanceOf(BusinessException.class);
+    }
 }

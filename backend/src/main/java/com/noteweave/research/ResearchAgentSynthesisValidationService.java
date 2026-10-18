@@ -27,6 +27,26 @@ class ResearchAgentSynthesisValidationService {
             boolean comparisonTableRequired,
             boolean narrativeRequired
     ) {
+        validate(targetCells, frozenCells, claims, markdown, narrative, trustedContext, comparisonTableRequired,
+                narrativeRequired, List.of());
+    }
+
+    /**
+     * leads 是没通过核验但有原文出处的单元格线索：正文和对比表可以绑定并引用它们，
+     * 校验口径与已核验的单元格相同（引用只能来自所绑定的单元格，数字和版本必须出现在原文里）；
+     * 线索不算作成文必须覆盖的目标，也不能出现在结论清单里。
+     */
+    void validate(
+            Set<String> targetCells,
+            List<Map<String, Object>> frozenCells,
+            List<Map<String, Object>> claims,
+            String markdown,
+            Map<String, Object> narrative,
+            String trustedContext,
+            boolean comparisonTableRequired,
+            boolean narrativeRequired,
+            List<Map<String, Object>> leads
+    ) {
         if (claims.isEmpty() || markdown.isBlank()) throw invalid("Synthesis candidate is empty");
         Map<String, FrozenCell> byKey = new HashMap<>();
         for (Map<String, Object> cell : frozenCells) {
@@ -70,8 +90,18 @@ class ResearchAgentSynthesisValidationService {
             }
         }
         if (!claimedCells.equals(targetCells)) throw invalid("Synthesis candidate does not cover every target cell");
+        Map<String, FrozenCell> narrativeCells = new HashMap<>(byKey);
+        for (Map<String, Object> lead : leads == null ? List.<Map<String, Object>>of() : leads) {
+            String key = text(lead.get("cell_key"));
+            String value = text(lead.get("candidate_value"));
+            Set<String> evidence = new HashSet<>(strings(lead.get("evidence_keys")));
+            if (key.isBlank() || value.isBlank() || evidence.isEmpty() || narrativeCells.containsKey(key)) continue;
+            String context = String.join(" ", text(lead.get("entity_label")), text(lead.get("column_label")),
+                    String.join(" ", strings(lead.get("supporting_quotes"))));
+            narrativeCells.put(key, new FrozenCell(value, evidence, false, context));
+        }
         if (narrativeRequired) validateNarrative(
-                narrative, byKey, markdown, trustedContext, comparisonTableRequired);
+                narrative, narrativeCells, markdown, trustedContext, comparisonTableRequired);
     }
 
     private void validateNarrative(
