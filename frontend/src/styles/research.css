@@ -1918,6 +1918,26 @@
 .research-cell.status-candidate_ready { border-left-color: var(--tint-blue-ink); }
 .research-cell.status-conflicted { border-left-color: var(--tint-rose-ink); }
 .research-cell.status-gap { border-left-color: var(--tint-gold-ink); }
+/* 依据分级：有出处的线索用黄色，相关材料与未找到用灰色并减弱文字 */
+.research-cell.level-sourced { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning-soft) 60%, transparent); }
+.research-cell.level-related { border-left-color: var(--muted); }
+.research-cell.level-not_found { border-left-color: var(--border); }
+.research-cell.level-related .research-cell-value,
+.research-cell.level-not_found .research-cell-value { color: var(--muted); }
+
+.research-cell-lead {
+  color: var(--ink-2);
+}
+
+.research-cell-quote blockquote {
+  margin: 0;
+  padding: 4px 0 4px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
 
 .research-cell-value {
   overflow-wrap: anywhere;

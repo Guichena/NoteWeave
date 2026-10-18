@@ -17,14 +17,28 @@ describe("研究工作台附属面板", () => {
     const api = { listCells: vi.fn().mockResolvedValue(researchInsights.cells("done")) };
     render(<ResearchCellsPanel workspaceId="w" researchRunId="r" refreshKey="1" api={api} />);
 
-    const cell = await screen.findByRole("button", { name: /多值索引/ });
-    expect(screen.getByText(/已验证 1/)).toBeTruthy();
+    const cell = await screen.findByRole("button", { name: /生成列上的 B-tree/ });
+    expect(screen.getByText(/已核实 1/)).toBeTruthy();
     expect(screen.getByText(/2 个独立来源 · 置信度 91%/)).toBeTruthy();
 
     fireEvent.click(cell);
     expect(screen.getByText("可以在 JSON 数组上建多值索引")).toBeTruthy();
     expect(screen.getByText(/语义矛盾：JSON 列不能建任何索引/)).toBeTruthy();
     expect(screen.getByText("待修复")).toBeTruthy();
+  });
+
+  it("没通过核验的单元格显示有出处的线索，点开后列出原文和来源", async () => {
+    const api = { listCells: vi.fn().mockResolvedValue(researchInsights.cells("done")) };
+    render(<ResearchCellsPanel workspaceId="w" researchRunId="r" refreshKey="1" api={api} />);
+
+    const cell = await screen.findByRole("button", { name: /MEMBER OF/ });
+    expect(cell.className).toContain("level-sourced");
+    expect(screen.getByText(/有出处，待核实 1/)).toBeTruthy();
+
+    fireEvent.click(cell);
+    expect(screen.getByText(/没有通过自动核验/)).toBeTruthy();
+    expect(screen.getByText(/Multi-valued indexes can be used/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /第三方博客/ }).getAttribute("href")).toBe("https://example.com/mysql-multi-valued-index");
   });
 
   it("后端还没有提供接口时不显示面板", async () => {

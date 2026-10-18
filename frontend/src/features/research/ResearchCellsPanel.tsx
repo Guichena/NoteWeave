@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { researchApi, type ResearchApi } from "./api";
-import type { ResearchCell } from "./model";
+import type { ResearchCell, ResearchEvidenceLevel } from "./model";
 import { formatConfidence, useRunResource } from "./useRunResource";
 
 export const CELL_STATUS_LABELS: Record<string, string> = {
@@ -8,6 +8,14 @@ export const CELL_STATUS_LABELS: Record<string, string> = {
   CANDIDATE_READY: "有候选值",
   VERIFIED: "已验证",
   CONFLICTED: "存在冲突"
+};
+
+/** 单元格按依据强弱分四级，没通过核验的单元格也能看到找到了什么 */
+export const EVIDENCE_LEVEL_LABELS: Record<ResearchEvidenceLevel, string> = {
+  VERIFIED: "已核实",
+  SOURCED: "有出处，待核实",
+  RELATED: "相关材料",
+  NOT_FOUND: "未找到"
 };
 
 const CONFLICT_LABELS: Record<string, string> = {
@@ -22,7 +30,22 @@ type ResearchCellsPanelProps = {
   api?: Pick<ResearchApi, "listCells">;
 };
 
-/** 研究表格的单元格：候选值、独立来源数、置信度和冲突；点击单元格查看等价表述与冲突详情。 */
+/** 旧接口没有级别字段时按单元格状态推断 */
+export function evidenceLevel(cell: ResearchCell): ResearchEvidenceLevel {
+  if (cell.evidence_level) return cell.evidence_level;
+  return cell.cell_status === "VERIFIED" ? "VERIFIED" : "NOT_FOUND";
+}
+
+/** 单元格标签：存在冲突、已有候选值仍在核验时按状态显示，其余按依据级别显示 */
+export function cellLabel(cell: ResearchCell): string {
+  const level = evidenceLevel(cell);
+  if (level !== "VERIFIED" && level !== "SOURCED" && CELL_STATUS_LABELS[cell.cell_status] && cell.cell_status !== "GAP") {
+    return CELL_STATUS_LABELS[cell.cell_status];
+  }
+  return EVIDENCE_LEVEL_LABELS[level];
+}
+
+/** 研究表格的单元格：按依据强弱显示结论或线索；点击单元格查看等价表述、线索原文与冲突详情。 */
 export function ResearchCellsPanel({ workspaceId, researchRunId, refreshKey, api = researchApi }: ResearchCellsPanelProps) {
   const { data, unavailable, error } = useRunResource(
     () => api.listCells(workspaceId, researchRunId),
@@ -36,14 +59,17 @@ export function ResearchCellsPanel({ workspaceId, researchRunId, refreshKey, api
   if (data.length === 0) return null;
 
   const selected = data.find((cell) => cell.cell_key === selectedKey) ?? null;
-  const counts = countStatuses(data);
+  const counts = countLevels(data);
 
   return (
     <section className="task-card research-cells-panel" aria-label="单元格结论">
       <div className="research-plan-header">
         <strong>单元格结论</strong>
         <small>
-          {Object.entries(counts).map(([status, total]) => `${CELL_STATUS_LABELS[status] ?? status} ${total}`).join(" · ")}
+          {(Object.keys(EVIDENCE_LEVEL_LABELS) as ResearchEvidenceLevel[])
+            .filter((level) => counts[level])
+            .map((level) => `${EVIDENCE_LEVEL_LABELS[level]} ${counts[level]}`)
+            .join(" · ")}
         </small>
       </div>
       <div className="research-cells-scroll">
@@ -61,20 +87,25 @@ export function ResearchCellsPanel({ workspaceId, researchRunId, refreshKey, api
                 {matrix.columns.map((column) => {
                   const cell = matrix.lookup.get(`${entity}\u0000${column}`);
                   if (!cell) return <td key={column} className="research-cell-empty">-</td>;
+                  const level = evidenceLevel(cell);
                   const openConflicts = cell.conflicts.filter((conflict) => conflict.status === "OPEN").length;
+                  const label = cellLabel(cell);
+                  const value = level === "SOURCED" ? cell.lead_value : cell.candidate_value;
+                  const leadCount = cell.lead_quotes?.length ?? 0;
                   return (
                     <td key={column}>
                       <button
                         type="button"
-                        className={`research-cell status-${cell.cell_status.toLowerCase()}${cell.cell_key === selectedKey ? " active" : ""}`}
+                        className={`research-cell status-${cell.cell_status.toLowerCase()} level-${level.toLowerCase()}${cell.cell_key === selectedKey ? " active" : ""}`}
                         aria-pressed={cell.cell_key === selectedKey}
                         onClick={() => setSelectedKey(cell.cell_key === selectedKey ? "" : cell.cell_key)}
                       >
-                        <span className="research-cell-value">{cell.candidate_value || CELL_STATUS_LABELS[cell.cell_status] || cell.cell_status}</span>
+                        <span className="research-cell-value">{value || label}</span>
                         <small>
-                          {CELL_STATUS_LABELS[cell.cell_status] ?? cell.cell_status}
-                          {cell.independent_source_count > 0 ? ` · ${cell.independent_source_count} 个独立来源` : ""}
-                          {cell.confidence_ppm !== null ? ` · 置信度 ${formatConfidence(cell.confidence_ppm)}` : ""}
+                          {label}
+                          {cell.candidate_value && cell.independent_source_count > 0 ? ` · ${cell.independent_source_count} 个独立来源` : ""}
+                          {cell.candidate_value && cell.confidence_ppm !== null ? ` · 置信度 ${formatConfidence(cell.confidence_ppm)}` : ""}
+                          {level === "RELATED" && leadCount > 0 ? ` · ${leadCount} 段原文` : ""}
                           {openConflicts > 0 ? ` · ${openConflicts} 处冲突` : ""}
                         </small>
                       </button>
@@ -86,12 +117,14 @@ export function ResearchCellsPanel({ workspaceId, researchRunId, refreshKey, api
           </tbody>
         </table>
       </div>
-      {selected ? <CellDetail cell={selected} /> : <small>点击单元格查看支撑这一结论的等价表述和冲突。</small>}
+      {selected ? <CellDetail cell={selected} /> : <small>点击单元格查看支撑这一结论的原文、待核实的线索和冲突。</small>}
     </section>
   );
 }
 
 function CellDetail({ cell }: { cell: ResearchCell }) {
+  const level = evidenceLevel(cell);
+  const quotes = cell.lead_quotes ?? [];
   return (
     <div className="research-cell-detail" aria-label="单元格详情">
       <strong>{cell.entity_label} · {cell.column_label}</strong>
@@ -107,7 +140,32 @@ function CellDetail({ cell }: { cell: ResearchCell }) {
             ))}
           </ul>
         </>
-      ) : <small>还没有支撑这一单元格的结论。</small>}
+      ) : null}
+      {level !== "VERIFIED" && quotes.length > 0 ? (
+        <>
+          <small>
+            {level === "SOURCED"
+              ? "找到了原文出处，但没有通过自动核验，例如只有第三方资料，或数字、版本与引用片段对不上"
+              : "以下原文与研究对象有关，但没有直接回答这一项"}
+          </small>
+          {level === "SOURCED" && cell.lead_value ? <span className="research-cell-lead">{cell.lead_value}</span> : null}
+          <ul>
+            {quotes.map((quote) => (
+              <li key={quote.evidence_key} className="research-cell-quote">
+                <blockquote>{quote.quote_text}</blockquote>
+                <small>
+                  {quote.source_url
+                    ? <a href={quote.source_url} target="_blank" rel="noreferrer">{quote.source_title || quote.source_url}</a>
+                    : quote.source_title}
+                </small>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+      {cell.equivalent_claims.length === 0 && quotes.length === 0
+        ? <small>读过的资料里没有找到与这一项相关的内容。</small>
+        : null}
       {cell.conflicts.length > 0 ? (
         <>
           <small>冲突</small>
@@ -138,8 +196,11 @@ export function buildMatrix(cells: ResearchCell[]) {
   return { entities, columns, lookup };
 }
 
-function countStatuses(cells: ResearchCell[]) {
-  const counts: Record<string, number> = {};
-  for (const cell of cells) counts[cell.cell_status] = (counts[cell.cell_status] ?? 0) + 1;
+function countLevels(cells: ResearchCell[]) {
+  const counts: Partial<Record<ResearchEvidenceLevel, number>> = {};
+  for (const cell of cells) {
+    const level = evidenceLevel(cell);
+    counts[level] = (counts[level] ?? 0) + 1;
+  }
   return counts;
 }

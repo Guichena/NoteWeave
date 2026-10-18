@@ -457,7 +457,7 @@ const cellFixtures: ResearchCell[] = [
       { evidence_key: "ev-pg-1", claim_text: "jsonb 支持 GIN 索引，提供 jsonb_ops 与 jsonb_path_ops 两种操作符类", source_domain: "postgresql.org" },
       { evidence_key: "ev-pg-2", claim_text: "可以对 jsonb 字段建 GIN 索引，或对提取出的值建表达式索引", source_domain: "crunchydata.com" }
     ],
-    independent_source_count: 2, confidence_ppm: 910000, conflicts: []
+    independent_source_count: 2, confidence_ppm: 910000, conflicts: [], evidence_level: "VERIFIED"
   },
   {
     cell_key: "entity-postgresql:dim-operators", entity_label: "PostgreSQL 17", column_label: "可加速的查询运算符",
@@ -478,7 +478,12 @@ const cellFixtures: ResearchCell[] = [
   },
   {
     cell_key: "entity-mysql:dim-operators", entity_label: "MySQL 8.4", column_label: "可加速的查询运算符",
-    cell_status: "GAP", candidate_value: null, equivalent_claims: [], independent_source_count: 0, confidence_ppm: null, conflicts: []
+    cell_status: "GAP", candidate_value: null, equivalent_claims: [], independent_source_count: 0, confidence_ppm: null, conflicts: [],
+    evidence_level: "SOURCED", lead_value: "JSON_CONTAINS() 与 MEMBER OF() 可以用上多值索引",
+    lead_quotes: [{
+      evidence_key: "ev-my-lead", quote_text: "Multi-valued indexes can be used with MEMBER OF(), JSON_CONTAINS() and JSON_OVERLAPS().",
+      source_title: "MySQL 多值索引实践（第三方博客）", source_url: "https://example.com/mysql-multi-valued-index"
+    }]
   }
 ];
 

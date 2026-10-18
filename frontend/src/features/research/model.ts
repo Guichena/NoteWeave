@@ -507,6 +507,20 @@ export type ResearchCell = {
   independent_source_count: number;
   confidence_ppm: number | null;
   conflicts: ResearchCellConflict[];
+  /** 依据强弱：已核实、有出处、相关材料、未找到；旧接口没有这个字段 */
+  evidence_level?: ResearchEvidenceLevel;
+  /** 没通过核验时保留下来的线索结论与原文 */
+  lead_value?: string;
+  lead_quotes?: ResearchLeadQuote[];
+};
+
+export type ResearchEvidenceLevel = "VERIFIED" | "SOURCED" | "RELATED" | "NOT_FOUND";
+
+export type ResearchLeadQuote = {
+  evidence_key: string;
+  quote_text: string;
+  source_title: string;
+  source_url: string;
 };
 
 export type ResearchDiscoveryProposal = {
