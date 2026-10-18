@@ -61,20 +61,26 @@ def plan_repair_queries(context, target, llm):
             except Exception as exc:
                 errors = [str(exc)[:240]]
     claims = [str(c.get("claim_text", "")) for c in target.get("claims", []) if isinstance(c, dict)]
-    # 规则检索词按列生成：优先用列的检索意图（多为英文），比中文列名更容易命中官方文档
-    bases = claims or [" ".join([context.entity_label, (c.search_intents[0] if c.search_intents else c.label)])
-                       for c in context.columns] or [context.entity_label]
+    # 规则检索词：先用每列尚未试过的检索意图原文（规划时已写成完整的检索词），再给它们加上策略后缀；
+    # 没有检索意图的列才用实体名加列名。切换语言时直接用用户的原问题，不把中英文拼在一起
+    intents = [intent for c in context.columns for intent in c.search_intents if intent.strip()]
+    bases = claims or intents or [" ".join([context.entity_label, c.label]) for c in context.columns] or [context.entity_label]
     suffixes = {"COUNTER_EVIDENCE": ["exceptions errata", "version differences counterexample"],
                 "SWITCH_SOURCE_TYPE": ["official documentation", "technical report"],
                 "NARROW": ["implementation requirements", "documented limitations"],
-                "SWITCH_LANGUAGE": ["官方说明 适用条件", "primary research limitations"],
+                "SWITCH_LANGUAGE": ["empirical study", "report data"],
                 "BROADEN": ["overview", "survey"]}[strategy]
+    candidates = ([context.question] if strategy == "SWITCH_LANGUAGE" and context.question else [])
+    if not claims:
+        candidates.extend(bases)
+    candidates.extend(f"{base[:140]} {suffix}" for suffix in suffixes for base in bases)
     specs = []
-    for base in bases:
-        for suffix in suffixes:
-            query = normalize_query(f"{base[:140]} {suffix}")[:200]
-            if not query_rejection_reason(query, specs, tried) and len(specs) < context.max_queries:
-                specs.append(ResearchQuerySpec(query=query, family="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
-                                              search_angle="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
-                                              search_lane="COUNTERFACTUAL" if strategy == "COUNTER_EVIDENCE" else "DEEP_FOCUS"))
+    for candidate in candidates:
+        query = normalize_query(candidate)[:200]
+        if len(specs) >= context.max_queries:
+            break
+        if not query_rejection_reason(query, specs, tried):
+            specs.append(ResearchQuerySpec(query=query, family="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
+                                          search_angle="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
+                                          search_lane="COUNTERFACTUAL" if strategy == "COUNTER_EVIDENCE" else "DEEP_FOCUS"))
     return CellQueryPlan(specs, "RULE", ["REPAIR_QUERY_LLM_UNAVAILABLE_OR_INVALID"]), strategy

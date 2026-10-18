@@ -89,7 +89,9 @@ class NarrativeReportPolisher:
                 "Write title, summary, headings, prose and table in the same language as research_question; keep "
                 "product names, API names and quoted terms in their original form.",
                 "Use entity_label and column_label to say which subject and aspect each fact belongs to; "
-                "supporting_quotes are verified source text you may draw details from.",
+                "supporting_quotes are verified source text you may draw details from; a leading [title] is the "
+                "source's title. When the question asks for identifiers such as JEP, PEP or RFC numbers or versions, "
+                "state them explicitly, taking them from the quote or its title.",
                 "State each fact with exactly the scope its quote supports: a statement about one option, operator "
                 "class, version or mode must not be generalized to the whole product or topic.",
                 "When known_limitations is not empty, say briefly in the summary which parts of the question remain "

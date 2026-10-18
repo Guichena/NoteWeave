@@ -155,21 +155,23 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "Entities are concrete things such as products, versions, standards or systems, never sub-questions. "
             "When the question asks several facts about one subject, use that subject as the single entity and "
             "make each asked fact a dimension.",
-            "Keep only dimensions needed to answer the question; perspectives help choose them but must not add "
-            "dimensions the question does not need. Prefer the smallest table that fully answers the question.",
+            "Keep only dimensions needed to answer the question, including the expert-expected ones described "
+            "next; perspectives help choose them but must not add other dimensions. Prefer the smallest table that "
+            "fully answers the question.",
             "Every part of the question must map to at least one dimension. Also cover what an expert reviewer "
             "would expect in a complete answer to each part, such as behaviour on failure or rebalance when "
             "asking about ordering, each product's locking when asking about concurrency, the production "
-            "counterpart when asking about development tooling, or the cause when asking when a problem was "
-            "fixed. Keep the table at most 6 dimensions.",
-            "When the question compares organizations, studies, vendors or implementations without naming them, "
+            "counterpart when asking about development tooling, the cause when asking when a problem was "
+            "fixed, or the release that made it effective when asking what a change brings. Keep the table at most 6 dimensions.",
+            "When the question compares organizations, studies, vendors or implementations without naming them "
+            "(and is not a whether-X-improves-Y question, which the supporting/opposing rule below covers), "
             "name 2 to 4 specific ones as entities (for example a published study with its organization and year), "
             "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "
             "'empirical studies'.",
             "Keep version numbers written in the question in the entity labels, for example 'MySQL 8.4'.",
             "A version, release or date that the question asks for is an answer, not an entity: for 'which JDK "
-            "version made X final' the entity is X and the version is a dimension. Never add dimensions the "
-            "question does not ask about, such as support status or history.",
+            "version made X final' the entity is X and the version is a dimension. Apart from the expert-expected "
+            "dimensions above, never add dimensions the question does not ask about, such as support status or history.",
             "When a dimension does not apply to an entity (for example 'what OIDC adds' for the entity "
             "'OAuth 2.1'), list that pair in not_applicable; those cells are not researched. Prefer one entity for "
             "the overall topic when most dimensions would not apply to the separate entities.",
@@ -179,7 +181,8 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "For a question that asks whether X improves or causes Y and wants supporting and opposing evidence "
             "(or results from different studies or organizations), use one entity for the topic and the "
             "dimensions: supporting evidence with its source, opposing or inconclusive evidence with its source, "
-            "and the conditions, methods or confounders that explain the difference.",
+            "and the conditions, methods or confounders that explain the difference. This rule wins over the rule "
+            "about naming organizations or studies as entities: name the studies inside the evidence cells instead.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
             "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "

@@ -277,15 +277,23 @@ class ResearchAgentRoleWorkflowService {
         List<String> quotes = new ArrayList<>();
         for (String key : evidenceKeys) {
             if (quotes.size() >= MAX_SUPPORTING_QUOTES) break;
-            jdbcTemplate.queryForList("""
-                    select quote_text from source_evidence
+            // 原文前加上来源标题：PEP、JEP、RFC 编号常常只出现在标题里，成文时需要据此写出编号
+            jdbcTemplate.query("""
+                    select source_title, quote_text from source_evidence
                     where research_run_id = ? and evidence_key = ? and quote_text is not null
-                    """, String.class, runId, key).stream().findFirst()
-                    .map(String::strip).filter(quote -> !quote.isEmpty())
-                    .map(quote -> quote.length() > MAX_QUOTE_CHARS ? quote.substring(0, MAX_QUOTE_CHARS) : quote)
+                    """, (rs, rowNum) -> withTitle(rs.getString(1), rs.getString(2)), runId, key).stream().findFirst()
+                    .filter(quote -> !quote.isEmpty())
                     .ifPresent(quotes::add);
         }
         return quotes;
+    }
+
+    private static String withTitle(String title, String quote) {
+        String text = quote == null ? "" : quote.strip();
+        if (text.isEmpty()) return "";
+        if (text.length() > MAX_QUOTE_CHARS) text = text.substring(0, MAX_QUOTE_CHARS);
+        String name = title == null ? "" : title.replaceAll("\\s+", " ").strip();
+        return name.isEmpty() || text.contains(name) ? text : "[" + name + "] " + text;
     }
 
     private ResearchAgentTaskCoordinatorService.CoordinatorReceipt createRoleTask(

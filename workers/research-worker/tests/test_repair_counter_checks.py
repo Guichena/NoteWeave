@@ -182,3 +182,27 @@ def test_executor_caps_llm_calls_at_the_authoritative_snapshot_budget(monkeypatc
     monkeypatch.setattr(deep_cell_executor, "_build_execution_llm", build)
     deep_cell_executor.DeepCellExecutor(_Permit(), "worker-a", toolchain=DeterministicFakeToolchain())(_command(), _claim(_snapshot()))
     assert limits == [2]
+
+
+def test_rule_repair_queries_use_untried_column_intents_instead_of_gluing_the_entity_label() -> None:
+    from app.cell_query_planner import CellColumn, CellQueryContext
+    from app.repair_queries import plan_repair_queries
+
+    column = CellColumn(key="dim-1", label="支持证据及来源", description="", search_intents=(
+        "microservices faster deployments study", "microservices release frequency survey report",
+        "microservices delivery speed case study"))
+    tried = ("microservices faster deployments study", "microservices delivery speed productivity long-term",
+             "microservices adoption empirical study deployment frequency productivity ACM",
+             "site:acm.org microservices empirical study deployment frequency productivity")
+    context = CellQueryContext(question="微服务架构是否提高了中型团队的长期交付速度？",
+                               entity_label="中型团队微服务架构对长期交付速度的影响", columns=(column,), tried_queries=tried)
+
+    plan, strategy = plan_repair_queries(context, {"repair_cause": "MARGINAL_GAIN_EXHAUSTED", "tried_queries": list(tried)}, None)
+    queries = [spec.query for spec in plan.specs]
+
+    assert strategy == "SWITCH_LANGUAGE"
+    assert queries[0].startswith("微服务架构是否提高了中型团队的长期交付速度")
+    assert "microservices release frequency survey report" in queries
+    assert not any("中型团队微服务架构对长期交付速度的影响" in query for query in queries)
+    assert not any("faster deployments study" in query and "empirical" not in query and "report" not in query
+                   for query in queries)
