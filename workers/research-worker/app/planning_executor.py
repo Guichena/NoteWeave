@@ -178,6 +178,9 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems) -> o
             "preferring ones seen in probe_results; never use a collective entity such as 'organizations' or "
             "'empirical studies'.",
             "Keep version numbers written in the question in the entity labels, for example 'MySQL 8.4'.",
+            "Every dimension applies to every entity: the table is entities times dimensions. Never put an entity "
+            "name in a dimension label; write 'JSON index types', not 'PostgreSQL 17 JSON index types' plus "
+            "'MySQL 8.4 JSON index types'.",
             "A version, release or date that the question asks for is an answer, not an entity: for 'which JDK "
             "version made X final' the entity is X and the version is a dimension. Apart from the expert-expected "
             "dimensions above, never add dimensions the question does not ask about, such as support status or history.",
@@ -280,6 +283,7 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
     dimensions, coverage_problems = _cover_required_points(raw.get("required_points"), dimensions, max_columns,
                                                            repair=final_attempt)
     problems.extend(coverage_problems)
+    dimensions, renamed = _shared_dimensions(dimensions, entities)
     # 答案格式不在允许范围内时 Java 会按 SHORT_TEXT 处理，这里同样处理，不因此拒绝整张表
     dimensions = [
         dimension if str(dimension.get("answer_format") or "").upper() in formats
@@ -325,12 +329,64 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         "authoritative_domains": [
             str(item) for item in raw.get("authoritative_domains", []) if isinstance(item, str)
         ][:8] if isinstance(raw.get("authoritative_domains"), list) else [],
+        # 改名合并过的列不再沿用原来的不适用标记：原标记针对的是带实体名的列，合并后对所有实体都适用
         "not_applicable": [
             {"entity": str(item.get("entity") or ""), "dimension": str(item.get("dimension") or "")}
-            for item in raw.get("not_applicable", []) if isinstance(item, dict)
+            for item in raw.get("not_applicable", [])
+            if isinstance(item, dict) and _label_key(item.get("dimension")) not in renamed
         ][:60] if isinstance(raw.get("not_applicable"), list) else [],
     }
     return PlanDraft(plan, [])
+
+
+def _label_key(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _shared_dimensions(
+    dimensions: list[dict[str, object]], entities: list[dict[str, object]]
+) -> tuple[list[dict[str, object]], set[str]]:
+    """去掉列名里的研究对象名，并合并去掉后同名的列。
+
+    表格是研究对象乘以列，列名带对象名（如 PostgreSQL 17 JSON 索引类型、MySQL 8.4 JSON 索引类型）时，
+    交叉出的单元格（MySQL 8.4 的 PostgreSQL 17 JSON 索引类型）没有意义，既占检索预算又永远是缺口。
+    返回新的列和被改名的原列名（按 _label_key 归一）。只有一个研究对象时不处理。
+    """
+    if len(entities) < 2:
+        return dimensions, set()
+    names: list[str] = []
+    for entity in entities:
+        names.append(str(entity.get("label") or ""))
+        aliases = entity.get("aliases")
+        if isinstance(aliases, list):
+            names.extend(str(alias) for alias in aliases)
+    names = sorted({name.strip() for name in names if len(name.strip()) >= 2}, key=len, reverse=True)
+    if not names:
+        return dimensions, set()
+    # 英文名两侧不能紧挨字母或数字，否则别名 PG 会把 upgrade 里的 pg 也去掉
+    pattern = re.compile("|".join(rf"(?<![A-Za-z0-9]){re.escape(name)}(?![A-Za-z0-9])" for name in names),
+                         re.IGNORECASE)
+    merged: list[dict[str, object]] = []
+    by_label: dict[str, dict[str, object]] = {}
+    renamed: set[str] = set()
+    for dimension in dimensions:
+        label = " ".join(str(dimension.get("label") or "").split())
+        stripped = " ".join(pattern.sub(" ", label).split()).strip(" -:：·/、,，的")
+        if not stripped or stripped == label:
+            stripped = label
+        else:
+            renamed.add(_label_key(label))
+        key = _label_key(stripped)
+        existing = by_label.get(key)
+        if existing is None:
+            item = {**dimension, "label": stripped}
+            by_label[key] = item
+            merged.append(item)
+            continue
+        intents = [*existing.get("search_intents", []), *dimension.get("search_intents", [])]
+        existing["search_intents"] = list(dict.fromkeys(str(intent) for intent in intents if str(intent).strip()))[:3]
+        existing["high_risk"] = bool(existing.get("high_risk")) or bool(dimension.get("high_risk"))
+    return merged, renamed
 
 
 def _cover_required_points(

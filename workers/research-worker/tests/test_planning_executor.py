@@ -324,3 +324,43 @@ def test_required_point_without_a_dimension_is_sent_back_then_filled_on_the_last
 def test_plan_without_required_points_is_not_checked() -> None:
     draft = validate_plan(_plan(dimensions=[{"label": "A"}, {"label": "B"}]), PLANNING_INPUT)
     assert draft.plan is not None
+
+
+def test_entity_names_are_removed_from_dimension_labels_and_duplicates_merge() -> None:
+    """列名带研究对象名时交叉出的单元格（MySQL 的 PostgreSQL 索引类型）没有意义，去掉对象名并合并同名列。"""
+    draft = validate_plan(_plan(
+        entities=[{"label": "PostgreSQL 17", "aliases": ["PG"]}, {"label": "MySQL 8.4"}],
+        dimensions=[
+            {"label": "PostgreSQL 17 JSON 索引类型", "description": "PG 索引", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["PostgreSQL JSON index types"]},
+            {"label": "MySQL 8.4 JSON 索引类型", "description": "MySQL 索引", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["MySQL JSON index types"]},
+            {"label": "索引代价", "description": "写入开销", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["index write overhead"]},
+            {"label": "Upgrade path", "description": "升级路径", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["upgrade"]},
+        ],
+        not_applicable=[{"entity": "MySQL 8.4", "dimension": "PostgreSQL 17 JSON 索引类型"},
+                        {"entity": "MySQL 8.4", "dimension": "索引代价"}],
+    ), PLANNING_INPUT)
+
+    assert draft.problems == []
+    labels = [item["label"] for item in draft.plan["dimensions"]]
+    assert labels == ["JSON 索引类型", "索引代价", "Upgrade path"]
+    assert draft.plan["dimensions"][0]["search_intents"] == ["PostgreSQL JSON index types", "MySQL JSON index types"]
+    # 原来针对带对象名列的不适用标记不再沿用，其他标记保留
+    assert draft.plan["not_applicable"] == [{"entity": "MySQL 8.4", "dimension": "索引代价"}]
+
+
+def test_single_entity_dimension_labels_are_kept() -> None:
+    draft = validate_plan(_plan(
+        entities=[{"label": "PostgreSQL 17"}],
+        dimensions=[
+            {"label": "PostgreSQL 17 增量备份命令", "description": "命令", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["pg_basebackup incremental"]},
+            {"label": "合并工具", "description": "pg_combinebackup", "answer_format": "LIST",
+             "high_risk": False, "search_intents": ["pg_combinebackup"]},
+        ],
+    ), PLANNING_INPUT)
+
+    assert [item["label"] for item in draft.plan["dimensions"]] == ["PostgreSQL 17 增量备份命令", "合并工具"]
