@@ -454,6 +454,8 @@ _META_DIMENSION = re.compile(
     r"|证据强度|可信度|置信度|(?i:confidence|evidence strength)"
     # 以引用、参考文献结尾的列（如 Relevant RFC references、发布与改善原始引用）也是在要求列出处
     r"|(?i:\b(?:references?|citations?))$|引用$"
+    # 以出处结尾的列（如 版本与官方文档出处）；以来源结尾的不算，冲突题的 支持的证据与来源 是正常列
+    r"|出处$|文档出处"
     # 只讲“官方文档说明”“官方文档条目或链接”的列
     r"|^(?:官方)?(?:文档|规范)(?:说明|页面|链接|原文|条目)$|^(?i:cite)\b|^引用"
     r"|(?i:^(?:the\s+)?official\s+(?:documentation|docs)\b.*\b(?:entry|entries|url|urls|page|pages|links?|explanation|says?)\b)")
