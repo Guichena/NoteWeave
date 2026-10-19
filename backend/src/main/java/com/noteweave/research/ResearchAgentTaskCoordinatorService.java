@@ -202,20 +202,26 @@ public class ResearchAgentTaskCoordinatorService {
         }
         Set<String> mergedCells = new LinkedHashSet<>();
         for (List<CounterfactualTarget> group : mergeable.values()) {
-            List<CellScope> cells = new ArrayList<>();
-            List<CounterfactualTarget> groupTargets = new ArrayList<>();
+            List<CellScope> eligibleCells = new ArrayList<>();
+            List<CounterfactualTarget> eligibleTargets = new ArrayList<>();
             for (CounterfactualTarget target : group) {
                 CellScope cell = lockRepairableCell(run.id(), target.cellKey());
                 if (cell.highRisk() || "EVIDENCE_CONFLICT".equals(repairCause(run.id(), cell.cellKey(), target))) continue;
-                cells.add(cell);
-                groupTargets.add(target);
+                eligibleCells.add(cell);
+                eligibleTargets.add(target);
             }
-            if (cells.size() < 2) continue;
-            MergedRepairReceipt merged = planMergedRepair(run, brief, sources, command, cells, groupTargets);
-            if (merged == null) continue;
-            cells.forEach(cell -> mergedCells.add(cell.cellKey()));
-            if (merged.existed()) replayed++; else created++;
-            if (merged.enqueued()) enqueued++;
+            // 提交时单个补查任务最多绑定 MAX_MERGED_REPAIR_CELLS 个单元格，超过时均分成几个任务，
+            // 否则 4 列的冲突类问题会建出 4 格任务，每次提交都被判为快照失效
+            for (int[] range : mergedRepairChunks(eligibleCells.size())) {
+                List<CellScope> cells = eligibleCells.subList(range[0], range[1]);
+                if (cells.size() < 2) continue;
+                MergedRepairReceipt merged = planMergedRepair(run, brief, sources, command,
+                        cells, eligibleTargets.subList(range[0], range[1]));
+                if (merged == null) continue;
+                cells.forEach(cell -> mergedCells.add(cell.cellKey()));
+                if (merged.existed()) replayed++; else created++;
+                if (merged.enqueued()) enqueued++;
+            }
         }
         for (CounterfactualTarget target : targets) {
             if (mergedCells.contains(target.cellKey())) continue;
@@ -279,6 +285,23 @@ public class ResearchAgentTaskCoordinatorService {
     }
 
     private record MergedRepairReceipt(boolean existed, boolean enqueued) { }
+
+    /** 与提交校验的单任务单元格上限一致。 */
+    static final int MAX_MERGED_REPAIR_CELLS = 3;
+
+    /** 把 n 个单元格尽量均匀地分成每组不超过上限的区间，例如 4 个分成 2+2，7 个分成 3+2+2。 */
+    static List<int[]> mergedRepairChunks(int size) {
+        if (size <= 0) return List.of();
+        int chunks = (size + MAX_MERGED_REPAIR_CELLS - 1) / MAX_MERGED_REPAIR_CELLS;
+        List<int[]> result = new ArrayList<>();
+        int start = 0;
+        for (int index = 0; index < chunks; index++) {
+            int length = size / chunks + (index < size % chunks ? 1 : 0);
+            result.add(new int[] {start, start + length});
+            start += length;
+        }
+        return result;
+    }
 
     /** 为同一研究对象的多个缺口单元格建一个补查任务；预算不足或没有可用来源时返回 null，交给逐个单元格的路径处理。 */
     private MergedRepairReceipt planMergedRepair(

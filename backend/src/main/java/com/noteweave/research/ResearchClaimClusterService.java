@@ -117,6 +117,9 @@ class ResearchClaimClusterService {
             changed.add(cellKey);
         }
         for (var candidate : raw == null ? List.<ResearchAgentCompletionEnvelope.Candidate>of() : envelope.candidates()) {
+            // 缺口单元格的弱支持候选只记录线索，不参与候选簇；与上面无簇时的回退路径一致
+            if (candidate.evidenceKeys().stream().map(evidence::get)
+                    .allMatch(item -> item != null && !"SUPPORTS".equals(item.relationType()))) continue;
             boolean represented = false;
             for (JsonNode cluster : clusters) {
                 Set<String> keys = new HashSet<>(); cluster.path("evidence_keys").forEach(key -> keys.add(key.asText()));

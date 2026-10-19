@@ -139,6 +139,27 @@ class ResearchAgentEvidenceEnforcementNegativeTest {
                 fixture, receipt, "RELATION_NOT_SUPPORTING", "NOT_ENOUGH_INFO");
     }
 
+    /** 缺口单元格的弱支持候选没有候选簇，带着候选簇诊断提交时也只记为线索，不能让整次提交失败。 */
+    @Test
+    void weakSupportCandidateWithoutClusterIsRecordedNotRejected() {
+        Fixture fixture = fixture("prefix trusted quote 0 suffix");
+        ResearchAgentCompletionEnvelope base = candidateEnvelope(fixture, "trusted quote 0", "value-0", "WEAK_SUPPORT", "value-0");
+        var diagnostics = Map.<String, Object>of("schema_version", "research-extraction-diagnostics.v1",
+                "termination_reason", "ACCEPTED_CARDS", "accepted_count", 1, "rejected_count", 0,
+                "rejection_counts", Map.of(), "provider_receipt", Map.of("purpose", "research.extract",
+                        "transport", "openai-compatible", "model", "", "call_count", 0, "response_digest", "",
+                        "response_chars", 0), "claim_clusters", List.of());
+        ResearchAgentCompletionEnvelope envelope = signed(new ResearchAgentCompletionEnvelope(
+                "research-agent-completion.v2", base.taskId(), base.workerInstanceId(), base.leaseEpoch(), base.fencingToken(),
+                base.executionKey(), base.taskSnapshotDigest(), base.terminationReason(), base.budgetUsage(),
+                base.telemetry(), base.traceDigest(), base.evidence(), base.candidates(), null, diagnostics, null));
+
+        ResearchAgentCompletionReceipt receipt = completionService.complete(fixture.taskId(), envelope);
+
+        assertCandidateRejectedWithoutPromotion(
+                fixture, receipt, "RELATION_NOT_SUPPORTING", "NOT_ENOUGH_INFO");
+    }
+
     @Test
     void shouldRejectClaimCandidateMismatchWithoutPromotion() {
         Fixture fixture = fixture("prefix trusted quote 0 suffix");
