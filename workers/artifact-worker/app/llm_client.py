@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
 import urllib.error
 import urllib.request
+from copy import copy
 from typing import Protocol
 
 import httpx
@@ -102,6 +104,7 @@ class OpenAICompatibleLlmClient:
         base_url: str = "",
         timeout_seconds: int = 60,
         max_total_calls: int = 64,
+        session_id: str = "",
     ) -> None:
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
@@ -112,6 +115,7 @@ class OpenAICompatibleLlmClient:
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.session_id = session_id
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
@@ -177,6 +181,7 @@ class OpenAICompatibleLlmClient:
                     },
                 ],
                 response_format={"type": "json_object"},
+                extra_headers={"X-Session-ID": self.session_id} if self.session_id else None,
             )
         except (OpenAIError, ValueError) as exc:
             with self._usage_lock:
@@ -211,6 +216,24 @@ class OpenAICompatibleLlmClient:
     def reserve_prior_calls(self, count):
         with self._usage_lock:
             self.prior_call_count = max(0, int(count))
+
+
+def routing_session_id(kind: str, workspace_id: str, stable_id: str) -> str:
+    if not workspace_id.strip() or not stable_id.strip():
+        raise ValueError("routing session requires workspace and stable task identity")
+    digest = hashlib.sha256(f"{kind}\0{workspace_id}\0{stable_id}".encode("utf-8")).hexdigest()
+    return f"noteweave-{kind}-{digest}"
+
+
+def bind_llm_session(
+    client: LlmClient | None, kind: str, workspace_id: str, stable_id: str,
+) -> LlmClient | None:
+    """返回带任务会话标识的浅拷贝；共享的客户端本身不保存会话，并行任务互不影响。"""
+    if not isinstance(client, OpenAICompatibleLlmClient):
+        return client
+    bound = copy(client)
+    bound.session_id = routing_session_id(kind, workspace_id, stable_id)
+    return bound
 
 
 def build_default_llm_client() -> LlmClient | None:

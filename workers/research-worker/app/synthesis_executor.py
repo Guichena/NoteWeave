@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.agent_command_contract import ResearchAgentCommand
 from app.agent_task_client import AgentTaskClaim
 from app.evidence_audit_executor import _role_completion
-from app.llm_client import LlmClient, build_default_llm_client
+from app.llm_client import LlmClient, bind_llm_session, build_default_llm_client
 from app.narrative_report import NarrativeReportPolisher
 from app.task_snapshot_contract import require_trusted_claim_snapshot
 from app.deep_cell_executor import require_worker_instance_id
@@ -38,7 +38,11 @@ class SynthesisExecutor:
             guarded = bool(cell.get("guarded", False))
             rendered = f"{value} (limited by unresolved evidence)" if guarded else value
             claims.append({"claim_text": rendered, "cell_key": cell_key, "evidence_keys": evidence_keys, "guarded": guarded})
-        narrative_result = NarrativeReportPolisher(self.llm_client).polish(synthesis_input)
+        llm_client = bind_llm_session(
+            self.llm_client, "research-agent", snapshot.workspace_id,
+            f"{snapshot.research_run_id}:{snapshot.task_id}",
+        )
+        narrative_result = NarrativeReportPolisher(llm_client).polish(synthesis_input)
         llm_calls = narrative_result.llm_calls
         role_result = {
             "result_schema_version": "research-synthesis-candidate.v2",

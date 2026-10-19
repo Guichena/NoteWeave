@@ -38,7 +38,7 @@ from app.fetch_adapters import (
     build_default_fetch_adapter,
     run_research_fetch,
 )
-from app.llm_client import InvalidJsonFaultLlmClient, OpenAICompatibleLlmClient, QuoteTamperFaultLlmClient
+from app.llm_client import InvalidJsonFaultLlmClient, OpenAICompatibleLlmClient, QuoteTamperFaultLlmClient, bind_llm_session
 from app.models import (
     ControlPack,
     ResearchColumn,
@@ -209,6 +209,10 @@ class DeepCellExecutor:
         # 普通单元格仍按快照的 4 次预算执行，角色上限仅供需要反证的任务使用。
         llm_limit = min(context.profile.max_llm_calls, int(snapshot.budget.get("llm_calls", context.profile.max_llm_calls)))
         llm_client = _build_execution_llm(require_active, replace(context.profile, max_llm_calls=llm_limit)) if self.enable_llm else None
+        llm_client = bind_llm_session(
+            llm_client, "research-agent", snapshot.workspace_id,
+            f"{snapshot.research_run_id}:{snapshot.task_id}",
+        )
 
         # Recovery inventory must be consulted before any provider permit. A prior lease may
         # already have spent the single search/fetch/read rounds reserved for this task.

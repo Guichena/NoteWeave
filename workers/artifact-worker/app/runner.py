@@ -44,7 +44,7 @@ from app.generation_runtime import ArtifactConfigurationRequiredError
 from app.export_runtime import export_artifact_if_required
 from app.candidate_file_manifest import build_required_files
 from app.artifact_content_ir import build_content_ir
-from app.llm_client import build_default_llm_client
+from app.llm_client import bind_llm_session, build_default_llm_client
 from app.verifier import build_output_contract_trace, verify_artifact_output
 from app.writeback_runtime import register_writeback_request
 from app.video_derived_runtime import run_video_derived_text_task
@@ -192,7 +192,9 @@ def _run_artifact_task(
     resume_stage: str = "",
     passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
-    llm_client = build_default_llm_client()
+    llm_client = bind_llm_session(
+        build_default_llm_client(), "artifact", task_input.workspace_id, task_input.target_id,
+    )
     has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
     if llm_client is None and not task_input.source_scope and not has_direct_input:
         raise ArtifactConfigurationRequiredError(

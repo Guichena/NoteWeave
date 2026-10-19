@@ -17,6 +17,28 @@ import org.junit.jupiter.api.Test;
 class AnswerGenerationOrchestratorTest {
 
     @Test
+    void generationMustForwardPersistedConversationInsteadOfPerMessageRequestId() {
+        AnswerRunService runs = mock(AnswerRunService.class);
+        AnswerGenerationGateway gateway = mock(AnswerGenerationGateway.class);
+        when(runs.requireByAssistantRequest("new-request-id"))
+                .thenReturn(new AnswerRunRef("answer-run", "ws", "stable-conversation", "message", "new-request-id", "RUNNING"));
+        when(gateway.load("new-request-id"))
+                .thenReturn(new AnswerGenerationMaterial("message", "ws", "draft", List.of(), 1200));
+        when(gateway.prepareDraft("draft")).thenReturn("prepared");
+        when(gateway.generateInConversation(
+                org.mockito.ArgumentMatchers.eq("ws"), org.mockito.ArgumentMatchers.eq("stable-conversation"),
+                org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any()))
+                .thenReturn("");
+
+        orchestrator(runs, gateway).stream("new-request-id", ignored -> {});
+
+        verify(gateway).generateInConversation(
+                org.mockito.ArgumentMatchers.eq("ws"), org.mockito.ArgumentMatchers.eq("stable-conversation"),
+                org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any());
+        verify(gateway, never()).generate(anyString(), anyInt(), any());
+    }
+
+    @Test
     void legacyGenerationMustNotCompleteWhenProviderReturnsBlankContent() {
         AnswerRunService answerRunService = mock(AnswerRunService.class);
         AnswerGenerationGateway gateway = mock(AnswerGenerationGateway.class);

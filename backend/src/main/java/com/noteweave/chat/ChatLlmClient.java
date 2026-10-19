@@ -31,6 +31,28 @@ public interface ChatLlmClient {
             Consumer<String> onToken
     );
 
+    /** Stable conversation identity is request-local, never stored on the singleton client. */
+    default String streamChatInSession(
+            String sessionId, String systemPrompt, String userPrompt,
+            int maximumOutputTokens, Consumer<String> onToken
+    ) {
+        return streamChat(systemPrompt, userPrompt, maximumOutputTokens, onToken);
+    }
+
+    static String routingSessionId(String kind, String workspaceId, String stableId) {
+        if (workspaceId == null || workspaceId.isBlank() || stableId == null || stableId.isBlank()) {
+            return null;
+        }
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                    (kind + "\0" + workspaceId + "\0" + stableId)
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return "noteweave-" + kind + "-" + java.util.HexFormat.of().formatHex(digest);
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
     /**
      * 多轮上下文形式，与 {@link #streamChat(String, String, Consumer)} 等价。
      * 默认实现把 messages 折叠成 system + user 两段。

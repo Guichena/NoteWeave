@@ -61,10 +61,21 @@ public class HttpChatLlmClient implements ChatLlmClient {
             int maximumOutputTokens,
             Consumer<String> onToken
     ) {
+        return streamChatInSession(null, systemPrompt, userPrompt, maximumOutputTokens, onToken);
+    }
+
+    @Override
+    public String streamChatInSession(
+            String sessionId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens,
+            Consumer<String> onToken
+    ) {
         if (!enabled) {
             throw new IllegalStateException("HttpChatLlmClient is not enabled; check noteweave.llm.* configuration");
         }
-        ChatCompletionCreateParams params = buildRequest(systemPrompt, userPrompt, maximumOutputTokens);
+        ChatCompletionCreateParams params = buildRequest(sessionId, systemPrompt, userPrompt, maximumOutputTokens);
         try (StreamResponse<ChatCompletionChunk> response = client.chat().completions().createStreaming(params)) {
             return consumeStream(response.stream().iterator(), onToken);
         } catch (IOException | OpenAIException ex) {
@@ -77,6 +88,15 @@ public class HttpChatLlmClient implements ChatLlmClient {
             String userPrompt,
             int maximumOutputTokens
     ) {
+        return buildRequest(null, systemPrompt, userPrompt, maximumOutputTokens);
+    }
+
+    ChatCompletionCreateParams buildRequest(
+            String sessionId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens
+    ) {
         ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
                 .model(model)
                 .addSystemMessage(systemPrompt)
@@ -85,6 +105,10 @@ public class HttpChatLlmClient implements ChatLlmClient {
                 .putAdditionalBodyProperty("max_tokens", JsonValue.from(Math.max(1, maximumOutputTokens)));
         if (model.toLowerCase(Locale.ROOT).startsWith("glm-5")) {
             builder.putAdditionalBodyProperty("thinking", JsonValue.from(Map.of("type", "disabled")));
+        }
+        // 会话标识只随本次请求发送，单例客户端不保存，避免串到其他对话
+        if (sessionId != null && !sessionId.isBlank()) {
+            builder.putAdditionalHeader("X-Session-ID", sessionId);
         }
         return builder.build();
     }

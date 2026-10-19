@@ -76,6 +76,17 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             int maximumOutputTokens,
             Consumer<String> tokenConsumer
     ) {
+        return generateInConversation(null, null, draft, maximumOutputTokens, tokenConsumer);
+    }
+
+    @Override
+    public String generateInConversation(
+            String workspaceId,
+            String conversationId,
+            String draft,
+            int maximumOutputTokens,
+            Consumer<String> tokenConsumer
+    ) {
         if (chatLlmClient == null || !chatLlmClient.isEnabled()) {
             if (!templateFallbackEnabled) {
                 throw new BusinessException(
@@ -104,18 +115,19 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
                 最终结果直接作为聊天正文，不要加前言或解释。
                 """.trim();
         String[] streamedBuffer = new String[1];
-        String streamed = chatLlmClient.streamChat(
-                systemPrompt,
-                draft == null ? "" : draft,
-                maximumOutputTokens,
-                token -> {
-                    if (token == null || token.isEmpty()) {
-                        return;
-                    }
-                    streamedBuffer[0] = streamedBuffer[0] == null
-                            ? token : streamedBuffer[0] + token;
-                    tokenConsumer.accept(token);
-                });
+        Consumer<String> onToken = token -> {
+            if (token == null || token.isEmpty()) {
+                return;
+            }
+            streamedBuffer[0] = streamedBuffer[0] == null
+                    ? token : streamedBuffer[0] + token;
+            tokenConsumer.accept(token);
+        };
+        String sessionId = ChatLlmClient.routingSessionId("chat", workspaceId, conversationId);
+        String streamed = sessionId == null
+                ? chatLlmClient.streamChat(systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken)
+                : chatLlmClient.streamChatInSession(
+                        sessionId, systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken);
         String generated = streamed == null || streamed.isEmpty() ? streamedBuffer[0] : streamed;
         if (generated == null || generated.isBlank()) {
             throw new BusinessException(
