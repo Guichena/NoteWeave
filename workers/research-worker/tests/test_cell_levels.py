@@ -154,3 +154,13 @@ def test_lead_sentence_that_already_says_unverified_is_kept_as_written() -> None
     result = NarrativeReportPolisher(client).polish(_synthesis_input())
 
     assert result.narrative["sections"][0]["paragraphs"][1]["text"] == "据第三方资料（未经核实），Kafka 只保证分区内有序 [evidence:k1]。"
+
+
+def test_writer_receives_the_required_points_from_planning() -> None:
+    client = FakeLlmClient({"research.synthesis": "not json"})
+    synthesis_input = {**_synthesis_input(), "required_points": ["两者是否保证全局顺序", " ", "两者是否保证全局顺序"]}
+
+    NarrativeReportPolisher(client).polish(synthesis_input)
+
+    assert client.payloads[0]["required_points"] == ["两者是否保证全局顺序"]
+    assert any("required_points" in rule for rule in client.payloads[0]["rules"])

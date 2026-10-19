@@ -319,6 +319,9 @@ def test_required_point_without_a_dimension_is_sent_back_then_filled_on_the_last
     labels = [item["label"] for item in final.plan["dimensions"]]
     # 不回答任何要点的 Failure fallback 被替换为生产构建这一要点
     assert labels == ["Dev server model", "HMR mechanism", "Tool used for production builds"]
+    # 要点随规划一起交给后端，成文时逐条作答
+    assert final.plan["required_points"] == [
+        "Whether the dev server bundles", "HMR granularity and mechanism", "Tool used for production builds"]
 
 
 def test_plan_without_required_points_is_not_checked() -> None:

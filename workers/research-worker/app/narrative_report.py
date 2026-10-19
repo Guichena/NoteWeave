@@ -39,6 +39,7 @@ class NarrativeReportPolisher:
         limitations = [item for item in _clean_strings(synthesis_input.get("limitations"))
                        if not re.fullmatch(r"[A-Z0-9_]+", item)]
         question = str(synthesis_input.get("question") or "").strip()
+        required_points = _clean_strings(synthesis_input.get("required_points"))[:6]
         comparison_required = _comparison_table_required(question, [*cells, *leads])
         if self.llm_client is None:
             return _fallback(cells, limitations, "LLM_UNAVAILABLE", question)
@@ -115,9 +116,16 @@ class NarrativeReportPolisher:
                 "sentence must say it is unverified, for example '据第三方资料（未经核实），……'. Use RELATED cells "
                 "only as background. Never use tentative cells in executive_summary and never let them contradict "
                 "or replace a frozen cell.",
+                "required_points are what an expert reviewer checks in a complete answer. In the direct-answer "
+                "section give each point an explicit conclusion drawn from the cells, in the point's own terms: for "
+                "'whether development bundles code' write whether each subject bundles, not only what each one "
+                "does; for a comparison point state the contrast between the subjects in one sentence. Do not number "
+                "or quote the points. A point that no frozen or SOURCED tentative cell answers goes to limitations "
+                "and must not be guessed.",
             ],
             "frozen_cells": cells,
             "tentative_cells": leads,
+            "required_points": required_points,
             "research_question": question,
             "known_limitations": limitations,
         }

@@ -329,6 +329,8 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         "authoritative_domains": [
             str(item) for item in raw.get("authoritative_domains", []) if isinstance(item, str)
         ][:8] if isinstance(raw.get("authoritative_domains"), list) else [],
+        # 专家必查要点交给成文逐条作答；评审按这些要点判断是否答全，只在规划阶段用来补列时成文看不到
+        "required_points": _required_point_texts(raw.get("required_points")),
         # 改名合并过的列不再沿用原来的不适用标记：原标记针对的是带实体名的列，合并后对所有实体都适用
         "not_applicable": [
             {"entity": str(item.get("entity") or ""), "dimension": str(item.get("dimension") or "")}
@@ -337,6 +339,17 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         ][:60] if isinstance(raw.get("not_applicable"), list) else [],
     }
     return PlanDraft(plan, [])
+
+
+def _required_point_texts(raw_points: object) -> list[str]:
+    if not isinstance(raw_points, list):
+        return []
+    points: list[str] = []
+    for item in raw_points[:6]:
+        point = " ".join(str(item.get("point") or "").split()) if isinstance(item, dict) else ""
+        if point and not _META_POINT.search(point) and point not in points:
+            points.append(point[:200])
+    return points
 
 
 def _label_key(value: object) -> str:

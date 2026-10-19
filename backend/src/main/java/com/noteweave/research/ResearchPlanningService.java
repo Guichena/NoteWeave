@@ -298,6 +298,10 @@ public class ResearchPlanningService {
         brief.put("exclusions", stringList(rawBrief.get("exclusions")).stream()
                 .map(item -> clean(item, MAX_COLUMN_LABEL_CHARS)).filter(item -> !item.isBlank())
                 .distinct().limit(10).toList());
+        // 专家必查要点：成文时逐条作答，避免已核验的内容只被复述、没有给出要点要的结论
+        brief.put("required_points", stringList(plan.get("required_points")).stream()
+                .map(item -> clean(item, MAX_TEXT_CHARS)).filter(item -> !item.isBlank())
+                .distinct().limit(6).toList());
         List<Map<String, Object>> perspectives = listOfMaps(plan.get("perspectives")).stream().limit(6)
                 .map(item -> Map.<String, Object>of(
                         "name", clean(text(item.get("name")), MAX_COLUMN_LABEL_CHARS),

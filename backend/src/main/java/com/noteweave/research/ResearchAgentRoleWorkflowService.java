@@ -235,9 +235,31 @@ class ResearchAgentRoleWorkflowService {
                 "audit_digest", audit.digest(),
                 "cells", synthesisCells,
                 "leads", synthesisLeads(runId, labels),
+                "required_points", requiredPoints(runId),
                 "limitations", List.copyOf(limitations));
         return createRoleTask(run, cells, waveNo, "SYNTHESIS", "synthesis:" + ledgerDigest.substring(7, 39),
                 Map.of("allowed_tools", List.of(), "synthesis_input", synthesisInput));
+    }
+
+    /** 规划给出的专家必查要点，取自当前生效的研究表格规划；没有时为空。 */
+    private List<String> requiredPoints(String runId) {
+        List<String> plans = jdbcTemplate.queryForList("""
+                select plan_json from research_matrix_plan
+                where research_run_id = ? and plan_mode = 'LLM_MATRIX' and plan_status = 'ACTIVE'
+                order by created_at desc, id desc limit 1
+                """, String.class, runId);
+        if (plans.isEmpty() || plans.get(0) == null) return List.of();
+        try {
+            com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(plans.get(0));
+            if (node.isTextual()) node = objectMapper.readTree(node.asText());
+            List<String> points = new ArrayList<>();
+            node.path("brief").path("required_points").forEach(item -> {
+                if (item.isTextual() && !item.asText().isBlank()) points.add(item.asText());
+            });
+            return List.copyOf(points);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
+            return List.of();
+        }
     }
 
     /** 交给成文的线索最多条数，避免线索挤占已核验结论的篇幅。 */
