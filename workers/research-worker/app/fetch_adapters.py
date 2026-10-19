@@ -509,7 +509,8 @@ class JinaUrlSnapshotTransport:
                 )
                 content_type = response_headers.get("Content-Type", "")
                 text = _decode_response(raw, content_type)
-                cleaned_text = _select_query_relevant_text(_strip_jina_wrapper(text), query, token_budget)
+                cleaned_text = _select_query_relevant_text(
+                    _unescape_markdown(_strip_jina_wrapper(text)), query, token_budget)
                 if cleaned_text:
                     injection_signals = detect_prompt_injection(cleaned_text)
                     return {
@@ -603,7 +604,8 @@ class TavilyMcpUrlSnapshotTransport:
                 data = self.client.call_tool(
                     TAVILY_EXTRACT_TOOL, {"urls": [url], "extract_depth": "basic"}
                 )
-                text = _tavily_extract_text(data, url)
+                # 读取结果是 Markdown，标点常被反斜杠转义，还原后模型引用的原文才能逐字对上
+                text = _unescape_markdown(_tavily_extract_text(data, url))
                 cleaned_text = _select_query_relevant_text(text, query, token_budget) if text else ""
                 if cleaned_text:
                     injection_signals = detect_prompt_injection(cleaned_text)
@@ -702,11 +704,12 @@ class DeepSeekFetchClient:
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"})
         with credential_safe_urlopen(request, timeout=self.timeout_seconds) as response:
             data = json.loads(response.read().decode("utf-8"))
-        return {"results": [{"url": url, "raw_content": _unescape_markdown(str(data.get("content") or ""))}]}
+        return {"results": [{"url": url, "raw_content": str(data.get("content") or "")}]}
 
 
-# DeepSeek 读取的 Markdown 会转义标点（如 pg\_basebackup、\#），不还原时引用原文和标识符都对不上检索词
-_MARKDOWN_ESCAPE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!|:<>~=\"'])")
+# DeepSeek 读取的 Markdown 会转义标点（如 pg\_basebackup、\#、\,、\/、\?、\@），不还原时模型引用的原文
+# 去掉了反斜杠，逐字匹配失败，整条证据被判为非原文引用。CommonMark 允许转义全部 ASCII 标点，这里全部还原。
+_MARKDOWN_ESCAPE = re.compile(r"\\([!-/:-@\[-`{-~])")
 
 
 def _unescape_markdown(text: str) -> str:

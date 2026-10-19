@@ -31,7 +31,8 @@ def _context(**overrides: object) -> CellQueryContext:
     return CellQueryContext(**values)  # type: ignore[arg-type]
 
 
-def test_missing_site_query_replaces_the_last_query_without_growing_the_plan() -> None:
+def test_missing_site_query_goes_second_and_drops_the_last_query_without_growing_the_plan() -> None:
+    """检索命中数达到预算就停止，官方来源查询放在最后常常执行不到，所以紧跟第一条宽泛查询。"""
     llm = _Llm({"queries": [
         {"query": "MySQL 8.4 JSON index", "intent": "direct"},
         {"query": "MySQL multi-valued index JSON", "intent": "direct"},
@@ -40,9 +41,21 @@ def test_missing_site_query_replaces_the_last_query_without_growing_the_plan() -
 
     plan = plan_cell_queries(_context(), llm)
 
-    assert len(plan.specs) == 3
-    assert plan.specs[-1].query == "MySQL 8.4 JSON 索引类型 site:dev.mysql.com"
-    assert plan.specs[-1].family == "verified_evidence"
+    assert [spec.query for spec in plan.specs] == [
+        "MySQL 8.4 JSON index", "MySQL 8.4 JSON 索引类型 site:dev.mysql.com", "MySQL multi-valued index JSON"]
+    assert plan.specs[1].family == "verified_evidence"
+
+
+def test_site_query_is_inserted_second_when_the_plan_has_room() -> None:
+    llm = _Llm({"queries": [
+        {"query": "MySQL 8.4 JSON index", "intent": "direct"},
+        {"query": "MySQL multi-valued index JSON", "intent": "direct"},
+    ]})
+
+    plan = plan_cell_queries(_context(), llm)
+
+    assert [spec.query for spec in plan.specs] == [
+        "MySQL 8.4 JSON index", "MySQL 8.4 JSON 索引类型 site:dev.mysql.com", "MySQL multi-valued index JSON"]
 
 
 def test_model_site_query_is_kept_as_is() -> None:
@@ -123,7 +136,7 @@ def test_site_query_uses_the_english_search_intent_instead_of_a_chinese_label() 
 
     plan = plan_cell_queries(_context(columns=(column,)), llm)
 
-    assert plan.specs[-1].query == "MySQL 8.4 JSON operators that use indexes site:dev.mysql.com"
+    assert plan.specs[1].query == "MySQL 8.4 JSON operators that use indexes site:dev.mysql.com"
 
 
 def test_cell_keeps_only_primary_source_evidence_when_both_kinds_exist() -> None:

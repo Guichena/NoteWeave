@@ -301,7 +301,9 @@ def _rule_plan(
 def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQueryContext) -> list[ResearchQuerySpec]:
     """规划给出官方域名而检索词里没有 site: 查询时，补一条定向官方来源的查询。
 
-    只有一条查询时追加；已到上限时替换最后一条，条数不变，不增加搜索调用。
+    放在第二条，紧跟宽泛的第一条：检索按顺序执行，命中数达到预算就停，放在最后时前两条常常已经用满预算，
+    官方来源查询根本没有执行（PG 17 增量备份一题只搜到邮件列表，官方文档页一次也没检索到）。
+    未到上限时插入；已到上限时去掉最后一条，条数不变，不增加搜索调用。
     """
     domains = [domain.strip().lower() for domain in context.authoritative_domains if domain.strip()]
     if not domains or any("site:" in spec.query.lower() for spec in specs):
@@ -315,9 +317,8 @@ def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQuer
     domain = best_matching_domain(domains, subject)
     query = normalize_query(" ".join(part for part in [subject, topic, f"site:{domain}"] if part))[:MAX_QUERY_CHARS]
     spec = _spec(query, "verify", [], rationale="official source")
-    if len(specs) < max(2, context.max_queries):
-        return [*specs, spec]
-    return [*specs[:-1], spec]
+    kept = specs if len(specs) < max(2, context.max_queries) else specs[:-1]
+    return [*kept[:1], spec, *kept[1:]]
 
 
 def best_matching_domain(domains: list[str], subject: str) -> str:

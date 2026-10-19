@@ -168,3 +168,29 @@ def test_deepseek_fetch_out_of_balance_is_skipped_for_later_urls(monkeypatch) ->
     assert second["fetch_failure_code"] == "PROVIDER_UNAVAILABLE"
     # 第一次 402 不重试，第二个网址不再请求
     assert len(calls) == 1
+
+
+def test_all_ascii_punctuation_escapes_are_restored_so_model_quotes_match() -> None:
+    """读取结果里逗号、斜杠、问号、@ 等标点的反斜杠转义不还原时，模型引用的原文去掉了反斜杠，逐字匹配失败。"""
+    from app.fetch_adapters import _unescape_markdown
+
+    escaped = r"Thanks\, Serkan. Use pg\_basebackup \-\-incremental\=path\/to\/manifest\? mail\@example.org \$PGDATA 100\%"
+    assert _unescape_markdown(escaped) == (
+        "Thanks, Serkan. Use pg_basebackup --incremental=path/to/manifest? mail@example.org $PGDATA 100%")
+    # 非标点前的反斜杠保持原样
+    assert _unescape_markdown(r"C:\Users\n") == r"C:\Users\n"
+
+
+def test_tavily_read_unescapes_markdown_before_selecting_text(monkeypatch) -> None:
+    from app.fetch_adapters import TavilyMcpUrlSnapshotTransport
+
+    class _Client:
+        def call_tool(self, tool, arguments):
+            return {"results": [{"url": arguments["urls"][0],
+                                 "raw_content": r"WAL summarization must be enabled\, see pg\_combinebackup\/docs."}]}
+
+    monkeypatch.setattr("app.fetch_adapters.validate_public_http_url", lambda url: None)
+    result = TavilyMcpUrlSnapshotTransport(client=_Client()).read(
+        "https://www.postgresql.org/docs/17/app-pgcombinebackup.html", "incremental backup", 2000)
+
+    assert result["text"] == "WAL summarization must be enabled, see pg_combinebackup/docs."
