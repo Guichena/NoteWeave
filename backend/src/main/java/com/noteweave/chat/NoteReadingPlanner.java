@@ -93,10 +93,11 @@ public class NoteReadingPlanner {
         plan.add(primary);
         Set<String> seen = new LinkedHashSet<>();
         seen.add(key(primary));
-        windows.stream().filter(window -> ((window.chunkNo() == primary.chunkNo()
-                        && Math.abs(window.windowNo() - primary.windowNo()) == 1)
-                        || (Math.abs(window.chunkNo() - primary.chunkNo()) == 1
-                        && window.windowNo() == primary.windowNo())) && seen.add(key(window)))
+        Map<Integer, Integer> maxWindowByChunk = new HashMap<>();
+        for (ReadingWindow window : windows) {
+            maxWindowByChunk.merge(window.chunkNo(), window.windowNo(), Math::max);
+        }
+        windows.stream().filter(window -> continuation(window, primary, maxWindowByChunk) && seen.add(key(window)))
                 .sorted(Comparator.comparingInt((ReadingWindow window) -> Math.abs(window.chunkNo() - primary.chunkNo()) * 10
                                 + Math.abs(window.windowNo() - primary.windowNo()))
                         .thenComparing(Comparator.comparingInt(ReadingWindow::score).reversed()))
@@ -110,6 +111,29 @@ public class NoteReadingPlanner {
                     .withAnchorWindowNo(window.windowNo()).withReadObjective("secondary-evidence"));
         }
         return plan;
+    }
+
+    /**
+     * Same-chunk neighbors stay at ±1. A different chunk is adjacent only at the
+     * shared boundary: the last window of the previous chunk into window 0, or
+     * window 0 of the next chunk after this chunk's last window.
+     */
+    private boolean continuation(
+            ReadingWindow window,
+            ReadingWindow primary,
+            Map<Integer, Integer> maxWindowByChunk
+    ) {
+        if (window.chunkNo() == primary.chunkNo()) {
+            return Math.abs(window.windowNo() - primary.windowNo()) == 1;
+        }
+        int primaryMax = maxWindowByChunk.getOrDefault(primary.chunkNo(), primary.windowNo());
+        if (window.chunkNo() == primary.chunkNo() - 1 && primary.windowNo() == 0) {
+            int previousMax = maxWindowByChunk.getOrDefault(window.chunkNo(), window.windowNo());
+            return window.windowNo() == previousMax;
+        }
+        return window.chunkNo() == primary.chunkNo() + 1
+                && window.windowNo() == 0
+                && primary.windowNo() == primaryMax;
     }
 
     private String key(ReadingWindow window) {
