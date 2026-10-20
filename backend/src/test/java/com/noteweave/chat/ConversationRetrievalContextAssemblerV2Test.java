@@ -40,6 +40,54 @@ class ConversationRetrievalContextAssemblerV2Test {
                 .doesNotContain(memory, old);
     }
 
+    @Test
+    void truncatesFrozenRawWindowWithV1Budgets() throws Exception {
+        String current = "第二种写入顺序呢？";
+        String longUser = "用户上下文" + "甲".repeat(200);
+        String longAssistant = "助手上下文" + "乙".repeat(300);
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 4, current,
+                List.of(new ContextProjectionV2.RawMessage("old", 2, "USER", longUser, sha(longUser)),
+                        new ContextProjectionV2.RawMessage("old-answer", 3, "ASSISTANT", longAssistant,
+                                sha(longAssistant)),
+                        new ContextProjectionV2.RawMessage("current", 4, "USER", current, sha(current))),
+                List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        var context = new ConversationRetrievalContextAssembler().assembleV2("current", current, frozen);
+
+        String expectedUser = longUser.substring(0, 119) + "...";
+        String expectedAssistant = longAssistant.substring(0, 179) + "...";
+        assertThat(expectedUser).hasSize(122);
+        assertThat(expectedAssistant).hasSize(182);
+        assertThat(context.retrievalQuestion())
+                .contains("- USER：" + expectedUser)
+                .contains("- ASSISTANT：" + expectedAssistant)
+                .doesNotContain(longUser)
+                .doesNotContain(longAssistant);
+    }
+
+    @Test
+    void keepsShortFrozenRawWindowUntouched() throws Exception {
+        String current = "第二种写入顺序呢？";
+        String user = "缓存一致性先写日志";
+        String answer = "先写日志再更新缓存";
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 4, current,
+                List.of(new ContextProjectionV2.RawMessage("old", 2, "USER", user, sha(user)),
+                        new ContextProjectionV2.RawMessage("old-answer", 3, "ASSISTANT", answer, sha(answer)),
+                        new ContextProjectionV2.RawMessage("current", 4, "USER", current, sha(current))),
+                List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        var context = new ConversationRetrievalContextAssembler().assembleV2("current", current, frozen);
+
+        assertThat(context.retrievalQuestion())
+                .contains("- USER：" + user)
+                .contains("- ASSISTANT：" + answer)
+                .doesNotContain("...");
+    }
+
     private static String sha(String value) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(value.getBytes(StandardCharsets.UTF_8)));

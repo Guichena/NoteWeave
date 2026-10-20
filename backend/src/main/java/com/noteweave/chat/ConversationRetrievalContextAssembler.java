@@ -108,7 +108,8 @@ class ConversationRetrievalContextAssembler {
         if (!summary.isBlank()) question.append("\n已冻结的相关主题摘要：\n").append(summary);
         question.append("\n连续原文窗口：");
         for (ContextProjectionV2.RawMessage message : history) {
-            question.append("\n- ").append(message.role()).append("：").append(message.text());
+            question.append("\n- ").append(message.role()).append("：")
+                    .append(trim(message.text(), messageBudget(message.role())));
         }
         if (!projection.constraints().isEmpty()) {
             question.append("\n当前有效的用户约束：");
@@ -369,6 +370,11 @@ class ConversationRetrievalContextAssembler {
             return value == null ? "" : value;
         }
         return value.substring(0, Math.max(0, max - 1)) + "...";
+    }
+
+    /** v2 原文窗口复用 v1 的截断预算：用户 120、助手 180。 */
+    private int messageBudget(String role) {
+        return "USER".equals(role) ? 120 : 180;
     }
 
     record Context(
