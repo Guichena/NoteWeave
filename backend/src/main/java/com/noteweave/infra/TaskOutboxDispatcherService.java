@@ -1,8 +1,10 @@
 package com.noteweave.infra;
 
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.common.BusinessException;
+import com.noteweave.source.SourcePipelineStages;
 import com.noteweave.task.TaskService;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import com.noteweave.infra.outbox.OutboxDispatchPolicy;
@@ -14,6 +16,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.slf4j.Logger;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TaskOutboxDispatcherService {
     private static final Logger log = LoggerFactory.getLogger(TaskOutboxDispatcherService.class);
+    private static final ObjectMapper PAYLOAD_MAPPER = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -194,9 +198,115 @@ public class TaskOutboxDispatcherService {
                     next_attempt_at = current_timestamp, dead_lettered_at = null
                 where id = ? and status = 'DEAD_LETTER'
                 """, outboxId);
+        // 只复位 outbox 行和任务不够：消费者按快照阶段守卫（解析需 PENDING、切片需 CHUNKING、
+        // 向量化/索引需停在对应阶段），死信收尾后资料停在 FAILED，重投的消息会被直接确认而不做任何事
+        resetPipelineState(row);
         if (row.taskId() != null) {
             taskService.redriveTask(row.taskId(), false);
         }
+    }
+
+    /** 按主题复位资料流水线状态；无法识别载荷或主题时保持原样，重投本身仍然生效。 */
+    private void resetPipelineState(OutboxRow row) {
+        boolean parseTopic = sourceParseTopic.equals(row.topic());
+        boolean chunkTopic = SourcePipelineStages.TOPIC_CHUNK.equals(row.topic());
+        boolean embedTopic = SourcePipelineStages.TOPIC_EMBED.equals(row.topic());
+        boolean indexTopic = SourcePipelineStages.TOPIC_INDEX.equals(row.topic());
+        if (!parseTopic && !chunkTopic && !embedTopic && !indexTopic) {
+            return;
+        }
+        PipelineTarget target = pipelineTarget(row);
+        if (target == null) {
+            return;
+        }
+        if (parseTopic) {
+            resetParseState(target, null);
+        } else if (chunkTopic) {
+            resetParseState(target, SourcePipelineStages.STAGE_CHUNKING);
+        } else if (embedTopic) {
+            resetIndexState(target, SourcePipelineStages.STAGE_EMBEDDING);
+        } else {
+            resetIndexState(target, SourcePipelineStages.STAGE_INDEXING);
+        }
+    }
+
+    /** 解析与切片从快照 PENDING 重新开始；切片阶段还要停在 CHUNKING，切片消费者才接受消息。 */
+    private void resetParseState(PipelineTarget target, String processingStage) {
+        int moved = jdbcTemplate.update("""
+                update source_snapshot
+                set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = ?,
+                    embedding_task_id = null, embedding_batch_version = null,
+                    index_attempt_count = 0, next_index_retry_at = null
+                where id = ? and source_id = ? and parse_status <> 'DELETED'
+                """, processingStage, target.snapshotId(), target.sourceId());
+        if (moved != 1) {
+            log.info("Skip source pipeline reset for redrive: snapshotId={}, stage={}",
+                    target.snapshotId(), processingStage);
+            return;
+        }
+        jdbcTemplate.update("""
+                update source
+                set parse_status = 'PENDING', index_status = 'PENDING', status = 'PROCESSING',
+                    updated_by = 'SYSTEM:OUTBOX_REDRIVE', updated_at = current_timestamp
+                where id = ? and workspace_id = ? and status <> 'DELETED'
+                """, target.sourceId(), target.workspaceId());
+    }
+
+    /** 向量化与索引在解析完成之后重跑，快照停在对应阶段，并清掉批次租约让批次可以被重新占用。 */
+    private void resetIndexState(PipelineTarget target, String processingStage) {
+        int moved = jdbcTemplate.update("""
+                update source_snapshot
+                set parse_status = 'PARSED', index_status = 'INDEXING', processing_stage = ?,
+                    index_attempt_count = 0, next_index_retry_at = null
+                where id = ? and source_id = ? and parse_status = 'PARSED'
+                """, processingStage, target.snapshotId(), target.sourceId());
+        if (moved != 1) {
+            log.info("Skip source index reset for redrive: snapshotId={}, stage={}",
+                    target.snapshotId(), processingStage);
+            return;
+        }
+        jdbcTemplate.update("""
+                update source
+                set index_status = 'INDEXING', status = 'PROCESSING',
+                    updated_by = 'SYSTEM:OUTBOX_REDRIVE', updated_at = current_timestamp
+                where id = ? and workspace_id = ? and status <> 'DELETED'
+                """, target.sourceId(), target.workspaceId());
+        jdbcTemplate.update("""
+                update source_embedding_batch
+                set lease_token = null, lease_until = null,
+                    status = case when status = 'COMPLETED' then status else 'READY' end,
+                    updated_at = current_timestamp
+                where source_snapshot_id = ?
+                """, target.snapshotId());
+    }
+
+    private PipelineTarget pipelineTarget(OutboxRow row) {
+        Map<String, Object> payload;
+        try {
+            payload = PAYLOAD_MAPPER.readValue(row.payloadJson(), new TypeReference<Map<String, Object>>() { });
+        } catch (Exception exception) {
+            log.warn("Outbox 重驱载荷无法解析，跳过资料状态复位: outboxId={}, topic={}", row.id(), row.topic());
+            return null;
+        }
+        if (payload == null) {
+            return null;
+        }
+        String workspaceId = text(payload.get("workspaceId"));
+        String sourceId = text(payload.get("sourceId"));
+        String snapshotId = text(payload.get("sourceSnapshotId"));
+        if (snapshotId == null || snapshotId.isBlank()) {
+            snapshotId = text(payload.get("snapshotId"));
+        }
+        if (workspaceId == null || workspaceId.isBlank() || sourceId == null || sourceId.isBlank()
+                || snapshotId == null || snapshotId.isBlank()) {
+            log.warn("Outbox 重驱载荷缺少资料身份，跳过资料状态复位: outboxId={}, topic={}", row.id(), row.topic());
+            return null;
+        }
+        return new PipelineTarget(workspaceId, sourceId, snapshotId);
+    }
+
+    private String text(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private int count(String status) {
@@ -231,4 +341,6 @@ public class TaskOutboxDispatcherService {
             String payloadJson,
             int attemptCount
     ) { }
+
+    private record PipelineTarget(String workspaceId, String sourceId, String snapshotId) { }
 }
