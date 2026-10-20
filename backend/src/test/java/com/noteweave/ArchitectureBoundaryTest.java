@@ -166,6 +166,26 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
+    void rerankDefaultsMustStayShortAndStopRetries() throws IOException {
+        String application = Files.readString(Path.of("src/main/resources/application.yml"))
+                .replace("\r\n", "\n");
+        String compose = Files.readString(Path.of("..").resolve("docker-compose.yml"))
+                .replace("\r\n", "\n");
+        String envExample = Files.readString(Path.of("..").resolve(".env.example"))
+                .replace("\r\n", "\n");
+
+        assertThat(application)
+                .contains("timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:5}")
+                .contains("max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}");
+        assertThat(compose)
+                .contains("NOTEWEAVE_RERANK_TIMEOUT_SECONDS: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:-5}")
+                .contains("NOTEWEAVE_RERANK_MAX_ATTEMPTS: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:-1}");
+        assertThat(envExample)
+                .contains("NOTEWEAVE_RERANK_TIMEOUT_SECONDS=5")
+                .contains("NOTEWEAVE_RERANK_MAX_ATTEMPTS=1");
+    }
+
+    @Test
     void durableOutboxDispatchersMustShareClaimAndRetryPolicy() throws IOException {
         String durableDispatcher = Files.readString(Path.of(
                 "src/main/java/com/noteweave/infra/outbox/DurableOutboxDispatcher.java"));
