@@ -15,13 +15,14 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.source.SourceParseFailureFinalizer;
+import com.noteweave.source.SourcePipelineStages;
 import com.noteweave.task.TaskService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-/** 资料解析消息重试耗尽进入 DLT 后，资料、快照和任务必须一起进入失败终态。 */
+/** 资料解析/切片消息重试耗尽进入 DLT 后，资料、快照和任务必须一起进入失败终态。 */
 class KafkaSourceParseDeadLetterRecoveryTest {
 
     private static final String PAYLOAD = """
@@ -57,6 +58,33 @@ class KafkaSourceParseDeadLetterRecoveryTest {
                 "SOURCE_PARSE_FAILED", "资料解析过程中出错", true);
     }
 
+    /** 切片阶段的死信收尾必须用切片专属的错误码和文案，不能复用解析阶段的。 */
+    @Test
+    void chunkInfrastructureFailureShouldUseChunkErrorCodeAndMessage() {
+        SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
+
+        recovery(finalizer).recover(record(SourcePipelineStages.TOPIC_CHUNK, PAYLOAD),
+                new IllegalStateException("handler failed",
+                        new java.io.UncheckedIOException(new java.io.IOException("minio timeout"))));
+
+        verify(finalizer).finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_CHUNK_FAILED", "资料切片过程中出错", true);
+    }
+
+    @Test
+    void chunkBusinessFailureShouldKeepItsOwnCodeAndMessage() {
+        SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
+        Exception failure = new IllegalStateException("Kafka source.chunk handler failed",
+                new BusinessException("SOURCE_PARSED_DOCUMENT_IDENTITY_MISMATCH", "切片文本对象不属于当前快照"));
+
+        recovery(finalizer).recover(record(SourcePipelineStages.TOPIC_CHUNK, PAYLOAD), failure);
+
+        verify(finalizer).finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_PARSED_DOCUMENT_IDENTITY_MISMATCH", "切片文本对象不属于当前快照", false);
+    }
+
     @Test
     void recoveryMustNotThrowSoTheDeadLetterIsNotRedelivered() {
         SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
@@ -70,6 +98,10 @@ class KafkaSourceParseDeadLetterRecoveryTest {
         assertThatCode(() -> recovery.recover(record("source.parse", "not json"), new IllegalStateException("boom")))
                 .doesNotThrowAnyException();
         assertThatCode(() -> recovery.recover(record("source.parse", "{\"taskId\":\"task-parse-1\"}"),
+                new IllegalStateException("boom"))).doesNotThrowAnyException();
+        assertThatCode(() -> recovery.recover(record(SourcePipelineStages.TOPIC_CHUNK, PAYLOAD),
+                new IllegalStateException("boom"))).doesNotThrowAnyException();
+        assertThatCode(() -> recovery.recover(record(SourcePipelineStages.TOPIC_CHUNK, "not json"),
                 new IllegalStateException("boom"))).doesNotThrowAnyException();
     }
 

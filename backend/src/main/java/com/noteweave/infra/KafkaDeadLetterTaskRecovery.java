@@ -49,9 +49,9 @@ public class KafkaDeadLetterTaskRecovery {
 
     public void recover(ConsumerRecord<?, ?> record, Exception exception) {
         // 解析和切片阶段失败时资料停在解析中；向量化和索引阶段失败时资料停在索引中
-        if (sourceParseTopic.equals(record.topic())
-                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(record.topic())) {
-            recoverSourceParse(record, exception);
+        boolean chunkStage = com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(record.topic());
+        if (sourceParseTopic.equals(record.topic()) || chunkStage) {
+            recoverSourceParse(record, exception, chunkStage);
             return;
         }
         if (!retrievalProjectionFinalizer.handles(record.topic())) {
@@ -61,7 +61,7 @@ public class KafkaDeadLetterTaskRecovery {
                 record.topic(), String.valueOf(record.value()), errorCode(exception));
     }
 
-    private void recoverSourceParse(ConsumerRecord<?, ?> record, Exception exception) {
+    private void recoverSourceParse(ConsumerRecord<?, ?> record, Exception exception, boolean chunkStage) {
         Map<String, Object> payload = readPayload(record, "Source parse");
         if (payload == null) {
             return;
@@ -77,9 +77,12 @@ public class KafkaDeadLetterTaskRecovery {
         }
         // 文档本身无法解析（类型不支持、PDF 无文本等）属于业务错误，重试没有意义；
         // 其余异常（例如读取对象存储失败）可能是暂时性的，标记为可重试。
+        // 切片阶段有独立的错误码和文案，避免把切片失败展示成解析失败。
         BusinessException businessFailure = findCause(exception, BusinessException.class);
-        String errorCode = businessFailure != null ? businessFailure.code() : "SOURCE_PARSE_FAILED";
-        String errorMessage = businessFailure != null ? businessFailure.getMessage() : "资料解析过程中出错";
+        String defaultErrorCode = chunkStage ? "SOURCE_CHUNK_FAILED" : "SOURCE_PARSE_FAILED";
+        String defaultErrorMessage = chunkStage ? "资料切片过程中出错" : "资料解析过程中出错";
+        String errorCode = businessFailure != null ? businessFailure.code() : defaultErrorCode;
+        String errorMessage = businessFailure != null ? businessFailure.getMessage() : defaultErrorMessage;
         try {
             sourceParseFailureFinalizer.finalizeProcessingFailed(
                     taskId, workspaceId, sourceId, snapshotId, errorCode, errorMessage, businessFailure == null);
