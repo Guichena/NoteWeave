@@ -25,6 +25,21 @@ class LlmClient(Protocol):
         """Return a JSON-shaped model response for the given purpose."""
 
 
+def _first_choice(data: object) -> dict[str, object]:
+    choices = data.get("choices") if isinstance(data, dict) else None
+    return choices[0] if isinstance(choices, list) and choices and isinstance(choices[0], dict) else {}
+
+
+def _message_content(data: object) -> str:
+    message = _first_choice(data).get("message")
+    return str(message.get("content") or "") if isinstance(message, dict) else ""
+
+
+def _finished_by_length(data: object) -> bool:
+    """输出被长度上限截断：重试得到的仍是截断结果，交给调用方按截断处理。"""
+    return _first_choice(data).get("finish_reason") == "length"
+
+
 class FakeLlmClient:
     def __init__(self, responses_by_purpose: dict[str, str]) -> None:
         self.responses_by_purpose = responses_by_purpose
@@ -233,6 +248,14 @@ class OpenAICompatibleLlmClient:
                 )
                 data = completion.model_dump()
                 termination_reason = "SUCCESS"
+                # 网关偶尔返回 200 但内容为空或不是 JSON（第九轮前 30 分钟约三分之一的抽取调用如此），
+                # 这类结果重试通常就能拿到正常响应；最后一次仍不正常时照常返回，由调用方按非法 JSON 处理
+                if attempt < purpose_max_attempts and not _finished_by_length(data) and not isinstance(
+                    parse_json_payload(_message_content(data)), (dict, list)
+                ):
+                    logger.warning("LLM JSON completion attempt %s for %s returned no JSON content", attempt, purpose)
+                    time.sleep(min(2 ** (attempt - 1), 4))
+                    continue
                 break
             except APIStatusError as exc:
                 http_statuses.append(exc.status_code)
