@@ -97,6 +97,36 @@ class NoteRecallRankerTest {
                 );
     }
 
+    @Test
+    void rerankScoreOutranksAHigherOriginalScore() {
+        NoteRecallRanker ranker = new NoteRecallRanker();
+        var selection = ranker.select(List.of(
+                scored("journal", "PDF", 30, 0, 5, 0),
+                scored("metadata", "MARKDOWN", 25, 8, 0, 0),
+                scored("other", "DOCX", 15, 2, 0, 0),
+                scored("relation", "WEB", 20, 0, 0, 6),
+                scored("A", "HTML", 2000, 0, 0, 5).withRerankScore(0.1),
+                scored("B", "TXT", 100, 0, 0, 5).withRerankScore(0.9)));
+
+        assertThat(selection.expansions()).extracting(ScoredCandidate::sourceId)
+                .containsExactly("B", "A");
+    }
+
+    @Test
+    void equalRerankScoresKeepTheHigherOriginalScoreFirst() {
+        NoteRecallRanker ranker = new NoteRecallRanker();
+        var selection = ranker.select(List.of(
+                scored("journal", "PDF", 30, 0, 5, 0),
+                scored("metadata", "MARKDOWN", 25, 8, 0, 0),
+                scored("other", "DOCX", 15, 2, 0, 0),
+                scored("relation", "WEB", 20, 0, 0, 6),
+                scored("B", "TXT", 100, 0, 0, 5).withRerankScore(0.5),
+                scored("A", "HTML", 2000, 0, 0, 5).withRerankScore(0.5)));
+
+        assertThat(selection.expansions()).extracting(ScoredCandidate::sourceId)
+                .containsExactly("A", "B");
+    }
+
     private ScoredCandidate scored(String id, String type, int score, int metadata, int note, int relation) {
         CandidateSource source = new CandidateSource(id, id, type, 1, 1, "", "", "", "[]", "{}", "",
                 score, "", List.of(), List.of(), 0, 0, "", "");

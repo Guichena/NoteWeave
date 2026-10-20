@@ -90,7 +90,8 @@ public class NoteRecallRanker {
         List<ScoredCandidate> expansions = scored.stream()
                 .filter(source -> !selectedIds.contains(source.sourceId()) && source.relationScore() > 0)
                 .sorted(Comparator.comparingInt(ScoredCandidate::relationScore).reversed()
-                        .thenComparing(Comparator.comparingInt(ScoredCandidate::score).reversed()))
+                        .thenComparing(Comparator.comparingInt(ScoredCandidate::score).reversed())
+                        .thenComparing(Comparator.comparingInt(ScoredCandidate::originalScore).reversed()))
                 .map(source -> source.withSelectionReason("relation-expansion"))
                 .limit(RELATION_EXPANSION_LIMIT)
                 .toList();
@@ -214,8 +215,15 @@ public class NoteRecallRanker {
             int noteScore,
             int relationScore,
             int readinessScore,
-            double rerankScore
+            double rerankScore,
+            int originalScore
     ) {
+        public ScoredCandidate(CandidateSource source, int metadataScore, int semanticScore,
+                               int noteScore, int relationScore, int readinessScore, double rerankScore) {
+            this(source, metadataScore, semanticScore, noteScore, relationScore, readinessScore,
+                    rerankScore, source.score());
+        }
+
         public ScoredCandidate(CandidateSource source, int metadataScore, int noteScore,
                                int relationScore, int readinessScore) {
             this(source, metadataScore, 0, noteScore, relationScore, readinessScore, source.score());
@@ -235,13 +243,13 @@ public class NoteRecallRanker {
 
         public ScoredCandidate withSelectionReason(String reason) {
             return new ScoredCandidate(source.withSelectionReason(reason), metadataScore, semanticScore,
-                    noteScore, relationScore, readinessScore, rerankScore);
+                    noteScore, relationScore, readinessScore, rerankScore, originalScore);
         }
 
         public ScoredCandidate withRerankScore(double score) {
-            int normalized = Math.max(source.score(), (int) Math.round(score * 1000));
+            int normalized = (int) Math.round(score * 1000);
             return new ScoredCandidate(source.withScore(normalized), metadataScore, semanticScore,
-                    noteScore, relationScore, readinessScore, score);
+                    noteScore, relationScore, readinessScore, score, originalScore);
         }
     }
 
