@@ -108,6 +108,9 @@ def _call_model(
         "policy": [
             "Write web search queries that find evidence for the listed table cells of one entity.",
             "The first query must be broad and short: 2 to 6 words naming the entity and the topic.",
+            "When the question compares this entity with other named subjects, every query is about this entity "
+            "alone: never name the other subjects and never write 'vs', 'comparison' or '对比'. Comparison "
+            "articles are secondary sources; another task searches the other subjects.",
             "Later queries narrow down to one or two columns each, using terms an authoritative source would use.",
             "Each query is plain natural language for a search engine: no field labels, no '::', no line breaks, "
             f"at most {MAX_QUERY_CHARS} characters.",
