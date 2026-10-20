@@ -43,8 +43,10 @@ public final class ConversationConstraintProjectorV2 {
             String key = next.kind() + ":" + next.scope()
                     + ("CURRENT_TOPIC".equals(next.scope()) ? ":" + topicId : "");
             Integer previous = activeByKind.get(key);
-            if (previous != null && value.matches("(?s).*(更正|改用|不要).*")
-                    && !"UNRESOLVED".equals(next.status())) {
+            // 同 kind+scope（CURRENT_TOPIC 还要求同话题）出现新的 ACTIVE 取值时，上一条立即失效，
+            // 不要求用户说出"更正/改用/不要"这类关键词：只要新取值生效，旧取值就不再成立。
+            // 指代不明（UNRESOLVED）没有取值，不能撤回任何约束。
+            if (previous != null && !"UNRESOLVED".equals(next.status())) {
                 Constraint old = output.get(previous);
                 output.set(previous, new Constraint(old.id(), old.sourceMessageId(), old.kind(),
                         old.scope(), old.text(), old.validFromSeq(), message.seq(),
