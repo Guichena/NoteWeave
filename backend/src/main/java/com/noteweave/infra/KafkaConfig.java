@@ -3,6 +3,7 @@ package com.noteweave.infra;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -285,7 +286,17 @@ public class KafkaConfig {
         return properties == null ? null : properties.kafka();
     }
 
+    /**
+     * 指数退避叠加抖动：第 {@code retry} 次的基准值为 {@code min(1000 << retry, cap)}，
+     * 实际延迟落在 {@code [base, base + max(1, base/5)]} 内。
+     * 抖动允许相邻延迟非严格递增（例如 cap 之后的两次基准相同），因此只保证基准值单调不减。
+     */
     BackOff exponentialJitterBackOff() {
+        return exponentialJitterBackOff(ThreadLocalRandom.current());
+    }
+
+    /** 可注入随机源的重载：生产路径使用 {@link ThreadLocalRandom}，测试可传入固定种子以获得确定性。 */
+    BackOff exponentialJitterBackOff(Random random) {
         int maxAttempts = retryMaxAttempts();
         long maxBackoffMillis = retryMaxBackoffMs();
         return () -> new BackOffExecution() {
@@ -298,8 +309,14 @@ public class KafkaConfig {
                 }
                 long baseMillis = Math.min(1_000L << retry++, maxBackoffMillis);
                 long maxJitterMillis = Math.max(1L, baseMillis / 5L);
-                return baseMillis + ThreadLocalRandom.current().nextLong(maxJitterMillis + 1L);
+                return baseMillis + nextJitterMillis(random, maxJitterMillis);
             }
         };
+    }
+
+    /** 抖动取值区间为闭区间 {@code [0, maxJitterMillis]}，与原有 ThreadLocalRandom#nextLong(bound) 语义一致。 */
+    private static long nextJitterMillis(Random random, long maxJitterMillis) {
+        long bound = maxJitterMillis + 1L;
+        return random.nextLong(bound);
     }
 }
