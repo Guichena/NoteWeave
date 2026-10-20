@@ -359,7 +359,7 @@ def test_url_fetch_adapter_with_transport_should_use_snapshot_content() -> None:
     assert document.transport_fallback_code == ""
     assert document.transport_attempt_count == 1
     assert document.snapshot_archive_ready is True
-    assert transport.calls == [(hit.url, hit.query, 2000)]
+    assert transport.calls == [(hit.url, hit.query, 4000)]
 
 
 def test_url_fetch_adapter_with_composite_transport_should_record_fallback_chain() -> None:

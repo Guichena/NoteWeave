@@ -132,8 +132,10 @@ class UrlFetchAdapter:
     def __init__(
         self,
         transport: UrlSnapshotTransport | None = None,
-        # 约 12000 个字符：合并任务要用同一页回答多个单元格，按单条检索词截取 4800 字符时其余列的内容常被截掉
-        token_budget: int = 2000,
+        # 约 24000 个字符：页面只按找到它的那条检索词截一段，12000 字符时同一页里别的列要的内容
+        # （如 pg_basebackup 选项一节里的 --incremental）常在范围之外；抽取时按列各截 1500 字，
+        # 窗口变长不会增大抽取提示
+        token_budget: int = 4000,
     ) -> None:
         self.transport = transport
         self.token_budget = token_budget

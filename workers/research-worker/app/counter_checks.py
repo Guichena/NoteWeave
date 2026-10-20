@@ -1,6 +1,7 @@
 """原子事实隔离验证。生成失败和判定失败均保留 NOT_RUN。"""
 from app.json_repair import parse_json_payload
 from app.cell_query_planner import normalize_query, query_rejection_reason
+from app.extractor import _excerpt_with_title
 
 MAX_FACTS = 6
 VERDICTS = {"REFUTED", "NOT_REFUTED", "NO_COUNTER_EVIDENCE_FOUND", "NOT_RUN"}
@@ -77,6 +78,7 @@ def judge_fact(fact, windows, llm):
                   "contradicting evidence; NOT_REFUTED requires supporting evidence; unrelated or empty results "
                   "mean NO_COUNTER_EVIDENCE_FOUND. Cite exact original text. Never treat no results as proof.",
         "claim_text": fact,
-        "passages": [{"window_id": w.window_id, "text": w.window_text} for w in windows],
+        # 只给与这条事实最相关的一段原文：整页原文随窗口变长会撑满提示；引文仍按整页原文校验
+        "passages": [{"window_id": w.window_id, "text": _excerpt_with_title(w.window_text, fact)} for w in windows],
         "output_schema": {"verdict": "REFUTED|NOT_REFUTED|NO_COUNTER_EVIDENCE_FOUND",
                           "citations": [{"window_id": "string", "quote_text": "string"}]}}, validate)
