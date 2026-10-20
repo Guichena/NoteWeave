@@ -21,6 +21,17 @@ public final class MemorySlots {
     private static final Pattern INTERACTION = Pattern.compile(
             ".*(追问|确认|反问|提问|澄清|ask|confirm).*",
             Pattern.CASE_INSENSITIVE);
+    /**
+     * 描述篇幅的词表。按「详略、数量、长短」分组排列，先于表格判定和类别兜底生效，
+     * 所以「简洁的段落」仍然归入长度而不是结构槽；这里只放整词，不使用裸「长/短」，
+     * 以免「更长的解释」这类语气描述被误判为长度偏好。
+     */
+    private static final String[] LENGTH_TERMS = {
+            "简短", "简洁", "精简", "啰嗦", "罗嗦", "冗长", "详细",
+            "字数", "篇幅", "长度",
+            "太长", "长一点", "长一些", "长段落",
+            "短句", "短一点", "短一些"
+    };
 
     private MemorySlots() {
     }
@@ -83,7 +94,7 @@ public final class MemorySlots {
         if (containsAny(text, "语言", "英文", "中文", "language")) {
             return "answer.language";
         }
-        if (containsAny(text, "简短", "简洁", "太长", "短句", "长段落", "长度")) {
+        if (containsAny(text, LENGTH_TERMS)) {
             return "answer.length";
         }
         if (containsAny(text, "表格", "table")) {
