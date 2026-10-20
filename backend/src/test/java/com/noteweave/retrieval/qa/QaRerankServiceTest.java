@@ -76,6 +76,32 @@ class QaRerankServiceTest {
     }
 
     @Test
+    void partialRerankKeepsUnscoredCandidatesBehindInOriginalOrder() {
+        QaRerankService service = new QaRerankService(new RerankClient() {
+            @Override public boolean isEnabled() { return true; }
+            @Override public RerankResult rerank(String query, List<String> documents, int topN) {
+                return new RerankResult(List.of(
+                        new Hit(2, 0.80, 1),
+                        new Hit(0, 0.20, 2)), "rerank-v1");
+            }
+        });
+
+        var outcome = service.rerank("query", List.of(
+                hit("a", 0.50), hit("b", 0.40), hit("c", 0.30), hit("d", 0.20), hit("e", 0.10)), 5);
+
+        assertThat(outcome.hits()).extracting(ranked -> ranked.hit().chunkId())
+                .containsExactly("c", "a", "b", "d", "e");
+        assertThat(outcome.hits().subList(0, 2)).allMatch(ranked -> !ranked.fallbackScore());
+        assertThat(outcome.hits().subList(2, 5)).allMatch(QaRerankService.RankedHit::fallbackScore);
+        double lowestScored = Math.min(
+                outcome.hits().get(0).rerankScore(), outcome.hits().get(1).rerankScore());
+        assertThat(outcome.hits().subList(2, 5)).allSatisfy(ranked ->
+                assertThat(ranked.rerankScore()).isLessThan(lowestScored));
+        assertThat(outcome.hits().get(3).rerankScore()).isLessThan(outcome.hits().get(2).rerankScore());
+        assertThat(outcome.hits().get(4).rerankScore()).isLessThan(outcome.hits().get(3).rerankScore());
+    }
+
+    @Test
     void emptyProviderResultShouldBeExplicitlyDegraded() {
         QaRerankService service = new QaRerankService(new RerankClient() {
             @Override public boolean isEnabled() { return true; }

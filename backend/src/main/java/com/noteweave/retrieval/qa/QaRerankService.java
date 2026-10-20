@@ -56,11 +56,23 @@ public class QaRerankService {
                 FusedHit candidate = safeCandidates.get(rerankHit.documentIndex());
                 ranked.add(new RankedHit(candidate, rerankHit.score(), rerankHit.rank(), false));
             }
+            boolean hasScored = !ranked.isEmpty();
+            double minScored = hasScored
+                    ? ranked.stream().mapToDouble(RankedHit::rerankScore).min().orElse(0.0d)
+                    : 0.0d;
+            int unscored = 0;
             for (int index = 0; index < safeCandidates.size(); index++) {
-                if (!byIndex.containsKey(index)) {
-                    FusedHit candidate = safeCandidates.get(index);
-                    ranked.add(new RankedHit(candidate, candidate.rrfScore(), ranked.size() + 1, true));
+                if (byIndex.containsKey(index)) {
+                    continue;
                 }
+                FusedHit candidate = safeCandidates.get(index);
+                // Unscored hits stay behind every scored hit, in their original order.
+                // An empty scored set keeps the previous RRF score.
+                double score = hasScored
+                        ? minScored - 1e-6d * (unscored + 1)
+                        : candidate.rrfScore();
+                unscored++;
+                ranked.add(new RankedHit(candidate, score, ranked.size() + 1, true));
             }
             return new RerankOutcome(ranked, false, List.of(), result.model());
         } catch (RuntimeException ex) {
