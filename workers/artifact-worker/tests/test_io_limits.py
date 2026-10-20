@@ -50,6 +50,13 @@ def test_llm_client_should_fallback_on_oversized_http_response(monkeypatch) -> N
     assert client.complete_json("artifact.generate", {}) == ""
 
 
+def test_llm_client_default_max_retries_is_two() -> None:
+    client = OpenAICompatibleLlmClient("api-key", "artifact-model")
+
+    assert client.max_retries == 2
+    assert client.client.max_retries == 2
+
+
 def test_llm_client_should_send_sdk_request_through_credential_safe_urlopen(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

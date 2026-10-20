@@ -102,6 +102,7 @@ class OpenAICompatibleLlmClient:
         base_url: str = "",
         timeout_seconds: int = 60,
         max_total_calls: int = 64,
+        max_retries: int = 2,
     ) -> None:
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
@@ -112,10 +113,11 @@ class OpenAICompatibleLlmClient:
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
-            max_retries=0,
+            max_retries=max_retries,
             timeout=timeout_seconds,
             http_client=httpx.Client(
                 transport=_CredentialSafeTransport(timeout_seconds),
