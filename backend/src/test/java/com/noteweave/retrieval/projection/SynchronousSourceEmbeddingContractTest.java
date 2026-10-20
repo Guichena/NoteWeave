@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.knowledge.WikiIndexOutbox;
 import com.noteweave.retrieval.index.RetrievalIndexManager;
 import com.noteweave.retrieval.index.RetrievalProjectionWriter;
 import com.noteweave.retrieval.provider.EmbeddingClient;
@@ -39,6 +40,8 @@ class SynchronousSourceEmbeddingContractTest {
     @MockBean EmbeddingClient embedding;
     @MockBean RetrievalIndexManager indexes;
     @MockBean RetrievalProjectionWriter writer;
+    /** Wiki 默认开启后，共享库里的索引发件箱会在本测试打桩期间调用同一个 EmbeddingClient mock。 */
+    @MockBean WikiIndexOutbox wikiIndexOutbox;
 
     @Test
     void committedUploadPersistsContextProjectionAndReadyStatus() throws Exception {
@@ -52,6 +55,7 @@ class SynchronousSourceEmbeddingContractTest {
         String workspace = mapper.readTree(mvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of("name", "同步向量回归"))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).path("data").path("workspace_id").asText();
+        jdbc.update("update workspace set wiki_enabled = false where id = ?", workspace);
         byte[] body = "# 资料标题\n\n原文与上下文分别保存，资料提交后可以读取。".getBytes(StandardCharsets.UTF_8);
         String upload = uploads.createUpload(workspace, new CreateUploadRequest("同步.md", body.length,
                 "text/markdown", body.length, 1)).uploadId();
