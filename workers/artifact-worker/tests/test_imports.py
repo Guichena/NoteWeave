@@ -136,12 +136,14 @@ def test_artifact_worker_should_use_only_its_namespaced_llm_configuration(monkey
     monkeypatch.setenv("NOTEWEAVE_LLM_API_KEY", "backend-key-must-not-leak")
     monkeypatch.setenv("NOTEWEAVE_LLM_BASE_URL", "https://backend.example/v1")
     monkeypatch.setenv("NOTEWEAVE_LLM_MODEL", "backend-model")
+    monkeypatch.setenv("NOTEWEAVE_LLM_MAX_RETRIES", "7")
 
     settings = load_settings()
 
     assert settings.llm_api_key == "artifact-key"
     assert settings.llm_base_url == "https://artifact.example/v1"
     assert settings.llm_model == "artifact-model"
+    assert settings.llm_max_retries == 2
 
     monkeypatch.delenv("NOTEWEAVE_ARTIFACT_LLM_API_KEY")
     monkeypatch.delenv("NOTEWEAVE_ARTIFACT_LLM_BASE_URL")
@@ -151,6 +153,15 @@ def test_artifact_worker_should_use_only_its_namespaced_llm_configuration(monkey
     assert isolated_settings.llm_api_key == ""
     assert isolated_settings.llm_base_url == ""
     assert isolated_settings.llm_model == ""
+    assert isolated_settings.llm_max_retries == 2
+
+
+def test_artifact_llm_max_retries_reads_namespaced_env(monkeypatch) -> None:
+    monkeypatch.delenv("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES", raising=False)
+    assert load_settings().llm_max_retries == 2
+
+    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES", "0")
+    assert load_settings().llm_max_retries == 0
 
 
 def test_artifact_worker_default_file_stores_should_live_under_dedicated_runtime_directory(

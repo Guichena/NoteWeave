@@ -113,11 +113,12 @@ class OpenAICompatibleLlmClient:
         self.model_name = model
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
-        self.max_retries = max_retries
+        # SDK retries stay inside chat.completions.create; call_records count logical calls only.
+        self.max_retries = max(0, max_retries)
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
-            max_retries=max_retries,
+            max_retries=self.max_retries,
             timeout=timeout_seconds,
             http_client=httpx.Client(
                 transport=_CredentialSafeTransport(timeout_seconds),
@@ -227,4 +228,5 @@ def build_default_llm_client() -> LlmClient | None:
         base_url=settings.llm_base_url,
         timeout_seconds=max(1, settings.llm_timeout_seconds),
         max_total_calls=settings.llm_max_total_calls,
+        max_retries=max(0, settings.llm_max_retries),
     )
