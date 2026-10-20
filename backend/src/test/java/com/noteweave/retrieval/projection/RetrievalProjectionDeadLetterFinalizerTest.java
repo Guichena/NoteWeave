@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.source.SourceTopicNames;
+import com.noteweave.source.SourceTopicNamesFixture;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -35,7 +37,7 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
         embeddingBatches = mock(SourceEmbeddingBatchRepository.class);
         finalizer = new RetrievalProjectionDeadLetterFinalizer(
-                new ObjectMapper(), projectionFinalizer, "noteweave.retrieval.projection")
+                new ObjectMapper(), projectionFinalizer, SourceTopicNamesFixture.defaults())
                 .withEmbeddingBatches(embeddingBatches);
     }
 
@@ -47,6 +49,30 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         assertThat(finalizer.handles(SourcePipelineStages.TOPIC_PARSE)).isFalse();
         assertThat(finalizer.handles(SourcePipelineStages.TOPIC_CHUNK)).isFalse();
         assertThat(finalizer.handles(null)).isFalse();
+    }
+
+    /** 主题名改成配置里的自定义值之后，识别和收尾都必须跟着走，不能只认缺省常量。 */
+    @Test
+    void customTopicNamesShouldStillBeHandledAndFinalized() {
+        SourceTopicNames custom = SourceTopicNamesFixture.custom(
+                "acme.parse", "acme.chunk", "acme.embed", "acme.index", "acme.projection");
+        RetrievalProjectionDeadLetterFinalizer customFinalizer = new RetrievalProjectionDeadLetterFinalizer(
+                new ObjectMapper(), projectionFinalizer, custom).withEmbeddingBatches(embeddingBatches);
+        when(embeddingBatches.acceptsFailure(
+                "workspace-1", "source-1", "snapshot-1", "task-1", 0, VERSION)).thenReturn(true);
+
+        assertThat(customFinalizer.handles("acme.embed")).isTrue();
+        assertThat(customFinalizer.handles("acme.index")).isTrue();
+        assertThat(customFinalizer.handles("acme.projection")).isTrue();
+        assertThat(customFinalizer.handles(SourcePipelineStages.TOPIC_EMBED)).isFalse();
+        assertThat(customFinalizer.handles(SourcePipelineStages.TOPIC_INDEX)).isFalse();
+
+        boolean finalized = customFinalizer.finalizeFailure("acme.embed", EMBED_PAYLOAD,
+                RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
+
+        assertThat(finalized).isTrue();
+        verify(projectionFinalizer).finalizeFailed("workspace-1", "source-1", "snapshot-1", "task-1",
+                "OUTBOX_DISPATCH_EXHAUSTED");
     }
 
     @Test

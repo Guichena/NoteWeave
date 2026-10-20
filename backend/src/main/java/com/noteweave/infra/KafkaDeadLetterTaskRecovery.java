@@ -7,11 +7,11 @@ import com.noteweave.retrieval.projection.RetrievalProjectionDeadLetterFinalizer
 import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.source.SourceParseFailureFinalizer;
+import com.noteweave.source.SourceTopicNames;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,21 +25,20 @@ public class KafkaDeadLetterTaskRecovery {
     private final ObjectMapper objectMapper;
     private final RetrievalProjectionDeadLetterFinalizer retrievalProjectionFinalizer;
     private final SourceParseFailureFinalizer sourceParseFailureFinalizer;
-    private final String sourceParseTopic;
+    private final SourceTopicNames topicNames;
 
     public KafkaDeadLetterTaskRecovery(
             ObjectMapper objectMapper,
             SourceRetrievalProjectionFinalizer projectionFinalizer,
             SourceParseFailureFinalizer sourceParseFailureFinalizer,
-            @Value("${noteweave.kafka.topics.retrieval-projection}") String retrievalProjectionTopic,
-            @Value("${noteweave.kafka.topics.source-parse}") String sourceParseTopic
+            SourceTopicNames topicNames
     ) {
         this.objectMapper = objectMapper;
         // 检索投影的死信收尾与 outbox 投递耗尽共用同一套逻辑
         this.retrievalProjectionFinalizer = new RetrievalProjectionDeadLetterFinalizer(
-                objectMapper, projectionFinalizer, retrievalProjectionTopic);
+                objectMapper, projectionFinalizer, topicNames);
         this.sourceParseFailureFinalizer = sourceParseFailureFinalizer;
-        this.sourceParseTopic = sourceParseTopic;
+        this.topicNames = topicNames;
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -49,8 +48,9 @@ public class KafkaDeadLetterTaskRecovery {
 
     public void recover(ConsumerRecord<?, ?> record, Exception exception) {
         // 解析和切片阶段失败时资料停在解析中；向量化和索引阶段失败时资料停在索引中
-        boolean chunkStage = com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(record.topic());
-        if (sourceParseTopic.equals(record.topic()) || chunkStage) {
+        // 主题名取自配置：硬编码字面量或常量一旦与配置不一致，死信收尾就会漏掉这条记录
+        boolean chunkStage = topicNames.chunk().equals(record.topic());
+        if (topicNames.isParseStage(record.topic())) {
             recoverSourceParse(record, exception, chunkStage);
             return;
         }

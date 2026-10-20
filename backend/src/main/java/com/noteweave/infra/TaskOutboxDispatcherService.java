@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.common.BusinessException;
 import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.source.SourceTopicNames;
 import com.noteweave.task.TaskService;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import com.noteweave.infra.outbox.OutboxDispatchPolicy;
@@ -37,7 +38,7 @@ public class TaskOutboxDispatcherService {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final boolean enabled;
     private final List<String> topics;
-    private final String sourceParseTopic;
+    private final SourceTopicNames topicNames;
     private final TaskService taskService;
     private final DurableOutboxDispatcher outboxDispatcher;
     private final SourceParseFailureFinalizer sourceParseFailureFinalizer;
@@ -94,13 +95,13 @@ public class TaskOutboxDispatcherService {
         this.outboxDispatcher = outboxDispatcher;
         this.sourceParseFailureFinalizer = sourceParseFailureFinalizer;
         NoteWeaveProperties.Topics configured = properties.kafka().topics();
-        this.sourceParseTopic = configured.sourceParse();
+        this.topicNames = new SourceTopicNames(properties);
         this.topics = configured.all();
         // 向量化/索引投递耗尽要与死信收尾一致：把快照、资料和任务标记为失败，
         // 资料才能被重新处理，残留的批次租约在重新处理时被清理
         this.retrievalProjectionFinalizer = sourceRetrievalProjectionFinalizer == null ? null
                 : new RetrievalProjectionDeadLetterFinalizer(
-                        new ObjectMapper(), sourceRetrievalProjectionFinalizer, configured.retrievalProjection());
+                        new ObjectMapper(), sourceRetrievalProjectionFinalizer, topicNames);
     }
 
     /** 批次守卫可选：没有向量批次仓储时仍然完成快照与任务收尾。 */
@@ -148,8 +149,7 @@ public class TaskOutboxDispatcherService {
         if (message.taskId() == null) {
             return;
         }
-        if (sourceParseFailureFinalizer != null && (sourceParseTopic.equals(message.topic())
-                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(message.topic()))) {
+        if (sourceParseFailureFinalizer != null && topicNames.isParseStage(message.topic())) {
             sourceParseFailureFinalizer.finalizeDeliveryExhausted(message.taskId(), message.payloadJson());
             return;
         }
@@ -208,10 +208,10 @@ public class TaskOutboxDispatcherService {
 
     /** 按主题复位资料流水线状态；无法识别载荷或主题时保持原样，重投本身仍然生效。 */
     private void resetPipelineState(OutboxRow row) {
-        boolean parseTopic = sourceParseTopic.equals(row.topic());
-        boolean chunkTopic = SourcePipelineStages.TOPIC_CHUNK.equals(row.topic());
-        boolean embedTopic = SourcePipelineStages.TOPIC_EMBED.equals(row.topic());
-        boolean indexTopic = SourcePipelineStages.TOPIC_INDEX.equals(row.topic());
+        boolean parseTopic = topicNames.parse().equals(row.topic());
+        boolean chunkTopic = topicNames.chunk().equals(row.topic());
+        boolean embedTopic = topicNames.embed().equals(row.topic());
+        boolean indexTopic = topicNames.index().equals(row.topic());
         if (!parseTopic && !chunkTopic && !embedTopic && !indexTopic) {
             return;
         }

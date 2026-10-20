@@ -8,6 +8,7 @@ import com.noteweave.storage.ObjectStorage;
 import com.noteweave.source.SourceMessagingMode;
 import com.noteweave.source.SourceParsePort;
 import com.noteweave.source.SourceCatalogVersionService;
+import com.noteweave.source.SourceTopicNames;
 import com.noteweave.task.TaskCommandPort;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
@@ -47,6 +48,7 @@ public class UploadService {
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final UploadTempObjectCleanupService uploadTempObjectCleanupService;
+    private final SourceTopicNames topicNames;
     private Duration staleAfter = Duration.ofSeconds(86400);
     private com.noteweave.research.ResearchGeneratedSourceReadGate generatedSourceReadGate;
 
@@ -69,7 +71,8 @@ public class UploadService {
             UploadSecurityPolicy uploadSecurityPolicy,
             AuditActorProvider auditActorProvider,
             SourceCatalogVersionService sourceCatalogVersionService,
-            UploadTempObjectCleanupService uploadTempObjectCleanupService
+            UploadTempObjectCleanupService uploadTempObjectCleanupService,
+            SourceTopicNames topicNames
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -82,6 +85,7 @@ public class UploadService {
         this.auditActorProvider = auditActorProvider;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.uploadTempObjectCleanupService = uploadTempObjectCleanupService;
+        this.topicNames = topicNames;
         log.info("UploadService initialised with object storage backend: {}", storage.backendName());
     }
 
@@ -293,8 +297,8 @@ public class UploadService {
         if (kafkaEnabled) {
             jdbcTemplate.update("""
                     insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                    values (?, ?, 'noteweave.source.parse', ?, ?, 'READY')
-                    """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
+                    values (?, ?, ?, ?, ?, 'READY')
+                    """, Ids.newId(), taskId, topicNames.parse(), sourceId, Json.write(objectMapper, payload));
         } else {
             taskCommandPort.startTask(taskId);
             sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged.path());

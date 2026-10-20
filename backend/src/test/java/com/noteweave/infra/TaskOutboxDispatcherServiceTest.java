@@ -170,6 +170,56 @@ class TaskOutboxDispatcherServiceTest {
                 "Kafka Outbox 投递耗尽，已进入死信", "OUTBOX_DISPATCH_EXHAUSTED", true);
     }
 
+    /** 主题名改成配置里的自定义值之后，投递耗尽仍要按配置主题命中投影收尾分支。 */
+    @Test
+    void customTopicNamesShouldStillFinalizeEmbedExhaustion() {
+        properties = customTopics();
+        TaskService taskService = mock(TaskService.class);
+        SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
+        insertOutbox("outbox-custom-embed", "task-embed", 4, "acme.source.embed", embedPayload());
+        failEverySend();
+
+        dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
+
+        assertThat(status("outbox-custom-embed")).isEqualTo("DEAD_LETTER");
+        verify(projectionFinalizer).finalizeFailed(
+                "workspace-1", "source-1", "snapshot-1", "task-embed", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    /** 自定义解析/索引主题的死信重驱也必须重置资料与快照状态，而不是只把 outbox 行改回 READY。 */
+    @Test
+    void customTopicNamesShouldStillResetPipelineStateOnRedrive() {
+        properties = customTopics();
+        insertDeadLetter("outbox-custom-parse", "task-1", "acme.source.parse", """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","snapshotId":"snapshot-1"}
+                """);
+        insertDeadLetter("outbox-custom-index", "task-1", "acme.source.index", """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","snapshotId":"snapshot-1"}
+                """);
+        seedSource("FAILED", "FAILED", "FAILED");
+        seedSnapshot("snapshot-1", "FAILED", "FAILED", "EXTRACTING", 2, true);
+        seedBatch("batch-1", "COMPLETED", "lease-1");
+        TaskService taskService = mock(TaskService.class);
+
+        redrive("outbox-custom-parse", taskService);
+
+        assertThat(status("outbox-custom-parse")).isEqualTo("READY");
+        assertThat(snapshot("snapshot-1").get("parse_status")).isEqualTo("PENDING");
+        assertThat(source().get("parse_status")).isEqualTo("PENDING");
+        verify(taskService).redriveTask("task-1", false);
+
+        jdbcTemplate.update("""
+                update source_snapshot set parse_status = 'PARSED', index_status = 'FAILED',
+                    processing_stage = 'EMBEDDING', index_attempt_count = 2
+                where id = 'snapshot-1'
+                """);
+        redrive("outbox-custom-index", taskService);
+
+        assertThat(status("outbox-custom-index")).isEqualTo("READY");
+        assertThat(snapshot("snapshot-1").get("processing_stage")).isEqualTo("INDEXING");
+    }
+
     @Test
     void unrelatedTopicExhaustionShouldStillOnlyFailTask() {
         TaskService taskService = mock(TaskService.class);
@@ -376,6 +426,16 @@ class TaskOutboxDispatcherServiceTest {
         return new TaskOutboxDispatcherService(jdbcTemplate, kafkaTemplate, properties, taskService, meterRegistry,
                 new DurableOutboxDispatcher(jdbcTemplate, meterRegistry),
                 mock(SourceParseFailureFinalizer.class), projectionFinalizer);
+    }
+
+    private NoteWeaveProperties customTopics() {
+        return new NoteWeaveProperties(null, null, null,
+                new NoteWeaveProperties.Kafka(true, new NoteWeaveProperties.Topics(
+                        "acme.source.parse", "acme.retrieval.projection",
+                        "acme.wiki.ingest", "acme.wiki.retract", "acme.conversation.summary",
+                        "acme.memory.extraction", "acme.source.chunk", "acme.source.embed",
+                        "acme.source.index")),
+                null, null);
     }
 
     private void failEverySend() {

@@ -18,6 +18,8 @@ import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.source.SourceParseFailureFinalizer;
 import com.noteweave.source.SourceParseService.SynchronousRetrievalProjectionRequested;
+import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.source.SourceTopicNamesFixture;
 import com.noteweave.task.TaskService;
 import java.util.Collection;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -72,7 +74,8 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
         SourceRetrievalProjectionFinalizer finalizer = mock(SourceRetrievalProjectionFinalizer.class);
         KafkaDeadLetterTaskRecovery recovery = new KafkaDeadLetterTaskRecovery(
                 new ObjectMapper(), finalizer, mock(SourceParseFailureFinalizer.class),
-                "retrieval.projection", "source.parse");
+                SourceTopicNamesFixture.custom("source.parse", SourcePipelineStages.TOPIC_CHUNK,
+                        SourcePipelineStages.TOPIC_EMBED, SourcePipelineStages.TOPIC_INDEX, "retrieval.projection"));
         ConsumerRecord<String, String> record = new ConsumerRecord<>(
                 "retrieval.projection",
                 0,

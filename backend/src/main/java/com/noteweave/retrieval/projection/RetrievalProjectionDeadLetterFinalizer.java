@@ -2,7 +2,7 @@ package com.noteweave.retrieval.projection;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.source.SourceTopicNames;
 import java.io.IOException;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -27,17 +27,17 @@ public class RetrievalProjectionDeadLetterFinalizer {
 
     private final ObjectMapper objectMapper;
     private final SourceRetrievalProjectionFinalizer projectionFinalizer;
-    private final String retrievalProjectionTopic;
+    private final SourceTopicNames topicNames;
     private SourceEmbeddingBatchRepository embeddingBatches;
 
     public RetrievalProjectionDeadLetterFinalizer(
             ObjectMapper objectMapper,
             SourceRetrievalProjectionFinalizer projectionFinalizer,
-            String retrievalProjectionTopic
+            SourceTopicNames topicNames
     ) {
         this.objectMapper = objectMapper;
         this.projectionFinalizer = projectionFinalizer;
-        this.retrievalProjectionTopic = retrievalProjectionTopic;
+        this.topicNames = topicNames;
     }
 
     /** 批次守卫可以为空（例如没有配置向量批次仓储的测试环境）。 */
@@ -47,11 +47,9 @@ public class RetrievalProjectionDeadLetterFinalizer {
         return this;
     }
 
-    /** 只有检索投影相关的主题才需要这套收尾。 */
+    /** 只有检索投影相关的主题才需要这套收尾，主题名一律取自配置。 */
     public boolean handles(String topic) {
-        return topic != null && (topic.equals(retrievalProjectionTopic)
-                || SourcePipelineStages.TOPIC_EMBED.equals(topic)
-                || SourcePipelineStages.TOPIC_INDEX.equals(topic));
+        return topicNames.isRetrievalProjection(topic);
     }
 
     /**
@@ -83,11 +81,11 @@ public class RetrievalProjectionDeadLetterFinalizer {
             log.warn("检索投影消息缺少身份信息，跳过收尾: topic={}, payload={}", topic, payloadJson);
             return false;
         }
-        if (embeddingBatches != null && SourcePipelineStages.TOPIC_EMBED.equals(topic)
+        if (embeddingBatches != null && topicNames.embed().equals(topic)
                 && !embedBatchAcceptsFailure(workspaceId, sourceId, snapshotId, taskId, payload)) {
             return false;
         }
-        if (embeddingBatches != null && SourcePipelineStages.TOPIC_INDEX.equals(topic)
+        if (embeddingBatches != null && topicNames.index().equals(topic)
                 && !embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "INDEXING")) {
             return false;
         }
