@@ -1,6 +1,6 @@
 {
   "dataset_key": "research-quality-v1",
-  "dataset_version": "1.0.0",
+  "dataset_version": "1.1.0",
   "frozen_at": "2026-10-12",
   "schema_version": "research-quality-dataset.v1",
   "purpose": "评估 Deep Research 结论质量；与 research-eval-v1 的健壮性断言互补，结构化字段由脚本统计，内容质量由单次 LLM 评分。",
@@ -27,19 +27,18 @@
       "research_eval_v1_case": "normal-postgres17-vs-mysql84-json"
     },
     {
-      "case_key": "cmp-openai-anthropic-tools",
+      "case_key": "cmp-nginx-envoy-lb",
       "question_type": "COMPARISON",
-      "question": "比较 OpenAI Responses API 与 Anthropic Messages API 在工具调用和流式事件设计上的差异，引用官方文档。",
+      "question": "比较 Nginx 与 Envoy 在负载均衡和健康检查机制上的差异，引用官方文档。",
       "must_cover": [
-        "工具定义与调用结果的消息结构",
-        "流式事件的类型划分",
-        "并行工具调用的支持方式"
+        "支持的负载均衡算法",
+        "主动与被动健康检查的方式",
+        "配置变更是否需要重新加载进程"
       ],
       "expected_entities": [
-        "OpenAI Responses API",
-        "Anthropic Messages API"
-      ],
-      "research_eval_v1_case": "normal-openai-responses-vs-anthropic-messages"
+        "Nginx",
+        "Envoy"
+      ]
     },
     {
       "case_key": "cmp-kafka-pulsar-ordering",
@@ -252,6 +251,13 @@
         "决定结果的条件，例如水合成本"
       ],
       "research_eval_v1_case": "conflict-ssr-vs-csr-web-vitals"
+    }
+  ],
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-10-20",
+      "change": "题目不涉及大模型：cmp-openai-anthropic-tools 换成 cmp-nginx-envoy-lb，题型与难度相同"
     }
   ]
 }
