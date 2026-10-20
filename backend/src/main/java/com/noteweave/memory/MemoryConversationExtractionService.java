@@ -37,7 +37,10 @@ public class MemoryConversationExtractionService {
     static final String SOURCE_EXPLICIT = "CONVERSATION_FEEDBACK";
     static final String SOURCE_INFERRED = "MODEL_INFERENCE";
     private static final String SOURCE_REF_PREFIX = "conversation-message:";
-    private static final int MAX_MESSAGE_CHARS = 2_000;
+    /** 入队 payload 保留的消息上限，与 {@link #shouldExtract(String)} 的上限一致。 */
+    static final int MAX_QUEUED_MESSAGE_CHARS = 4_000;
+    /** 只有拼接提示词时才截断，避免长消息在入队阶段丢失偏好。 */
+    private static final int MAX_PROMPT_MESSAGE_CHARS = 2_000;
     private static final int MAX_STATEMENTS = 3;
     private static final int MAX_STATEMENT_CHARS = 200;
     private static final int EXTRACTION_OUTPUT_TOKENS = 900;
@@ -152,7 +155,7 @@ public class MemoryConversationExtractionService {
         payload.put("conversation_id", conversationId);
         payload.put("message_id", messageId);
         payload.put("user_id", actorUserId);
-        payload.put("content", bound(content, MAX_MESSAGE_CHARS));
+        payload.put("content", queuedContent(content));
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')
@@ -161,7 +164,17 @@ public class MemoryConversationExtractionService {
     }
 
     static boolean shouldExtract(String content) {
-        return content != null && !content.isBlank() && content.length() <= MAX_MESSAGE_CHARS * 2;
+        return content != null && !content.isBlank() && content.length() <= MAX_QUEUED_MESSAGE_CHARS;
+    }
+
+    /** 入队 payload 里的消息内容：完整保留到 {@link #MAX_QUEUED_MESSAGE_CHARS}。 */
+    static String queuedContent(String content) {
+        return content == null ? "" : bound(content, MAX_QUEUED_MESSAGE_CHARS);
+    }
+
+    /** 拼接提示词时使用的消息内容：按 {@link #MAX_PROMPT_MESSAGE_CHARS} 截断。 */
+    static String promptContent(String content) {
+        return content == null ? "" : bound(content.trim(), MAX_PROMPT_MESSAGE_CHARS);
     }
 
     /**
@@ -243,7 +256,7 @@ public class MemoryConversationExtractionService {
     }
 
     Extraction extractPreferences(String content, String previousAnswer) {
-        String message = bound(content == null ? "" : content.trim(), MAX_MESSAGE_CHARS);
+        String message = promptContent(content);
         if (llmClient != null && llmClient.isEnabled()) {
             String decision = MemoryExtractionClassifier.decide(llmClient, message);
             if ("NO".equals(decision)) {
@@ -420,7 +433,7 @@ public class MemoryConversationExtractionService {
                 order by earlier.created_at desc
                 limit 1
                 """, rs -> rs.next() ? rs.getString(1) : null, messageId, workspaceId);
-        return content == null ? "" : bound(content, MAX_MESSAGE_CHARS);
+        return content == null ? "" : bound(content, MAX_PROMPT_MESSAGE_CHARS);
     }
 
     private static String extractionPrompt(String message, String previousAnswer) {
