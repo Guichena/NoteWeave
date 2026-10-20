@@ -8,15 +8,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
 @Component
 public class QaRerankService {
-    private static final Pattern CODE_FENCE = Pattern.compile("```+");
+    private static final Pattern CODE_FENCE = Pattern.compile("```+[A-Za-z0-9_+-]*");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[[^]]*]\\([^)]*\\)");
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^]]+)]\\([^)]*\\)");
     private static final Pattern MARKERS = Pattern.compile("(?m)^(?:#{1,6}|>|[-*+] |\\d+\\. )\\s*");
+    private static final Pattern BARE_HTTP_URL = Pattern.compile("https?://[^\\s<>\"'`\\]\\)]+", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SENSITIVE_QUERY_NAME = Pattern.compile(
+            "(?i)^(x-amz-.+|x-goog-.+|awsaccesskeyid|signature|sig|token|access[_-]?token|security[_-]?token)$");
+    private static final String URL_TRAILING_PUNCTUATION = ".,;:!?";
     private final RerankClient rerankClient;
 
     public QaRerankService(RerankClient rerankClient) {
@@ -102,7 +107,52 @@ public class QaRerankService {
         text = MARKDOWN_IMAGE.matcher(text).replaceAll(" ");
         text = MARKDOWN_LINK.matcher(text).replaceAll("$1");
         text = MARKERS.matcher(text).replaceAll("");
+        text = stripSensitiveUrlQueryParams(text);
         return text.replaceAll("[\\t ]+", " ").replaceAll("\\n{3,}", "\n\n").trim();
+    }
+
+    private String stripSensitiveUrlQueryParams(String text) {
+        Matcher matcher = BARE_HTTP_URL.matcher(text);
+        StringBuilder rewritten = new StringBuilder();
+        while (matcher.find()) {
+            String raw = matcher.group();
+            String trailing = "";
+            while (!raw.isEmpty() && URL_TRAILING_PUNCTUATION.indexOf(raw.charAt(raw.length() - 1)) >= 0) {
+                trailing = raw.charAt(raw.length() - 1) + trailing;
+                raw = raw.substring(0, raw.length() - 1);
+            }
+            matcher.appendReplacement(rewritten, Matcher.quoteReplacement(stripSensitiveQuery(raw) + trailing));
+        }
+        matcher.appendTail(rewritten);
+        return rewritten.toString();
+    }
+
+    private String stripSensitiveQuery(String url) {
+        int queryStart = url.indexOf('?');
+        if (queryStart < 0 || queryStart == url.length() - 1) {
+            return url;
+        }
+        int fragmentStart = url.indexOf('#', queryStart + 1);
+        String base = url.substring(0, queryStart);
+        String query = fragmentStart < 0
+                ? url.substring(queryStart + 1)
+                : url.substring(queryStart + 1, fragmentStart);
+        String fragment = fragmentStart < 0 ? "" : url.substring(fragmentStart);
+        List<String> kept = new ArrayList<>();
+        for (String param : query.split("&", -1)) {
+            if (param.isEmpty()) {
+                continue;
+            }
+            int eq = param.indexOf('=');
+            String name = eq < 0 ? param : param.substring(0, eq);
+            if (!SENSITIVE_QUERY_NAME.matcher(name).matches()) {
+                kept.add(param);
+            }
+        }
+        if (kept.isEmpty()) {
+            return base + fragment;
+        }
+        return base + "?" + String.join("&", kept) + fragment;
     }
 
     private String text(String value) {
