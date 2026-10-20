@@ -458,7 +458,11 @@ _META_DIMENSION = re.compile(
     r"|出处$|文档出处"
     # 只讲“官方文档说明”“官方文档条目或链接”的列
     r"|^(?:官方)?(?:文档|规范)(?:说明|页面|链接|原文|条目)$|^(?i:cite)\b|^引用"
-    r"|(?i:^(?:the\s+)?official\s+(?:documentation|docs)\b.*\b(?:entry|entries|url|urls|page|pages|links?|explanation|says?)\b)")
+    r"|(?i:^(?:the\s+)?official\s+(?:documentation|docs)\b.*\b(?:entry|entries|url|urls|page|pages|links?|explanation|says?)\b)"
+    # 只有文档名或网址的列（官方文档来源、官方来源 URL、official documentation）、原文引述，
+    # 以及评价证据本身的列（证据缺口、证据等级）：缺口和证据强弱由核验结果给出，不需要单独检索
+    r"|^(?:官方)?(?:文档|规范)?(?:来源|出处)$|^官方文档来源$|(?i:\burls?)$|引述$"
+    r"|(?i:^(?:official\s+)?(?:documentation|docs)$)|证据缺口|证据充分性|证据等级")
 _META_POINT = re.compile(
     r"(?i)\b(?:urls?|links?)\b|official\s+(?:documentation|docs)\s+(?:urls?|entry|entries|pages?)"
     r"|原文引用|引用原始|引用原文|链接|文档页面|文档说明")

@@ -296,12 +296,16 @@ def test_meta_dimensions_are_dropped_but_evidence_content_columns_stay() -> None
         {"label": "Incompatible changes list"}, {"label": "Migration tooling"},
         {"label": "Official quote and source"}, {"label": "规范原文引用"},
         {"label": "Relevant RFC references"}, {"label": "发布与改善原始引用"},
-        {"label": "版本与官方文档出处"},
+        {"label": "版本与官方文档出处"}, {"label": "官方文档来源"}, {"label": "官方来源 URL"},
+        {"label": "规范原文引述"}, {"label": "official documentation"},
     ]), PLANNING_INPUT)
     assert [item["label"] for item in draft.plan["dimensions"]] == ["Incompatible changes list", "Migration tooling"]
 
-    conflict = validate_plan(_plan(dimensions=[{"label": "支持的证据与来源"}, {"label": "反对的证据与来源"}]), PLANNING_INPUT)
-    assert [item["label"] for item in conflict.plan["dimensions"]] == ["支持的证据与来源", "反对的证据与来源"]
+    conflict = validate_plan(_plan(dimensions=[
+        {"label": "支持的证据与来源"}, {"label": "反对的证据与来源"}, {"label": "研究或案例来源"},
+        {"label": "证据缺口"}, {"label": "因果与相关性证据等级"},
+    ]), PLANNING_INPUT)
+    assert [item["label"] for item in conflict.plan["dimensions"]] == ["支持的证据与来源", "反对的证据与来源", "研究或案例来源"]
 
 
 def test_required_point_without_a_dimension_is_sent_back_then_filled_on_the_last_attempt() -> None:
