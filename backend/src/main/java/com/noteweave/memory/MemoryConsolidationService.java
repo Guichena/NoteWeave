@@ -23,6 +23,18 @@ public class MemoryConsolidationService {
     private static final String MERGE_PROMPT = """
             判断下面两条记忆是否在说同一条回答偏好。
             只输出 JSON：{"merge": true} 或 {"merge": false}。不要解释。""";
+    private static final int MERGE_BATCH_SIZE = 40;
+    private static final Timestamp MERGE_CURSOR_ORIGIN = Timestamp.from(Instant.EPOCH);
+    private static final String MERGE_CURSOR_ORIGIN_ID = "";
+    private static final String MERGE_BATCH_SQL = """
+            select i.id, i.workspace_id, i.reinforcement_count, i.semantic_slot_key, r.display_text, i.created_at
+            from memory_item i
+            join memory_runtime_revision r on r.id = i.current_revision_id
+            where i.status = 'ACTIVE' and i.review_status = 'APPROVED' and r.status = 'ACTIVE'
+              and (i.created_at > ? or (i.created_at = ? and i.id > ?))
+            order by i.created_at, i.id
+            limit 40
+            """;
 
     private final JdbcTemplate jdbcTemplate;
     private final ChatLlmClient llmClient;
@@ -31,6 +43,8 @@ public class MemoryConsolidationService {
     private final CanonicalMemoryReviewService reviewService;
     private final boolean enabled;
     private final int staleDays;
+    /** 实例内 keyset 游标：上一批末尾的 (created_at, id)；扫到末尾后复位到起始点。 */
+    private ConsolidationCursor mergeCursor = new ConsolidationCursor(MERGE_CURSOR_ORIGIN, MERGE_CURSOR_ORIGIN_ID);
 
     public MemoryConsolidationService(
             JdbcTemplate jdbcTemplate,
@@ -87,20 +101,22 @@ public class MemoryConsolidationService {
                 """, cutoff);
     }
 
-    private int mergeDuplicates() {
-        List<Item> items = jdbcTemplate.query("""
-                select i.id, i.workspace_id, i.reinforcement_count, i.semantic_slot_key, r.display_text
-                from memory_item i
-                join memory_runtime_revision r on r.id = i.current_revision_id
-                where i.status = 'ACTIVE' and i.review_status = 'APPROVED' and r.status = 'ACTIVE'
-                order by i.created_at, i.id
-                limit 40
-                """, (rs, rowNum) -> new Item(
+    private synchronized int mergeDuplicates() {
+        ConsolidationCursor start = mergeCursor;
+        List<Item> items = jdbcTemplate.query(MERGE_BATCH_SQL, (rs, rowNum) -> new Item(
                 rs.getString("id"),
                 rs.getString("workspace_id"),
                 rs.getInt("reinforcement_count"),
                 MemorySlots.publicSlot(rs.getString("semantic_slot_key")),
-                rs.getString("display_text")));
+                rs.getString("display_text"),
+                rs.getTimestamp("created_at")),
+                start.createdAt(), start.createdAt(), start.id());
+        if (items.size() < MERGE_BATCH_SIZE) {
+            mergeCursor = new ConsolidationCursor(MERGE_CURSOR_ORIGIN, MERGE_CURSOR_ORIGIN_ID);
+        } else {
+            Item last = items.get(items.size() - 1);
+            mergeCursor = new ConsolidationCursor(last.createdAt(), last.id());
+        }
         int merged = 0;
         for (int i = 0; i < items.size() && merged < 5; i++) {
             for (int j = i + 1; j < items.size() && merged < 5; j++) {
@@ -160,6 +176,9 @@ public class MemoryConsolidationService {
         return null;
     }
 
-    private record Item(String id, String workspaceId, int reinforcementCount, String slot, String text) {
+    private record ConsolidationCursor(Timestamp createdAt, String id) {
+    }
+
+    record Item(String id, String workspaceId, int reinforcementCount, String slot, String text, Timestamp createdAt) {
     }
 }
