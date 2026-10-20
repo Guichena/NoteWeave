@@ -18,6 +18,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.time.Duration;
 import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,6 +37,12 @@ public class UploadService {
 
     private static final Logger log = LoggerFactory.getLogger(UploadService.class);
     private static final String BUCKET_SOURCE = "noteweave-source";
+    /** 秒传复用时，处理中的旧资料必须在这个窗口内仍有进展，否则视为卡住，改为重新上传。 */
+    static final Duration INSTANT_REUSE_PROGRESS_WINDOW = Duration.ofMinutes(30);
+    /** 旧资料实际可用的成功状态：解析与检索投影都完成后由 finalizer 置为 READY/PARSED。 */
+    private static final Set<String> SOURCE_SUCCEEDED_STATUSES = Set.of("READY");
+    /** 解析任务仍在正常推进的状态；FAILED/BLOCKED/CANCELLED/COMPLETED 等都不再算“进行中”。 */
+    private static final Set<String> ACTIVE_PARSE_TASK_STATUSES = Set.of("PENDING", "RUNNING", "WAITING", "QUEUED");
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
@@ -142,15 +149,18 @@ public class UploadService {
         }
         if (!storage.exists(BUCKET_SOURCE, file.objectKey())) return null;
         List<InstantSource> sources = jdbcTemplate.query("""
-                select s.id, s.parse_status, s.index_status, coalesce(s.generated_by, ''), coalesce(s.generated_ref_id, '')
+                select s.id, s.status, s.parse_status, s.index_status, s.updated_at,
+                       coalesce(s.generated_by, ''), coalesce(s.generated_ref_id, '')
                 from source s where s.workspace_id = ? and s.file_object_id = ?
                   and s.status in ('READY', 'PROCESSING') and s.parse_status <> 'FAILED'
                   and exists (select 1 from source_snapshot ss where ss.source_id = s.id
                     and ss.file_object_id = s.file_object_id
                     and ss.version_no = (select max(latest_snapshot.version_no) from source_snapshot latest_snapshot where latest_snapshot.source_id = s.id))
                 order by s.created_at desc
-                """, (rs, index) -> new InstantSource(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)),
+                """, (rs, index) -> new InstantSource(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getTimestamp(5) == null ? null : rs.getTimestamp(5).toInstant(), rs.getString(6), rs.getString(7)),
                 workspaceId, file.id());
+        Instant now = Instant.now();
         for (InstantSource source : sources) {
             if ("research_agent".equals(source.generatedBy())) {
                 if (generatedSourceReadGate == null) continue;
@@ -158,17 +168,43 @@ public class UploadService {
                     if (!generatedSourceReadGate.visible(workspaceId, source.generatedBy(), source.generatedRefId())) continue;
                 } catch (BusinessException unavailable) { continue; }
             }
-            List<String> tasks = jdbcTemplate.queryForList("""
-                    select id from task where workspace_id = ? and target_id = ? and target_type = 'SOURCE'
-                      and task_type = 'SOURCE_PARSE' and task_status not in ('COMPLETED', 'FAILED', 'CANCELLED')
-                    order by created_at desc limit 1
-                    """, String.class, workspaceId, source.id());
-            return new CompleteUploadResponse(source.id(), tasks.isEmpty() ? "" : tasks.get(0), source.parseStatus(), source.indexStatus());
+            InstantSourceTask task = latestParseTask(workspaceId, source.id());
+            boolean parseTaskInProgress = task != null && ACTIVE_PARSE_TASK_STATUSES.contains(task.status());
+            if (!reusableInstantSource(source.status(), source.parseStatus(), source.updatedAt(), parseTaskInProgress, now)) continue;
+            return new CompleteUploadResponse(source.id(), parseTaskInProgress ? task.id() : "",
+                    source.parseStatus(), source.indexStatus());
         }
         return null;
     }
 
-    private record InstantSource(String id, String parseStatus, String indexStatus, String generatedBy, String generatedRefId) {}
+    /** 取最近一次解析任务；仍在推进的任务优先，避免同一时间戳下选到已结束的旧任务。 */
+    private InstantSourceTask latestParseTask(String workspaceId, String sourceId) {
+        return jdbcTemplate.query("""
+                select id, task_status from task where workspace_id = ? and target_id = ? and target_type = 'SOURCE'
+                  and task_type = 'SOURCE_PARSE'
+                order by case when task_status in ('PENDING', 'RUNNING', 'WAITING', 'QUEUED') then 0 else 1 end,
+                         created_at desc, id
+                limit 1
+                """, rs -> rs.next() ? new InstantSourceTask(rs.getString(1), rs.getString(2)) : null,
+                workspaceId, sourceId);
+    }
+
+    /**
+     * 判断同哈希旧资料能否被秒传复用：只有已成功（READY/PARSED）的资料，或者解析任务仍在推进
+     * 且资料在 {@link #INSTANT_REUSE_PROGRESS_WINDOW} 内仍有进展的资料才复用；
+     * 卡住超时或任务已失败/阻塞的资料走正常新建上传，避免把旧 sourceId/taskId 返回给调用方。
+     */
+    static boolean reusableInstantSource(String sourceStatus, String parseStatus, Instant sourceUpdatedAt,
+                                         boolean parseTaskInProgress, Instant now) {
+        if (SOURCE_SUCCEEDED_STATUSES.contains(sourceStatus) && "PARSED".equals(parseStatus)) return true;
+        if (!parseTaskInProgress || sourceUpdatedAt == null) return false;
+        return sourceUpdatedAt.isAfter(now.minus(INSTANT_REUSE_PROGRESS_WINDOW));
+    }
+
+    private record InstantSource(String id, String status, String parseStatus, String indexStatus, Instant updatedAt,
+                                 String generatedBy, String generatedRefId) {}
+
+    private record InstantSourceTask(String id, String status) {}
 
     @Transactional
     public UploadChunkResponse acceptChunk(String uploadId, int chunkIndex, String contentMd5, byte[] content) {

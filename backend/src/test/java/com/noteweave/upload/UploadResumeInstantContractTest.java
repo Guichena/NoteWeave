@@ -156,6 +156,78 @@ class UploadResumeInstantContractTest {
     }
 
     @Test
+    void stalledProcessingSourceIsNotReusedAndFallsBackToNormalUpload() throws Exception {
+        String workspace = workspace();
+        byte[] bytes = "卡住未推进的资料".getBytes(StandardCharsets.UTF_8);
+        String upload = create(workspace, request(bytes.length, 1, null)).path("upload_id").asText();
+        chunk(upload, 0, bytes);
+        String source = complete(upload).path("source_id").asText();
+        jdbc.update("update source set status = 'PROCESSING', parse_status = 'PARSING', index_status = 'PENDING' where id = ?", source);
+        String task = tasks.createTask(workspace, "SOURCE_PARSE", "SOURCE", source, "PARSING", "卡住的解析任务");
+        tasks.startTask(task);
+        jdbc.update("update source set updated_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minus(UploadService.INSTANT_REUSE_PROGRESS_WINDOW).minusSeconds(600)), source);
+        JsonNode instant = create(workspace, request(bytes.length, 1, hash(bytes)));
+        assertThat(instant.path("instant").asBoolean()).isFalse();
+        assertThat(instant.path("status").asText()).isEqualTo("UPLOADING");
+        assertThat(instant.path("source_id").asText()).isEmpty();
+        assertThat(instant.path("task_id").asText()).isEmpty();
+        String retried = instant.path("upload_id").asText();
+        chunk(retried, 0, bytes);
+        assertThat(complete(retried).path("source_id").asText()).isNotEqualTo(source);
+        assertThat(jdbc.queryForObject("select count(*) from source where workspace_id = ?", Integer.class, workspace)).isEqualTo(2);
+    }
+
+    @Test
+    void failedParseTaskSourceIsNotReusedForInstantUpload() throws Exception {
+        String workspace = workspace();
+        byte[] bytes = "解析失败的资料".getBytes(StandardCharsets.UTF_8);
+        String upload = create(workspace, request(bytes.length, 1, null)).path("upload_id").asText();
+        chunk(upload, 0, bytes);
+        String source = complete(upload).path("source_id").asText();
+        jdbc.update("update source set status = 'PROCESSING', parse_status = 'PARSING', index_status = 'PENDING' where id = ?", source);
+        String task = tasks.createTask(workspace, "SOURCE_PARSE", "SOURCE", source, "PARSING", "失败前的解析任务");
+        tasks.startTask(task);
+        tasks.failTask(task, "PARSING", "解析失败", "SOURCE_PARSE_FAILED", false);
+        JsonNode instant = create(workspace, request(bytes.length, 1, hash(bytes)));
+        assertThat(instant.path("instant").asBoolean()).isFalse();
+        assertThat(instant.path("source_id").asText()).isEmpty();
+        assertThat(instant.path("task_id").asText()).isEmpty();
+    }
+
+    @Test
+    void blockedOrCancelledParseTaskSourceIsNotReusedForInstantUpload() throws Exception {
+        String workspace = workspace();
+        byte[] bytes = "阻塞或取消的资料".getBytes(StandardCharsets.UTF_8);
+        String upload = create(workspace, request(bytes.length, 1, null)).path("upload_id").asText();
+        chunk(upload, 0, bytes);
+        String source = complete(upload).path("source_id").asText();
+        jdbc.update("update source set status = 'PROCESSING', parse_status = 'PARSING', index_status = 'PENDING' where id = ?", source);
+        String task = tasks.createTask(workspace, "SOURCE_PARSE", "SOURCE", source, "PARSING", "终态解析任务");
+        for (String status : java.util.List.of("BLOCKED", "CANCELLED")) {
+            jdbc.update("update task set task_status = ? where id = ?", status, task);
+            assertThat(create(workspace, request(bytes.length, 1, hash(bytes))).path("instant").asBoolean()).isFalse();
+        }
+    }
+
+    @Test
+    void succeededSourceIsReusedForInstantUploadEvenAfterLongIdleTime() throws Exception {
+        String workspace = workspace();
+        byte[] bytes = "已成功可复用的资料".getBytes(StandardCharsets.UTF_8);
+        String upload = create(workspace, request(bytes.length, 1, null)).path("upload_id").asText();
+        chunk(upload, 0, bytes);
+        String source = complete(upload).path("source_id").asText();
+        jdbc.update("update source set status = 'READY', parse_status = 'PARSED', index_status = 'INDEXED' where id = ?", source);
+        jdbc.update("update source set updated_at = ? where id = ?",
+                java.sql.Timestamp.from(Instant.now().minus(UploadService.INSTANT_REUSE_PROGRESS_WINDOW).minusSeconds(86400)), source);
+        JsonNode instant = create(workspace, request(bytes.length, 1, hash(bytes)));
+        assertThat(instant.path("instant").asBoolean()).isTrue();
+        assertThat(instant.path("source_id").asText()).isEqualTo(source);
+        assertThat(instant.path("task_id").asText()).isEmpty();
+        assertThat(jdbc.queryForObject("select count(*) from source where workspace_id = ?", Integer.class, workspace)).isEqualTo(1);
+    }
+
+    @Test
     void instantUploadRequiresTheStoredObjectToStillExist() throws Exception {
         String workspace = workspace();
         byte[] bytes = "原件必须存在".getBytes(StandardCharsets.UTF_8);
