@@ -537,18 +537,24 @@ public class NoteRecallRetriever {
     }
 
     private List<String> unionIds(List<List<String>> groups) {
+        List<List<String>> safeGroups = groups == null ? List.of() : groups;
+        int[] cursor = new int[safeGroups.size()];
         LinkedHashSet<String> ids = new LinkedHashSet<>();
-        for (List<String> group : groups) {
-            for (String id : emptyIfNull(group)) {
-                if (id == null || id.isBlank()) {
-                    continue;
-                }
-                ids.add(id);
-                if (ids.size() >= 200) {
-                    return List.copyOf(ids);
+        boolean added;
+        do {
+            added = false;
+            for (int groupIndex = 0; groupIndex < safeGroups.size() && ids.size() < 200; groupIndex++) {
+                List<String> group = emptyIfNull(safeGroups.get(groupIndex));
+                while (cursor[groupIndex] < group.size()) {
+                    String id = group.get(cursor[groupIndex]++);
+                    if (id == null || id.isBlank() || !ids.add(id)) {
+                        continue;
+                    }
+                    added = true;
+                    break;
                 }
             }
-        }
+        } while (added && ids.size() < 200);
         return List.copyOf(ids);
     }
 

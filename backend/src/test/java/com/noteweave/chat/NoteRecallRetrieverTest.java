@@ -17,10 +17,12 @@ import com.noteweave.retrieval.note.NoteSourceSearchPort;
 import com.noteweave.retrieval.note.NoteSourceSearchPort.NoteSourceHit;
 import com.noteweave.retrieval.provider.EmbeddingClient;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class NoteRecallRetrieverTest {
     @Test
@@ -149,6 +151,49 @@ class NoteRecallRetrieverTest {
                 .isInstanceOfSatisfying(RetrievalProviderException.class, error ->
                         assertThat(error.errorCode())
                                 .isEqualTo("NOTE_SOURCE_RETRIEVAL_PROVIDER_UNAVAILABLE"));
+    }
+
+    @Test
+    void unionIdsRoundRobinKeepsEveryIdFromASmallTrailingGroup() {
+        NoteRecallRepository repository = mock(NoteRecallRepository.class);
+        NoteJournalRetriever journalRetriever = mock(NoteJournalRetriever.class);
+        List<NoteSourceHit> semanticHits = new ArrayList<>();
+        for (int index = 0; index < 300; index++) {
+            semanticHits.add(new NoteSourceHit(
+                    "sem-" + index, "snapshot", "Title", "PDF", "", List.of(), "", 1.0d));
+        }
+        when(journalRetriever.sourceSignals(eq("workspace"), anySet())).thenReturn(Map.of(
+                "journal-0", 5,
+                "journal-1", 4,
+                "journal-2", 3,
+                "journal-3", 2,
+                "journal-4", 1));
+        when(journalRetriever.retrieve("workspace", "roundrobinquery")).thenReturn(List.of());
+        when(repository.findCurrentSourcesByIds(eq("workspace"), anyCollection())).thenReturn(List.of());
+        EmbeddingClient embedding = mock(EmbeddingClient.class);
+        when(embedding.isEnabled()).thenReturn(true);
+        when(embedding.embedQuery("roundrobinquery")).thenReturn(
+                new EmbeddingClient.EmbeddingResult(List.of(List.of(1f)), "embedding", 1, 1));
+        NoteSourceSearchPort search = mock(NoteSourceSearchPort.class);
+        when(search.semanticRetrieve(eq("workspace"), eq(List.of(1f)), anyInt())).thenReturn(semanticHits);
+        NoteRecallRetriever retriever = new NoteRecallRetriever(
+                repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
+                embedding, search, null, null, false);
+
+        retriever.retrieve("workspace", "roundrobinquery");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<String>> captured = ArgumentCaptor.forClass(Collection.class);
+        verify(repository).findCurrentSourcesByIds(eq("workspace"), captured.capture());
+        assertThat(captured.getValue())
+                .hasSize(200)
+                .startsWith(
+                        "sem-0", "journal-0",
+                        "sem-1", "journal-1",
+                        "sem-2", "journal-2",
+                        "sem-3", "journal-3",
+                        "sem-4", "journal-4")
+                .contains("journal-0", "journal-1", "journal-2", "journal-3", "journal-4");
     }
 
     private CandidateSource source(String id, String title, String tagsJson) {
