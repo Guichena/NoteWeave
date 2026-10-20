@@ -270,8 +270,8 @@ noteweave:
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
     batch-size: ${NOTEWEAVE_RERANK_BATCH_SIZE:80}
     max-document-characters: ${NOTEWEAVE_RERANK_MAX_DOCUMENT_CHARACTERS:1800}
-    timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:20}
-    max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
+    timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:5}
+    max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
