@@ -258,6 +258,17 @@ def test_duplicate_evidence_is_rejected_with_reason_code() -> None:
     assert result.termination_reason is ExtractionTerminationReason.ACCEPTED_CARDS
 
 
+def test_same_quote_with_a_reworded_claim_counts_as_duplicate() -> None:
+    task_input, plan, read_windows = _build_case()
+    first = _card(plan, read_windows[0])
+    reworded = {**first, "claim_text": first["claim_text"] + "（换一种说法）"}
+
+    result = _run_cards(task_input, plan, read_windows, [first, reworded])
+
+    assert result.rejection_counts() == {"DUPLICATE_EVIDENCE": 1}
+    assert result.accepted_count == 1
+
+
 # --------------------------------------------------------------------------- #
 # 2. 终止原因：零卡 Run 必须落到确定原因，而不是笼统空。
 # --------------------------------------------------------------------------- #

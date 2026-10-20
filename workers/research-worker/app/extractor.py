@@ -206,6 +206,7 @@ def _extract_evidence_cards_detailed_with_llm(
     accepted: list[ResearchEvidenceCard] = []
     rejected: list[RejectedEvidenceCard] = []
     used_ids: set[str] = set()
+    used_quotes: set[tuple[str, str, str, str]] = set()
     for card_index, raw_card in enumerate(raw_cards):
         # 拒绝判定顺序固定(见 DR-101 契约),每条拒绝都生成一个确定 reason code。
         if not isinstance(raw_card, dict):
@@ -374,7 +375,10 @@ def _extract_evidence_cards_detailed_with_llm(
             ).encode("utf-8")
         ).hexdigest()[:16]
         evidence_id = f"ev-{window_id}-{evidence_digest}"
-        if evidence_id in used_ids:
+        # 同一来源、同一列的同一句原文只留一条：模型常把同一句换个说法写成两三张卡，
+        # 占满每格的证据名额，其他来源的证据反而进不来
+        quote_key = (window.url or window.source_id, column_key, relation_type, " ".join(quote.split()).casefold())
+        if evidence_id in used_ids or quote_key in used_quotes:
             rejected.append(
                 RejectedEvidenceCard(
                     reason=ExtractionFailureReason.DUPLICATE_EVIDENCE,
@@ -385,6 +389,7 @@ def _extract_evidence_cards_detailed_with_llm(
             )
             continue
         used_ids.add(evidence_id)
+        used_quotes.add(quote_key)
         accepted.append(
             ResearchEvidenceCard(
                 evidence_id=evidence_id,
