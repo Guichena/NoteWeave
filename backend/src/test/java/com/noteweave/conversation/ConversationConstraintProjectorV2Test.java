@@ -68,6 +68,56 @@ class ConversationConstraintProjectorV2Test {
     }
 
     @Test
+    void negatedLanguagePrefixesAreNotTakenAsTheRequestedLanguage() {
+        // 否定前缀不能只有"不要/别/不"："不是用英文""禁止使用英文"同样是在拒绝英文
+        for (String text : List.of("不是用英文。", "不要用英文。", "不用英文。", "禁止使用英文。",
+                "避免用英文回答。", "别用英文。", "不要再用英文。", "不要总是用英文。")) {
+            List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                    message("x1", 1, "USER", text)));
+
+            assertThat(constraints).as(text).singleElement().satisfies(constraint -> {
+                assertThat(constraint.kind()).as(text).isEqualTo("NEGATION");
+                assertThat(constraint.status()).isEqualTo("ACTIVE");
+                assertThat(constraint.text()).as(text).isEqualTo(text.substring(0, text.length() - 1));
+            });
+        }
+    }
+
+    @Test
+    void negationBetweenPrefixAndCueStillLeavesTheRequestPositive() {
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("w1", 1, "USER", "不要忘记用英文。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("英文");
+        });
+    }
+
+    @Test
+    void negatedLanguageInOneClauseDoesNotCancelPositiveLanguageInAnother() {
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("y1", 1, "USER", "不是用英文，用中文写。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("中文");
+        });
+    }
+
+    @Test
+    void negationTakesPrecedenceOverFormatCueInTheSameClause() {
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("z1", 1, "USER", "不要用表格。"),
+                message("z2", 2, "USER", "禁止使用表格对比。")));
+
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::kind)
+                .containsExactly("NEGATION", "NEGATION");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::text)
+                .containsExactly("不要用表格", "禁止使用表格对比");
+    }
+
+    @Test
     void laterValueOfSameKindRevokesEarlierOneWithoutCorrectionKeyword() {
         List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
                 message("k1", 1, "USER", "这份报告用英文。"),

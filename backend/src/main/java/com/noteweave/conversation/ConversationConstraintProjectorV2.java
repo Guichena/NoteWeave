@@ -20,7 +20,16 @@ public final class ConversationConstraintProjectorV2 {
             "先给结论|结论先行|先说结论|用表格|表格对比|分点|分条|列表|列出|不超过\\d+字|控制在\\d+字|"
                     + "字数|简短|简洁|精简|详细一点|展开讲|附上(?:来源|引用|出处)|标注(?:来源|出处)|带上代码|给出代码");
     private static final java.util.regex.Pattern NEGATION = java.util.regex.Pattern.compile(
-            "不要|别再|不许|禁止|避免");
+            "不要|别再|不许|不是|不用|禁止|避免");
+    /**
+     * 紧贴在语言/格式线索前面、并落在同一分句内的否定前缀。
+     * 除"不要""别""不是""不用""禁止""避免""不"外，允许夹一个紧邻的副词或动词（"不要再用""禁止使用"），
+     * 但"不要忘记用英文"这类中间隔着无关成分的说法仍然是正向要求。
+     */
+    private static final java.util.regex.Pattern NEGATION_PREFIX = java.util.regex.Pattern.compile(
+            "(?:不要|别|不是|不用|禁止|避免|不)(?:再|总是|一直)?(?:使用|用|使)?$");
+    /** 分句边界：否定只作用于它所在的分句。 */
+    private static final String CLAUSE_BREAK = "，,。；;！!？?\n：:";
     /** "那个格式""跟之前一样"这类没有说清指什么的指代。 */
     private static final java.util.regex.Pattern VAGUE_REFERENCE = java.util.regex.Pattern.compile(
             "那个格式|那种格式|之前那样|上次那样|跟之前一样|和之前一样|原来那样|照旧");
@@ -59,7 +68,10 @@ public final class ConversationConstraintProjectorV2 {
     }
 
     /**
-     * 识别一条用户消息里的显式要求，每条消息最多产出一条约束，优先级：指代不明 > 语言 > 格式 > 否定。
+     * 识别一条用户消息里的显式要求，每条消息最多产出一条约束，优先级：
+     * 指代不明 > （未被否定的）语言 > （未被否定的）格式 > 否定。
+     * 否定先于语言和格式生效："不是用英文""禁止用表格"里的线索是被拒绝的取值，不能当成正向要求；
+     * 只有否定前缀和线索同处一个分句时才算否定，"不要用英文，用中文写"里的"用中文"仍然生效。
      * 带"以后""每次""从现在起"等长期措辞的要求在整个会话内生效，否则只在当前话题内生效。
      */
     private Constraint explicit(TopicSegmenterV2.Message message, String text) {
@@ -69,6 +81,7 @@ public final class ConversationConstraintProjectorV2 {
         java.util.regex.Matcher language;
         java.util.regex.Matcher format;
         java.util.regex.Matcher negation;
+        int negatedCue = firstNegatedCueStart(text);
         if (VAGUE_REFERENCE.matcher(text).find()) {
             // 指向前文某种格式但没有说清是哪种，不能直接生效
             kind = "FORMAT";
@@ -77,12 +90,16 @@ public final class ConversationConstraintProjectorV2 {
         } else if ((language = lastPositiveLanguage(text)) != null) {
             kind = "LANGUAGE";
             ruleText = language.group(1);
-        } else if ((format = FORMAT_CUE.matcher(text)).find()) {
+        } else if ((format = firstPositiveFormat(text)) != null) {
             kind = "FORMAT";
             ruleText = clause(text, format.start());
         } else if ((negation = NEGATION.matcher(text)).find()) {
             kind = "NEGATION";
             ruleText = clause(text, negation.start());
+        } else if (negatedCue >= 0) {
+            // 唯一的语言/格式线索被否定了，这条要求只能记为否定约束
+            kind = "NEGATION";
+            ruleText = clause(text, negatedCue);
         } else {
             return null;
         }
@@ -92,23 +109,51 @@ public final class ConversationConstraintProjectorV2 {
                 message.seq(), null, status, null);
     }
 
-    /** 最后一处没有被"不要""别"否定的"用某种语言"。 */
+    /** 最后一处没有被"不要""别""不是""不用""禁止""避免""不"否定的"用某种语言"。 */
     private static java.util.regex.Matcher lastPositiveLanguage(String text) {
         java.util.regex.Matcher matcher = LANGUAGE.matcher(text);
         java.util.regex.Matcher found = null;
         while (matcher.find()) {
-            String before = text.substring(Math.max(0, matcher.start() - 2), matcher.start());
-            if (before.endsWith("不要") || before.endsWith("别") || before.endsWith("不")) continue;
+            if (negated(text, matcher.start())) continue;
             found = LANGUAGE.matcher(text);
             found.find(matcher.start());
         }
         return found;
     }
 
+    /** 第一处没有被否定前缀否定的格式线索。 */
+    private static java.util.regex.Matcher firstPositiveFormat(String text) {
+        java.util.regex.Matcher matcher = FORMAT_CUE.matcher(text);
+        while (matcher.find()) {
+            if (!negated(text, matcher.start())) return matcher;
+        }
+        return null;
+    }
+
+    /** 第一处被否定的语言/格式线索位置，没有则返回 -1。 */
+    private static int firstNegatedCueStart(String text) {
+        java.util.regex.Matcher language = LANGUAGE.matcher(text);
+        while (language.find()) {
+            if (negated(text, language.start())) return language.start();
+        }
+        java.util.regex.Matcher format = FORMAT_CUE.matcher(text);
+        while (format.find()) {
+            if (negated(text, format.start())) return format.start();
+        }
+        return -1;
+    }
+
+    /** 命中位置前面（同一分句内）是否紧跟着否定前缀。 */
+    private static boolean negated(String text, int position) {
+        int start = position;
+        while (start > 0 && CLAUSE_BREAK.indexOf(text.charAt(start - 1)) < 0) start--;
+        return NEGATION_PREFIX.matcher(text.substring(start, position).stripTrailing()).find();
+    }
+
     /** 命中位置所在的分句，去掉开头的长期措辞和"请""记住"等客套，作为约束原文。 */
     private static String clause(String text, int position) {
         int start = position;
-        while (start > 0 && "，,。；;！!？?\n：:".indexOf(text.charAt(start - 1)) < 0) start--;
+        while (start > 0 && CLAUSE_BREAK.indexOf(text.charAt(start - 1)) < 0) start--;
         int end = position;
         while (end < text.length() && "，,。；;！!？?\n".indexOf(text.charAt(end)) < 0) end++;
         String clause = text.substring(start, end).trim();
