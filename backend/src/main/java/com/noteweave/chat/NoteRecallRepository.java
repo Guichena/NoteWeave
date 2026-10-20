@@ -94,7 +94,9 @@ public class NoteRecallRepository {
                        coalesce(s.metadata_json, '{}') as metadata_json,
                        count(distinct c.id) as chunk_count,
                        count(distinct w.id) as window_count,
-                       coalesce(min(c.content), '') as sample_text
+                       coalesce((select c2.content from source_chunk c2
+                                 where c2.source_id = s.id and c2.source_snapshot_id = ss.id
+                                 order by c2.chunk_no limit 1), '') as sample_text
                 from source s
                 left join source_snapshot ss on ss.source_id = s.id
                   and ss.index_status = 'INDEXED'
@@ -104,7 +106,7 @@ public class NoteRecallRepository {
                 left join source_window w on w.source_chunk_id = c.id
                 where s.workspace_id = ? and s.status = 'READY' and s.index_status = 'INDEXED'
                   and s.id in (%s)
-                group by s.id, s.title, s.source_type, s.updated_at, s.summary, s.tags_json, s.metadata_json
+                group by s.id, s.title, s.source_type, s.updated_at, s.summary, s.tags_json, s.metadata_json, ss.id
                 order by s.id
                 """.formatted(placeholders), SOURCE_MAPPER, args.toArray());
         return filterVisible(workspaceId, sources);
