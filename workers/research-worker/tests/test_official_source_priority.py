@@ -130,6 +130,24 @@ def test_doc_url_with_another_version_moves_behind_the_matching_version() -> Non
         "refman/8.4/en/json.html", "relnotes/", "refman/9.3/en/json.html"]
 
 
+def test_major_version_doc_path_is_compared_but_other_numbers_are_not() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["postgresql.org", "openjdk.org"],
+                                             "entity_label": "PostgreSQL 17"})
+
+    def hit(url: str) -> SimpleNamespace:
+        return SimpleNamespace(url=url, source_domain=url.split("/")[2], source_quality="OFFICIAL_DOC", adapter="serper")
+
+    ordered = _prioritize_authoritative_hits(snapshot, [
+        hit("https://www.postgresql.org/docs/16/gin.html"),
+        hit("https://openjdk.org/jeps/444"),
+        hit("https://www.postgresql.org/docs/17/gin.html"),
+    ])
+
+    assert [item.url for item in ordered] == [
+        "https://openjdk.org/jeps/444", "https://www.postgresql.org/docs/17/gin.html",
+        "https://www.postgresql.org/docs/16/gin.html"]
+
+
 def test_site_query_uses_the_english_search_intent_instead_of_a_chinese_label() -> None:
     llm = _Llm({"queries": [{"query": "MySQL 8.4 JSON index", "intent": "direct"}]})
     column = CellColumn("operators", "可加速的查询运算符", search_intents=("JSON operators that use indexes",))

@@ -835,9 +835,17 @@ def _version_mismatch(versions: set[str], hit: object) -> int:
         return 0
     path = urlsplit(str(getattr(hit, "url", "") or "")).path
     found = set(re.findall(r"(?<![\w.])(\d+\.\d+(?:\.\d+)*)(?![\w.])", path))
+    # 只有主版本号的文档网址（如 PostgreSQL 的 /docs/16/）只认文档目录后面那一段，
+    # 避免把 /jeps/444 这类编号当成版本
+    segments = [segment for segment in path.lower().split("/") if segment]
+    found |= {segment for previous, segment in zip(segments, segments[1:])
+              if previous in _VERSIONED_DOC_DIRS and re.fullmatch(r"\d{1,3}", segment)}
     if not found:
         return 0
     return 0 if found & versions else 1
+
+
+_VERSIONED_DOC_DIRS = frozenset({"docs", "doc", "documentation", "manual", "refman", "reference", "javase"})
 
 
 def _interleave_hits_by_domain(hits: list[object]) -> list[object]:
