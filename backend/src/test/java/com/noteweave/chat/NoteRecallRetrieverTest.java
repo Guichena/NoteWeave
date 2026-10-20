@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -184,7 +185,7 @@ class NoteRecallRetrieverTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Collection<String>> captured = ArgumentCaptor.forClass(Collection.class);
-        verify(repository).findCurrentSourcesByIds(eq("workspace"), captured.capture());
+        verify(repository, times(1)).findCurrentSourcesByIds(eq("workspace"), captured.capture());
         assertThat(captured.getValue())
                 .hasSize(200)
                 .startsWith(
