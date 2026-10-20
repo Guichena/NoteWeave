@@ -72,8 +72,8 @@ class NarrativeReportPolisher:
                 "Write a cohesive professional research article, not an audit log.",
                 "Never mention frozen cells, ledgers, cell keys or other internal terms in the prose; refer to the "
                 "verified sources instead (for example '本次核验的资料显示').",
-                "When a cell's supporting_quotes contain several different facts or list items for its column, cover "
-                "each relevant one instead of only candidate_value.",
+                "When a cell's quotes (evidence_quotes or supporting_quotes) contain several different facts or "
+                "list items for its column, cover each relevant one instead of only candidate_value.",
                 "Cite inline like a research article: right after each sentence (or inside each table cell) write "
                 "the one or two evidence keys whose quotes directly support it, for example "
                 "'虚拟线程在 JDK 21 正式发布 [evidence:ab12]。'; never pile every key of a cell at the end. "
@@ -101,9 +101,13 @@ class NarrativeReportPolisher:
                 "Write title, summary, headings, prose and table in the same language as research_question; keep "
                 "product names, API names and quoted terms in their original form.",
                 "Use entity_label and column_label to say which subject and aspect each fact belongs to; "
-                "supporting_quotes are verified source text you may draw details from; a leading [title] is the "
-                "source's title. When the question asks for identifiers such as JEP, PEP or RFC numbers or versions, "
+                "evidence_quotes and supporting_quotes are verified source text you may draw details from; a "
+                "leading [title] is the source's title. When the question asks for identifiers such as JEP, PEP or RFC numbers or versions, "
                 "state them explicitly, taking them from the quote or its title.",
+                "evidence_quotes pairs each evidence key with its own quote. After a sentence cite only the keys "
+                "whose own quote states that sentence's fact; a sentence that lists several items (types, events, "
+                "options, steps) may name only the items that appear in the quotes it cites, and a fact that no "
+                "quote states is left out even when candidate_value implies it.",
                 "State each fact with exactly the scope its quote supports: a statement about one option, operator "
                 "class, version or mode must not be generalized to the whole product or topic.",
                 "When known_limitations is not empty, say briefly in the summary which parts of the question remain "
@@ -123,8 +127,8 @@ class NarrativeReportPolisher:
                 "or quote the points. A point that no frozen or SOURCED tentative cell answers goes to limitations "
                 "and must not be guessed.",
             ],
-            "frozen_cells": cells,
-            "tentative_cells": leads,
+            "frozen_cells": _prompt_cells(cells),
+            "tentative_cells": _prompt_cells(leads),
             "required_points": required_points,
             "research_question": question,
             "known_limitations": limitations,
@@ -161,10 +165,34 @@ def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, objec
             "entity_label": str(raw.get("entity_label") or "").strip(),
             "column_label": str(raw.get("column_label") or "").strip(),
             "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
+            "evidence_quotes": _evidence_quotes(raw.get("evidence_quotes"), evidence_keys),
         })
     if not cells:
         raise ValueError("SYNTHESIS input has no frozen cells")
     return sorted(cells, key=lambda item: str(item["cell_key"]))
+
+
+def _evidence_quotes(raw: object, evidence_keys: list[str]) -> list[dict[str, str]]:
+    """按证据编号对应的原文，只保留属于这一格的编号；后端旧版本没有这个字段时为空。"""
+    if not isinstance(raw, list):
+        return []
+    allowed = set(evidence_keys)
+    quotes: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("evidence_key") or "").strip()
+        quote = str(item.get("quote") or "").strip()
+        if key in allowed and quote:
+            quotes.append({"evidence_key": key, "quote": quote})
+    return quotes
+
+
+def _prompt_cells(cells: list[dict[str, object]]) -> list[dict[str, object]]:
+    """交给模型的单元格：有按编号对应的原文时不再重复给不带编号的原文列表。"""
+    return [{key: value for key, value in cell.items()
+             if not (key == "supporting_quotes" and cell.get("evidence_quotes"))
+             and not (key == "evidence_quotes" and not value)} for cell in cells]
 
 
 _LEAD_LEVELS = ("SOURCED", "RELATED")
@@ -195,6 +223,7 @@ def _validated_leads(synthesis_input: dict[str, object], verified_keys: set[str]
             "entity_label": str(raw.get("entity_label") or "").strip(),
             "column_label": str(raw.get("column_label") or "").strip(),
             "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
+            "evidence_quotes": _evidence_quotes(raw.get("evidence_quotes"), evidence_keys),
         })
     return sorted(leads, key=lambda item: str(item["cell_key"]))
 

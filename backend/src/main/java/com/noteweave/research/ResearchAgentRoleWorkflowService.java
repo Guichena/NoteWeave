@@ -225,7 +225,11 @@ class ResearchAgentRoleWorkflowService {
             item.put("guarded", false);
             item.put("entity_label", labels.getOrDefault(parts[0], ""));
             item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
-            item.put("supporting_quotes", supportingQuotes(runId, evidenceKeys));
+            // 每条原文带上自己的证据编号：只给两份互不对应的列表时，模型分不清哪个编号对应哪句原文，
+            // 同一格里常把只讲 gauge 的引用挂到列举四种类型的句子上
+            List<Map<String, String>> evidenceQuotes = evidenceQuotes(runId, evidenceKeys);
+            item.put("evidence_quotes", evidenceQuotes);
+            item.put("supporting_quotes", evidenceQuotes.stream().map(quote -> quote.get("quote")).toList());
             return item;
         }).toList();
         String ledgerDigest = canonicalizer.domainSeparatedDigest(LEDGER_DIGEST_DOMAIN, synthesisCells);
@@ -281,14 +285,20 @@ class ResearchAgentRoleWorkflowService {
             item.put("evidence_keys", lead.quotes().stream().map(ResearchCellLevels.Quote::evidenceKey).toList());
             item.put("entity_label", labels.getOrDefault(parts[0], ""));
             item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
-            item.put("supporting_quotes", lead.quotes().stream()
-                    .map(quote -> withTitle(quote.sourceTitle(), quote.quote())).filter(quote -> !quote.isEmpty()).toList());
+            List<Map<String, String>> evidenceQuotes = lead.quotes().stream()
+                    .filter(quote -> quote.evidenceKey() != null)
+                    .map(quote -> Map.of("evidence_key", quote.evidenceKey(),
+                            "quote", withTitle(quote.sourceTitle(), quote.quote())))
+                    .filter(quote -> !quote.get("quote").isEmpty()).toList();
+            item.put("evidence_quotes", evidenceQuotes);
+            item.put("supporting_quotes", evidenceQuotes.stream().map(quote -> quote.get("quote")).toList());
             leads.add(item);
         }
         return leads;
     }
 
-    private static final int MAX_SUPPORTING_QUOTES = 6;
+    /** 与每格证据上限一致：每个交给成文的证据编号都有原文，模型不会引用一条看不到原文的证据。 */
+    private static final int MAX_SUPPORTING_QUOTES = 8;
     private static final int MAX_SYNTHESIS_EVIDENCE_PER_CELL = 8;
 
     /** 单元格自身的证据，加上同一单元格其他候选簇里通过资格校验的证据，最多 8 条。 */
@@ -323,8 +333,8 @@ class ResearchAgentRoleWorkflowService {
     // 与 Worker 扩展引用的上限一致，答案的关键名称常在扩展出的后一句里
     private static final int MAX_QUOTE_CHARS = 700;
 
-    private List<String> supportingQuotes(String runId, List<String> evidenceKeys) {
-        List<String> quotes = new ArrayList<>();
+    private List<Map<String, String>> evidenceQuotes(String runId, List<String> evidenceKeys) {
+        List<Map<String, String>> quotes = new ArrayList<>();
         for (String key : evidenceKeys) {
             if (quotes.size() >= MAX_SUPPORTING_QUOTES) break;
             // 原文前加上来源标题：PEP、JEP、RFC 编号常常只出现在标题里，成文时需要据此写出编号
@@ -333,7 +343,7 @@ class ResearchAgentRoleWorkflowService {
                     where research_run_id = ? and evidence_key = ? and quote_text is not null
                     """, (rs, rowNum) -> withTitle(rs.getString(1), rs.getString(2)), runId, key).stream().findFirst()
                     .filter(quote -> !quote.isEmpty())
-                    .ifPresent(quotes::add);
+                    .ifPresent(quote -> quotes.add(Map.of("evidence_key", key, "quote", quote)));
         }
         return quotes;
     }

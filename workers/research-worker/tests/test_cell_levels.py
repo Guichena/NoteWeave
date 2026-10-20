@@ -164,3 +164,22 @@ def test_writer_receives_the_required_points_from_planning() -> None:
 
     assert client.payloads[0]["required_points"] == ["两者是否保证全局顺序"]
     assert any("required_points" in rule for rule in client.payloads[0]["rules"])
+
+
+def test_writer_sees_each_quote_with_its_own_evidence_key() -> None:
+    client = FakeLlmClient({"research.synthesis": "not json"})
+    synthesis_input = _synthesis_input()
+    synthesis_input["cells"][0]["evidence_keys"] = ["evidence:p1", "evidence:p2"]
+    synthesis_input["cells"][0]["evidence_quotes"] = [
+        {"evidence_key": "evidence:p1", "quote": "Exclusive subscription keeps order"},
+        {"evidence_key": "evidence:other", "quote": "不属于这一格的证据"},
+    ]
+
+    NarrativeReportPolisher(client).polish(synthesis_input)
+
+    frozen = client.payloads[0]["frozen_cells"][0]
+    assert frozen["evidence_quotes"] == [{"evidence_key": "evidence:p1", "quote": "Exclusive subscription keeps order"}]
+    assert "supporting_quotes" not in frozen
+    # 旧版后端没有按编号对应的原文时，线索照旧带不带编号的原文列表
+    lead = client.payloads[0]["tentative_cells"][0]
+    assert lead["supporting_quotes"] and "evidence_quotes" not in lead
