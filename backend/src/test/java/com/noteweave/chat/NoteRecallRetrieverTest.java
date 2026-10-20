@@ -196,6 +196,38 @@ class NoteRecallRetrieverTest {
                 .contains("journal-0", "journal-1", "journal-2", "journal-3", "journal-4");
     }
 
+    @Test
+    void twoCharacterChineseTermsAreNotUsedForExpansion() {
+        NoteRecallRepository repository = mock(NoteRecallRepository.class);
+        NoteJournalRetriever journalRetriever = mock(NoteJournalRetriever.class);
+        CandidateSource anchor = source("anchor", "AnchorTitle", "[\"学习\",\"学习机\"]");
+        when(repository.findCurrentSourcesByIds(eq("workspace"), anyCollection())).thenAnswer(invocation -> {
+            Collection<?> ids = invocation.getArgument(1);
+            return ids.contains("anchor") ? List.of(anchor) : List.of();
+        });
+        when(journalRetriever.sourceSignals(eq("workspace"), anySet())).thenReturn(Map.of());
+        when(journalRetriever.retrieve("workspace", "expansionprobe")).thenReturn(List.of());
+        EmbeddingClient embedding = mock(EmbeddingClient.class);
+        when(embedding.isEnabled()).thenReturn(true);
+        when(embedding.embedQuery("expansionprobe")).thenReturn(
+                new EmbeddingClient.EmbeddingResult(List.of(List.of(1f)), "embedding", 1, 1));
+        NoteSourceSearchPort search = mock(NoteSourceSearchPort.class);
+        when(search.semanticRetrieve("workspace", List.of(1f), 80)).thenReturn(List.of(
+                new NoteSourceHit("anchor", "snapshot-anchor", "AnchorTitle", "PDF", "",
+                        List.of(), "", 1.0d)));
+        when(search.metadataRetrieve("workspace", "expansionprobe", 80)).thenReturn(List.of());
+        NoteRecallRetriever retriever = new NoteRecallRetriever(
+                repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
+                embedding, search, null, null, false);
+
+        retriever.retrieve("workspace", "expansionprobe");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<String>> terms = ArgumentCaptor.forClass(Collection.class);
+        verify(repository).findTagOverlapSourceIds(eq("workspace"), terms.capture(), anyCollection(), anyInt());
+        assertThat(terms.getValue()).contains("学习机").doesNotContain("学习");
+    }
+
     private CandidateSource source(String id, String title, String tagsJson) {
         return new CandidateSource(
                 id, title, "PDF", 1, 1, "", "", "", tagsJson, "{}", "",

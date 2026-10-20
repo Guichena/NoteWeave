@@ -523,7 +523,11 @@ public class NoteRecallRetriever {
         }
         int first = term.codePointAt(0);
         boolean han = Character.UnicodeScript.of(first) == Character.UnicodeScript.HAN;
-        if (!han && term.length() < 4) {
+        if (han) {
+            if (term.codePointCount(0, term.length()) < 3) {
+                return;
+            }
+        } else if (term.length() < 4) {
             return;
         }
         terms.add(term);
