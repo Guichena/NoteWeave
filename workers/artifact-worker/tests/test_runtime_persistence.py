@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import threading
 
 from fastapi import Request
 from fastapi import HTTPException
@@ -433,3 +435,45 @@ def test_restart_recovery_should_redeliver_persisted_system_mcp_outcome_without_
         "request_ids": ["persisted-outcome-1"],
     }
     assert scheduled == [("persisted-outcome-1", "http://java-host:8081")]
+
+
+def test_persisted_outcome_retry_stops_when_ack_always_fails(monkeypatch, caplog) -> None:
+    request_id = "retry-cap-request"
+    system_mcp_executor._callback_threads[request_id] = threading.current_thread()
+    attempts = {"count": 0}
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(
+        system_mcp_executor,
+        "peek_acquisition_operation",
+        lambda _: {
+            "callback_status": "PROVIDER_OUTCOME_READY",
+            "callback_token": "token",
+            "provider_outcome_status": "ACKNOWLEDGED",
+            "provider_outcome_result_locator": "loc",
+            "provider_outcome_error_code": "",
+            "provider_outcome_error_message": "",
+        },
+    )
+    monkeypatch.setattr(system_mcp_executor, "get_acquisition_result_payload", lambda _: {})
+
+    def always_fail(*, java_base_url, payload):
+        attempts["count"] += 1
+        raise RuntimeError("host ack transport unavailable")
+
+    monkeypatch.setattr(system_mcp_executor, "_send_host_ack", always_fail)
+    monkeypatch.setattr(system_mcp_executor.time, "sleep", lambda delay: sleeps.append(delay))
+
+    with caplog.at_level(logging.ERROR):
+        system_mcp_executor._retry_persisted_outcome_delivery(
+            request_id, "http://java-host:8081"
+        )
+
+    assert attempts["count"] == system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS
+    assert len(sleeps) == system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS - 1
+    assert request_id not in system_mcp_executor._callback_threads
+    assert any(
+        request_id in record.message and "exceeded retry limit" in record.message
+        for record in caplog.records
+        if record.levelno == logging.ERROR
+    )
