@@ -34,6 +34,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
     public static final String GRAPH_EDGE_LIMIT_METADATA = "wiki_graph_edge_limit";
     public static final String GRAPH_CHARACTER_LIMIT_METADATA = "wiki_graph_character_limit";
     public static final String GRAPH_PATH_METADATA = "graph_path";
+    /** Matches the per-item graph character cap in {@code WikiAnswerModeStrategy}. */
+    public static final int MAX_EXCERPT_CHARS = 4000;
 
     private final WikiRetrievalQueryPort wikiRetrievalQueryPort;
     private final WikiRetrievalSnapshotCodec snapshotCodec;
@@ -172,7 +174,7 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             java.util.Map<String, List<String>> graphPaths
     ) {
         KnowledgePageHit page = context.page();
-        String excerpt = page.summary().isBlank() ? page.content() : page.summary();
+        String excerpt = page.summary().isBlank() ? boundedContent(page.content()) : page.summary();
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("version_no", Integer.toString(page.versionNo()));
         metadata.put("outgoing_link_count", Integer.toString(context.outgoingLinks().size()));
@@ -211,5 +213,12 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 excerpt == null ? 0 : excerpt.length(),
                 metadata
         );
+    }
+
+    private static String boundedContent(String content) {
+        if (content == null || content.length() <= MAX_EXCERPT_CHARS) {
+            return content;
+        }
+        return content.substring(0, MAX_EXCERPT_CHARS) + "…";
     }
 }
