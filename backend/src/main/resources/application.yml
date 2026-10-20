@@ -91,7 +91,7 @@ noteweave:
         refill-per-minute: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE:24}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
   video-learning:
-    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
+    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:true}
     workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
     query-rewrite:
