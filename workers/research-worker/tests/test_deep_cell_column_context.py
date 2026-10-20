@@ -78,3 +78,32 @@ def test_repair_queries_skip_duplicates_instead_of_dropping_the_whole_answer() -
 
     assert plan.method == "LLM"
     assert [spec.query for spec in plan.specs] == ["summarize_wal setting"]
+
+
+def test_multi_column_task_gets_one_excerpt_per_column_from_a_long_window() -> None:
+    from types import SimpleNamespace
+
+    from app.extractor import _window_excerpt
+
+    filler = "The server streams the base backup over the replication protocol. " * 60
+    options = "-i old_manifest_file\n--incremental=old_manifest_file\n  Performs an incremental backup."
+    restore = "An incremental backup cannot be used directly; pg_combinebackup must first combine it."
+    text = "pg_basebackup -- take a base backup\n\n" + filler + options + " " + filler + restore + " " + filler
+    columns = [
+        SimpleNamespace(label="增量备份执行方式", description="命令行参数",
+                        search_intents=["pg_basebackup --incremental old_manifest_file option"]),
+        SimpleNamespace(label="合并与恢复流程", description="",
+                        search_intents=["pg_combinebackup combine incremental backup restore"]),
+    ]
+    plan = SimpleNamespace(normalized_question="PostgreSQL 17 增量备份怎么使用？",
+                           research_schema=SimpleNamespace(columns=columns),
+                           stop_contract={"deep_cell_entity_label": "PostgreSQL 17"})
+    window = SimpleNamespace(window_text=text, query="PostgreSQL 17 incremental backup")
+
+    excerpt = _window_excerpt(plan, window)
+
+    assert "--incremental=old_manifest_file" in excerpt
+    assert "pg_combinebackup must first combine it" in excerpt
+    assert excerpt.startswith("pg_basebackup -- take a base backup")
+    # 每段都是原文中连续的一段
+    assert all(part in text for part in excerpt.split("\n\n") if part)

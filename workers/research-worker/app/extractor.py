@@ -136,6 +136,11 @@ def _extract_evidence_cards_detailed_with_llm(
                 "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
+                "when a column asks for a command, option, parameter, configuration item or condition, prefer a quote "
+                "that names it literally (for example '--max-connections=N' or 'only when the cache is cold') over a "
+                "general description of the feature",
+                "when several windows answer a column, take each card from a different window before taking a second "
+                "card from the same window",
                 "for each (entity, column) produce up to three SUPPORTS cards, each stating a different fact that answers the column (up to five when the column asks for a list of items), plus at most one CONFLICTS card; never emit two cards for the same fact",
                 "CONFLICTS is relative to another card: when sources disagree, emit one directional finding as SUPPORTS and the opposing finding as CONFLICTS; never emit only CONFLICTS cards",
                 "relation_type is judged against the column, not against the question's hypothesis: a finding that X does not help is SUPPORTS for a column that asks for opposing or inconclusive evidence",
@@ -150,7 +155,7 @@ def _extract_evidence_cards_detailed_with_llm(
                     "window_id": window.window_id,
                     "entity_hint": window.source_title,
                     "query": window.query,
-                    "text": _excerpt_with_title(window.window_text, _excerpt_hint(plan, window)),
+                    "text": _window_excerpt(plan, window),
                     "trust_boundary": "UNTRUSTED_EXTERNAL_CONTENT" if window.untrusted_content else "TRUSTED_WORKSPACE_CONTENT",
                     "prompt_injection_detected": window.prompt_injection_detected,
                     "prompt_injection_signals": list(window.prompt_injection_signals),
@@ -453,10 +458,48 @@ def _excerpt_with_title(text: str, relevance_hint: str) -> str:
     return title + "\n\n" + excerpt
 
 
+# 一个任务含多列时每列各截一段：整页只截一段时，片段常落在与某一列相关的段落，
+# 其他列要的命令参数、成立条件在截取范围之外，模型只能拿笼统的介绍句充数
+COLUMN_EXCERPT_CHARS = 1500
+
+
+def _window_excerpt(plan: ResearchPlan, window: ResearchReadWindow) -> str:
+    text = window.window_text
+    columns = plan.research_schema.columns
+    if len(columns) < 2 or len(text) <= EXCERPT_MAX_CHARS:
+        return _excerpt_with_title(text, _excerpt_hint(plan, window))
+    entity = str(plan.stop_contract.get("deep_cell_entity_label") or "")
+    fallback_hint = _excerpt_hint(plan, window)
+    spans: list[tuple[int, int]] = []
+    for column in columns:
+        terms = " ".join((column.label, column.description, *column.search_intents))
+        start, end, relevance = _relevant_span(text, " ".join((terms, terms, entity)), max_chars=COLUMN_EXCERPT_CHARS)
+        if relevance <= 0:
+            # 中文列名对英文页面常一个词都匹配不上，这时退回整体提示，避免片段落在页首导航
+            start, end, _ = _relevant_span(text, fallback_hint, max_chars=COLUMN_EXCERPT_CHARS)
+        spans.append((start, end))
+    merged: list[list[int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    parts = [text[start:end] for start, end in merged]
+    if merged[0][0] > TITLE_CHARS:
+        parts.insert(0, _snap_to_boundaries(text, 0, TITLE_CHARS))
+    return "\n\n".join(part for part in parts if part)
+
+
 def _select_relevant_excerpt(text: str, relevance_hint: str, *, max_chars: int) -> str:
     """Choose an exact bounded slice, avoiding navigation-heavy page prefixes."""
+    start, end, _ = _relevant_span(text, relevance_hint, max_chars=max_chars)
+    return text[start:end]
+
+
+def _relevant_span(text: str, relevance_hint: str, *, max_chars: int) -> tuple[int, int, int]:
+    """返回与提示最相关的一段原文的起止位置（已对齐到词边界），以及这段命中提示词的得分。"""
     if len(text) <= max_chars:
-        return text
+        return 0, len(text), 1
     normalized_hint = relevance_hint.casefold()
     latin_terms = set(re.findall(r"[a-z0-9][a-z0-9._+-]{2,}", normalized_hint))
     cjk_terms = {
@@ -471,21 +514,30 @@ def _select_relevant_excerpt(text: str, relevance_hint: str, *, max_chars: int) 
     if starts[-1] != final_start:
         starts.append(final_start)
 
+    def relevance(start: int) -> int:
+        candidate = text[start:start + max_chars].casefold()
+        return sum(candidate.count(term) * min(len(term), 12) for term in terms)
+
     def score(start: int) -> tuple[int, int, int]:
         candidate = text[start:start + max_chars].casefold()
-        relevance = sum(candidate.count(term) * min(len(term), 12) for term in terms)
         # Jina/Markdown pages often begin with a dense navbar whose labels happen
         # to repeat product terms. Penalize link-heavy slices so prose with the
         # same relevance wins; the returned excerpt remains an exact source slice.
         link_count = candidate.count("](") + candidate.count("http://") + candidate.count("https://")
         prose_chars = len(re.findall(r"[a-z\u4e00-\u9fff]", candidate))
-        return relevance - link_count * 24, prose_chars, -start
+        return relevance(start) - link_count * 24, prose_chars, -start
 
     best_start = max(starts, key=score)
-    return _snap_to_boundaries(text, best_start, best_start + max_chars)
+    start, end = _snap_span(text, best_start, best_start + max_chars)
+    return start, end, relevance(best_start)
 
 
 def _snap_to_boundaries(text: str, start: int, end: int) -> str:
+    start, end = _snap_span(text, start, end)
+    return text[start:end]
+
+
+def _snap_span(text: str, start: int, end: int) -> tuple[int, int]:
     """片段从单词中间开始时，模型会照抄残缺的开头，所以起点挪到下一个空白之后，终点退回到上一个空白。
 
     中文没有词间空白，只在两侧都是拉丁字母或数字时调整。
@@ -500,7 +552,7 @@ def _snap_to_boundaries(text: str, start: int, end: int) -> str:
             pass
         if match:
             end = max(start, end - 200) + match.start()
-    return text[start:end]
+    return start, end
 
 
 def _is_word_char(char: str) -> bool:
