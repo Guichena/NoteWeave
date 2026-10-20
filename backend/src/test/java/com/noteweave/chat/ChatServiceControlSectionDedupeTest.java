@@ -84,7 +84,69 @@ class ChatServiceControlSectionDedupeTest {
                 .containsOnlyOnce("请用中文回答");
     }
 
+    @Test
+    void rendersEvidencePolicyLineWhenPackCarriesEvidencePolicy() {
+        MemoryControlPackResponse pack = packWithEvidencePolicy(
+                List.of("仅使用近 90 天内的资料", "无来源时明确说明"),
+                List.of("请用中文回答"),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+
+        String rendered = ChatService.renderChatControlSection(pack, null);
+
+        assertThat(rendered)
+                .contains("## 表达控制")
+                .contains("- 证据口径：仅使用近 90 天内的资料；无来源时明确说明");
+    }
+
+    @Test
+    void omitsEvidencePolicyLineWhenPackCarriesNoEvidencePolicy() {
+        MemoryControlPackResponse pack = pack(List.of("请用中文回答"), List.of(), List.of(),
+                List.of(), List.of(), List.of());
+
+        String rendered = ChatService.renderChatControlSection(pack, null);
+
+        assertThat(rendered).contains("- 风格约束：请用中文回答");
+        assertThat(rendered).doesNotContain("- 证据口径：");
+    }
+
+    @Test
+    void keepsControlSectionWhenOnlyEvidencePolicyIsPresent() {
+        MemoryControlPackResponse pack = packWithEvidencePolicy(
+                List.of("引用需可追溯"), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+
+        String rendered = ChatService.renderChatControlSection(pack, null);
+
+        assertThat(rendered)
+                .contains("## 表达控制")
+                .contains("- 证据口径：引用需可追溯");
+    }
+
+    @Test
+    void dropsEvidencePolicyLineWhenItRepeatsAFrozenConstraint() throws Exception {
+        MemoryControlPackResponse pack = packWithEvidencePolicy(
+                List.of("仅使用近 90 天内的资料"), List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+        var frozen = frozen("仅使用近 90 天内的资料");
+
+        String rendered = ChatService.renderChatControlSection(pack, frozen);
+
+        assertThat(rendered).doesNotContain("## 表达控制");
+        assertThat(rendered).containsOnlyOnce("仅使用近 90 天内的资料");
+    }
+
     private static MemoryControlPackResponse pack(
+            List<String> styleConstraints,
+            List<String> structureConstraints,
+            List<String> terminologyPolicy,
+            List<String> forbiddenPatterns,
+            List<String> interactionPolicy,
+            List<String> reviewChecklist
+    ) {
+        return packWithEvidencePolicy(List.of(), styleConstraints, structureConstraints, terminologyPolicy,
+                forbiddenPatterns, interactionPolicy, reviewChecklist);
+    }
+
+    private static MemoryControlPackResponse packWithEvidencePolicy(
+            List<String> evidencePolicy,
             List<String> styleConstraints,
             List<String> structureConstraints,
             List<String> terminologyPolicy,
@@ -100,7 +162,7 @@ class ChatServiceControlSectionDedupeTest {
                 structureConstraints,
                 terminologyPolicy,
                 forbiddenPatterns,
-                List.of(),
+                evidencePolicy,
                 interactionPolicy,
                 reviewChecklist,
                 List.of("memory-1"),

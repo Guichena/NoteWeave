@@ -379,10 +379,12 @@ public class ChatService {
         List<String> structureConstraints = distinctControlValues(chatControlPack.structureConstraints(), seen);
         List<String> terminologyPolicy = distinctControlValues(chatControlPack.terminologyPolicy(), seen);
         List<String> forbiddenPatterns = distinctControlValues(chatControlPack.forbiddenPatterns(), seen);
+        List<String> evidencePolicy = distinctControlValues(chatControlPack.evidencePolicy(), seen);
         List<String> interactionPolicy = distinctControlValues(chatControlPack.interactionPolicy(), seen);
         List<String> reviewChecklist = distinctControlValues(chatControlPack.reviewChecklist(), seen);
         if (styleConstraints.isEmpty() && structureConstraints.isEmpty() && terminologyPolicy.isEmpty()
-                && forbiddenPatterns.isEmpty() && interactionPolicy.isEmpty() && reviewChecklist.isEmpty()) {
+                && forbiddenPatterns.isEmpty() && evidencePolicy.isEmpty() && interactionPolicy.isEmpty()
+                && reviewChecklist.isEmpty()) {
             return;
         }
         builder.append("## 表达控制\n");
@@ -390,6 +392,7 @@ public class ChatService {
         appendControlLine(builder, "- 结构约束：", structureConstraints);
         appendControlLine(builder, "- 术语口径：", terminologyPolicy);
         appendControlLine(builder, "- 禁用路径：", forbiddenPatterns);
+        appendControlLine(builder, "- 证据口径：", evidencePolicy);
         appendControlLine(builder, "- 交互策略：", interactionPolicy);
         appendControlLine(builder, "- 复核清单：", reviewChecklist);
         builder.append("\n");
