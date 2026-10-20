@@ -123,8 +123,30 @@ class QaRerankServiceTest {
 
         service.rerank("query", List.of(noisy), 1);
 
-        assertThat(captured.get()).contains("Header", "useful")
-                .doesNotContain("https://", "noise();", "![image]");
+        assertThat(captured.get()).contains("Header", "useful", "noise();")
+                .doesNotContain("https://", "![image]", "```");
+    }
+
+    @Test
+    void keepsCodeIdentifiersAndBareUrls() {
+        java.util.concurrent.atomic.AtomicReference<String> captured = new java.util.concurrent.atomic.AtomicReference<>();
+        QaRerankService service = new QaRerankService(new RerankClient() {
+            @Override public boolean isEnabled() { return true; }
+            @Override public RerankResult rerank(String query, List<String> documents, int topN) {
+                captured.set(documents.get(0));
+                return new RerankResult(List.of(new Hit(0, 0.8, 1)), "rerank-v1");
+            }
+        });
+        FusedHit source = new FusedHit(
+                "a", "source-a", "snapshot-1", 0, "Title", "Heading", "PDF",
+                "Docs live at https://docs.example.com/api/v1.\n```java\nloadWorkspaceSnapshot(workspaceId);\n```",
+                1, 1, 0.9, 9.0, 0.03, List.of("vector", "keyword"));
+
+        service.rerank("query", List.of(source), 1);
+
+        assertThat(captured.get())
+                .contains("loadWorkspaceSnapshot", "workspaceId", "https://docs.example.com/api/v1")
+                .doesNotContain("```");
     }
 
     private FusedHit hit(String id, double score) {

@@ -13,10 +13,9 @@ import org.springframework.stereotype.Component;
 
 @Component
 public class QaRerankService {
-    private static final Pattern CODE_BLOCK = Pattern.compile("(?s)```.*?```");
+    private static final Pattern CODE_FENCE = Pattern.compile("```+");
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[[^]]*]\\([^)]*\\)");
     private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^]]+)]\\([^)]*\\)");
-    private static final Pattern RAW_URL = Pattern.compile("https?://\\S+");
     private static final Pattern MARKERS = Pattern.compile("(?m)^(?:#{1,6}|>|[-*+] |\\d+\\. )\\s*");
     private final RerankClient rerankClient;
 
@@ -87,10 +86,9 @@ public class QaRerankService {
 
     private String clean(String value) {
         String text = value == null ? "" : value;
-        text = CODE_BLOCK.matcher(text).replaceAll(" ");
+        text = CODE_FENCE.matcher(text).replaceAll(" ");
         text = MARKDOWN_IMAGE.matcher(text).replaceAll(" ");
         text = MARKDOWN_LINK.matcher(text).replaceAll("$1");
-        text = RAW_URL.matcher(text).replaceAll(" ");
         text = MARKERS.matcher(text).replaceAll("");
         return text.replaceAll("[\\t ]+", " ").replaceAll("\\n{3,}", "\n\n").trim();
     }
