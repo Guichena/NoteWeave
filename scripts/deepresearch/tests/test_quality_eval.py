@@ -120,6 +120,28 @@ class QualityEvalTest(unittest.TestCase):
         result = self.score.score_case(self.case, record([cell("VERIFIED")]), lambda _m: judge_json(scores=scores))
         self.assertFalse(result["passed"])
 
+    def test_majority_of_judge_samples_decides_and_cache_reuses_verdicts(self):
+        replies = iter([judge_json(), judge_json(**{"pass": False}), judge_json(**{"pass": False})])
+        calls = []
+
+        def call(messages):
+            calls.append(messages)
+            return next(replies)
+
+        cache = {}
+        result = self.score.score_case(self.case, record([cell("VERIFIED")]), call, samples=3, cache=cache)
+        self.assertFalse(result["passed"])
+        self.assertEqual((result["judge"]["samples"], result["judge"]["pass_votes"]), (3, 1))
+        self.assertEqual(len(calls), 3)
+
+        again = self.score.score_case(self.case, record([cell("VERIFIED")]), lambda _m: judge_json(), samples=3,
+                                      cache=cache)
+        self.assertFalse(again["passed"])
+        changed = record([cell("VERIFIED")])
+        changed["run_detail"]["final_report_markdown"] = "# 新报告"
+        fresh = self.score.score_case(self.case, changed, lambda _m: judge_json(), samples=3, cache=cache)
+        self.assertTrue(fresh["passed"])
+
     def test_aggregate_uses_micro_average_for_effective_cell_rate(self):
         results = [
             self.score.score_case(self.case, record([cell("VERIFIED")]), lambda _m: judge_json()),

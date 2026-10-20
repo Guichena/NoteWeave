@@ -1,7 +1,8 @@
 """为 research-quality-v1 的运行记录打分并生成汇总报告。
 
 结构化指标（有效单元格完成率、检索效率、实体覆盖）由脚本从原始记录计算；
-内容质量由一次 LLM 评分给出五个维度的 0 到 1 分和是否通过。
+内容质量由 LLM 评分给出五个维度的 0 到 1 分和是否通过；每份报告默认评三次取多数，分数取平均，
+评分按输入缓存在 reports/judge-cache.json，报告没变时沿用。
 评分模型通过 NOTEWEAVE_EVAL_JUDGE_BASE_URL、NOTEWEAVE_EVAL_JUDGE_API_KEY、NOTEWEAVE_EVAL_JUDGE_MODEL 配置，
 未配置或调用失败时评分记为 NOT_RUN，不计入通过。
 """
@@ -9,6 +10,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import urllib.error
@@ -22,6 +24,7 @@ EVAL_DIR = ROOT / "experiments/deep-research/quality-eval"
 DATASET = EVAL_DIR / "dataset.json"
 RUNS_DIR = EVAL_DIR / "runs"
 REPORTS_DIR = EVAL_DIR / "reports"
+JUDGE_CACHE = REPORTS_DIR / "judge-cache.json"
 
 DIMENSIONS = ("factual_accuracy", "citation_accuracy", "completeness", "source_quality", "tool_efficiency")
 # 通过线：评分模型判定通过，且事实准确与引用准确都不低于该值
@@ -212,11 +215,38 @@ def openai_compatible_judge() -> JudgeCall | None:
     return call
 
 
-def score_case(case: dict[str, Any], record: dict[str, Any], call: JudgeCall | None) -> dict[str, Any]:
+def score_case(case: dict[str, Any], record: dict[str, Any], call: JudgeCall | None, *,
+               samples: int = 1, cache: dict[str, list[dict[str, Any]]] | None = None) -> dict[str, Any]:
+    """评分模型在 temperature 0 下对同一份报告也会给出不同结论（2026-10-20 同一批 16 份未变的报告重评时
+    5 份翻转），所以每份报告评 samples 次取多数，并按评分输入缓存：报告没变就沿用已有的评分，
+    只重跑几题时其他题的结论不会因重评而波动。"""
     metrics = structural_metrics(case, record)
-    judge = run_judge(judge_messages(case, record, metrics), case.get("must_cover", []), call)
-    return {"case_key": case["case_key"], "question_type": case.get("question_type"), "run_id": record.get("run_id"),
-            "metrics": metrics, "judge": judge, "passed": passed(judge)}
+    messages = judge_messages(case, record, metrics)
+    key = hashlib.sha256(json.dumps([os.environ.get("NOTEWEAVE_EVAL_JUDGE_MODEL", ""), messages],
+                                    ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+    judges = list((cache or {}).get(key, []))[:samples] if call is not None else []
+    failed: dict[str, Any] | None = None
+    while len(judges) < samples:
+        judge = run_judge(messages, case.get("must_cover", []), call)
+        if judge.get("status") != "SCORED":
+            failed = judge
+            break
+        judges.append(judge)
+    if cache is not None and judges:
+        cache[key] = judges
+    result = {"case_key": case["case_key"], "question_type": case.get("question_type"), "run_id": record.get("run_id"),
+              "metrics": metrics}
+    if not judges:
+        return {**result, "judge": failed, "passed": passed(failed)}
+    votes = [bool(passed(judge)) for judge in judges]
+    majority = sum(votes) * 2 > len(votes)
+    representative = next(judge for judge, vote in zip(judges, votes) if vote == majority) \
+        if majority in votes else judges[0]
+    combined = {**representative,
+                "scores": {dim: round(sum(judge["scores"][dim] for judge in judges) / len(judges), 4)
+                           for dim in DIMENSIONS},
+                "samples": len(judges), "pass_votes": sum(votes)}
+    return {**result, "judge": combined, "passed": majority}
 
 
 def mean(values: list[float]) -> float | None:
@@ -291,16 +321,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs-dir", type=Path, default=RUNS_DIR)
     parser.add_argument("--no-judge", action="store_true", help="只计算结构化指标")
+    parser.add_argument("--judge-samples", type=int, default=3, help="每份报告评分次数，按多数决定是否通过")
+    parser.add_argument("--judge-cache", type=Path, default=JUDGE_CACHE,
+                        help="评分缓存；报告与评分输入不变时沿用已有评分")
     args = parser.parse_args(argv)
     dataset = json.loads(DATASET.read_text(encoding="utf-8"))
     call = None if args.no_judge else openai_compatible_judge()
+    cache = json.loads(args.judge_cache.read_text(encoding="utf-8")) if args.judge_cache.exists() else {}
     results = []
     for case in dataset["cases"]:
         path = args.runs_dir / f"{case['case_key']}.json"
         if path.exists():
-            results.append(score_case(case, json.loads(path.read_text(encoding="utf-8")), call))
+            results.append(score_case(case, json.loads(path.read_text(encoding="utf-8")), call,
+                                      samples=max(1, args.judge_samples), cache=cache))
     summary = aggregate(results, dataset)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    args.judge_cache.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     (REPORTS_DIR / f"quality-{stamp}.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
