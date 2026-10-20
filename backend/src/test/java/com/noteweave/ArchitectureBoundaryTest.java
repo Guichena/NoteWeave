@@ -186,6 +186,23 @@ class ArchitectureBoundaryTest {
     }
 
     @Test
+    void videoLearningMustStayEnabledByDefaultAcrossDeployFiles() throws IOException {
+        String application = Files.readString(Path.of("src/main/resources/application.yml"))
+                .replace("\r\n", "\n");
+        String compose = Files.readString(Path.of("..").resolve("docker-compose.yml"))
+                .replace("\r\n", "\n");
+        String envExample = Files.readString(Path.of("..").resolve(".env.example"))
+                .replace("\r\n", "\n");
+
+        assertThat(application)
+                .contains("enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:true}");
+        assertThat(compose)
+                .contains("NOTEWEAVE_VIDEO_LEARNING_ENABLED: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:-true}");
+        assertThat(envExample)
+                .contains("NOTEWEAVE_VIDEO_LEARNING_ENABLED=true");
+    }
+
+    @Test
     void durableOutboxDispatchersMustShareClaimAndRetryPolicy() throws IOException {
         String durableDispatcher = Files.readString(Path.of(
                 "src/main/java/com/noteweave/infra/outbox/DurableOutboxDispatcher.java"));
