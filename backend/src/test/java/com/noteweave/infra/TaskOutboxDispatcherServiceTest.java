@@ -1,16 +1,27 @@
 package com.noteweave.infra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.noteweave.config.NoteWeaveProperties;
+import com.noteweave.infra.outbox.DurableOutboxDispatcher;
+import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
+import com.noteweave.source.SourceParseFailureFinalizer;
+import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.task.TaskService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,11 +97,107 @@ class TaskOutboxDispatcherServiceTest {
                 .tag("topic", "noteweave.source.parse").counter().count()).isEqualTo(1.0);
     }
 
+    @Test
+    void embedDeliveryExhaustionShouldFinalizeSnapshotAndTaskFailure() {
+        TaskService taskService = mock(TaskService.class);
+        SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
+        insertOutbox("outbox-embed", "task-embed", 4, SourcePipelineStages.TOPIC_EMBED, embedPayload());
+        failEverySend();
+
+        dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
+
+        assertThat(status("outbox-embed")).isEqualTo("DEAD_LETTER");
+        verify(projectionFinalizer).finalizeFailed(
+                "workspace-1", "source-1", "snapshot-1", "task-embed", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void indexDeliveryExhaustionShouldFinalizeSnapshotAndTaskFailure() {
+        TaskService taskService = mock(TaskService.class);
+        SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
+        insertOutbox("outbox-index", "task-index", 4, SourcePipelineStages.TOPIC_INDEX, """
+                {"workspaceId":"workspace-1","sourceId":"source-1","sourceSnapshotId":"snapshot-1",
+                 "taskId":"task-index","batchVersion":"%s"}
+                """.formatted("b".repeat(64)));
+        failEverySend();
+
+        dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
+
+        assertThat(status("outbox-index")).isEqualTo("DEAD_LETTER");
+        verify(projectionFinalizer).finalizeFailed(
+                "workspace-1", "source-1", "snapshot-1", "task-index", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    @Test
+    void projectionFinalizationFailureShouldNotBreakDispatchLoop() {
+        TaskService taskService = mock(TaskService.class);
+        SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
+        doThrow(new IllegalStateException("snapshot is not awaiting failure finalization")).when(projectionFinalizer)
+                .finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+        insertOutbox("outbox-embed", "task-embed", 4, SourcePipelineStages.TOPIC_EMBED, embedPayload());
+        failEverySend();
+
+        TaskOutboxDispatcherService dispatcher = dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer);
+
+        assertThatCode(dispatcher::dispatchReadyMessages).doesNotThrowAnyException();
+        assertThat(status("outbox-embed")).isEqualTo("DEAD_LETTER");
+        // 收尾没有生效时退回到只打失败任务，任务不会停在执行中
+        verify(taskService).failTask("task-embed", "OUTBOX_DEAD_LETTER",
+                "Kafka Outbox 投递耗尽，已进入死信", "OUTBOX_DISPATCH_EXHAUSTED", true);
+    }
+
+    @Test
+    void unrelatedTopicExhaustionShouldStillOnlyFailTask() {
+        TaskService taskService = mock(TaskService.class);
+        SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
+        insertOutbox("outbox-wiki", "task-wiki", 4, "noteweave.wiki.ingest", "{\"taskId\":\"task-wiki\"}");
+        failEverySend();
+
+        dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
+
+        assertThat(status("outbox-wiki")).isEqualTo("DEAD_LETTER");
+        verify(taskService).failTask("task-wiki", "OUTBOX_DEAD_LETTER",
+                "Kafka Outbox 投递耗尽，已进入死信", "OUTBOX_DISPATCH_EXHAUSTED", true);
+        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    private TaskOutboxDispatcherService dispatcher(
+            MeterRegistry meterRegistry,
+            TaskService taskService,
+            SourceRetrievalProjectionFinalizer projectionFinalizer
+    ) {
+        return new TaskOutboxDispatcherService(jdbcTemplate, kafkaTemplate, properties, taskService, meterRegistry,
+                new DurableOutboxDispatcher(jdbcTemplate, meterRegistry),
+                mock(SourceParseFailureFinalizer.class), projectionFinalizer);
+    }
+
+    private void failEverySend() {
+        when(kafkaTemplate.send(any(ProducerRecord.class)))
+                .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("broker unavailable")));
+    }
+
+    private String embedPayload() {
+        return """
+                {"workspaceId":"workspace-1","sourceId":"source-1","sourceSnapshotId":"snapshot-1",
+                 "taskId":"task-embed","batchNo":0,"batchVersion":"%s"}
+                """.formatted("c".repeat(64));
+    }
+
     private void insertOutbox(String id, int attempts) {
+        insertOutbox(id, "task-1", attempts, "noteweave.source.parse", "source-1", "{}");
+    }
+
+    private void insertOutbox(String id, String taskId, int attempts, String topic, String payloadJson) {
+        insertOutbox(id, taskId, attempts, topic, taskId, payloadJson);
+    }
+
+    private void insertOutbox(String id, String taskId, int attempts, String topic, String messageKey, String payloadJson) {
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status, attempt_count)
-                values (?, 'task-1', 'noteweave.source.parse', 'source-1', '{}', 'READY', ?)
-                """, id, attempts);
+                values (?, ?, ?, ?, ?, 'READY', ?)
+                """, id, taskId, topic, messageKey, payloadJson, attempts);
     }
 
     private String status(String id) {

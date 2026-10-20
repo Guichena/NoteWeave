@@ -1,10 +1,14 @@
 package com.noteweave.infra;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.common.BusinessException;
 import com.noteweave.task.TaskService;
 import com.noteweave.infra.outbox.DurableOutboxDispatcher;
 import com.noteweave.infra.outbox.OutboxDispatchPolicy;
+import com.noteweave.retrieval.projection.RetrievalProjectionDeadLetterFinalizer;
+import com.noteweave.retrieval.projection.SourceEmbeddingBatchRepository;
+import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
 import com.noteweave.source.SourceParseFailureFinalizer;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -12,6 +16,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -21,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class TaskOutboxDispatcherService {
+    private static final Logger log = LoggerFactory.getLogger(TaskOutboxDispatcherService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final KafkaTemplate<String, String> kafkaTemplate;
@@ -30,6 +37,7 @@ public class TaskOutboxDispatcherService {
     private final TaskService taskService;
     private final DurableOutboxDispatcher outboxDispatcher;
     private final SourceParseFailureFinalizer sourceParseFailureFinalizer;
+    private final RetrievalProjectionDeadLetterFinalizer retrievalProjectionFinalizer;
 
     public TaskOutboxDispatcherService(
             JdbcTemplate jdbcTemplate,
@@ -48,7 +56,20 @@ public class TaskOutboxDispatcherService {
             MeterRegistry meterRegistry
     ) {
         this(jdbcTemplate, kafkaTemplate, properties, taskService, meterRegistry,
-                new DurableOutboxDispatcher(jdbcTemplate, meterRegistry), null);
+                new DurableOutboxDispatcher(jdbcTemplate, meterRegistry), null, null);
+    }
+
+    public TaskOutboxDispatcherService(
+            JdbcTemplate jdbcTemplate,
+            KafkaTemplate<String, String> kafkaTemplate,
+            NoteWeaveProperties properties,
+            TaskService taskService,
+            MeterRegistry meterRegistry,
+            DurableOutboxDispatcher outboxDispatcher,
+            SourceParseFailureFinalizer sourceParseFailureFinalizer
+    ) {
+        this(jdbcTemplate, kafkaTemplate, properties, taskService, meterRegistry,
+                outboxDispatcher, sourceParseFailureFinalizer, null);
     }
 
     @Autowired
@@ -59,7 +80,8 @@ public class TaskOutboxDispatcherService {
             TaskService taskService,
             MeterRegistry meterRegistry,
             DurableOutboxDispatcher outboxDispatcher,
-            SourceParseFailureFinalizer sourceParseFailureFinalizer
+            SourceParseFailureFinalizer sourceParseFailureFinalizer,
+            SourceRetrievalProjectionFinalizer sourceRetrievalProjectionFinalizer
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.kafkaTemplate = kafkaTemplate;
@@ -70,6 +92,19 @@ public class TaskOutboxDispatcherService {
         NoteWeaveProperties.Topics configured = properties.kafka().topics();
         this.sourceParseTopic = configured.sourceParse();
         this.topics = configured.all();
+        // 向量化/索引投递耗尽要与死信收尾一致：把快照、资料和任务标记为失败，
+        // 资料才能被重新处理，残留的批次租约在重新处理时被清理
+        this.retrievalProjectionFinalizer = sourceRetrievalProjectionFinalizer == null ? null
+                : new RetrievalProjectionDeadLetterFinalizer(
+                        new ObjectMapper(), sourceRetrievalProjectionFinalizer, configured.retrievalProjection());
+    }
+
+    /** 批次守卫可选：没有向量批次仓储时仍然完成快照与任务收尾。 */
+    @Autowired(required = false)
+    void setEmbeddingBatches(SourceEmbeddingBatchRepository embeddingBatches) {
+        if (retrievalProjectionFinalizer != null) {
+            retrievalProjectionFinalizer.withEmbeddingBatches(embeddingBatches);
+        }
     }
 
     @Scheduled(fixedDelayString = "${noteweave.kafka.outbox-redrive-delay-ms:1000}")
@@ -88,20 +123,41 @@ public class TaskOutboxDispatcherService {
                 message -> kafkaTemplate.send(new ProducerRecord<>(
                         message.topic(), message.messageKey(), message.payloadJson()
                 )).get(10, TimeUnit.SECONDS),
-                message -> {
-                    if (message.taskId() != null) {
-                        if (sourceParseFailureFinalizer != null && (sourceParseTopic.equals(message.topic())
-                                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(message.topic()))) {
-                            sourceParseFailureFinalizer.finalizeDeliveryExhausted(
-                                    message.taskId(), message.payloadJson());
-                        } else {
-                            taskService.failTask(message.taskId(), "OUTBOX_DEAD_LETTER",
-                                    "Kafka Outbox 投递耗尽，已进入死信",
-                                    "OUTBOX_DISPATCH_EXHAUSTED", true);
-                        }
-                    }
-                }
+                message -> handleDeliveryExhausted(message)
         );
+    }
+
+    /**
+     * 投递耗尽后的收尾。检索投影（向量化、索引、同步投影）与解析/切片一样要做业务收尾，
+     * 否则快照会一直停在 PROCESSING 且向量批次租约不释放。收尾异常只记日志，不能打断投递循环。
+     */
+    private void handleDeliveryExhausted(DurableOutboxDispatcher.Message message) {
+        try {
+            finalizeDeliveryExhausted(message);
+        } catch (RuntimeException failure) {
+            // 收尾异常不能打断投递循环，消息已经进入死信，可以重驱
+            log.warn("Outbox 投递耗尽收尾失败: outboxId={}, topic={}", message.outboxId(), message.topic(), failure);
+        }
+    }
+
+    private void finalizeDeliveryExhausted(DurableOutboxDispatcher.Message message) {
+        if (message.taskId() == null) {
+            return;
+        }
+        if (sourceParseFailureFinalizer != null && (sourceParseTopic.equals(message.topic())
+                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(message.topic()))) {
+            sourceParseFailureFinalizer.finalizeDeliveryExhausted(message.taskId(), message.payloadJson());
+            return;
+        }
+        if (retrievalProjectionFinalizer != null && retrievalProjectionFinalizer.handles(message.topic())
+                && retrievalProjectionFinalizer.finalizeFailure(message.topic(), message.payloadJson(),
+                        RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE)) {
+            return;
+        }
+        // 收尾没有生效（载荷不可用、批次已过时等）时仍然把任务打失败，任务不能停在执行中
+        taskService.failTask(message.taskId(), "OUTBOX_DEAD_LETTER",
+                "Kafka Outbox 投递耗尽，已进入死信",
+                "OUTBOX_DISPATCH_EXHAUSTED", true);
     }
 
     public TaskOutboxMetricsResponse metrics() {
