@@ -203,10 +203,14 @@ public class KafkaConfig {
         factory.setConsumerFactory(consumerFactory);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.setContainerCustomizer(container -> {
+            String memberId = staticMemberIdOrNull(container.getListenerId());
+            if (memberId == null) {
+                // 实例 ID 未配置时保持默认的动态成员协议，不写入 group.instance.id。
+                return;
+            }
             Properties consumerProperties = new Properties();
             consumerProperties.putAll(container.getContainerProperties().getKafkaConsumerProperties());
-            consumerProperties.setProperty(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG,
-                    staticMemberId(container.getListenerId()));
+            consumerProperties.setProperty(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG, memberId);
             container.getContainerProperties().setKafkaConsumerProperties(consumerProperties);
         });
         DeadLetterPublishingRecoverer publishingRecoverer = new DeadLetterPublishingRecoverer(
@@ -244,6 +248,17 @@ public class KafkaConfig {
         return com.noteweave.source.SourcePipelineProcessingBudget.maxPollIntervalMs(
                 pipelineProperties, maxPollIntervalMs);
     }
+    /**
+     * 静态成员 ID；实例 ID 为空/空白时返回 {@code null}，表示不启用静态成员
+     * （不写入 {@code group.instance.id}），避免同一消费组内实例互相替换。
+     */
+    String staticMemberIdOrNull(String listenerId) {
+        if (instanceId == null || instanceId.isBlank()) {
+            return null;
+        }
+        return staticMemberId(listenerId);
+    }
+
     /** 每个稳定部署实例的 listener 独占成员 ID，避免同一消费组内相互替换。 */
     String staticMemberId(String listenerId) {
         if (instanceId == null || !instanceId.matches("[A-Za-z0-9._-]{1,160}")
@@ -253,16 +268,35 @@ public class KafkaConfig {
         return instanceId + "-" + listenerId;
     }
 
-    private BackOff exponentialJitterBackOff() {
+    /** 消费重试次数：来自 {@code noteweave.kafka.retry-max-attempts}，缺省 5，限制 1..10。 */
+    int retryMaxAttempts() {
+        NoteWeaveProperties.Kafka kafka = kafkaProperties();
+        return kafka == null ? NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_ATTEMPTS : kafka.retryMaxAttempts();
+    }
+
+    /** 单次退避上限：来自 {@code noteweave.kafka.retry-max-backoff-ms}，缺省 30000ms。 */
+    long retryMaxBackoffMs() {
+        NoteWeaveProperties.Kafka kafka = kafkaProperties();
+        return kafka == null ? NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_BACKOFF_MS : kafka.retryMaxBackoffMs();
+    }
+
+    private NoteWeaveProperties.Kafka kafkaProperties() {
+        NoteWeaveProperties properties = pipelineProperties;
+        return properties == null ? null : properties.kafka();
+    }
+
+    BackOff exponentialJitterBackOff() {
+        int maxAttempts = retryMaxAttempts();
+        long maxBackoffMillis = retryMaxBackoffMs();
         return () -> new BackOffExecution() {
             private int retry;
 
             @Override
             public long nextBackOff() {
-                if (retry >= 2) {
+                if (retry >= maxAttempts) {
                     return STOP;
                 }
-                long baseMillis = 1_000L << retry++;
+                long baseMillis = Math.min(1_000L << retry++, maxBackoffMillis);
                 long maxJitterMillis = Math.max(1L, baseMillis / 5L);
                 return baseMillis + ThreadLocalRandom.current().nextLong(maxJitterMillis + 1L);
             }
