@@ -40,6 +40,16 @@ def test_conflict_queries_target_actual_claims_and_reject_used_queries():
     assert llm.calls[1][1]["validation_errors"]
 
 
+def test_gap_cell_without_claims_cannot_be_repaired_with_counter_evidence():
+    llm = Llm([{"strategy": "COUNTER_EVIDENCE", "queries": ["code coverage no reduction in defects counterexample"]},
+               {"strategy": "NARROW", "queries": ["higher code coverage reduced post-release defects study"]}])
+    context = CellQueryContext("coverage", "coverage threshold", (CellColumn("support", "支持证据与来源"),))
+    plan, strategy = plan_repair_queries(context, {"repair_cause": "MARGINAL_GAIN_EXHAUSTED"}, llm)
+    assert strategy == "NARROW"
+    assert plan.specs[0].query == "higher code coverage reduced post-release defects study"
+    assert "COUNTER_EVIDENCE" in llm.calls[1][1]["validation_errors"][0]
+
+
 @pytest.mark.parametrize("cause,strategy", [("FETCH_FAILED", "SWITCH_SOURCE_TYPE"),
     ("PROVIDER_FAILED", "SWITCH_SOURCE_TYPE"), ("MARGINAL_GAIN_EXHAUSTED", "NARROW")])
 def test_reason_specific_rule_fallback(cause, strategy):

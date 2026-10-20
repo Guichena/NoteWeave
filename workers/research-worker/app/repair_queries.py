@@ -27,7 +27,11 @@ def plan_repair_queries(context, target, llm):
                      "both query wording and source type. Do not repeat tried queries. Use each column's label and "
                      "description to decide what is still missing. For software, standards and science topics write "
                      "English queries, include known identifiers (JEP, RFC, PEP, version numbers) and keep the "
-                     "entity's version. For empirical questions target studies and data. When authoritative domains are "
+                     "entity's version. For empirical questions target studies and data. Every query must look for "
+                     "what the column of repair_target.cell_key asks for: when that column asks for one side of a "
+                     "debate, such as supporting evidence or opposing or inconclusive evidence, phrase every query "
+                     "toward that side (for supporting evidence 'X reduced Y study', for opposing evidence 'X no "
+                     "effect on Y study') and never toward the other side. When authoritative domains are "
                      "given, at least one query must add site:<domain> for the best matching one. "
                      f"Return strategy and 1 to {context.max_queries} queries.",
                      "repair_target": target, "entity": context.entity_label,
@@ -45,6 +49,9 @@ def plan_repair_queries(context, target, llm):
                 items = items[:context.max_queries]
                 if cause == "EVIDENCE_CONFLICT" and chosen != "COUNTER_EVIDENCE":
                     raise ValueError("冲突修复必须使用 COUNTER_EVIDENCE")
+                # 缺口单元格还没有结论，找反证没有对象；冲突题的支持证据列因此被检索成反方证据
+                if chosen == "COUNTER_EVIDENCE" and cause != "EVIDENCE_CONFLICT" and not target.get("claims"):
+                    raise ValueError("目标单元格还没有结论，不能用 COUNTER_EVIDENCE，按列要求的内容补检索")
                 if cause in {"FETCH_FAILED", "PROVIDER_FAILED"} and chosen != "SWITCH_SOURCE_TYPE":
                     raise ValueError("获取失败必须使用 SWITCH_SOURCE_TYPE")
                 specs = []
