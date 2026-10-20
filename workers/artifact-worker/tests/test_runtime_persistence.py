@@ -437,23 +437,41 @@ def test_restart_recovery_should_redeliver_persisted_system_mcp_outcome_without_
     assert scheduled == [("persisted-outcome-1", "http://java-host:8081")]
 
 
+def _ready_persisted_outcome_operation() -> dict[str, str]:
+    return {
+        "callback_status": "PROVIDER_OUTCOME_READY",
+        "callback_token": "token",
+        "provider_outcome_status": "ACKNOWLEDGED",
+        "provider_outcome_result_locator": "loc",
+        "provider_outcome_error_code": "",
+        "provider_outcome_error_message": "",
+    }
+
+
+class _FakeCallbackClock:
+    def __init__(self, *, sleep_advance: float = 0.0) -> None:
+        self.now = 0.0
+        self.sleep_advance = sleep_advance
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, delay: float) -> None:
+        self.sleeps.append(delay)
+        self.now += self.sleep_advance if self.sleep_advance > 0 else delay
+
+
 def test_persisted_outcome_retry_stops_when_ack_always_fails(monkeypatch, caplog) -> None:
     request_id = "retry-cap-request"
     system_mcp_executor._callback_threads[request_id] = threading.current_thread()
     attempts = {"count": 0}
-    sleeps: list[float] = []
+    clock = _FakeCallbackClock()
 
     monkeypatch.setattr(
         system_mcp_executor,
         "peek_acquisition_operation",
-        lambda _: {
-            "callback_status": "PROVIDER_OUTCOME_READY",
-            "callback_token": "token",
-            "provider_outcome_status": "ACKNOWLEDGED",
-            "provider_outcome_result_locator": "loc",
-            "provider_outcome_error_code": "",
-            "provider_outcome_error_message": "",
-        },
+        lambda _: _ready_persisted_outcome_operation(),
     )
     monkeypatch.setattr(system_mcp_executor, "get_acquisition_result_payload", lambda _: {})
 
@@ -462,15 +480,51 @@ def test_persisted_outcome_retry_stops_when_ack_always_fails(monkeypatch, caplog
         raise RuntimeError("host ack transport unavailable")
 
     monkeypatch.setattr(system_mcp_executor, "_send_host_ack", always_fail)
-    monkeypatch.setattr(system_mcp_executor.time, "sleep", lambda delay: sleeps.append(delay))
+    monkeypatch.setattr(system_mcp_executor, "time", clock)
 
     with caplog.at_level(logging.ERROR):
         system_mcp_executor._retry_persisted_outcome_delivery(
             request_id, "http://java-host:8081"
         )
 
+    # The last failed attempt does not sleep; 20 tries produce 19 backoff sleeps.
     assert attempts["count"] == system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS
-    assert len(sleeps) == system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS - 1
+    assert len(clock.sleeps) == system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS - 1
+    assert request_id not in system_mcp_executor._callback_threads
+    assert any(
+        request_id in record.message and "exceeded retry limit" in record.message
+        for record in caplog.records
+        if record.levelno == logging.ERROR
+    )
+
+
+def test_persisted_outcome_retry_stops_when_elapsed_limit_is_reached(monkeypatch, caplog) -> None:
+    request_id = "retry-time-cap-request"
+    system_mcp_executor._callback_threads[request_id] = threading.current_thread()
+    attempts = {"count": 0}
+    clock = _FakeCallbackClock(sleep_advance=200.0)
+
+    monkeypatch.setattr(
+        system_mcp_executor,
+        "peek_acquisition_operation",
+        lambda _: _ready_persisted_outcome_operation(),
+    )
+    monkeypatch.setattr(system_mcp_executor, "get_acquisition_result_payload", lambda _: {})
+
+    def always_fail(*, java_base_url, payload):
+        attempts["count"] += 1
+        raise RuntimeError("host ack transport unavailable")
+
+    monkeypatch.setattr(system_mcp_executor, "_send_host_ack", always_fail)
+    monkeypatch.setattr(system_mcp_executor, "time", clock)
+
+    with caplog.at_level(logging.ERROR):
+        system_mcp_executor._retry_persisted_outcome_delivery(
+            request_id, "http://java-host:8081"
+        )
+
+    assert attempts["count"] < system_mcp_executor._PERSISTED_OUTCOME_MAX_ATTEMPTS
+    assert clock.now >= system_mcp_executor._PERSISTED_OUTCOME_MAX_ELAPSED_SECONDS
     assert request_id not in system_mcp_executor._callback_threads
     assert any(
         request_id in record.message and "exceeded retry limit" in record.message
