@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
  * 约束抽取评测集的离线部分：stub 模型回放 fixture 里的「理想 ops」，真实合并器与真实接线负责落行。
  * <p>
  * 断言的是整条链路的结果，而不是某段规则：稳定 id（{@code messageId:slot:opIndex}）、落库 kind、
- * scope、ACTIVE/REVOKED、撤回的 {@code invalid_after_seq} 与 {@code superseded_by}。因此 fixture 同时是
+ * scope、极性（{@code REQUIRE}/{@code FORBID}）、ACTIVE/REVOKED、撤回的 {@code invalid_after_seq}
+ * 与 {@code superseded_by}。因此 fixture 同时是
  * 「模型应该怎么答」的说明和「接线有没有接对」的回归。不发任何网络请求，也不依赖 Spring 上下文。
  * <p>
  * {@code targetId} 里的 {@code $active:<slot>} 由测试桩按提示词里给出的 ACTIVE 列表解析，
@@ -134,6 +135,9 @@ class ConstraintOpsEvalTest {
         assertThat(row.kind()).as(caseId).isEqualTo(slot.dbKind());
         assertThat(row.scope()).as(caseId).isEqualTo(expected.path("scope").asText());
         assertThat(row.status()).as(caseId).isEqualTo(expected.path("status").asText());
+        // 极性是落库列：禁止项必须落成 FORBID，不能只靠正文里的「不要使用表格」。
+        assertThat(row.polarity()).as(caseId)
+                .isEqualTo(ConstraintPolarity.fromWire(expected.path("polarity").asText("require")));
         assertThat(row.text()).as(caseId).isEqualTo(expected.path("value").asText());
         if (expected.hasNonNull("invalid_after_seq")) {
             assertThat(row.invalidAfterSeq()).as(caseId)

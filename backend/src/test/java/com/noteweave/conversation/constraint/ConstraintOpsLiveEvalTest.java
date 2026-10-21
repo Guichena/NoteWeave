@@ -27,9 +27,10 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
  * 可用 {@code NOTEWEAVE_LLM_ENDPOINT}/{@code NOTEWEAVE_LLM_MODEL}/{@code NOTEWEAVE_LLM_API_KEY}
  * 或同名 {@code -Dnoteweave.live.llm.*} 覆盖；密钥永远不会被打印。
  * <p>
- * 判定只看最终 ACTIVE 约束的 {@code slot@scope} 集合，不比 value 原文：同一句话的措辞允许不同，
- * 「抽出了哪个槽位、作用范围是会话还是本话题」才是评测目标。分数只报告，不因得分低而失败；
- * 设置 {@code -Dnoteweave.live.llm.min-score=0.8} 后才按及格线断言。
+ * 判定只看最终 ACTIVE 约束的 {@code slot@scope@polarity} 集合，不比 value 原文：同一句话的措辞允许不同，
+ * 「抽出了哪个槽位、作用范围是会话还是本话题、是要求还是禁止」才是评测目标。
+ * 极性必须一起比：模型把「不要表格」抽成正向 table 时，只看槽位会当成通过。
+ * 分数只报告，不因得分低而失败；设置 {@code -Dnoteweave.live.llm.min-score=0.8} 后才按及格线断言。
  */
 @EnabledIfEnvironmentVariable(named = "DEEPSEEK_API_KEY", matches = ".+")
 @EnabledIfSystemProperty(named = "noteweave.live.llm", matches = "true")
@@ -78,7 +79,8 @@ class ConstraintOpsLiveEvalTest {
             List<String> expected = expectedActive(evalCase);
             List<String> actual = new ArrayList<>();
             for (ConstraintOpsExtractor.ActiveConstraint active : merger.activeConstraints(steps)) {
-                actual.add(slotScope(active.slot() == null ? "" : active.slot().wire(), active.scope()));
+                actual.add(slotScope(active.slot() == null ? "" : active.slot().wire(), active.scope(),
+                        active.polarity()));
             }
             Collections.sort(actual);
             // 模型失败/超时/输出不合规也算这一例失败：不能靠「本轮没抽到」蒙混过关。
@@ -104,15 +106,22 @@ class ConstraintOpsLiveEvalTest {
         List<String> expected = new ArrayList<>();
         for (JsonNode row : evalCase.path("expected")) {
             if ("ACTIVE".equals(row.path("status").asText())) {
-                expected.add(slotScope(row.path("slot").asText(), row.path("scope").asText()));
+                expected.add(slotScope(row.path("slot").asText(), row.path("scope").asText(),
+                        polarityOf(row)));
             }
         }
         Collections.sort(expected);
         return expected;
     }
 
-    private static String slotScope(String slot, String scope) {
-        return slot + "@" + scope;
+    /** fixture 的期望极性：缺字段按 REQUIRE，与落库缺省一致。 */
+    private static ConstraintPolarity polarityOf(JsonNode row) {
+        ConstraintPolarity polarity = ConstraintPolarity.fromWire(row.path("polarity").asText(null));
+        return polarity == null ? ConstraintPolarity.REQUIRE : polarity;
+    }
+
+    private static String slotScope(String slot, String scope, ConstraintPolarity polarity) {
+        return slot + "@" + scope + "@" + (polarity == null ? ConstraintPolarity.REQUIRE : polarity);
     }
 
     private static JsonNode fixture() throws Exception {

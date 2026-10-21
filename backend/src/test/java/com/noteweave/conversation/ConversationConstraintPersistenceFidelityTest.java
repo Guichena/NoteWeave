@@ -7,6 +7,7 @@ import com.noteweave.conversation.constraint.ConstraintOp;
 import com.noteweave.conversation.constraint.ConstraintOpMerger;
 import com.noteweave.conversation.constraint.ConstraintOpsExtractor;
 import com.noteweave.conversation.constraint.ConstraintOpsPrompt;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.conversation.constraint.ConstraintScope;
 import com.noteweave.conversation.constraint.ConstraintSlot;
 import java.util.ArrayList;
@@ -135,6 +136,29 @@ class ConversationConstraintPersistenceFidelityTest {
         assertDatabaseMatchesMerger();
     }
 
+    /** 极性是结构化落库列：「不要表格」落 FORBID，重抽改成正向要求时同一行的极性也要跟着翻。 */
+    @Test
+    void polarityIsPersistedAndFollowsReExtraction() {
+        userMessage("m1", 1, "不要用表格。");
+        respond("m1", forbid(ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION));
+        refresh();
+        String id = onlyRowId();
+        assertThat(row(id).polarity()).isEqualTo("FORBID");
+        assertThat(row(id).text()).isEqualTo("不要使用表格");
+        assertDatabaseMatchesMerger();
+
+        // 规则版本升级后重抽同一条消息：id 不变，正文与极性都必须跟着合并器改写回 REQUIRE。
+        resetExtractionBaseline();
+        extractor.steps.clear();
+        respond("m1", add(ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION));
+        refresh();
+
+        assertThat(onlyRowId()).isEqualTo(id);
+        assertThat(row(id).polarity()).isEqualTo("REQUIRE");
+        assertThat(row(id).text()).isEqualTo("format.table");
+        assertDatabaseMatchesMerger();
+    }
+
     /** 「模型答没有」是终局：重放改成 NOOP 后，这条消息名下的旧行必须消失。 */
     @Test
     void replayAnsweredWithNoopRemovesTheStaleRow() {
@@ -241,14 +265,15 @@ class ConversationConstraintPersistenceFidelityTest {
         expected.sort(byId);
         List<ConversationConstraintProjectorV2.Constraint> actual = jdbc.query("""
                 select id, source_message_id, kind, scope, constraint_text, valid_from_seq,
-                       invalid_after_seq, status, superseded_by
+                       invalid_after_seq, status, superseded_by, polarity
                 from conversation_constraint_v2
                 where workspace_id = ? and conversation_id = ? and valid_from_seq <= ?
                 """, (rs, index) -> new ConversationConstraintProjectorV2.Constraint(
                         rs.getString("id"), rs.getString("source_message_id"), rs.getString("kind"),
                         rs.getString("scope"), rs.getString("constraint_text"), rs.getInt("valid_from_seq"),
                         rs.getObject("invalid_after_seq") == null ? null : rs.getInt("invalid_after_seq"),
-                        rs.getString("status"), rs.getString("superseded_by")),
+                        rs.getString("status"), rs.getString("superseded_by"),
+                        ConstraintPolarity.fromDb(rs.getString("polarity"))),
                 WORKSPACE, CONVERSATION, processedSeq);
         actual.sort(byId);
         assertThat(actual).containsExactlyElementsOf(expected);
@@ -272,6 +297,12 @@ class ConversationConstraintPersistenceFidelityTest {
 
     private static ConstraintOp add(ConstraintSlot slot, String value, ConstraintScope scope) {
         return new ConstraintOp(ConstraintOp.Op.ADD, slot, value, scope, null, 0.9);
+    }
+
+    /** 「不要这样做」：同一槽位带 {@code FORBID}，落库文本由合并器渲染成「不要使用表格」。 */
+    private static ConstraintOp forbid(ConstraintSlot slot, String value, ConstraintScope scope) {
+        return new ConstraintOp(ConstraintOp.Op.ADD, slot, value, scope, null, 0.9,
+                ConstraintPolarity.FORBID);
     }
 
     private static String activeId(ConstraintOpsExtractor.Request request, ConstraintSlot slot) {
@@ -333,13 +364,14 @@ class ConversationConstraintPersistenceFidelityTest {
     private List<Row> rows() {
         return jdbc.query("""
                 select id, source_message_id, kind, scope, constraint_text, valid_from_seq,
-                       invalid_after_seq, status, superseded_by
+                       invalid_after_seq, status, superseded_by, polarity
                 from conversation_constraint_v2 where conversation_id = ? order by id
                 """, (rs, index) -> new Row(rs.getString("id"), rs.getString("source_message_id"),
                 rs.getString("kind"), rs.getString("scope"), rs.getString("constraint_text"),
                 rs.getInt("valid_from_seq"),
                 rs.getObject("invalid_after_seq") == null ? null : rs.getInt("invalid_after_seq"),
-                rs.getString("status"), rs.getString("superseded_by")), CONVERSATION);
+                rs.getString("status"), rs.getString("superseded_by"),
+                rs.getString("polarity")), CONVERSATION);
     }
 
     private Row row(String id) {
@@ -432,6 +464,7 @@ class ConversationConstraintPersistenceFidelityTest {
                     invalid_after_seq int,
                     status varchar(24) not null,
                     superseded_by varchar(36),
+                    polarity varchar(16) not null default 'REQUIRE',
                     rule_version varchar(64) not null
                 )
                 """);
@@ -473,6 +506,7 @@ class ConversationConstraintPersistenceFidelityTest {
     }
 
     private record Row(String id, String sourceMessageId, String kind, String scope, String text,
-                       int validFromSeq, Integer invalidAfterSeq, String status, String supersededBy) {
+                       int validFromSeq, Integer invalidAfterSeq, String status, String supersededBy,
+                       String polarity) {
     }
 }

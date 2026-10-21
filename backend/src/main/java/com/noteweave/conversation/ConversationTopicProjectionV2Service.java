@@ -284,23 +284,25 @@ public class ConversationTopicProjectionV2Service {
                 jdbc.update("""
                         insert into conversation_constraint_v2(id, workspace_id, conversation_id,
                             source_message_id, kind, scope, constraint_text, valid_from_seq,
-                            invalid_after_seq, status, superseded_by, rule_version)
-                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            invalid_after_seq, status, superseded_by, polarity, rule_version)
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, constraint.id(), workspaceId, conversationId, constraint.sourceMessageId(),
                         constraint.kind(), constraint.scope(), constraint.text(), constraint.validFromSeq(),
                         constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
-                        constraintProjection.version());
+                        constraint.polarity().dbValue(), constraintProjection.version());
             } else {
                 // 落库必须与合并器输出逐字段一致：id 只由 (messageId, slot, index) 决定，重抽同一条
-                // 消息时取值、槽位（kind）与 scope 都可能变，只改状态字段会把旧正文留在库里继续生效。
+                // 消息时取值、槽位（kind）、scope 与极性都可能变，只改状态字段会把旧正文留在库里继续生效。
                 jdbc.update("""
                         update conversation_constraint_v2
                         set kind = ?, scope = ?, constraint_text = ?, valid_from_seq = ?,
-                            invalid_after_seq = ?, status = ?, superseded_by = ?, rule_version = ?
+                            invalid_after_seq = ?, status = ?, superseded_by = ?, polarity = ?,
+                            rule_version = ?
                         where id = ? and workspace_id = ? and conversation_id = ?
                         """, constraint.kind(), constraint.scope(), constraint.text(),
                         constraint.validFromSeq(), constraint.invalidAfterSeq(), constraint.status(),
-                        constraint.supersededBy(), constraintProjection.version(),
+                        constraint.supersededBy(), constraint.polarity().dbValue(),
+                        constraintProjection.version(),
                         constraint.id(), workspaceId, conversationId);
             }
         }

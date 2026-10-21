@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashSet;
@@ -89,6 +90,37 @@ class ContextProjectionV2ContractTest {
         assertThat(redacted.constraints().get(0).text()).isEmpty();
         assertThat(redacted.memoryRevisions().get(0).text()).isEmpty();
         assertThat(redacted.redacted()).isSameAs(redacted);
+    }
+
+    /** 极性既随快照 JSON 往返，也必须在脱敏后保留：旧快照没有该字段时读回 REQUIRE。 */
+    @Test
+    void constraintPolaritySurvivesSnapshotJsonAndRedaction() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        String legacy = """
+                {"constraintId":"constraint-1","sourceMessageId":"message-1","sourceRole":"USER",
+                 "kind":"FORMAT","scope":"CONVERSATION","text":"不要使用表格","validFromSeq":1,
+                 "invalidAfterSeq":null,"status":"ACTIVE"}
+                """;
+        assertThat(mapper.readValue(legacy, ContextProjectionV2.UserConstraint.class).polarity())
+                .isEqualTo(ConstraintPolarity.REQUIRE);
+        assertThat(mapper.readValue(legacy.replace("\"status\":\"ACTIVE\"",
+                        "\"status\":\"ACTIVE\",\"polarity\":\"FORBID\""),
+                        ContextProjectionV2.UserConstraint.class).polarity())
+                .isEqualTo(ConstraintPolarity.FORBID);
+
+        ContextProjectionV2 original = new ContextProjectionV2(
+                "context-projection-v2", "shadow-v2", "workspace", "actor", "conversation",
+                2, "private query", List.of(),
+                List.of(),
+                List.of(new ContextProjectionV2.UserConstraint("constraint", "message-1", "USER",
+                        "FORMAT", "CONVERSATION", "不要使用表格", 1, null, "ACTIVE",
+                        ConstraintPolarity.FORBID)),
+                List.of(), List.of(), 1000, 100, List.of(), "FULL");
+
+        ContextProjectionV2 redacted = original.redacted();
+
+        assertThat(redacted.constraints().get(0).polarity()).isEqualTo(ConstraintPolarity.FORBID);
+        assertThat(redacted.constraints().get(0).text()).isEmpty();
     }
 
     @Test

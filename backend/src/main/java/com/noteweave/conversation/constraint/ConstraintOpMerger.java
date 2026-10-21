@@ -310,7 +310,7 @@ public final class ConstraintOpMerger {
         ConversationConstraintProjectorV2.Constraint old = row.constraint();
         rows.set(previous.index(), new Row(new ConversationConstraintProjectorV2.Constraint(
                 old.id(), old.sourceMessageId(), old.kind(), old.scope(), old.text(),
-                old.validFromSeq(), seq, STATUS_REVOKED, supersededBy),
+                old.validFromSeq(), seq, STATUS_REVOKED, supersededBy, old.polarity()),
                 row.slot(), row.value(), row.forbid(), row.scopeKey()));
     }
 
@@ -400,9 +400,11 @@ public final class ConstraintOpMerger {
                            boolean forbid) {
         // 禁止项直接落可读文本「不要使用表格」：应答提示词与检索改写都只渲染 constraint_text，
         // 写内部槽位名（format.table）会让模型把它当成正向要求。
+        // 极性同时结构化落库（polarity 列），提示词按列渲染禁止表述，不再从正文反推。
         String text = forbid ? slot.forbidText(value) : (value == null ? slot.wire() : value);
         return new Row(new ConversationConstraintProjectorV2.Constraint(
-                id, step.messageId(), slot.dbKind(), scope, text, step.seq(), null, STATUS_ACTIVE, null),
+                id, step.messageId(), slot.dbKind(), scope, text, step.seq(), null, STATUS_ACTIVE, null,
+                forbid ? ConstraintPolarity.FORBID : ConstraintPolarity.REQUIRE),
                 slot, value, forbid, scopeKey(scope, step.topicId()));
     }
 

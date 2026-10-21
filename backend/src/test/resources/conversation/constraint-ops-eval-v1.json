@@ -1,6 +1,6 @@
 {
   "schema_version": "constraint-ops-eval-v1",
-  "annotation_note": "约束抽取的模型侧评测集：抽取只走模型，没有关键词/正则规则，也没有规则兜底。每条 USER 消息的 ideal_ops 是「理想模型输出」，CI 用 stub 客户端原样回放，再由真实 merger 折叠；live 测试让真实模型自己给 ops，只比对最终 ACTIVE 的 slot/scope。带目标的否定用 polarity=FORBID + 被否定对象的槽位表达（「不要表格」不是正向 table）。targetId 里的 $active:<slot> 表示「从提示词给出的 ACTIVE 列表里取该槽位那一行的 id」，由测试桩解析，模拟模型按提示词引用已有约束。expected 每行用 (source_message_id, slot, op_index) 定位到稳定 id，status/scope/value 是落库字段（value 即 constraint_text，禁止项是可读的「不要使用表格」）；REVOKED 行额外给出 invalid_after_seq 与 superseded_by。",
+  "annotation_note": "约束抽取的模型侧评测集：抽取只走模型，没有关键词/正则规则，也没有规则兜底。每条 USER 消息的 ideal_ops 是「理想模型输出」，CI 用 stub 客户端原样回放，再由真实 merger 折叠；live 测试让真实模型自己给 ops，只比对最终 ACTIVE 的 slot/scope。带目标的否定用 polarity=FORBID + 被否定对象的槽位表达（「不要表格」不是正向 table）。targetId 里的 $active:<slot> 表示「从提示词给出的 ACTIVE 列表里取该槽位那一行的 id」，由测试桩解析，模拟模型按提示词引用已有约束。expected 每行用 (source_message_id, slot, op_index) 定位到稳定 id，status/scope/value/polarity 是落库字段（value 即 constraint_text，禁止项是可读的「不要使用表格」，polarity 同时落 polarity 列）；REVOKED 行额外给出 invalid_after_seq 与 superseded_by。",
   "cases": [
     {
       "id": "dangling-this-not-constraint",
@@ -42,7 +42,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -129,6 +130,7 @@
           "value": "中文",
           "scope": "CURRENT_TOPIC",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3,
           "superseded_by": "c3:language:0"
         },
@@ -138,7 +140,8 @@
           "op_index": 0,
           "value": "英文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -175,7 +178,8 @@
           "op_index": 0,
           "value": "英文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -240,6 +244,7 @@
           "value": "英文",
           "scope": "CONVERSATION",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3,
           "superseded_by": "c3:language:0"
         },
@@ -249,7 +254,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -308,7 +314,8 @@
           "op_index": 0,
           "value": "英文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -345,7 +352,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -382,7 +390,8 @@
           "op_index": 0,
           "value": "不要太长",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -446,6 +455,7 @@
           "value": "简短",
           "scope": "CONVERSATION",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3,
           "superseded_by": "c3:detail:0"
         },
@@ -455,7 +465,8 @@
           "op_index": 0,
           "value": "详细",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -501,7 +512,8 @@
           "op_index": 0,
           "value": "不要使用表格",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "FORBID"
         },
         {
           "source_message_id": "c1",
@@ -509,7 +521,8 @@
           "op_index": 1,
           "value": "format.bullets",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -546,7 +559,8 @@
           "op_index": 0,
           "value": "format.conclusion",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -610,6 +624,7 @@
           "value": "英文",
           "scope": "CURRENT_TOPIC",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3,
           "superseded_by": "c3:language:0"
         },
@@ -619,7 +634,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -682,7 +698,8 @@
           "op_index": 0,
           "value": "英文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         },
         {
           "source_message_id": "c3",
@@ -690,7 +707,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -767,7 +785,8 @@
           "op_index": 0,
           "value": "format.conclusion",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         },
         {
           "source_message_id": "c1",
@@ -775,7 +794,8 @@
           "op_index": 1,
           "value": "format.table",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         },
         {
           "source_message_id": "c3",
@@ -783,7 +803,8 @@
           "op_index": 0,
           "value": "300字",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         },
         {
           "source_message_id": "c3",
@@ -791,7 +812,8 @@
           "op_index": 1,
           "value": "简短",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -860,6 +882,7 @@
           "value": "format.table",
           "scope": "CONVERSATION",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3
         },
         {
@@ -868,7 +891,8 @@
           "op_index": 1,
           "value": "format.citation",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -933,6 +957,7 @@
           "value": "英文",
           "scope": "CONVERSATION",
           "status": "REVOKED",
+          "polarity": "REQUIRE",
           "invalid_after_seq": 3,
           "superseded_by": "c3:language:0"
         },
@@ -942,7 +967,8 @@
           "op_index": 0,
           "value": "中文",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -1005,7 +1031,8 @@
           "op_index": 0,
           "value": "format.table",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         },
         {
           "source_message_id": "c3",
@@ -1013,7 +1040,8 @@
           "op_index": 0,
           "value": "format.table",
           "scope": "CURRENT_TOPIC",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },
@@ -1076,7 +1104,8 @@
           "op_index": 0,
           "value": "英文",
           "scope": "CONVERSATION",
-          "status": "ACTIVE"
+          "status": "ACTIVE",
+          "polarity": "REQUIRE"
         }
       ]
     },

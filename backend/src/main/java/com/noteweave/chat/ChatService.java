@@ -22,6 +22,7 @@ import com.noteweave.conversation.EffectiveRetrievalConfig;
 import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.conversation.ContextV2RolloutService;
 import com.noteweave.conversation.ContextV2ShadowSnapshotService;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
 import com.noteweave.quota.WorkloadQuotaService;
@@ -463,10 +464,15 @@ public class ChatService {
                 : builder.toString();
     }
 
+    /**
+     * 冻结约束按极性渲染：{@code REQUIRE} 直接给要求，{@code FORBID} 前置「禁止：」，
+     * 让回答模型不用从正文反推「不要使用表格」是一条禁止项。
+     */
     static String renderV2UserConstraints(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
         if (frozen == null || frozen.projection().constraints().isEmpty()) return "";
         StringBuilder builder = new StringBuilder("## 当前有效的用户约束（冻结会话）\n");
-        frozen.projection().constraints().forEach(rule -> builder.append("- ")
+        frozen.projection().constraints().forEach(rule -> builder
+                .append(rule.polarity() == ConstraintPolarity.FORBID ? "- 禁止：" : "- ")
                 .append(rule.text()).append("\n"));
         return builder.append("\n").toString();
     }

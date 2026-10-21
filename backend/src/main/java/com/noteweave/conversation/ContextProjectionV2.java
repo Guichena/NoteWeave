@@ -1,5 +1,6 @@
 package com.noteweave.conversation;
 
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashSet;
@@ -102,10 +103,16 @@ public record ContextProjectionV2(
         }
     }
 
+    /**
+     * @param polarity 极性：{@code FORBID} 的约束在回答提示词里渲染成禁止表述；旧快照缺该字段时按
+     *                 {@code REQUIRE} 处理，与 {@code conversation_constraint_v2.polarity} 的缺省一致
+     */
     public record UserConstraint(String constraintId, String sourceMessageId, String sourceRole,
                                  String kind, String scope, String text,
-                                 int validFromSeq, Integer invalidAfterSeq, String status) {
+                                 int validFromSeq, Integer invalidAfterSeq, String status,
+                                 ConstraintPolarity polarity) {
         public UserConstraint {
+            polarity = polarity == null ? ConstraintPolarity.REQUIRE : polarity;
             if (blank(constraintId) || blank(sourceMessageId) || !"USER".equals(sourceRole)
                     || blank(kind) || blank(scope)
                     || text == null || validFromSeq < 1
@@ -114,6 +121,14 @@ public record ContextProjectionV2(
                     || "UNRESOLVED".equals(status))) {
                 throw new IllegalArgumentException("user constraint reference is invalid");
             }
+        }
+
+        /** 缺省极性为 {@code REQUIRE} 的构造器：只关心行正文的调用点不用逐个改写。 */
+        public UserConstraint(String constraintId, String sourceMessageId, String sourceRole,
+                              String kind, String scope, String text,
+                              int validFromSeq, Integer invalidAfterSeq, String status) {
+            this(constraintId, sourceMessageId, sourceRole, kind, scope, text,
+                    validFromSeq, invalidAfterSeq, status, ConstraintPolarity.REQUIRE);
         }
     }
 
@@ -150,7 +165,7 @@ public record ContextProjectionV2(
         List<UserConstraint> redactedConstraints = constraints.stream()
                 .map(rule -> new UserConstraint(rule.constraintId(), rule.sourceMessageId(),
                         rule.sourceRole(), rule.kind(), rule.scope(), "", rule.validFromSeq(),
-                        rule.invalidAfterSeq(), rule.status())).toList();
+                        rule.invalidAfterSeq(), rule.status(), rule.polarity())).toList();
         List<MemoryRevision> redactedMemories = memoryRevisions.stream()
                 .map(memory -> new MemoryRevision(memory.memoryId(), memory.revisionId(),
                         "", emptyHash)).toList();

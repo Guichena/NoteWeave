@@ -27,6 +27,29 @@ public enum ConstraintPolarity {
         return wire;
     }
 
+    /** 落库取值：{@code conversation_constraint_v2.polarity} 与 {@code status} 列一样用大写枚举名。 */
+    public String dbValue() {
+        return name();
+    }
+
+    /**
+     * 读回库里的极性。
+     * <p>
+     * {@code null}/空白按 {@link #REQUIRE} 处理，与 {@link ConstraintOp} 兼容旧基线的口径一致；
+     * 其余不认识的值说明有人绕过校验写了库，直接抛错而不是猜一个极性。
+     */
+    public static ConstraintPolarity fromDb(String value) {
+        if (value == null || value.isBlank()) {
+            return REQUIRE;
+        }
+        for (ConstraintPolarity polarity : values()) {
+            if (polarity.name().equalsIgnoreCase(value.trim())) {
+                return polarity;
+            }
+        }
+        throw new IllegalArgumentException("unknown constraint polarity: " + value);
+    }
+
     /** 解析模型输出里的极性；不认识的值返回 {@code null}，由校验器整体判失败，不做兜底猜测。 */
     public static ConstraintPolarity fromWire(String value) {
         if (value == null) {

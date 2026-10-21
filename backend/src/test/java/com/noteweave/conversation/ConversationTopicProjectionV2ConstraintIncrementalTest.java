@@ -192,8 +192,9 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         topics.refresh(WORKSPACE, CONVERSATION);
 
         String forbidId = ConstraintIds.of("m1", "table", 0);
-        // 禁止项落成可读文本，极性写进 steps_json 的基线 ops。
+        // 禁止项落成可读文本，极性同时写进 steps_json 的基线 ops 与 polarity 列。
         assertThat(constraintText(forbidId)).isEqualTo("不要使用表格");
+        assertThat(constraintPolarity(forbidId)).isEqualTo("FORBID");
         assertThat(stepsJson()).contains("\"polarity\":\"FORBID\"");
 
         userMessage("m3", 3, "改用表格。");
@@ -208,6 +209,8 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         String requireId = ConstraintIds.of("m3", "table", 0);
         assertThat(constraintStatus(requireId)).isEqualTo("ACTIVE");
         assertThat(constraintText(requireId)).isEqualTo("format.table");
+        assertThat(constraintPolarity(requireId)).isEqualTo("REQUIRE");
+        assertThat(constraintPolarity(forbidId)).isEqualTo("FORBID");
     }
 
     private static ConstraintOpsExtractor.Result forbiddenTableConstraint() {
@@ -260,6 +263,11 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
 
     private String constraintText(String id) {
         return jdbc.queryForObject("select constraint_text from conversation_constraint_v2 where id = ?",
+                String.class, id);
+    }
+
+    private String constraintPolarity(String id) {
+        return jdbc.queryForObject("select polarity from conversation_constraint_v2 where id = ?",
                 String.class, id);
     }
 
@@ -331,6 +339,7 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
                     invalid_after_seq int,
                     status varchar(24) not null,
                     superseded_by varchar(36),
+                    polarity varchar(16) not null default 'REQUIRE',
                     rule_version varchar(64) not null
                 )
                 """);

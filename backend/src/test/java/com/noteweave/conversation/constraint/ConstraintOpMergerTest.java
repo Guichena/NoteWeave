@@ -113,8 +113,11 @@ class ConstraintOpMergerTest {
         assertThat(positive.status()).isEqualTo("REVOKED");
         assertThat(positive.supersededBy()).isEqualTo(forbid.id());
         assertThat(positive.text()).isEqualTo("表格");
+        assertThat(positive.polarity()).isEqualTo(ConstraintPolarity.REQUIRE);
         assertThat(forbid.status()).isEqualTo("ACTIVE");
         assertThat(forbid.text()).isEqualTo("不要使用表格");
+        // 极性是行的一部分：落库列与提示词渲染都靠它，不能只剩正文里的「不要」。
+        assertThat(forbid.polarity()).isEqualTo(ConstraintPolarity.FORBID);
     }
 
     @Test

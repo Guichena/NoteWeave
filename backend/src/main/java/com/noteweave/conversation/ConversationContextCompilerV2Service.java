@@ -1,6 +1,7 @@
 package com.noteweave.conversation;
 
 import com.noteweave.common.BusinessException;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.memory.MemoryReferenceResponse;
 import com.noteweave.memory.MemoryRuntime;
 import com.noteweave.memory.MemoryRuntimeQuery;
@@ -100,7 +101,7 @@ public class ConversationContextCompilerV2Service {
         if (nextSeq != cutoffSeq + 1) throw invalid("topic projection does not cover cutoff");
         List<ContextProjectionV2.UserConstraint> constraints = jdbc.query("""
                 select c.id, c.source_message_id, m.role, c.kind, c.scope, c.constraint_text,
-                       c.valid_from_seq, c.invalid_after_seq, c.status
+                       c.valid_from_seq, c.invalid_after_seq, c.status, c.polarity
                 from conversation_constraint_v2 c
                 join conversation_message m on m.id = c.source_message_id
                 where c.workspace_id = ? and c.conversation_id = ? and c.valid_from_seq <= ?
@@ -108,7 +109,8 @@ public class ConversationContextCompilerV2Service {
                 """, (rs, index) -> new ContextProjectionV2.UserConstraint(
                 rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
                 rs.getString(5), rs.getString(6), rs.getInt(7),
-                rs.getObject(8) == null ? null : rs.getInt(8), rs.getString(9)),
+                rs.getObject(8) == null ? null : rs.getInt(8), rs.getString(9),
+                ConstraintPolarity.fromDb(rs.getString(10))),
                 workspaceId, conversationId, cutoffSeq);
         return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, conversationId,
                 cutoffSeq, currentInput, taskPurpose, tokenBudget, messages, segments,
