@@ -17,6 +17,10 @@ class VideoLearningRolloutPolicyTest {
                 .allows("workspace-a")).isFalse();
         assertThat(new VideoLearningRolloutPolicy(true, "", "", catalog)
                 .allows("workspace-c")).isTrue();
+        assertThat(new VideoLearningRolloutPolicy(true, "", "", catalog)
+                .availableSkills("workspace-c")).isNotEmpty();
+        assertThat(new VideoLearningRolloutPolicy(false, "", "", catalog)
+                .availableSkills("workspace-c")).isEmpty();
     }
 
     @Test

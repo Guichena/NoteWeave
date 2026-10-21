@@ -10,6 +10,7 @@ import com.noteweave.knowledge.KnowledgePageHit;
 import com.noteweave.knowledge.WikiPageContext;
 import com.noteweave.knowledge.WikiLinkResponse;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -130,6 +131,47 @@ class WikiAnswerModeStrategyTest {
         var prompt = strategy.compose(context, bundle);
 
         assertThat(prompt.userPrompt()).contains("到达路径 Seed → Wiki Page");
+    }
+
+    @Test
+    void backlinkOnlyOnFourthContextAppearsInNetworkLinks() {
+        List<WikiPageContext> contexts = new ArrayList<>();
+        List<EvidenceBundle.Evidence> evidence = new ArrayList<>();
+        for (int index = 1; index <= 4; index++) {
+            String versionId = "version-" + index;
+            List<WikiLinkResponse> backlinks = index == 4
+                    ? List.of(new WikiLinkResponse(
+                            "item-4", "only-fourth", "OnlyOnFourth", "WIKI_LINK", "RESOLVED", 2))
+                    : List.of();
+            contexts.add(new WikiPageContext(
+                    new KnowledgePageHit(
+                            "item-" + index, versionId, 1, "Page " + index,
+                            "content-" + index, "summary-" + index, index),
+                    List.of(),
+                    backlinks,
+                    List.of()));
+            evidence.add(new EvidenceBundle.Evidence(
+                    "knowledge-version:" + versionId, "KNOWLEDGE_VERSION", "", "", "",
+                    "item-" + index, versionId, "Page " + index, "summary-" + index,
+                    "knowledge-version:" + versionId,
+                    index, 1, 1, "workspace-knowledge:item-" + index, null, "wiki-page-graph",
+                    index, Map.of()));
+        }
+        WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(contexts, List.of());
+        EvidenceBundle bundle = new EvidenceBundle(
+                "bundle", WikiAnswerModeStrategy.PLAN_VERSION, evidence, false,
+                List.of(), Instant.now(),
+                Map.of(WikiRetrievalSnapshotCodec.METADATA_KEY, codec.encode(snapshot)));
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query", Set.of(), Map.of(), Instant.now());
+
+        var prompt = strategy.compose(context, bundle);
+
+        assertThat(prompt.userPrompt())
+                .contains("## 反向引用关系")
+                .contains("OnlyOnFourth：RESOLVED，2 次提及")
+                .contains("出链采样")
+                .contains("（每类最多 5 条）");
     }
 
     private WikiPageContext pageContext() {

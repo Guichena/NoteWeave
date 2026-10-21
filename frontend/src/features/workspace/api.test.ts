@@ -27,24 +27,18 @@ describe("WorkspaceApi", () => {
     });
   });
 
-  it("owns retrieval settings and member administration contracts", async () => {
+  it("owns member administration contracts", async () => {
     const get = vi.fn(async () => []);
     const put = vi.fn(async () => ({}));
     const remove = vi.fn(async () => undefined);
     const api = new WorkspaceApi({ get, put, delete: remove } as unknown as ApiClient);
 
-    await api.getRetrievalSettings("workspace");
-    await api.updateRetrievalSettings("workspace", true);
     await api.listMembers("workspace");
     await api.putMember("workspace", "user/id", { role: "EDITOR", status: "ACTIVE" });
     await api.removeMember("workspace", "user/id");
 
-    expect(get).toHaveBeenNthCalledWith(1, "/api/v2/workspaces/workspace/retrieval-settings");
-    expect(put).toHaveBeenNthCalledWith(1, "/api/v2/workspaces/workspace/retrieval-settings", {
-      retrieval_strategy_v2_enabled: true
-    });
-    expect(get).toHaveBeenNthCalledWith(2, "/api/v2/workspaces/workspace/members");
-    expect(put).toHaveBeenNthCalledWith(2, "/api/v2/workspaces/workspace/members/user%2Fid", {
+    expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/members");
+    expect(put).toHaveBeenCalledWith("/api/v2/workspaces/workspace/members/user%2Fid", {
       role: "EDITOR",
       status: "ACTIVE"
     });

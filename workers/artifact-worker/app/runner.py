@@ -15,6 +15,7 @@ from app.content_runtime import (
     build_canonical_content_objects,
     build_context_pack,
 )
+from app.registry import capability_names_match, operation_capability_name
 from app.models import (
     AcquisitionReceipt,
     ArtifactCommitReceipt,
@@ -61,6 +62,8 @@ PHASE_SEQUENCE = [
 # The prior published catalog omitted explicit acquisition policy on the three
 # derived video Skills. Its queued Runs retain this digest and default policy.
 PRE_VIDEO_POLICY_CATALOG_DIGEST = "8a7ad34dd197854251c65a234f1915e0b44fe9621d2d1caa4581b9eb3ca2eec8"
+# Queued runs frozen before OCR_FRAME replaced the ANALYZE_FRAME capability name.
+PRE_FRAME_OCR_CATALOG_DIGEST = "8b1d093f598ae60ef4968373141178dd905c99d97546aebb97782ec8c0d6d6bc"
 
 
 PRE_OUTPUT_CONTRACT_CATALOG_DIGEST = "08108539a76c23dc3fcc4c23fee6c6cd3f8bba29895cd6ccc50f3425dadcb2f0"
@@ -78,6 +81,7 @@ PRE_SECTION_CATALOG_DIGESTS = {
 def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
     if task_input.catalog_digest and task_input.catalog_digest not in {
             CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST, PRE_OUTPUT_CONTRACT_CATALOG_DIGEST, PRE_TYPED_NODE_CATALOG_DIGEST,
+            PRE_FRAME_OCR_CATALOG_DIGEST,
             *PRE_STATEMENT_CATALOG_DIGESTS, *PRE_SECTION_CATALOG_DIGESTS}:
         raise ValueError("artifact Skill catalog digest does not match the frozen Run")
     if task_input.catalog_digest == PRE_VIDEO_POLICY_CATALOG_DIGEST:
@@ -1127,20 +1131,14 @@ def _resolve_async_provider_capabilities(
     pending_capabilities: list[str] = []
     for source_plan in plan.content_acquisition_plan.source_plans:
         for operation_key in source_plan.planned_operations:
-            capability_name = {
-                "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
-                "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
-                "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
-                "ANALYZE_FRAMES": "ANALYZE_FRAME",
-                "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
-            }.get(operation_key, "")
+            capability_name = operation_capability_name(operation_key)
             if not capability_name:
                 continue
             resolved_binding = next(
                 (
                     binding
                     for binding in capability_resolution.resolved_bindings
-                    if binding["capability_name"] == capability_name
+                    if capability_names_match(str(binding["capability_name"]), capability_name)
                 ),
                 {},
             )

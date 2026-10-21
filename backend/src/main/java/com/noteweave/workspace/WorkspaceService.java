@@ -101,46 +101,4 @@ public class WorkspaceService implements WorkspaceQueryPort {
     public WorkspaceWikiSettingsResponse getWikiSettings(String workspaceId) {
         return new WorkspaceWikiSettingsResponse(workspaceId, isWikiEnabled(workspaceId));
     }
-
-    public boolean isRetrievalStrategyV2Enabled(String workspaceId) {
-        workspaceAccessGuard.requireMember(workspaceId);
-        Boolean enabled = jdbcTemplate.query("""
-                select retrieval_strategy_v2_enabled from workspace where id = ?
-                """, rs -> {
-            if (!rs.next()) {
-                throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
-            }
-            return rs.getBoolean("retrieval_strategy_v2_enabled");
-        }, workspaceId);
-        return Boolean.TRUE.equals(enabled);
-    }
-
-    @Transactional
-    public WorkspaceRetrievalSettingsResponse updateRetrievalSettings(
-            String workspaceId,
-            UpdateWorkspaceRetrievalSettingsRequest request
-    ) {
-        workspaceAccessGuard.requireOwner(workspaceId);
-        String actor = auditActorProvider.currentOrSystem("WORKSPACE");
-        boolean enabled = Boolean.TRUE.equals(request.retrievalStrategyV2Enabled());
-        int updated = jdbcTemplate.update("""
-                update workspace
-                set retrieval_strategy_v2_enabled = ?, updated_by = ?, updated_at = current_timestamp
-                where id = ?
-                """, enabled, actor, workspaceId);
-        if (updated == 0) {
-            throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
-        }
-        return new WorkspaceRetrievalSettingsResponse(
-                workspaceId,
-                enabled
-        );
-    }
-
-    public WorkspaceRetrievalSettingsResponse getRetrievalSettings(String workspaceId) {
-        return new WorkspaceRetrievalSettingsResponse(
-                workspaceId,
-                isRetrievalStrategyV2Enabled(workspaceId)
-        );
-    }
 }

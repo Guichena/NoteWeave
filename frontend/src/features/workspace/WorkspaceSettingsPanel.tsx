@@ -4,8 +4,7 @@ import { ApiError } from "../../shared/api";
 import { workspaceApi, type WorkspaceApi } from "./api";
 import {
   type UpdateWorkspaceMemberInput,
-  type WorkspaceMember,
-  type WorkspaceRetrievalSettings
+  type WorkspaceMember
 } from "./model";
 
 type WorkspaceSettingsPanelProps = {
@@ -22,32 +21,32 @@ export function WorkspaceSettingsPanel({
   api = workspaceApi,
   showMembers = false
 }: WorkspaceSettingsPanelProps) {
-  const [retrieval, setRetrieval] = useState<WorkspaceRetrievalSettings | null>(null);
   const [members, setMembers] = useState<WorkspaceMember[] | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(showMembers);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState("");
   const [newUserId, setNewUserId] = useState("");
   const [newRole, setNewRole] = useState<UpdateWorkspaceMemberInput["role"]>("VIEWER");
 
   useEffect(() => {
+    if (!showMembers) {
+      setMembers(null);
+      setLoading(false);
+      setError("");
+      return;
+    }
     let active = true;
     setLoading(true);
     setError("");
-    void Promise.all([
-      api.getRetrievalSettings(workspaceId),
-      showMembers
-        ? api.listMembers(workspaceId).catch((cause) => {
-          if (cause instanceof ApiError && cause.status === 403) {
-            return null;
-          }
-          throw cause;
-        })
-        : Promise.resolve(null)
-    ])
-      .then(([nextRetrieval, nextMembers]) => {
+    void api.listMembers(workspaceId)
+      .catch((cause) => {
+        if (cause instanceof ApiError && cause.status === 403) {
+          return null;
+        }
+        throw cause;
+      })
+      .then((nextMembers) => {
         if (active) {
-          setRetrieval(nextRetrieval);
           setMembers(nextMembers);
         }
       })
@@ -57,12 +56,6 @@ export function WorkspaceSettingsPanel({
       active = false;
     };
   }, [api, workspaceId, showMembers]);
-
-  async function updateRetrieval(enabled: boolean) {
-    await mutate(async () => {
-      setRetrieval(await api.updateRetrievalSettings(workspaceId, enabled));
-    });
-  }
 
   async function addMember() {
     const userId = newUserId.trim();
@@ -106,8 +99,10 @@ export function WorkspaceSettingsPanel({
     <section className="workspace-settings-panel" aria-label="工作台设置">
       <header className="workspace-settings-header">
         <div>
-          <h2>{showMembers ? "检索与成员" : "检索设置"}</h2>
-          <p className="workspace-settings-intro">控制当前工作台的检索策略与访问权限。</p>
+          <h2>{showMembers ? "成员" : "工作台设置"}</h2>
+          <p className="workspace-settings-intro">
+            {showMembers ? "管理当前工作台的访问权限。" : "当前为单人工作台。"}
+          </p>
         </div>
         <button type="button" className="secondary-button" onClick={onClose}>关闭</button>
       </header>
@@ -116,8 +111,8 @@ export function WorkspaceSettingsPanel({
         <div className="workspace-settings-state is-loading" aria-busy="true" aria-live="polite">
           <span className="workspace-settings-state-icon" aria-hidden="true"><Settings2 size={19} /></span>
           <div>
-            <strong>正在读取工作台设置</strong>
-            <span>同步检索策略与成员权限。</span>
+            <strong>正在读取成员</strong>
+            <span>同步成员权限。</span>
           </div>
           <div className="view-loading-skeleton" aria-hidden="true">
             <span className="skeleton-line w-70" />
@@ -126,25 +121,6 @@ export function WorkspaceSettingsPanel({
         </div>
       ) : (
         <>
-          <div className="workspace-retrieval-setting">
-            <div>
-              <strong>检索策略 V2</strong>
-              <p>{retrieval?.retrieval_strategy_v2_enabled ? "已启用，可使用新版召回策略" : "已停用，继续使用兼容策略"}</p>
-            </div>
-            <label className="workspace-toggle">
-              <input
-                type="checkbox"
-                checked={retrieval?.retrieval_strategy_v2_enabled ?? false}
-                disabled={mutating}
-                onChange={(event) => void updateRetrieval(event.target.checked)}
-              />
-              <span className="workspace-toggle-track" aria-hidden="true">
-                <span className="workspace-toggle-thumb" />
-              </span>
-              <span>{retrieval?.retrieval_strategy_v2_enabled ? "已启用" : "已停用"}</span>
-            </label>
-          </div>
-
           {showMembers ? (
             members === null ? (
               <p className="workspace-settings-state is-note">当前账号没有成员管理权限。</p>

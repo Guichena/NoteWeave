@@ -172,7 +172,7 @@ test("real QA guard, Note, and Wiki chat modes follow their available capabiliti
   await submitChatMode(page, "Wiki", `wiki-playwright-${Date.now()}`);
 });
 
-test("real Wiki creation, Memory refresh, and workspace settings persist", async ({ page }) => {
+test("real Wiki creation, Memory refresh, and workspace member settings", async ({ page }) => {
   test.setTimeout(240_000);
   await newWorkspace(page);
   const marker = `playwright-wiki-${Date.now()}`;
@@ -211,32 +211,19 @@ test("real Wiki creation, Memory refresh, and workspace settings persist", async
   await expect(page.getByRole("heading", { name: "生效中" })).toBeVisible();
   await expect(page.locator(".memory-error")).toHaveCount(0);
 
-  // 工作台设置在账户菜单里
+  // 工作台设置在账户菜单里，只管理成员
   const settingsLoaded = page.waitForResponse((response) =>
-    /\/api\/v2\/workspaces\/[^/]+\/retrieval-settings$/.test(response.url())
+    /\/api\/v2\/workspaces\/[^/]+\/members$/.test(response.url())
       && response.request().method() === "GET"
   );
   await openAccountMenu(page, DESKTOP_WIDTH);
   await page.getByRole("menuitem", { name: "工作台设置" }).click();
   expect((await settingsLoaded).status()).toBe(200);
-  const retrievalToggle = page.locator('.workspace-settings-panel input[type="checkbox"]');
-  await expect(retrievalToggle).toBeEnabled();
-  const originallyChecked = await retrievalToggle.isChecked();
-  const settingsUpdated = page.waitForResponse((response) =>
-    /\/api\/v2\/workspaces\/[^/]+\/retrieval-settings$/.test(response.url())
-      && response.request().method() === "PUT"
-  );
-  await page.locator(".workspace-toggle").click();
-  expect((await settingsUpdated).status()).toBe(200);
-  await expect(retrievalToggle).toBeChecked({ checked: !originallyChecked });
-
-  const settingsRestored = page.waitForResponse((response) =>
-    /\/api\/v2\/workspaces\/[^/]+\/retrieval-settings$/.test(response.url())
-      && response.request().method() === "PUT"
-  );
-  await page.locator(".workspace-toggle").click();
-  expect((await settingsRestored).status()).toBe(200);
-  await expect(retrievalToggle).toBeChecked({ checked: originallyChecked });
+  const settings = page.locator(".workspace-settings-panel");
+  await expect(settings.getByRole("heading", { name: "成员" })).toBeVisible();
+  await expect(settings.getByText("检索策略")).toHaveCount(0);
+  await expect(settings.locator('input[type="checkbox"]')).toHaveCount(0);
+  await expect(settings.getByLabel("用户 ID")).toBeVisible();
 });
 
 test("real Artifact task reaches a terminal UI state or exposes provider wait", async ({ page }) => {

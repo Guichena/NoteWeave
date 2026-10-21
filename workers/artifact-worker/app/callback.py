@@ -46,6 +46,7 @@ from app.video_frame_observation import verify_frame_observation_batch
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
+from app.registry import capability_names_match, is_frame_text_ocr_operation
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID
 
 
@@ -539,7 +540,7 @@ def _collect_parent_video_material(
             has_capture_stage = True
             if isinstance(payload, dict):
                 capture_payload = payload
-        elif operation_key == "ANALYZE_FRAMES" \
+        elif is_frame_text_ocr_operation(operation_key) \
                 and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
             has_observation_stage = True
             if isinstance(payload, dict):
@@ -764,7 +765,7 @@ def _attach_frozen_video_material(
             has_capture_stage = True
             if isinstance(payload, dict):
                 capture_payload = payload
-        elif operation_key == "ANALYZE_FRAMES" \
+        elif is_frame_text_ocr_operation(operation_key) \
                 and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
             has_observation_stage = True
             if isinstance(payload, dict):
@@ -957,7 +958,8 @@ def _matching_waiting_tasks(
             operation_capability_name = str(operation.get("capability_name", "")).strip().upper()
             if operation_request_id != normalized_request_id:
                 continue
-            if normalized_capability_name and operation_capability_name and operation_capability_name != normalized_capability_name:
+            if normalized_capability_name and operation_capability_name \
+                    and not capability_names_match(operation_capability_name, normalized_capability_name):
                 continue
             matched_records.append(record)
             break

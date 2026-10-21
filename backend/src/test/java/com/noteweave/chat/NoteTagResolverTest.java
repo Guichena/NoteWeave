@@ -25,4 +25,31 @@ class NoteTagResolverTest {
         assertThat(result.unresolvedTerms()).containsExactly("unknown");
         assertThat(result.sourceScores()).containsEntry("source-1", 12);
     }
+
+    @Test
+    void chineseTermsMatchATagThatContainsThem() {
+        CandidateSource source = new CandidateSource(
+                "source-ml", "机器学习笔记", "MARKDOWN", 1, 1, "", "", "",
+                "[\"topic:机器学习\"]", "{}", "", 0, "",
+                List.of(), List.of(), 0, 0, "", "");
+
+        var result = new NoteTagResolver(new SourceTagCodec(new ObjectMapper(), new SimpleMeterRegistry())).resolve(
+                Set.of("机器", "学习"), List.of(source));
+
+        assertThat(result.sourceScores().get("source-ml")).isNotNull().isGreaterThan(0);
+    }
+
+    @Test
+    void latinTermsDoNotMatchBySubstring() {
+        CandidateSource source = new CandidateSource(
+                "source-art", "Art notes", "MARKDOWN", 1, 1, "", "", "",
+                "[\"smart\"]", "{}", "", 0, "",
+                List.of(), List.of(), 0, 0, "", "");
+
+        var result = new NoteTagResolver(new SourceTagCodec(new ObjectMapper(), new SimpleMeterRegistry())).resolve(
+                Set.of("art"), List.of(source));
+
+        assertThat(result.resolvedTags()).isEmpty();
+        assertThat(result.sourceScores()).doesNotContainKey("source-art");
+    }
 }

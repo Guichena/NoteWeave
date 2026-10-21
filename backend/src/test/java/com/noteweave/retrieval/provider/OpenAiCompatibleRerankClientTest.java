@@ -1,6 +1,7 @@
 package com.noteweave.retrieval.provider;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,6 +10,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +55,31 @@ class OpenAiCompatibleRerankClientTest {
             assertThat(payload.path("documents").get(0).asText()).isEqualTo("12345");
             assertThat(payload.path("top_n").asInt()).isEqualTo(2);
             assertThat(payload.path("return_documents").asBoolean()).isFalse();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void maxAttemptsOneDoesNotRetryRetryableHttpErrors() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger hits = new AtomicInteger();
+        server.createContext("/v1/rerank", exchange -> {
+            hits.incrementAndGet();
+            exchange.sendResponseHeaders(500, 0);
+            exchange.close();
+        });
+        server.start();
+
+        try {
+            OpenAiCompatibleRerankClient client = new OpenAiCompatibleRerankClient(
+                    new ObjectMapper(),
+                    properties(server));
+
+            assertThatThrownBy(() -> client.rerank("question", List.of("document"), 1))
+                    .isInstanceOf(RetrievalProviderException.class)
+                    .hasMessageContaining("HTTP 500");
+            assertThat(hits.get()).isEqualTo(1);
         } finally {
             server.stop(0);
         }

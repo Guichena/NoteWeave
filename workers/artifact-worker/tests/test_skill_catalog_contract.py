@@ -8,7 +8,7 @@ from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_defin
 from app.main import _to_public_input_schema
 from app.registry import PRODUCTION_ACTIONS
 from app.models import ArtifactTaskInput
-from app.runner import (PRE_VIDEO_POLICY_CATALOG_DIGEST,
+from app.runner import (PRE_FRAME_OCR_CATALOG_DIGEST, PRE_VIDEO_POLICY_CATALOG_DIGEST,
                         _require_published_catalog, run_artifact_task)
 import pytest
 
@@ -69,6 +69,17 @@ def test_worker_rejects_run_frozen_against_another_catalog_before_execution() ->
     })
     with pytest.raises(ValueError, match="catalog digest"):
         run_artifact_task(task)
+
+
+def test_queued_run_from_pre_frame_ocr_catalog_remains_executable() -> None:
+    task = ArtifactTaskInput.model_validate({
+        "task_id": "legacy-frame-ocr-run", "workspace_id": "workspace", "target_id": "target",
+        "input_snapshot_id": "snapshot", "catalog_digest": PRE_FRAME_OCR_CATALOG_DIGEST,
+        "control_pack": {"pack_type": "artifact", "target_key": "study_guide",
+                         "task_neighborhood": "ARTIFACT_SKILL_STUDY_GUIDE"},
+        "input_payload": {"skill_key": "study_guide"},
+    })
+    _require_published_catalog(task)
 
 
 def test_queued_run_from_prior_catalog_keeps_default_video_policy() -> None:

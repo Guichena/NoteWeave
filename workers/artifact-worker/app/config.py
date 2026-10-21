@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     )
     llm_intent_enabled: bool = Field(default=True, validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_INTENT_ENABLED"))
     llm_max_total_calls: int = Field(default=64, ge=1, le=256, validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_TOTAL_CALLS"))
+    llm_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=8,
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES"),
+    )
     mcp_process_timeout_seconds: int = Field(default=3600, ge=1, le=21_600)
     transcription_pool_size: int = Field(default=1, ge=1, le=8)
     transcription_queue_capacity: int = Field(default=8, ge=1, le=64)
