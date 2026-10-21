@@ -2,8 +2,11 @@ package com.noteweave.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -30,8 +33,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 跟进反馈的判定模型在事务外调用、写入放进短事务并做乐观检查。
  * <p>
  * 用内存 H2 起最小的几张表直接构造服务，不启动 Spring 上下文，模型用 stub。
- * 钉住三件事：模型调用时没有活动事务且不持锁、判定期间 usage 行或对应反馈被别的处理改过时一行都不写、
- * 正常路径按原语义写入接受/负面；另外确认判断失败时只重试一次、返回 {@code RETRYABLE} 且不开事务。
+ * 钉住四件事：模型调用时没有活动事务且不持锁、判定期间 usage 行或对应反馈被别的处理改过时一行都不写
+ * 且返回 {@code RETRYABLE}（任务标可重试、重跑后写入）、正常路径按原语义写入接受/负面；
+ * 另外确认判断失败时只重试一次、返回 {@code RETRYABLE} 且不开事务。
  */
 class MemoryApplicationFeedbackFollowUpTransactionTest {
 
@@ -123,9 +127,10 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
 
     /**
      * 判定期间同一 usage 行被别的处理（例如同一回答的评分）写了反馈：乐观检查失败，本次一行都不写。
+     * 但不能当成「本轮不需要写」：返回 {@code RETRYABLE}，调用方据此把任务标成可重试。
      */
     @Test
-    void usageRowChangedDuringTheJudgmentDropsTheWrite() {
+    void usageRowChangedDuringTheJudgmentIsRetryableAndDropsTheWrite() {
         client.onCall = () -> jdbc.update("""
                 update memory_usage_log set outcome_type = 'ACCEPTED', outcome_score = 1
                 where id = 'usage-1'
@@ -134,7 +139,7 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
 
         FollowUpResult result = feedback.recordFollowUp(WORKSPACE, USER_MESSAGE, "谢谢，这样讲很清楚");
 
-        assertThat(result).isEqualTo(FollowUpResult.SKIPPED);
+        assertThat(result).isEqualTo(FollowUpResult.RETRYABLE);
         assertThat(followUpItems()).isEmpty();
         assertThat(utility(LENGTH_ITEM)).isCloseTo(0.75, within(0.0001));
         assertThat(count(LENGTH_ITEM, "positive_outcome_count")).isZero();
@@ -142,17 +147,58 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
         assertThat(outcomeOf("usage-2")).isNull();
     }
 
-    /** 判定期间这条回答又多了一条注入记录：快照和加锁重读的行集对不上，同样放弃写入。 */
+    /** 判定期间这条回答又多了一条注入记录：快照和加锁重读的行集对不上，同样放弃写入并标可重试。 */
     @Test
-    void usageRowAddedDuringTheJudgmentDropsTheWrite() {
+    void usageRowAddedDuringTheJudgmentIsRetryableAndDropsTheWrite() {
         client.onCall = () -> insertUsage("usage-3", TERM_ITEM);
         MemoryApplicationFeedbackService feedback = feedback(jdbc.getDataSource());
 
         FollowUpResult result = feedback.recordFollowUp(WORKSPACE, USER_MESSAGE, "谢谢，这样讲很清楚");
 
-        assertThat(result).isEqualTo(FollowUpResult.SKIPPED);
+        assertThat(result).isEqualTo(FollowUpResult.RETRYABLE);
         assertThat(followUpItems()).isEmpty();
         assertThat(outcomeOf("usage-1")).isNull();
+    }
+
+    /**
+     * 乐观检查冲突 → 任务被标可重试（而不是直接收尾）→ 重驱后重跑这一轮，反馈真正写进去。
+     * 这一条把「冲突返回 RETRYABLE」和调用方的任务状态流转串起来：只改返回值而调用方仍 completeTask
+     * 的话，反馈会在第一次冲突时永久丢失。
+     */
+    @Test
+    void conflictLeavesTheTaskRetryableAndTheRedriveWritesTheFeedback() {
+        TaskService taskService = mock(TaskService.class);
+        jdbc.update("insert into task(id, task_status) values ('task-1', 'RUNNING')");
+        MemoryApplicationFeedbackService feedback = feedback(jdbc.getDataSource());
+        MemoryConversationExtractionService extraction = extractionService(taskService, feedback);
+        // 判定期间这条回答的 usage 行被别的处理改过：第一次写入必然撞上乐观检查
+        client.onCall = () -> jdbc.update("""
+                update memory_usage_log set outcome_type = 'ACCEPTED', outcome_score = 1
+                where id = 'usage-2'
+                """);
+
+        extraction.persistExtraction("task-1", WORKSPACE, USER_MESSAGE, "user-1",
+                new MemoryConversationExtractionService.Extraction(
+                        List.of(), MemoryConversationExtractionService.METHOD_LLM), "谢谢，这样讲很清楚");
+
+        // 冲突不再静默跳过：任务标成可重试，反馈这一轮没有落库
+        verify(taskService).failTask("task-1", MemoryConversationExtractionService.RETRY_PHASE,
+                "模型不可用，本轮未完成记忆处理", MemoryConversationExtractionService.RETRY_PHASE, true);
+        verify(taskService, never()).completeTask(anyString(), anyString(), anyString(), anyString());
+        assertThat(followUpItems()).isEmpty();
+
+        // 既有重驱入口把任务复位后重跑：这次没有并发写入，判定结果真正写进去，任务才收尾
+        client.onCall = () -> { };
+        jdbc.update("update task set task_status = 'RUNNING' where id = 'task-1'");
+
+        extraction.persistExtraction("task-1", WORKSPACE, USER_MESSAGE, "user-1",
+                new MemoryConversationExtractionService.Extraction(
+                        List.of(), MemoryConversationExtractionService.METHOD_LLM), "谢谢，这样讲很清楚");
+
+        assertThat(followUpItems()).containsExactlyInAnyOrder(LENGTH_ITEM, TERM_ITEM);
+        verify(taskService).completeTask("task-1", "COMPLETED", "没有发现需要长期记住的偏好", USER_MESSAGE);
+        // 只失败过一次：重跑成功后不再重复写失败事件
+        verify(taskService, times(1)).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
     }
 
     /**

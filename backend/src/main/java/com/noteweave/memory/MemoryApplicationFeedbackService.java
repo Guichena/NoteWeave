@@ -11,6 +11,8 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,7 +42,8 @@ public class MemoryApplicationFeedbackService {
 
     /**
      * 跟进反馈的处理结果：写接受、写负面，或这一轮不写。
-     * {@link #RETRYABLE} 表示模型没给出可用结论，本轮跳过并沿用记忆抽取的可重试标记。
+     * {@link #RETRYABLE} 表示本轮没写成但值得重跑：模型没给出可用结论，或判定期间数据被别的写入改过、
+     * 乐观检查失败。调用方据此把任务标成可重试，而不是直接收尾。
      */
     public enum FollowUpResult {
         ACCEPTED,
@@ -48,6 +51,8 @@ public class MemoryApplicationFeedbackService {
         SKIPPED,
         RETRYABLE
     }
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryApplicationFeedbackService.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
@@ -168,8 +173,10 @@ public class MemoryApplicationFeedbackService {
      * <p>
      * 调用方要在事务外调用（记忆抽取已经把这一步提到持久化事务之前）。判断模型在事务外调用，
      * 也不持有任何行锁；只有把结论写到实际注入的记忆上时才开一个短事务，加锁重读 usage 行并做
-     * 乐观检查：判定期间 usage 行或已生效的反馈发生变化就放弃这次写入
-     * （返回 {@link FollowUpResult#SKIPPED}，由调用方按现有机制安全跳过）。
+     * 乐观检查：判定期间 usage 行或已生效的反馈发生变化就放弃这次写入，返回
+     * {@link FollowUpResult#RETRYABLE} 并记一条只含原因码与消息 id 的 warn：调用方据此把任务标成
+     * 可重试、由既有重驱入口重跑。不能返回 {@link FollowUpResult#SKIPPED}——调用方会把它当成
+     * 「本轮不需要写」直接收尾任务，这条跟进反馈就永久丢了。
      */
     public FollowUpResult recordFollowUp(String workspaceId, String userMessageId, String userContent) {
         FollowUpPlan plan = planFollowUp(workspaceId, userMessageId, userContent);
@@ -177,7 +184,11 @@ public class MemoryApplicationFeedbackService {
             return plan.result();
         }
         FollowUpResult applied = transactionTemplate.execute(status -> applyFollowUp(plan));
-        return applied == null ? FollowUpResult.SKIPPED : applied;
+        if (applied == null) {
+            // 事务没给出结论（理论上不会发生）：按可重试处理，不静默丢掉这条反馈
+            return retryableConflict("NO_APPLY_RESULT", plan);
+        }
+        return applied;
     }
 
     /** 事务外的只读快照 + 模型判断：不加锁，模型慢也不会挡住同一行上的其它写入。 */
@@ -223,25 +234,26 @@ public class MemoryApplicationFeedbackService {
     /**
      * 短事务里的写入：先重新加锁读 usage 行，与事务外的快照逐行比较（行集、记忆/版本、反馈状态），
      * 再重算这次要写的行。任一不一致都说明判定期间已经有别的反馈、重试或数据变更写过这些行，
-     * 本次放弃写入，不去覆盖别人的结果。
+     * 本次放弃写入，不去覆盖别人的结果；同时返回 {@link FollowUpResult#RETRYABLE}，让调用方重跑这一轮。
      */
     private FollowUpResult applyFollowUp(FollowUpPlan plan) {
         if (sourceExists(plan.workspaceId(), plan.sourceRef())) {
+            // 同一轮反馈已经被并发的重复投递写过：不重复写，但也不算丢失
             return FollowUpResult.SKIPPED;
         }
         if (!plan.assistantMessageId().equals(
                 previousAssistantId(plan.workspaceId(), plan.userMessageId()))) {
-            return FollowUpResult.SKIPPED;
+            return retryableConflict("PREVIOUS_ANSWER_CHANGED", plan);
         }
         List<UsageRow> locked = loadUsages(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId());
         if (!locked.equals(plan.usages())) {
-            return FollowUpResult.SKIPPED;
+            return retryableConflict("USAGE_SNAPSHOT_CHANGED", plan);
         }
         List<UsageRow> targets = plan.result() == FollowUpResult.ACCEPTED
                 ? locked.stream().filter(row -> !alreadySignaled(row)).toList()
                 : select(locked, "NEGATIVE", plan.judgment().aspect());
         if (!sameUsageIds(targets, plan.targets())) {
-            return FollowUpResult.SKIPPED;
+            return retryableConflict("TARGET_SET_CHANGED", plan);
         }
         if (plan.result() == FollowUpResult.ACCEPTED) {
             apply(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId(), SIGNAL_FOLLOW_UP, targets,
@@ -259,6 +271,17 @@ public class MemoryApplicationFeedbackService {
                 plan.judgment().aspect(), trimNote(plan.note()), plan.degradation(), plan.sourceRef(),
                 betaFor("NEGATIVE", plan.judgment().aspect()));
         return FollowUpResult.NEGATIVE;
+    }
+
+    /**
+     * 乐观检查冲突：判定期间这条回答的 usage 行、上一轮回答或已生效的反馈被别的写入改过，本次不覆盖
+     * 别人的结果。返回 {@link FollowUpResult#RETRYABLE} 让调用方把任务标成可重试；日志只带稳定原因码、
+     * workspace 与消息 id，不带用户正文。
+     */
+    private FollowUpResult retryableConflict(String reason, FollowUpPlan plan) {
+        log.warn("Follow-up feedback not applied: reason={}, workspaceId={}, userMessageId={}",
+                reason, plan.workspaceId(), plan.userMessageId());
+        return FollowUpResult.RETRYABLE;
     }
 
     /**
