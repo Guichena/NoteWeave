@@ -138,7 +138,9 @@ class ConversationConstraintProjectorV2Test {
     }
 
     @Test
-    void newConversationWideFormatPreferenceSupersedesEarlierOne() {
+    void complementaryConversationWideFormatPreferencesCoexist() {
+        // 撤回按语义槽位而不是按 kind："先给结论"和"用表格"是两个互补的格式维度，
+        // 后来的表格偏好不能把先前的结论偏好作废。
         List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
                 message("p1", 1, "USER", "以后解释技术问题先给结论。"),
                 message("p2", 2, "USER", "以后用表格对比。")));
@@ -146,10 +148,133 @@ class ConversationConstraintProjectorV2Test {
         assertThat(constraints).hasSize(2);
         assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
         assertThat(constraints.get(0).text()).isEqualTo("解释技术问题先给结论");
-        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
-        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(0).invalidAfterSeq()).isNull();
         assertThat(constraints.get(1).scope()).isEqualTo("CONVERSATION");
         assertThat(constraints.get(1).text()).isEqualTo("用表格对比");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::supersededBy)
+                .containsOnlyNulls();
+    }
+
+    @Test
+    void complementaryFormatSlotsStayActiveTogether() {
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("m1", 1, "USER", "以后先给结论。"),
+                message("m2", 2, "USER", "以后用表格对比。"),
+                message("m3", 3, "USER", "每次回答不超过300字。")));
+
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::kind)
+                .containsExactly("FORMAT", "FORMAT", "FORMAT");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::scope)
+                .containsOnly("CONVERSATION");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::status)
+                .containsOnly("ACTIVE");
+    }
+
+    @Test
+    void negatedFormatRevokesEarlierPositiveFormatAcrossKinds() {
+        // 评审反例：旧「用表格」是 FORMAT，新「不要用表格」是 NEGATION，kind 不同也要撤回
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("t1", 1, "USER", "介绍一下 Redis 的持久化方式，用表格对比 RDB 和 AOF。"),
+                message("t2", 2, "USER", "不要再用表格。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).kind()).isEqualTo("FORMAT");
+        assertThat(constraints.get(0).text()).isEqualTo("用表格对比 RDB 和 AOF");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(1).text()).isEqualTo("不要再用表格");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void negatedLanguageRevokesEarlierConversationWideLanguage() {
+        // 评审反例：旧「以后用英文」是 LANGUAGE:CONVERSATION，新「不要用英文」是 NEGATION，
+        // 不撤回会让提示词同时出现「英文」和「不要用英文」
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("v1", 1, "USER", "以后用英文。"),
+                message("v2", 2, "USER", "不要用英文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(1).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void explicitCorrectionRevokesConversationWideLanguageFromTopicScope() {
+        // 评审反例：旧「以后用英文」=LANGUAGE:CONVERSATION，新「更正：这份报告改用中文」
+        // =LANGUAGE:CURRENT_TOPIC，scope 不同，但有显式更正措辞，旧约束必须撤回
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("x1", 1, "USER", "以后用英文。"),
+                message("x2", 2, "USER", "更正：这份报告改用中文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void negatingOneLanguageDoesNotRevokeAnotherLanguagePreference() {
+        // 槽位相同但取值不同：「不要用中文」不是对「以后用英文」的更正
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("q1", 1, "USER", "以后用英文。"),
+                message("q2", 2, "USER", "不要用中文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).text()).isEqualTo("英文");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(1).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void negationWithoutCueDoesNotRevokeUnrelatedFormat() {
+        // 没有指向具体线索的否定要求不占任何已有槽位
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("r1", 1, "USER", "先给结论。"),
+                message("r2", 2, "USER", "不要再贴大段配置文件了。")));
+
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::kind)
+                .containsExactly("FORMAT", "NEGATION");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::status)
+                .containsOnly("ACTIVE");
+    }
+
+    @Test
+    void correctionOnlyReachesTheSameSlot() {
+        // 「更正」只作废同一槽位的旧取值，不牵连其它格式维度
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("y1", 1, "USER", "以后先给结论。"),
+                message("y2", 2, "USER", "更正：改用分点列出。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).text()).isEqualTo("先给结论");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(1).text()).isEqualTo("改用分点列出");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void sameSlotInSameTopicSupersedesWithoutCorrectionKeyword() {
+        // 同一长度维度里的新取值仍然直接顶掉旧取值，不需要关键词
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("z1", 1, "USER", "解释 Redis 过期键删除策略，回答简短一点。"),
+                message("z2", 2, "USER", "继续，Redis 过期键删除再详细一点。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
         assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
     }
 

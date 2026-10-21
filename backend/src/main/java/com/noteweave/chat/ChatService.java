@@ -265,7 +265,8 @@ public class ChatService {
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS,
                 Boolean.toString(chatControlPack.hasControls() || !v2UserControls.isBlank()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
-                renderChatControlSection(chatControlPack, conversationContext.frozenV2()));
+                renderChatControlSection(chatControlPack, conversationContext.frozenV2(),
+                        !conversationContext.contextApplied()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         if (conversationContext.contextApplied()) {
@@ -445,9 +446,21 @@ public class ChatService {
     /** 合并控制包与 v2 冻结用户约束，同一约束（归一化文本相同）只保留一次。 */
     static String renderChatControlSection(MemoryControlPackResponse chatControlPack,
                                            ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
+        return renderChatControlSection(chatControlPack, frozen, true);
+    }
+
+    /**
+     * @param renderFrozenConstraints 对话窗口已经带着同一批冻结约束时传 false：控制包里重复的控制项仍然
+     *                                按冻结约束去重，但不再单独渲染一遍，避免提示词里出现两份用户约束
+     */
+    static String renderChatControlSection(MemoryControlPackResponse chatControlPack,
+                                           ContextV2ShadowSnapshotService.FrozenAnswer frozen,
+                                           boolean renderFrozenConstraints) {
         StringBuilder builder = new StringBuilder();
         appendChatControlSection(builder, chatControlPack, frozenConstraintKeys(frozen));
-        return builder.append(renderV2UserConstraints(frozen)).toString();
+        return renderFrozenConstraints
+                ? builder.append(renderV2UserConstraints(frozen)).toString()
+                : builder.toString();
     }
 
     static String renderV2UserConstraints(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {

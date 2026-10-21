@@ -39,8 +39,11 @@ public class MemoryConversationExtractionService {
     private static final String SOURCE_REF_PREFIX = "conversation-message:";
     /** 入队 payload 保留的消息上限，与 {@link #shouldExtract(String)} 的上限一致。 */
     static final int MAX_QUEUED_MESSAGE_CHARS = 4_000;
-    /** 只有拼接提示词时才截断，避免长消息在入队阶段丢失偏好。 */
-    private static final int MAX_PROMPT_MESSAGE_CHARS = 2_000;
+    /**
+     * 拼接提示词时的消息上限，与入队上限一致：入队保留的偏好不能在这里又被裁掉，
+     * 否则写在长消息后半段的长期偏好永远不会进入候选门控。
+     */
+    private static final int MAX_PROMPT_MESSAGE_CHARS = MAX_QUEUED_MESSAGE_CHARS;
     private static final int MAX_STATEMENTS = 3;
     private static final int MAX_STATEMENT_CHARS = 200;
     private static final int EXTRACTION_OUTPUT_TOKENS = 900;

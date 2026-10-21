@@ -133,6 +133,36 @@ class ChatServiceControlSectionDedupeTest {
         assertThat(rendered).containsOnlyOnce("仅使用近 90 天内的资料");
     }
 
+    @Test
+    void skipsFrozenConstraintBlockWhenTheConversationWindowAlreadyCarriesIt() throws Exception {
+        MemoryControlPackResponse pack = pack(List.of("请用中文回答", "回答控制在三段以内"),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+        var frozen = frozen("请用中文回答。");
+
+        String rendered = ChatService.renderChatControlSection(pack, frozen, false);
+
+        // 窗口里已经有「当前有效的用户约束：- 请用中文回答。」，控制区不再重复整块约束
+        assertThat(rendered).doesNotContain("当前有效的用户约束");
+        // 与冻结约束重复的控制项仍然被去重，剩下的控制项照常输出
+        assertThat(rendered).doesNotContain("请用中文回答");
+        assertThat(rendered)
+                .contains("## 表达控制")
+                .contains("- 风格约束：回答控制在三段以内");
+    }
+
+    @Test
+    void rendersFrozenConstraintBlockByDefaultWhenNoWindowIsApplied() throws Exception {
+        MemoryControlPackResponse pack = pack(List.of("请用中文回答", "回答控制在三段以内"),
+                List.of(), List.of(), List.of(), List.of(), List.of());
+        var frozen = frozen("请用中文回答。");
+
+        String rendered = ChatService.renderChatControlSection(pack, frozen, true);
+
+        assertThat(rendered)
+                .contains("## 当前有效的用户约束（冻结会话）")
+                .containsOnlyOnce("请用中文回答");
+    }
+
     private static MemoryControlPackResponse pack(
             List<String> styleConstraints,
             List<String> structureConstraints,

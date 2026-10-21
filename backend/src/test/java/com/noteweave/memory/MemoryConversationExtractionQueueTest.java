@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * 入队保留 4000 字、提示词只用 2000 字的边界，不依赖 Spring 上下文。
+ * 入队和拼提示词都保留 4000 字，不依赖 Spring 上下文。
  */
 class MemoryConversationExtractionQueueTest {
 
@@ -30,15 +30,18 @@ class MemoryConversationExtractionQueueTest {
     }
 
     @Test
-    void queuedContentKeepsFourThousandCharsWhilePromptContentUsesTwoThousand() {
+    void queuedContentAndPromptContentShareTheFourThousandCharBoundary() {
         String longMessage = "b".repeat(3_600);
 
         assertThat(MemoryConversationExtractionService.queuedContent(longMessage))
                 .hasSize(3_600).isEqualTo(longMessage);
         assertThat(MemoryConversationExtractionService.queuedContent("c".repeat(4_500)))
                 .hasSize(4_000).isEqualTo("c".repeat(4_000));
+        // 提示词不再比入队更早截断：3_600 字的消息整条进入抽取
         assertThat(MemoryConversationExtractionService.promptContent(longMessage))
-                .hasSize(2_000).isEqualTo("b".repeat(2_000));
+                .hasSize(3_600).isEqualTo(longMessage);
+        assertThat(MemoryConversationExtractionService.promptContent("d".repeat(4_500)))
+                .hasSize(4_000).isEqualTo("d".repeat(4_000));
         assertThat(MemoryConversationExtractionService.promptContent("  以后回答先给结论  "))
                 .isEqualTo("以后回答先给结论");
         assertThat(MemoryConversationExtractionService.queuedContent(null)).isEmpty();
@@ -75,17 +78,18 @@ class MemoryConversationExtractionQueueTest {
     }
 
     @Test
-    void promptTruncationOnlyAffectsTheExtractionPrompt() {
+    void preferencesAfterTwoThousandCharsReachTheExtractionPrompt() {
         MemoryConversationExtractionService service = service(mock(JdbcTemplate.class), mock(TaskService.class));
         String filler = "填充".repeat(1_100);
         String preference = "以后回答先给结论再展开";
 
-        // 偏好落在 2000 字之后，提示词截断后规则提取看不到它
-        assertThat(service.extractPreferences(filler + "。" + preference, null).preferences()).isEmpty();
-        // 同一条偏好只要在 2000 字以内就会被提取，说明入队内容没有被提前砍掉
-        assertThat(service.extractPreferences(filler.substring(0, 1_000) + "。" + preference, null).preferences())
+        // 偏好落在 2000 字之后、入队上限 4000 字之内：提示词不再截断，规则提取能看到它
+        assertThat(service.extractPreferences(filler + "。" + preference, null).preferences())
                 .extracting(MemoryConversationExtractionService.Preference::statement)
                 .containsExactly(preference);
+        // 超过入队上限的消息根本不会入队，不存在"入队了却在抽取前被静默丢弃"的情况
+        assertThat(MemoryConversationExtractionService.shouldExtract(
+                "填充".repeat(2_100) + "。" + preference)).isFalse();
     }
 
     private MemoryConversationExtractionService service(JdbcTemplate jdbc, TaskService taskService) {
