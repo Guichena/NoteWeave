@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Shadow extraction of explicit user instructions; no assistant text becomes a constraint. */
 public final class ConversationConstraintProjectorV2 {
-    public static final String RULE_VERSION = "constraint-projector-v2-a4";
+    public static final String RULE_VERSION = "constraint-projector-v2-a5";
     /** 语言只有一个语义槽位：一次回答只用一种语言，"用英文"和"用中文"互斥。 */
     static final String SLOT_LANGUAGE = "answer.language";
     /** 会话级 scope：比当前话题更宽，同值重申不能把它降级。 */
@@ -19,6 +19,12 @@ public final class ConversationConstraintProjectorV2 {
     /** 长期生效的措辞。 */
     private static final java.util.regex.Pattern DURABLE = java.util.regex.Pattern.compile(
             "以后|今后|往后|之后都|从现在起|从今以后|每次|每一次|一律|始终|总是|一直都?要");
+    /**
+     * 显式"仅本话题"措辞：用户明说这条要求只管这一次/这个话题，即使同一句里还有长期措辞，
+     * 也只算当前话题的约束（"以后都用表格，这次用分点"里的分点不升级成会话级）。
+     */
+    private static final java.util.regex.Pattern NARROW = java.util.regex.Pattern.compile(
+            "这次|本次|这一次|这轮|本轮|本话题|这个话题|这个问题|临时|暂时");
     /** 语言名字面量；否定判定复用同一份词表，避免两处清单漂移。 */
     private static final String LANGUAGE_NAME = "简体中文|繁体中文|中文|英文|英语|日文|日语|韩文";
     private static final java.util.regex.Pattern LANGUAGE = java.util.regex.Pattern.compile(
@@ -87,6 +93,9 @@ public final class ConversationConstraintProjectorV2 {
                     ? next.scope() + ":" + topicId
                     : next.scope();
             boolean correction = isCorrection(text, detected);
+            // 用户明说"这次/仅本话题"时作用范围就限在当前话题：既不能升级成会话级，
+            // 也不能借"更正/改用"之类的措辞撤回会话级偏好（"以后用英文，这次改用中文"）。
+            boolean narrowed = detected.narrowed();
             // 撤回按语义槽位（语言 / 表格 / 结论 / 分点 / 字数 / 引用 / 代码）而不是按 kind：
             // 同一槽位里的取值互斥，"用表格"和"先给结论"这类互补格式可以同时生效。
             // 同 scope 内出现新的 ACTIVE 取值时，上一条立即失效，不要求用户说出关键词。
@@ -105,7 +114,7 @@ public final class ConversationConstraintProjectorV2 {
                     confirmed = true;
                     break;
                 }
-                if (!correction && !previous.scopeKey().equals(scopeKey)) continue;
+                if ((narrowed || !correction) && !previous.scopeKey().equals(scopeKey)) continue;
                 Constraint old = output.get(previous.index());
                 output.set(previous.index(), new Constraint(old.id(), old.sourceMessageId(), old.kind(),
                         old.scope(), old.text(), old.validFromSeq(), message.seq(),
@@ -128,7 +137,8 @@ public final class ConversationConstraintProjectorV2 {
      * 否定还必须是约束形态：否定词后面跟着语言/格式/长度目标（"不要用英文""不用表格""别太长"）。
      * 只有否定语气、没有目标的"不是""不用"（"这不是我要的""不用了""不是这个意思"）不产生约束。
      * 否定约束继承被否定线索的槽位，这样"不要用表格"才能撤回之前的"用表格"。
-     * 带"以后""每次""从现在起"等长期措辞的要求在整个会话内生效，否则只在当前话题内生效。
+     * 带"以后""每次""从现在起"等长期措辞的要求在整个会话内生效，否则只在当前话题内生效；
+     * 明说"这次""仅本话题"的要求优先按当前话题生效，长期措辞不能把它升级成会话级。
      */
     private Detected explicit(TopicSegmenterV2.Message message, String text) {
         String kind;
@@ -173,10 +183,11 @@ public final class ConversationConstraintProjectorV2 {
         } else {
             return null;
         }
-        String scope = DURABLE.matcher(text).find() ? "CONVERSATION" : "CURRENT_TOPIC";
+        boolean narrowed = NARROW.matcher(text).find();
+        String scope = narrowed || !DURABLE.matcher(text).find() ? "CURRENT_TOPIC" : "CONVERSATION";
         String id = "constraint-" + digest(message.messageId() + ":" + kind).substring(0, 24);
         return new Detected(new Constraint(id, message.messageId(), kind, scope, ruleText,
-                message.seq(), null, status, null), slot, value, forbid);
+                message.seq(), null, status, null), slot, value, forbid, narrowed);
     }
 
     /**
@@ -328,8 +339,9 @@ public final class ConversationConstraintProjectorV2 {
     /** 被否定的语言/格式线索：位置、所属槽位和取值。 */
     private record Cue(int position, String slot, String value) {}
 
-    /** 一条消息抽出的约束，以及只在本类内部使用的槽位/取值/是否否定。 */
-    private record Detected(Constraint constraint, String slot, String value, boolean forbid) {}
+    /** 一条消息抽出的约束，以及只在本类内部使用的槽位/取值/是否否定/是否显式窄化到本话题。 */
+    private record Detected(Constraint constraint, String slot, String value, boolean forbid,
+                            boolean narrowed) {}
 
     /** 当前仍然生效的约束，槽位和 scope 用来判断后续消息能否撤回它。 */
     private record Active(int index, String slot, String value, boolean forbid, String scopeKey) {}

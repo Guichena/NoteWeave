@@ -489,6 +489,65 @@ class ConversationConstraintProjectorV2Test {
         assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
     }
 
+    @Test
+    void topicOnlyWordingKeepsDurableRequirementScopedToCurrentTopic() {
+        // 评审 M5-M15③：「以后」是长期措辞，但同一句里的「这次」明说只管这一轮，不能升级成会话级
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("a1", 1, "USER", "以后都用英文回答，这次用中文。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("中文");
+            assertThat(constraint.scope()).isEqualTo("CURRENT_TOPIC");
+            assertThat(constraint.status()).isEqualTo("ACTIVE");
+        });
+    }
+
+    @Test
+    void topicOnlyPhrasingsAreRecognizedWithoutWideningToConversation() {
+        // 词表里的每种「仅本话题」说法都要能压住同句的长期措辞
+        for (String text : List.of("以后都用英文回答，这次用中文。", "以后都用英文回答，本次用中文。",
+                "以后都用英文回答，这个问题用中文。", "以后都用英文回答，仅本话题用中文。",
+                "以后都用英文回答，临时用中文。")) {
+            assertThat(projector.project(List.of(message("a2", 1, "USER", text))))
+                    .as(text).singleElement()
+                    .satisfies(constraint -> assertThat(constraint.scope()).as(text).isEqualTo("CURRENT_TOPIC"));
+        }
+    }
+
+    @Test
+    void topicOnlyWordingDoesNotRevokeConversationWidePreferenceEvenWithCorrectionWording() {
+        // 「这次改用」既是更正措辞又带窄化词：会话级英文偏好必须留着，中文只在本话题生效
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("b1", 1, "USER", "以后用英文。"),
+                message("b2", 2, "USER", "这次改用中文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).text()).isEqualTo("英文");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(0).invalidAfterSeq()).isNull();
+        assertThat(constraints.get(0).supersededBy()).isNull();
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void topicOnlyRequirementStillSupersedesEarlierConstraintInTheSameTopic() {
+        // 窄化只挡住跨 scope 的撤回，同话题内同槽位的新取值照旧顶掉旧取值
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("c1", 1, "USER", "解释 Redis 过期键删除策略，回答简短一点。"),
+                message("c2", 2, "USER", "继续，这次 Redis 过期键删除再详细一点。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
     private TopicSegmenterV2.Message message(String id, int seq, String role, String text) {
         return new TopicSegmenterV2.Message(id, seq, role, text);
     }
