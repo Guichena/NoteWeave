@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Shadow extraction of explicit user instructions; no assistant text becomes a constraint. */
 public final class ConversationConstraintProjectorV2 {
-    public static final String RULE_VERSION = "constraint-projector-v2-a5";
+    public static final String RULE_VERSION = "constraint-projector-v2-a6";
     /** 语言只有一个语义槽位：一次回答只用一种语言，"用英文"和"用中文"互斥。 */
     static final String SLOT_LANGUAGE = "answer.language";
     /**
@@ -62,12 +62,13 @@ public final class ConversationConstraintProjectorV2 {
      * （"以后用英文"之后说"改用中文"，会话级英文偏好必须失效）。
      * 没有这些词时，另一个 scope 里的新取值只是局部补充，不动会话级偏好。
      * 单独的"换"不算，避免"换个话题，用表格列出……"被当成更正。
-     * "不是""不用"不在这里：它们单独出现只是语气（"这不是重点""不用了"），
-     * 整句匹配会把"以后用英文"降级成当前话题；只有构成约束形态的否定（"不用英文"）
+     * "不是""不用""不要"不在这里：它们单独出现只是语气（"这不是重点""不用了"），
+     * 出现在别的分句里也不修饰本条线索（"这个不要，用中文解释一下"），整句匹配会把
+     * "以后用英文"降级成当前话题；只有构成约束形态的否定（"不用英文""不要用英文"）
      * 才算更正，见 {@link #isCorrection}。
      */
     private static final java.util.regex.Pattern EXPLICIT_CORRECTION = java.util.regex.Pattern.compile(
-            "更正|纠正|改正|改用|改成|改为|换用|换成|换为|不要|别再|禁止|避免|取消|去掉|撤销|替换");
+            "更正|纠正|改正|改用|改成|改为|换用|换成|换为|别再|禁止|避免|取消|去掉|撤销|替换");
     /** 分句边界：否定只作用于它所在的分句。 */
     private static final String CLAUSE_BREAK = "，,。；;！!？?\n：:";
     /** "那个格式""跟之前一样"这类没有说清指什么的指代。 */
@@ -105,11 +106,14 @@ public final class ConversationConstraintProjectorV2 {
             // 撤回按语义槽位（语言 / 表格 / 结论 / 分点 / 字数上限 / 详略 / 引用 / 代码）而不是按 kind：
             // 同一槽位里的取值互斥，"用表格"和"先给结论"这类互补格式可以同时生效。
             // 同 scope 内出现新的 ACTIVE 取值时，上一条立即失效，不要求用户说出关键词。
-            // 跨 scope 只有用户明说"更正/改用/换成/不要"才撤回，否则一个话题里的临时要求
+            // 跨 scope 只有用户明说"更正/改用/换成"或构成约束形态的否定才撤回，否则一个话题里的临时要求
             // 会悄悄废掉会话级偏好。否定约束只撤回同一取值的旧约束：
             // "不要用中文"不会撤掉"以后用英文"，而"不要用英文"会。
-            // 同槽位同取值的正向重申只是确认，保留已有（更宽）的约束，不新建更窄的约束。
-            boolean confirmed = false;
+            // 同槽位同取值的正向重申只是确认，保留已有（更宽）的约束，不新建更窄的约束；
+            // 但确认不能就此结束扫描：更老的同槽位冲突行仍要撤回，否则"用中文"→"以后用英文"
+            // →"继续用英文"会留下话题级"中文"，当前话题同时要求中英文。
+            String confirmedBy = null;
+            List<Active> superseded = new ArrayList<>();
             for (int index = active.size() - 1; index >= 0; index--) {
                 Active previous = active.get(index);
                 if (!previous.slot().equals(detected.slot())) continue;
@@ -117,17 +121,21 @@ public final class ConversationConstraintProjectorV2 {
                         && previous.value() != null && detected.value() != null
                         && !previous.value().equals(detected.value())) continue;
                 if (confirms(previous, detected, scopeKey)) {
-                    confirmed = true;
-                    break;
+                    // 确认行只保留最新的一条（和原先 break 的效果一致），撤回行指向它。
+                    if (confirmedBy == null) confirmedBy = output.get(previous.index()).id();
+                    continue;
                 }
                 if ((narrowed || !correction) && !previous.scopeKey().equals(scopeKey)) continue;
+                superseded.add(previous);
+            }
+            for (Active previous : superseded) {
                 Constraint old = output.get(previous.index());
                 output.set(previous.index(), new Constraint(old.id(), old.sourceMessageId(), old.kind(),
                         old.scope(), old.text(), old.validFromSeq(), message.seq(),
-                        "REVOKED", next.id()));
-                active.remove(index);
+                        "REVOKED", confirmedBy == null ? next.id() : confirmedBy));
+                active.remove(previous);
             }
-            if (confirmed) continue;
+            if (confirmedBy != null) continue;
             output.add(next);
             active.add(new Active(output.size() - 1, detected.slot(), detected.value(),
                     detected.forbid(), scopeKey));
@@ -199,7 +207,8 @@ public final class ConversationConstraintProjectorV2 {
     /**
      * 这条消息是否在更正之前的说法。除显式更正词外，与目标槽位构成约束形态的否定
      * （"不用英文""不是用表格"）也算更正；单独的语气词（"这不是重点""不用了"）不算，
-     * 否则一句口语就能把会话级偏好降级成当前话题。
+     * 否则一句口语就能把会话级偏好降级成当前话题。"不要"同样不进整句词表：只有它紧贴目标、
+     * 让本条消息本身成为否定约束时才算更正，"这个不要，用中文解释一下"里的"不要"在另一个分句。
      */
     private static boolean isCorrection(String text, Detected detected) {
         if (EXPLICIT_CORRECTION.matcher(text).find()) return true;
@@ -207,10 +216,11 @@ public final class ConversationConstraintProjectorV2 {
     }
 
     /**
-     * 同槽位、同取值的正向重申/确认。命中时保留已有约束（包括更宽的 CONVERSATION scope），
-     * 既不新建更窄的约束，也不撤回旧约束："以后用英文"之后的"这不是重点，继续用英文"
+     * 同槽位、同取值的正向重申/确认。命中时保留这一行（包括更宽的 CONVERSATION scope），
+     * 也不新建更窄的约束："以后用英文"之后的"这不是重点，继续用英文"
      * 只是确认，不能把会话级偏好降级成当前话题；同 scope 内的同值重申也保持幂等。
      * 只有取值不同，或用户明说"更正/改用"时才覆盖旧约束。
+     * 确认行本身不撤回，但调用方仍会继续扫描更老的同槽位冲突行。
      */
     private static boolean confirms(Active previous, Detected detected, String scopeKey) {
         if (previous.forbid() || detected.forbid()) return false;

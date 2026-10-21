@@ -624,6 +624,83 @@ class ConversationConstraintProjectorV2Test {
         assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
     }
 
+    @Test
+    void broaderSameValueConfirmationStillRevokesOlderNarrowerLanguage() {
+        // 评审 REVIEW-d5 阻断一：「用中文」（话题级）→「以后用英文」（会话级）→「继续用英文」。
+        // 确认会话级取值时不能就此结束扫描，更老的话题级「中文」必须撤回，
+        // 否则当前话题的窗口会同时要求中英文
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("n1", 1, "USER", "用中文。"),
+                message("n2", 2, "USER", "以后用英文。"),
+                message("n3", 3, "USER", "继续用英文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).text()).isEqualTo("中文");
+        assertThat(constraints.get(0).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(3);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).text()).isEqualTo("英文");
+        assertThat(constraints.get(1).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(1).invalidAfterSeq()).isNull();
+    }
+
+    @Test
+    void broaderSameValueConfirmationAlsoRevokesOlderNegationOfTheLanguage() {
+        // 同一支确认循环：更老的「不要用英文」也是同槽位的冲突行，不能和新确认的「英文」并存
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("n4", 1, "USER", "不要用英文。"),
+                message("n5", 2, "USER", "以后用英文。"),
+                message("n6", 3, "USER", "继续用英文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(3);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).kind()).isEqualTo("LANGUAGE");
+        assertThat(constraints.get(1).text()).isEqualTo("英文");
+        assertThat(constraints.get(1).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void incidentalNegationInAnotherClauseDoesNotNarrowConversationWideLanguage() {
+        // 评审 REVIEW-d5 阻断二：「不要」在另一个分句里只是语气，不能撤回会话级英文，
+        // 和「这不是重点，用中文解释一下」保持一致
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("s1", 1, "USER", "以后用英文。"),
+                message("s2", 2, "USER", "这个不要，用中文解释一下。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).text()).isEqualTo("英文");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(0).invalidAfterSeq()).isNull();
+        assertThat(constraints.get(0).supersededBy()).isNull();
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void incidentalNegationInAnotherClauseDoesNotNarrowConversationWideFormat() {
+        // 格式槽位没有同值确认保护（"用表格"的取值就是槽位本身），只能靠「不要」不再整句算更正
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("s3", 1, "USER", "以后用表格。"),
+                message("s4", 2, "USER", "这个不要，继续用表格。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).text()).isEqualTo("用表格");
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(0).invalidAfterSeq()).isNull();
+        assertThat(constraints.get(0).supersededBy()).isNull();
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
     private TopicSegmenterV2.Message message(String id, int seq, String role, String text) {
         return new TopicSegmenterV2.Message(id, seq, role, text);
     }
