@@ -68,6 +68,59 @@ class ConversationSummaryGeneratorTest {
                 .isLessThan("缓存一致性".getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
     }
 
+    @Test
+    void longMessageIsSplitIntoChunksInThePromptInsteadOfBeingTruncated() {
+        String content = "开头" + "中".repeat(4_496) + "结尾";
+        RecordingLlm llm = new RecordingLlm("摘要");
+
+        new ConversationSummaryGenerator(llm).summarize(null,
+                List.of(new ConversationSummaryGenerator.Turn("USER", content)));
+
+        String prompt = llm.userPrompts.get(0);
+        // 4500 字按 2000 字分块，共 3 块，块间有续块标记
+        assertThat(prompt).contains("（分块续 2/3）").contains("（分块续 3/3）");
+        // 去掉续块标记后，原文完整地进了提示词，尾部没有被丢掉
+        String flattened = prompt.replaceAll("\n（分块续 \\d+/\\d+）\n", "");
+        assertThat(flattened).contains("用户：" + content);
+        assertThat(prompt).doesNotContain(ConversationSummaryGenerator.TRUNCATION_MARKER);
+    }
+
+    @Test
+    void extractiveMessageKeepsHeadAndTailAndMarksTheTruncation() {
+        String content = "开头" + "中".repeat(1_000) + "结尾";
+
+        String line = ConversationSummaryGenerator.summarizeMessage("USER", content);
+        assertThat(line).startsWith("user: 开头").endsWith("结尾")
+                .contains(ConversationSummaryGenerator.TRUNCATION_MARKER);
+        // 标记计入 600 字额度
+        assertThat(line.length() - "user: ".length()).isLessThanOrEqualTo(600);
+
+        ConversationSummaryGenerator.Summary summary = ConversationSummaryGenerator.extractiveOnly()
+                .summarize(null, List.of(new ConversationSummaryGenerator.Turn("ASSISTANT", content)));
+        assertThat(summary.method()).isEqualTo(ConversationSummaryGenerator.METHOD_EXTRACTIVE);
+        assertThat(summary.text()).contains(ConversationSummaryGenerator.TRUNCATION_MARKER)
+                .endsWith("结尾");
+    }
+
+    @Test
+    void extractiveSummaryOverTheTotalLimitKeepsHeadAndTailAndMarksTheTruncation() {
+        List<ConversationSummaryGenerator.Turn> turns = new ArrayList<>();
+        turns.add(new ConversationSummaryGenerator.Turn("USER", "第0条：" + "填".repeat(580)));
+        for (int index = 1; index < 30; index++) {
+            turns.add(new ConversationSummaryGenerator.Turn("USER", "第" + index + "条：" + "填".repeat(580)));
+        }
+        turns.add(new ConversationSummaryGenerator.Turn("USER", "最后一条：" + "末".repeat(580)));
+
+        String text = ConversationSummaryGenerator.extractiveOnly().summarize(null, turns).text();
+
+        assertThat(text.length()).isLessThanOrEqualTo(ConversationSummaryGenerator.MAX_SUMMARY_CHARS);
+        assertThat(text).startsWith("user: 第0条：").endsWith("末".repeat(580));
+        // 单条都没超 600 字，标记只能来自总量截断，且只出现一次
+        assertThat(text.indexOf(ConversationSummaryGenerator.TRUNCATION_MARKER))
+                .isEqualTo(text.lastIndexOf(ConversationSummaryGenerator.TRUNCATION_MARKER))
+                .isGreaterThan(0);
+    }
+
     private static final class RecordingLlm implements ChatLlmClient {
         private final String output;
         private final List<String> userPrompts = new ArrayList<>();
