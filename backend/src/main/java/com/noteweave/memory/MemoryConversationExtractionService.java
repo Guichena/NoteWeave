@@ -58,6 +58,8 @@ public class MemoryConversationExtractionService {
     static final String METHOD_CLASSIFIED_NO = "CLASSIFIED_NO";
     static final String METHOD_LLM_UNAVAILABLE = "LLM_UNAVAILABLE";
     static final String METHOD_LLM_FAILED = "LLM_FAILED";
+    /** 偏好此前已抽过，本次重投只补跑了跟进反馈判定。 */
+    static final String METHOD_FEEDBACK_RETRY = "FEEDBACK_RETRY";
     static final String RETRY_PHASE = "MEMORY_EXTRACTION_LLM_UNAVAILABLE";
     private static final Set<String> CATEGORIES = Set.of("style", "structure", "terminology", "forbidden", "interaction");
 
@@ -199,17 +201,56 @@ public class MemoryConversationExtractionService {
     }
 
     /**
-     * Kafka 消费者调用：提取偏好、写入信号并交给候选门控。重复投递时直接返回。
+     * Kafka 消费者调用：提取偏好、写入信号并交给候选门控。重复投递时不再重抽。
      * 调用大模型不占用数据库事务，写入部分在单独的事务里完成。
      */
     public ExtractionResult extract(String taskId, String workspaceId, String messageId, String userId,
                                     String content) {
         if (alreadyExtracted(workspaceId, messageId)) {
-            transactionTemplate.executeWithoutResult(status -> completeTask(taskId, "记忆候选已提取", messageId));
-            return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
+            return resumeExtractedMessage(taskId, workspaceId, messageId, content);
         }
         Extraction extraction = extractPreferences(content, previousAssistant(workspaceId, messageId));
         return persistExtraction(taskId, workspaceId, messageId, userId, extraction, content);
+    }
+
+    /**
+     * 偏好已经写过（这条消息已有 {@code memory_signal}），重投时不再重抽，也不新建候选。
+     * <p>
+     * 例外是「偏好写完、跟进反馈判成可重试」的那一轮：它把任务留在非终态（先 FAILED，经重驱回到
+     * PENDING/RUNNING），这个状态本身就是「反馈判定还没完成」的标记——抽取失败的那一轮不会写信号，
+     * 所以「已有信号 + 任务未终结」基本只可能是反馈没判定完（其余失败路径即便落到这里，补跑反馈也是
+     * 幂等的：{@code recordFollowUp} 按 sourceRef 去重）。此时只补跑反馈判定，否则这条消息的反馈会在
+     * 重投时被重复投递短路掉，永久丢失。
+     */
+    private ExtractionResult resumeExtractedMessage(String taskId, String workspaceId, String messageId,
+                                                    String content) {
+        if (applicationFeedback == null || taskSettled(taskId)) {
+            transactionTemplate.executeWithoutResult(status -> completeTask(taskId, "记忆候选已提取", messageId));
+            return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
+        }
+        boolean retryable = Boolean.TRUE.equals(transactionTemplate.execute(status ->
+                applicationFeedback.recordFollowUp(workspaceId, messageId, content)
+                        == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE));
+        if (retryable) {
+            markTaskForRetry(taskId);
+        } else {
+            transactionTemplate.executeWithoutResult(status ->
+                    completeTask(taskId, "偏好已提取，本轮只补写跟进反馈", messageId));
+        }
+        return new ExtractionResult(List.of(), METHOD_FEEDBACK_RETRY);
+    }
+
+    /**
+     * 任务是否已经处理完这条消息：COMPLETED/CANCELLED 是终态，没有任务记录（手工调用）也按处理完算。
+     * FAILED 不算——它正是「上一轮只差跟进反馈判定」最常留下的状态。
+     */
+    private boolean taskSettled(String taskId) {
+        if (taskId == null || taskId.isBlank()) {
+            return true;
+        }
+        String status = jdbcTemplate.query("select task_status from task where id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, taskId);
+        return status == null || Set.of("COMPLETED", "CANCELLED").contains(status);
     }
 
     /** 把提取结果写成信号并交给候选门控，在单独的事务里完成。 */
@@ -491,7 +532,8 @@ public class MemoryConversationExtractionService {
 
     /**
      * 本轮没跑成是因为模型没给出结论（抽取失败，或跟进反馈判断失败）：不把任务当成功，标成可重试，
-     * 之后可以走既有的重驱入口（{@code TaskService#redriveTask}）再跑一次。
+     * 之后可以走既有的重驱入口（{@code TaskService#redriveTask}）再跑一次。重投时任务还没终结，
+     * {@link #resumeExtractedMessage} 据此判断要不要只补跑跟进反馈。
      */
     private void markTaskForRetry(String taskId) {
         if (taskId == null || taskId.isBlank()) return;
