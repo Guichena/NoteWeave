@@ -374,6 +374,121 @@ class ConversationConstraintProjectorV2Test {
         assertThat(projector.project(messages)).isEqualTo(first);
     }
 
+    @Test
+    void incidentalNegationWordDoesNotNarrowConversationWideLanguagePreference() {
+        // 评审 M5-M15 反例：整句里的「不是」只是语气，同槽位同取值的重申必须保留会话级 scope
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("n1", 1, "USER", "以后用英文。"),
+                message("n2", 2, "USER", "这不是重点，继续用英文。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("英文");
+            assertThat(constraint.scope()).isEqualTo("CONVERSATION");
+            assertThat(constraint.validFromSeq()).isEqualTo(1);
+            assertThat(constraint.status()).isEqualTo("ACTIVE");
+            assertThat(constraint.invalidAfterSeq()).isNull();
+            assertThat(constraint.supersededBy()).isNull();
+        });
+    }
+
+    @Test
+    void incidentalNegationWordWithADifferentValueIsNotACorrection() {
+        // 「不是」不在更正词表里：换一个取值但只说本话题时，不能撤回会话级偏好
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("o1", 1, "USER", "以后用英文。"),
+                message("o2", 2, "USER", "这不是重点，用中文解释一下。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).text()).isEqualTo("英文");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(0).invalidAfterSeq()).isNull();
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void repeatingTheSameValueInTheSameScopeIsIdempotent() {
+        // 同值同 scope 的重申是确认：不新建重复约束，也不把旧约束标成 REVOKED
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("i1", 1, "USER", "以后用英文。"),
+                message("i2", 2, "USER", "以后也继续用英文。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.sourceMessageId()).isEqualTo("i1");
+            assertThat(constraint.scope()).isEqualTo("CONVERSATION");
+            assertThat(constraint.status()).isEqualTo("ACTIVE");
+            assertThat(constraint.invalidAfterSeq()).isNull();
+            assertThat(constraint.supersededBy()).isNull();
+        });
+    }
+
+    @Test
+    void differentValueCorrectionStillNarrowsConversationWidePreference() {
+        // 取值不同且有显式更正措辞时，会话级偏好照旧被顶掉
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("j1", 1, "USER", "以后用英文。"),
+                message("j2", 2, "USER", "改用中文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void explicitTopicOnlyValueDoesNotRevokeConversationWidePreference() {
+        // 明说只在本话题里换取值：会话级偏好继续生效，新取值只是当前话题的补充
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("k1", 1, "USER", "以后用英文。"),
+                message("k2", 2, "USER", "这次回答只用中文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).scope()).isEqualTo("CONVERSATION");
+        assertThat(constraints.get(0).text()).isEqualTo("英文");
+        assertThat(constraints.get(0).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(1).scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(constraints.get(1).text()).isEqualTo("中文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void constraintShapedNegationWithTheSameValueStillCountsAsCorrection() {
+        // 「不用」从整句更正词表里拿掉后，构成约束形态的否定（"不用英文"）仍然是更正
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("l1", 1, "USER", "以后用英文。"),
+                message("l2", 2, "USER", "不用英文。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(1).text()).isEqualTo("不用英文");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void buXuIsANegationPrefixSoTheCueIsNotReadAsAPositiveFormat() {
+        // 「不许」也是否定词：不能把"不许用表格"读成正向的 format.table
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("u1", 1, "USER", "以后用表格对比。"),
+                message("u2", 2, "USER", "不许用表格。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(1).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(1).text()).isEqualTo("不许用表格");
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
     private TopicSegmenterV2.Message message(String id, int seq, String role, String text) {
         return new TopicSegmenterV2.Message(id, seq, role, text);
     }

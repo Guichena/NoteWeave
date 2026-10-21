@@ -8,9 +8,11 @@ import java.util.List;
 
 /** Shadow extraction of explicit user instructions; no assistant text becomes a constraint. */
 public final class ConversationConstraintProjectorV2 {
-    public static final String RULE_VERSION = "constraint-projector-v2-a3";
+    public static final String RULE_VERSION = "constraint-projector-v2-a4";
     /** 语言只有一个语义槽位：一次回答只用一种语言，"用英文"和"用中文"互斥。 */
     static final String SLOT_LANGUAGE = "answer.language";
+    /** 会话级 scope：比当前话题更宽，同值重申不能把它降级。 */
+    private static final String SCOPE_CONVERSATION = "CONVERSATION";
     /** 没有指向具体线索的否定要求（"不要再贴大段配置"）单独占一个槽位，不撤回任何旧约束。 */
     private static final String SLOT_NEGATION_PREFIX = "negation:";
     private static final String SLOT_UNRESOLVED_PREFIX = "unresolved:";
@@ -38,19 +40,22 @@ public final class ConversationConstraintProjectorV2 {
     private static final int NEGATION_TARGET_WINDOW = 8;
     /**
      * 紧贴在语言/格式线索前面、并落在同一分句内的否定前缀。
-     * 除"不要""别""不是""不用""禁止""避免""不"外，允许夹一个紧邻的副词或动词（"不要再用""禁止使用"），
+     * 除"不要""别""不是""不用""不许""禁止""避免""不"外，允许夹一个紧邻的副词或动词（"不要再用""禁止使用"），
      * 但"不要忘记用英文"这类中间隔着无关成分的说法仍然是正向要求。
      */
     private static final java.util.regex.Pattern NEGATION_PREFIX = java.util.regex.Pattern.compile(
-            "(?:不要|别|不是|不用|禁止|避免|不)(?:再|总是|一直)?(?:使用|用|使)?$");
+            "(?:不要|别|不是|不用|不许|禁止|避免|不)(?:再|总是|一直)?(?:使用|用|使)?$");
     /**
      * 显式更正措辞：用户明说要改掉之前的说法时，允许撤回**跨 scope** 的同槽位旧约束
      * （"以后用英文"之后说"改用中文"，会话级英文偏好必须失效）。
      * 没有这些词时，另一个 scope 里的新取值只是局部补充，不动会话级偏好。
      * 单独的"换"不算，避免"换个话题，用表格列出……"被当成更正。
+     * "不是""不用"不在这里：它们单独出现只是语气（"这不是重点""不用了"），
+     * 整句匹配会把"以后用英文"降级成当前话题；只有构成约束形态的否定（"不用英文"）
+     * 才算更正，见 {@link #isCorrection}。
      */
     private static final java.util.regex.Pattern EXPLICIT_CORRECTION = java.util.regex.Pattern.compile(
-            "更正|纠正|改正|改用|改成|改为|换用|换成|换为|不要|别再|不用|不是|禁止|避免|取消|去掉|撤销|替换");
+            "更正|纠正|改正|改用|改成|改为|换用|换成|换为|不要|别再|禁止|避免|取消|去掉|撤销|替换");
     /** 分句边界：否定只作用于它所在的分句。 */
     private static final String CLAUSE_BREAK = "，,。；;！!？?\n：:";
     /** "那个格式""跟之前一样"这类没有说清指什么的指代。 */
@@ -81,19 +86,25 @@ public final class ConversationConstraintProjectorV2 {
             String scopeKey = "CURRENT_TOPIC".equals(next.scope())
                     ? next.scope() + ":" + topicId
                     : next.scope();
-            boolean correction = EXPLICIT_CORRECTION.matcher(text).find();
+            boolean correction = isCorrection(text, detected);
             // 撤回按语义槽位（语言 / 表格 / 结论 / 分点 / 字数 / 引用 / 代码）而不是按 kind：
             // 同一槽位里的取值互斥，"用表格"和"先给结论"这类互补格式可以同时生效。
             // 同 scope 内出现新的 ACTIVE 取值时，上一条立即失效，不要求用户说出关键词。
             // 跨 scope 只有用户明说"更正/改用/换成/不要"才撤回，否则一个话题里的临时要求
             // 会悄悄废掉会话级偏好。否定约束只撤回同一取值的旧约束：
             // "不要用中文"不会撤掉"以后用英文"，而"不要用英文"会。
+            // 同槽位同取值的正向重申只是确认，保留已有（更宽）的约束，不新建更窄的约束。
+            boolean confirmed = false;
             for (int index = active.size() - 1; index >= 0; index--) {
                 Active previous = active.get(index);
                 if (!previous.slot().equals(detected.slot())) continue;
                 if ((previous.forbid() || detected.forbid())
                         && previous.value() != null && detected.value() != null
                         && !previous.value().equals(detected.value())) continue;
+                if (confirms(previous, detected, scopeKey)) {
+                    confirmed = true;
+                    break;
+                }
                 if (!correction && !previous.scopeKey().equals(scopeKey)) continue;
                 Constraint old = output.get(previous.index());
                 output.set(previous.index(), new Constraint(old.id(), old.sourceMessageId(), old.kind(),
@@ -101,6 +112,7 @@ public final class ConversationConstraintProjectorV2 {
                         "REVOKED", next.id()));
                 active.remove(index);
             }
+            if (confirmed) continue;
             output.add(next);
             active.add(new Active(output.size() - 1, detected.slot(), detected.value(),
                     detected.forbid(), scopeKey));
@@ -165,6 +177,37 @@ public final class ConversationConstraintProjectorV2 {
         String id = "constraint-" + digest(message.messageId() + ":" + kind).substring(0, 24);
         return new Detected(new Constraint(id, message.messageId(), kind, scope, ruleText,
                 message.seq(), null, status, null), slot, value, forbid);
+    }
+
+    /**
+     * 这条消息是否在更正之前的说法。除显式更正词外，与目标槽位构成约束形态的否定
+     * （"不用英文""不是用表格"）也算更正；单独的语气词（"这不是重点""不用了"）不算，
+     * 否则一句口语就能把会话级偏好降级成当前话题。
+     */
+    private static boolean isCorrection(String text, Detected detected) {
+        if (EXPLICIT_CORRECTION.matcher(text).find()) return true;
+        return detected.forbid() && detected.value() != null;
+    }
+
+    /**
+     * 同槽位、同取值的正向重申/确认。命中时保留已有约束（包括更宽的 CONVERSATION scope），
+     * 既不新建更窄的约束，也不撤回旧约束："以后用英文"之后的"这不是重点，继续用英文"
+     * 只是确认，不能把会话级偏好降级成当前话题；同 scope 内的同值重申也保持幂等。
+     * 只有取值不同，或用户明说"更正/改用"时才覆盖旧约束。
+     */
+    private static boolean confirms(Active previous, Detected detected, String scopeKey) {
+        if (previous.forbid() || detected.forbid()) return false;
+        if (!hasDistinctValue(detected.slot())) return false;
+        if (previous.value() == null || !previous.value().equals(detected.value())) return false;
+        return previous.scopeKey().equals(scopeKey) || SCOPE_CONVERSATION.equals(previous.scopeKey());
+    }
+
+    /**
+     * 槽位是否有独立取值。语言槽位的取值是"英文/中文"，格式槽位的取值就是槽位本身
+     * （"简短一点"和"详细一点"都落在 format.length），同值判断对格式槽位没有意义。
+     */
+    private static boolean hasDistinctValue(String slot) {
+        return SLOT_LANGUAGE.equals(slot);
     }
 
     /** 最后一处没有被"不要""别""不是""不用""禁止""避免""不"否定的"用某种语言"。 */

@@ -178,11 +178,13 @@ public class ConversationTopicProjectionV2Service {
                         constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
                         ConversationConstraintProjectorV2.RULE_VERSION);
             } else {
+                // 重放时也把 rule_version 拉齐，否则旧行会一直停在插入时的版本。
                 jdbc.update("""
                         update conversation_constraint_v2
-                        set invalid_after_seq = ?, status = ?, superseded_by = ?
+                        set invalid_after_seq = ?, status = ?, superseded_by = ?, rule_version = ?
                         where id = ? and workspace_id = ? and conversation_id = ?
                         """, constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
+                        ConversationConstraintProjectorV2.RULE_VERSION,
                         constraint.id(), workspaceId, conversationId);
             }
         }
