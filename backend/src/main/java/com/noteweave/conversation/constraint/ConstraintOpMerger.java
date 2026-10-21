@@ -20,7 +20,8 @@ import java.util.Objects;
  *   <li>{@code UPDATE}：{@code targetId} 命中 ACTIVE 行时无条件撤回（允许跨 scope，这正是
  *       「以后用英文」→「改用中文」）；新行落在 {@code op.scope}，只有显式的 {@code this-turn}
  *       才收窄，未声明或 {@code current-topic} 时保留旧行的 scope 宽度（见 {@link #updateScope}）。
- *       没有 {@code targetId} 或 id 没命中时退化成 {@code ADD}。</li>
+ *       没有 {@code targetId} 或 id 没命中时退化成 {@code ADD}；若退化后与旧行同槽位同值同 scope，
+ *       那就是重申而不是更正，按 {@code ADD} 的重申规则保留旧行、不新插。</li>
  *   <li>{@code REVOKE}：按 {@code targetId}（或 {@code slot}+{@code value}）撤回，不新增行。</li>
  *   <li>否定约束（{@code slot=negation}）只撤回同 slot 同取值的旧行；没有取值时单独成行，
  *       既不撤回别人，也不被后来的约束撤回。</li>

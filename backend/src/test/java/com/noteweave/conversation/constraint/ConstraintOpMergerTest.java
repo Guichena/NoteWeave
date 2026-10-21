@@ -222,17 +222,40 @@ class ConstraintOpMergerTest {
 
     @Test
     void updateWithoutTargetDegradesToAdd() {
+        // 没有 targetId 的 UPDATE 走 ADD 规则：换值即撤回同槽位同 scope 的旧行并插入新行。
+        // 取值必须与旧行不同——同槽位同值同 scope 的 ADD 是重申，不会新插（见下一个用例）。
+        String englishId = ConstraintIds.of("m1", "language", 0);
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CURRENT_TOPIC)),
+                step("m2", 2, update(ConstraintSlot.LANGUAGE, "中文", ConstraintScope.CURRENT_TOPIC, null))));
+
+        ConversationConstraintProjectorV2.Constraint old = row(rows, englishId);
+        ConversationConstraintProjectorV2.Constraint replacement = row(rows, ConstraintIds.of("m2", "language", 0));
+        assertThat(old.status()).isEqualTo("REVOKED");
+        assertThat(old.invalidAfterSeq()).isEqualTo(2);
+        assertThat(old.supersededBy()).isEqualTo(replacement.id());
+        assertThat(replacement.status()).isEqualTo("ACTIVE");
+        assertThat(replacement.text()).isEqualTo("中文");
+        // 退化成 ADD 后按 op.scope 落库，不再走 UPDATE 的「未声明保留旧宽度」。
+        assertThat(replacement.scope()).isEqualTo("CURRENT_TOPIC");
+    }
+
+    @Test
+    void updateWithoutTargetOnTheSameValueIsRestatement() {
+        // 模型把「重申」误报成无 targetId 的 UPDATE 时，ADD 规则按重申处理：
+        // 保留旧行（id 与 validFromSeq 不变），既不新插也不撤回，避免同一要求出现两行。
         String tableId = ConstraintIds.of("m1", "table", 0);
         List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
                 step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC)),
                 step("m2", 2, update(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC, null))));
 
-        ConversationConstraintProjectorV2.Constraint old = row(rows, tableId);
-        ConversationConstraintProjectorV2.Constraint replacement = row(rows, ConstraintIds.of("m2", "table", 0));
-        assertThat(old.status()).isEqualTo("REVOKED");
-        assertThat(old.invalidAfterSeq()).isEqualTo(2);
-        assertThat(old.supersededBy()).isEqualTo(replacement.id());
-        assertThat(replacement.status()).isEqualTo("ACTIVE");
+        assertThat(rows).singleElement().satisfies(kept -> {
+            assertThat(kept.id()).isEqualTo(tableId);
+            assertThat(kept.status()).isEqualTo("ACTIVE");
+            assertThat(kept.validFromSeq()).isEqualTo(1);
+            assertThat(kept.invalidAfterSeq()).isNull();
+            assertThat(kept.supersededBy()).isNull();
+        });
     }
 
     @Test
