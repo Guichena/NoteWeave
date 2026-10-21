@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.task.TaskService;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -79,11 +80,14 @@ class MemoryConversationExtractionQueueTest {
 
     @Test
     void preferencesAfterTwoThousandCharsReachTheExtractionPrompt() {
-        MemoryConversationExtractionService service = service(mock(JdbcTemplate.class), mock(TaskService.class));
         String filler = "填充".repeat(1_100);
         String preference = "以后回答先给结论再展开";
+        // 模型桩只在提示词里真的出现了这条偏好时才回偏好，提示词被截断就会回空数组
+        MemoryConversationExtractionService service = service(mock(JdbcTemplate.class), mock(TaskService.class),
+                new MemoryExtractionModelStub(Map.of(preference,
+                        "[{\"statement\":\"" + preference + "\",\"category\":\"structure\",\"explicit\":true}]")));
 
-        // 偏好落在 2000 字之后、入队上限 4000 字之内：提示词不再截断，规则提取能看到它
+        // 偏好落在 2000 字之后、入队上限 4000 字之内：提示词不再截断，模型能看到它
         assertThat(service.extractPreferences(filler + "。" + preference, null).preferences())
                 .extracting(MemoryConversationExtractionService.Preference::statement)
                 .containsExactly(preference);
@@ -93,8 +97,16 @@ class MemoryConversationExtractionQueueTest {
     }
 
     private MemoryConversationExtractionService service(JdbcTemplate jdbc, TaskService taskService) {
+        return service(jdbc, taskService, null);
+    }
+
+    private MemoryConversationExtractionService service(JdbcTemplate jdbc, TaskService taskService,
+                                                        MemoryExtractionModelStub modelStub) {
+        if (modelStub != null) {
+            modelStub.enable();
+        }
         return new MemoryConversationExtractionService(jdbc, objectMapper, taskService, null, null, null, null,
-                null, null, null, mock(PlatformTransactionManager.class), "noteweave.memory.extraction", true);
+                modelStub, null, null, mock(PlatformTransactionManager.class), "noteweave.memory.extraction", true);
     }
 
     private JsonNode readJson(String value) {

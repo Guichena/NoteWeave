@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,7 +25,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 从对话中自动提取长期记忆候选。
  * <p>
  * 用户消息在长度范围内都会进入异步任务。任务里先做一次短分类，只有包含回答方式要求或反馈的消息才完整抽取。
- * 模型不可用时退回规则：长期措辞仍按明确偏好处理，太长了、看不懂、别用英文这类隐式反馈单独抽取。
+ * 一条偏好是否算显式记忆（explicit）、是否算对上一条回答的负面反馈（feedback），只由模型输出字段决定，
+ * 不再有关键词正则兜底：模型调用失败、超时或输出不是合法 JSON 时重试一次，仍失败则本轮不抽取、记日志，
+ * 并把任务标成可重试，等既有的重驱入口再跑一次。
  * 与已有记忆等价的信号不再新建一条，而是按会话累加证据。
  * 只提取回答方式上的偏好，资料中的事实不会写入记忆。
  */
@@ -47,23 +48,15 @@ public class MemoryConversationExtractionService {
     private static final int MAX_STATEMENTS = 3;
     private static final int MAX_STATEMENT_CHARS = 200;
     private static final int EXTRACTION_OUTPUT_TOKENS = 900;
+    /** 模型抽取的最多尝试次数：首次失败后只重试一次，仍失败就放弃本轮。 */
+    private static final int MAX_LLM_ATTEMPTS = 2;
+    private static final String RETRY_SUFFIX = "\n上次输出不是合法的 JSON 数组，只输出 JSON 数组，不要解释。";
 
-    /** 规则降级时识别长期要求。它不再决定消息能否入队。 */
-    static final Pattern DURABLE_CUE = Pattern.compile(
-            "以后|今后|往后|之后都|从现在起|从今以后|每次|每一次|一律|总是|始终|一直都?要|默认(用|使用|给|按)"
-                    + "|记住|请记得|不要再|别再|统一(用|使用|称|叫|写)|我(比较|更|很|最|一般|通常)?(喜欢|偏好|习惯)|我倾向于?|我希望你"
-                    + "|\\balways\\b|\\bnever\\b|from now on|\\bremember\\b|\\bprefer\\b",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern DIRECTIVE = Pattern.compile(
-            "用|使用|回答|回复|写|给出?|保持|先|不要|别|避免|放在|列出|控制|称|叫|加上|附上|标注|输出|解释"
-                    + "|\\buse\\b|\\banswer\\b|\\breply\\b|\\bwrite\\b|\\bkeep\\b|\\bavoid\\b|\\bput\\b",
-            Pattern.CASE_INSENSITIVE);
-    private static final Pattern SENTENCE_BREAK = Pattern.compile("[。！？!?\\n；;]+");
-    private static final Pattern LEADING_CUE = Pattern.compile("^(请)?(记住|请记得)[：:，,\\s]*");
-    private static final Pattern FEEDBACK_CUE = Pattern.compile(
-            "太长|太短|太啰嗦|看不懂|听不懂|说人话|简单点|详细点|别用英文|不要用英文|少用英文");
-    /** 判定负面反馈时允许的整条消息长度：只有短句抱怨才算，长消息里的零散措辞不算。 */
-    private static final int MAX_FEEDBACK_MESSAGE_CHARS = 60;
+    static final String METHOD_LLM = "LLM";
+    static final String METHOD_CLASSIFIED_NO = "CLASSIFIED_NO";
+    static final String METHOD_LLM_UNAVAILABLE = "LLM_UNAVAILABLE";
+    static final String METHOD_LLM_FAILED = "LLM_FAILED";
+    static final String RETRY_PHASE = "MEMORY_EXTRACTION_LLM_UNAVAILABLE";
     private static final Set<String> CATEGORIES = Set.of("style", "structure", "terminology", "forbidden", "interaction");
 
     private static final String SYSTEM_PROMPT = """
@@ -250,85 +243,63 @@ public class MemoryConversationExtractionService {
             produced.add(new ExtractedCandidate(candidate.candidateId(), preference.statement(),
                     sourceType(preference), candidate.reviewStatus()));
         }
-        if (applicationFeedback != null) {
-            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent,
-                    dissatisfied(extraction, userContent));
+        // 模型没给出结论时判不了“这一轮是不是不满”，不写跟进反馈，避免把沉默记成接受
+        if (!extraction.retryable() && applicationFeedback != null) {
+            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent, dissatisfied(extraction));
         }
-        completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
-                : "提取到 " + produced.size() + " 条记忆候选", messageId);
+        if (extraction.retryable()) {
+            markTaskForRetry(taskId);
+        } else {
+            completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
+                    : "提取到 " + produced.size() + " 条记忆候选", messageId);
+        }
         return new ExtractionResult(List.copyOf(produced), extraction.method());
     }
 
+    /**
+     * 只由模型决定抽取结果。分类器判 NO、或模型给出空数组，都视为“这条消息没有偏好”，不再回落规则；
+     * 调用失败或输出不是合法 JSON 时重试一次，仍失败则本轮不抽取，由 {@link Extraction#retryable()} 标出待重抽。
+     */
     Extraction extractPreferences(String content, String previousAnswer) {
         String message = promptContent(content);
-        if (llmClient != null && llmClient.isEnabled()) {
-            String decision = MemoryExtractionClassifier.decide(llmClient, message);
-            if ("NO".equals(decision)) {
-                // 分类器只做短判定，会漏掉隐式反馈；判 NO 也按规则再抽一次，method 仍标 RULE
-                log.debug("Memory extraction classifier answered NO; falling back to rules");
+        if (llmClient == null || !llmClient.isEnabled()) {
+            log.warn("Memory extraction skipped: LLM client is not configured");
+            return new Extraction(List.of(), METHOD_LLM_UNAVAILABLE, false);
+        }
+        String decision = MemoryExtractionClassifier.decide(llmClient, message);
+        if ("NO".equals(decision)) {
+            return new Extraction(List.of(), METHOD_CLASSIFIED_NO, false);
+        }
+        if (!"YES".equals(decision)) {
+            log.warn("Memory extraction skipped: classifier is unavailable");
+            return new Extraction(List.of(), METHOD_LLM_UNAVAILABLE, false);
+        }
+        String prompt = extractionPrompt(message, previousAnswer);
+        for (int attempt = 0; attempt < MAX_LLM_ATTEMPTS; attempt++) {
+            try {
+                String output = llmClient.streamChat(SYSTEM_PROMPT, prompt, EXTRACTION_OUTPUT_TOKENS, token -> { });
+                List<Preference> parsed = parse(output);
+                // 空数组是模型的终局回答（“没有符合条件的偏好”），不是失败
+                if (parsed != null) return new Extraction(parsed, METHOD_LLM, false);
+                log.warn("Memory extraction output was not a JSON array (attempt {}/{}); retrying",
+                        attempt + 1, MAX_LLM_ATTEMPTS);
+            } catch (RuntimeException ex) {
+                log.warn("Memory extraction call failed (attempt {}/{}): {}",
+                        attempt + 1, MAX_LLM_ATTEMPTS, ex.getMessage());
             }
-            if ("YES".equals(decision)) {
-                try {
-                    String output = llmClient.streamChat(SYSTEM_PROMPT, extractionPrompt(message, previousAnswer),
-                            EXTRACTION_OUTPUT_TOKENS, token -> { });
-                    List<Preference> parsed = parse(output);
-                    // 空数组不算抽取成功：模型常以 [] 代替“没看懂”，仍回落规则
-                    if (parsed != null && !parsed.isEmpty()) return new Extraction(parsed, "LLM");
-                    log.warn(parsed == null
-                            ? "Memory extraction output was not a JSON array; falling back to rules"
-                            : "Memory extraction output had no preferences; falling back to rules");
-                } catch (RuntimeException ex) {
-                    log.warn("Memory extraction via LLM failed; falling back to rules: {}", ex.getMessage());
-                }
-            }
+            prompt = prompt + RETRY_SUFFIX;
         }
-        return new Extraction(ruleBased(message), "RULE");
-    }
-
-    /** 规则提取：长期措辞视为明确偏好；没有长期措辞的不满说法视为隐式反馈。 */
-    static List<Preference> ruleBased(String message) {
-        List<Preference> preferences = new ArrayList<>();
-        for (String sentence : SENTENCE_BREAK.split(message)) {
-            String trimmed = LEADING_CUE.matcher(sentence.trim()).replaceFirst("").trim();
-            if (trimmed.length() < 4 || !DURABLE_CUE.matcher(sentence).find()
-                    || !DIRECTIVE.matcher(trimmed).find()) continue;
-            preferences.add(new Preference(bound(trimmed, MAX_STATEMENT_CHARS), categorize(trimmed), true));
-            if (preferences.size() == MAX_STATEMENTS) return preferences;
-        }
-        for (String sentence : SENTENCE_BREAK.split(message)) {
-            String trimmed = sentence.trim();
-            if (trimmed.length() < 2 || !FEEDBACK_CUE.matcher(trimmed).find()) continue;
-            if (preferences.stream().anyMatch(item -> item.statement().equals(trimmed))) continue;
-            preferences.add(new Preference(bound(trimmed, MAX_STATEMENT_CHARS), categorize(trimmed), false,
-                    null, null, "FORBID", true));
-            if (preferences.size() == MAX_STATEMENTS) break;
-        }
-        return preferences;
+        log.warn("Memory extraction gave up after {} attempts; no preference is extracted for this round",
+                MAX_LLM_ATTEMPTS);
+        return new Extraction(List.of(), METHOD_LLM_FAILED, true);
     }
 
     /**
-     * 是否算作对上一条回答的负面反馈。只有两种情况算：抽出了 feedback 类偏好；
-     * 或整条消息是一句短的抱怨，且这句话没有抽成可执行偏好。
-     * 「以后回答不要太长」这类带长期措辞的指令只作为偏好，不回头惩罚上一条回答。
+     * 是否算作对上一条回答的负面反馈：只看模型有没有把抽到的偏好标成对已有回答的评价（feedback 字段）。
+     * 不再用关键词判断，避免把「变量名太长」这类描述记成对回答的不满。
      */
-    static boolean dissatisfied(Extraction extraction, String userContent) {
-        if (extraction.preferences().stream().anyMatch(Preference::feedback)) return true;
-        if (userContent == null || userContent.length() > MAX_FEEDBACK_MESSAGE_CHARS) return false;
-        for (String sentence : SENTENCE_BREAK.split(userContent)) {
-            String trimmed = sentence.trim();
-            if (trimmed.isEmpty() || !FEEDBACK_CUE.matcher(trimmed).find()) continue;
-            // 带长期措辞的句子是可执行偏好指令，不针对上一条回答
-            if (DURABLE_CUE.matcher(trimmed).find()) continue;
-            // 已经抽成偏好的句子不再重复算作负面反馈
-            if (extraction.preferences().stream().anyMatch(item -> !item.statement().isEmpty()
-                    && (item.statement().contains(trimmed) || trimmed.contains(item.statement())))) continue;
-            return true;
-        }
-        return false;
-    }
-
-    static String categorize(String statement) {
-        return MemorySlots.categoryOf(statement);
+    static boolean dissatisfied(Extraction extraction) {
+        return extraction.preferences().stream().anyMatch(Preference::feedback);
     }
 
     private List<Preference> parse(String output) {
@@ -500,6 +471,18 @@ public class MemoryConversationExtractionService {
         taskService.completeTask(taskId, "COMPLETED", message, resultRef);
     }
 
+    /**
+     * 本轮没抽到东西是因为模型不可用：不把任务当成功，标成可重试，
+     * 之后可以走既有的重驱入口（{@code TaskService#redriveTask}）再跑一次。
+     */
+    private void markTaskForRetry(String taskId) {
+        if (taskId == null || taskId.isBlank()) return;
+        String status = jdbcTemplate.query("select task_status from task where id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, taskId);
+        if (status == null || !Set.of("PENDING", "RUNNING", "WAITING").contains(status)) return;
+        taskService.failTask(taskId, RETRY_PHASE, "记忆抽取模型不可用，本轮未抽取", RETRY_PHASE, true);
+    }
+
     private static String bound(String value, int maximum) {
         return value.length() <= maximum ? value : value.substring(0, maximum);
     }
@@ -529,7 +512,18 @@ public class MemoryConversationExtractionService {
     private record KnownMemory(String id, String text, String slot, String value, String polarity) {
     }
 
-    record Extraction(List<Preference> preferences, String method) { }
+    /**
+     * 抽取结果。
+     *
+     * @param method    结果来源：LLM、CLASSIFIED_NO、LLM_UNAVAILABLE、LLM_FAILED
+     * @param retryable 本轮因为模型失败没抽成，任务应标为可重试
+     */
+    record Extraction(List<Preference> preferences, String method, boolean retryable) {
+
+        Extraction(List<Preference> preferences, String method) {
+            this(preferences, method, false);
+        }
+    }
 
     public record ExtractedCandidate(String candidateId, String statement, String sourceType, String reviewStatus) { }
 

@@ -9,12 +9,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.Ids;
 import java.lang.reflect.Field;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,6 +37,26 @@ class MemoryApplicationFeedbackContractTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired MemoryConversationExtractionService extractionService;
     @Autowired MemoryApplicationFeedbackService feedbackService;
+    @Autowired MemoryExtractionModelStub modelStub;
+
+    /** 抽取只由模型决定，这里用离线模型桩给出确定输出，不发起任何网络调用。 */
+    @TestConfiguration
+    static class StubModelConfig {
+
+        @Bean
+        @Primary
+        MemoryExtractionModelStub memoryExtractionModelStub() {
+            Map<String, String> outputs = new LinkedHashMap<>();
+            outputs.put("记住：以后回答要简短",
+                    "[{\"statement\":\"以后回答要简短\",\"category\":\"style\",\"explicit\":true}]");
+            outputs.put("记住：术语统一称为缓存",
+                    "[{\"statement\":\"术语统一称为缓存\",\"category\":\"terminology\",\"explicit\":true}]");
+            // 负面反馈由模型的 feedback 字段决定，不再看关键词
+            outputs.put("太长了",
+                    "[{\"statement\":\"太长了\",\"category\":\"style\",\"explicit\":false,\"feedback\":true}]");
+            return new MemoryExtractionModelStub(outputs);
+        }
+    }
 
     @Test
     void ratingFollowsTheLastSubmissionAndContentReasonsDoNotChangeSlots() throws Exception {
@@ -222,13 +246,19 @@ class MemoryApplicationFeedbackContractTest {
                 .content(mapper.writeValueAsString(body)));
     }
 
+    /** 只在抽取这一步打开模型桩：同一次请求里的回答生成仍然走模板回退。 */
     private void consume(String messageId) throws Exception {
         JsonNode payload = mapper.readTree(jdbc.queryForObject(
                 "select payload_json from task_outbox where topic = ? and message_key = ?",
                 String.class, TOPIC, messageId));
-        extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
-                payload.path("message_id").asText(), payload.path("user_id").asText(),
-                payload.path("content").asText());
+        modelStub.enable();
+        try {
+            extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
+                    payload.path("message_id").asText(), payload.path("user_id").asText(),
+                    payload.path("content").asText());
+        } finally {
+            modelStub.disable();
+        }
     }
 
     private String send(String conversationId, String content, String clientRequestId, String regeneratedFrom)
