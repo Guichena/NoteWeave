@@ -5,11 +5,6 @@ export type Workspace = {
   created_at?: string;
 };
 
-export type WorkspaceRetrievalSettings = {
-  workspace_id: string;
-  retrieval_strategy_v2_enabled: boolean;
-};
-
 export type WorkspaceMember = {
   user_id: string;
   display_name: string;

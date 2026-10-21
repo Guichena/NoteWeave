@@ -2,8 +2,6 @@ package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,29 +32,10 @@ class QaWorkspaceRetrievalStrategyContractTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    void workspaceSettingsMustNotChangeTheSingleV2ProfileForNewQaRuns() throws Exception {
-        String workspaceA = createWorkspace("QA strategy A");
-        String workspaceB = createWorkspace("QA strategy B");
-        String conversationA = createConversation(workspaceA);
-        String conversationB = createConversation(workspaceB);
-
-        String initialRunA = sendQa(conversationA, "initial-a");
-        String initialRunB = sendQa(conversationB, "initial-b");
-        assertV2Run(initialRunA);
-        assertV2Run(initialRunB);
-
-        setV2(workspaceA, false);
-        String falseSettingRunA = sendQa(conversationA, "false-setting-a");
-        String unaffectedRunB = sendQa(conversationB, "unaffected-b");
-        assertV2Run(falseSettingRunA);
-        assertV2Run(unaffectedRunB);
-
-        setV2(workspaceA, true);
-        String trueSettingRunA = sendQa(conversationA, "true-setting-a");
-        assertV2Run(trueSettingRunA);
-
-        // A persisted run stays V2 even after a legacy setting write.
-        assertV2Run(initialRunA);
+    void newQaRunsUseTheCurrentRetrievalProfile() throws Exception {
+        String workspaceId = createWorkspace("QA strategy");
+        String conversationId = createConversation(workspaceId);
+        assertCurrentRun(sendQa(conversationId, "current-profile"));
     }
 
     private String createWorkspace(String name) throws Exception {
@@ -92,16 +71,7 @@ class QaWorkspaceRetrievalStrategyContractTest {
         return objectMapper.readTree(response).path("data").path("answer_run_id").asText();
     }
 
-    private void setV2(String workspaceId, boolean enabled) throws Exception {
-        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/retrieval-settings", workspaceId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(Map.of(
-                                "retrieval_strategy_v2_enabled", enabled))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.retrieval_strategy_v2_enabled").value(enabled));
-    }
-
-    private void assertV2Run(String runId) throws Exception {
+    private void assertCurrentRun(String runId) throws Exception {
         String expectedPlanVersion = "qa-weknora-hybrid-v1";
         String expectedProfile = "qa-hybrid-mmr-token-v3";
         String expectedRelevancePolicy = "qa-lexical-sufficiency-v2";

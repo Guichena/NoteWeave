@@ -1649,7 +1649,7 @@ class Phase3NoteWikiContractTest {
                 .path("data").path("workspace_id").asText();
         jdbcTemplate.update("""
                 update workspace
-                set retrieval_strategy_v2_enabled = true, wiki_enabled = false
+                set wiki_enabled = false
                 where id = ?
                 """, workspaceId);
         return workspaceId;
