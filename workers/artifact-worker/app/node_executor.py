@@ -12,6 +12,7 @@ from pydantic import ConfigDict, RootModel
 
 from app.json_repair import parse_json_payload
 from app.node_prompts import resolve_node_prompt_recipe
+from app.execution_heartbeat import ArtifactExecutionSuperseded
 
 
 _NODE_KINDS = frozenset({"LLM_STEP", "RETRIEVE", "VERIFY", "REPAIR", "TOOL"})
@@ -88,6 +89,8 @@ class NodeExecutor:
             output = self._validate_output(handler(projected, node), projected, node)
             trace.update(status="COMPLETED", output_fields=sorted(output))
             return NodeExecutionResult(output, trace)
+        except ArtifactExecutionSuperseded:
+            raise
         except NodeExecutionError as exc:
             exc.trace.update(node_id=trace["node_id"], node_kind=trace["node_kind"],
                 prompt_recipe_id=trace["prompt_recipe_id"], input_fields=trace["input_fields"])
@@ -114,6 +117,9 @@ class NodeExecutor:
                     "inputs": deepcopy(projected),
                     "validation_errors": list(errors) if attempt else [],
                 })
+            except ArtifactExecutionSuperseded:
+                trace["llm_calls"] += _actual_calls(self.llm_client, before)
+                raise
             except Exception:
                 trace["llm_calls"] += _actual_calls(self.llm_client, before)
                 _fail("节点模型调用失败", trace, "ARTIFACT_NODE_LLM_CALL_FAILED")

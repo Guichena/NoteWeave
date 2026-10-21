@@ -37,6 +37,7 @@ from app.models import (
     WritebackPreview,
 )
 from app.skill_graph import execute_skill_graph
+from app.execution_heartbeat import checkpoint_artifact_execution
 from app.error_sanitizer import sanitize_error_message
 from app.custom_mcp_executor import submit_custom_mcp_acquisition_operation
 from app.generation_runtime import ArtifactConfigurationRequiredError
@@ -88,6 +89,7 @@ def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
 
 
 def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    checkpoint_artifact_execution()
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)
@@ -191,6 +193,7 @@ def _run_artifact_task(
     resume_stage: str = "",
     passage_search=None,
 ) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    checkpoint_artifact_execution()
     llm_client = build_default_llm_client()
     has_direct_input = any(str(value).strip() for value in task_input.input_payload.inputs.values())
     if llm_client is None and not task_input.source_scope and not has_direct_input:
@@ -293,10 +296,12 @@ def _run_artifact_task(
     if task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
         return _build_material_only_result(
             task_input, plan, capability_resolution, canonical_content_objects)
+    checkpoint_artifact_execution()
     repaired_sections, node_traces, generation_trace = execute_skill_graph(
         task_input, plan, canonical_content_objects=canonical_content_objects,
         llm_client=llm_client, passage_search=passage_search,
     )
+    checkpoint_artifact_execution()
     if generation_trace is None:
         raise RuntimeError("artifact skill graph did not produce a section draft")
     repaired_checks = [f"章节修复完成：{heading}" for record in
@@ -453,6 +458,7 @@ def _run_artifact_task(
         sections=repaired_sections, markdown=rendered_markdown,
     )
     result.result_payload["content_ir"] = content_ir.model_dump(mode="json")
+    checkpoint_artifact_execution()
     export_trace = export_artifact_if_required(
         task_input=task_input,
         title=artifact_title,
