@@ -231,19 +231,14 @@ class MemoryConversationExtractionModelOnlyTest {
     }
 
     @Test
-    void invalidModelSlotFallsBackToTheModelCategory() {
+    void missingModelSlotFallsBackToTheModelCategory() {
+        // 模型没给 slot（字段缺失）时按它给的 category 兜底；给了但不在白名单里的槽位整批作废，
+        // 见 MemoryExtractionPromptSecurityTest
         ScriptedClient missing = new ScriptedClient("yes",
                 "[{\"statement\":\"以后回答都用中文\",\"category\":\"style\",\"explicit\":true}]");
         assertThat(service(missing).extractPreferences("以后回答都用中文", null).preferences())
                 .singleElement()
                 .satisfies(preference -> assertThat(preference.assignment().slot()).isEqualTo("answer.style"));
-
-        ScriptedClient invalid = new ScriptedClient("yes",
-                "[{\"statement\":\"以后回答先给结论\",\"category\":\"structure\",\"explicit\":true,"
-                        + "\"slot\":\"不是槽位\"}]");
-        assertThat(service(invalid).extractPreferences("以后回答先给结论", null).preferences())
-                .singleElement()
-                .satisfies(preference -> assertThat(preference.assignment().slot()).isEqualTo("format.structure"));
     }
 
     @Test

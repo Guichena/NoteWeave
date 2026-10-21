@@ -89,6 +89,12 @@ final class MemoryExtractionModelStub implements ChatLlmClient {
 
     static String messageOf(String userPrompt) {
         String prompt = userPrompt == null ? "" : userPrompt;
+        // 抽取/分类提示词把正文包在 <user_message> 里：先取围栏内容，再退回旧的「用户消息：」锚点
+        int open = prompt.lastIndexOf(MemoryPromptFence.USER_OPEN);
+        int close = prompt.lastIndexOf(MemoryPromptFence.USER_CLOSE);
+        if (open >= 0 && close > open) {
+            return prompt.substring(open + MemoryPromptFence.USER_OPEN.length(), close).trim();
+        }
         int index = prompt.lastIndexOf(MESSAGE_MARKER);
         return index < 0 ? prompt : prompt.substring(index + MESSAGE_MARKER.length());
     }
