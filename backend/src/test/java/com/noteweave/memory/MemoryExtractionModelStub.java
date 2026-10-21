@@ -14,8 +14,11 @@ import java.util.function.Consumer;
  */
 final class MemoryExtractionModelStub implements ChatLlmClient {
 
-    /** 分类器输出上限，与抽取输出的上限不同，用来区分两次模型调用。 */
-    static final int CLASSIFIER_TOKENS = 10;
+    /**
+     * 分类器输出上限，与抽取输出的上限不同，用来区分两次模型调用。
+     * 直接跟随分类器的真实预算，避免预算调整后桩把分类调用当成抽取调用。
+     */
+    static final int CLASSIFIER_TOKENS = MemoryExtractionClassifier.MAX_OUTPUT_TOKENS;
     /** 抽取提示词的开头，用来区分抽取调用和别的模型调用。 */
     static final String EXTRACTION_PROMPT_HEAD = "你从用户的一条消息中找出用户希望助手长期遵守的表达偏好";
     static final String MESSAGE_MARKER = "用户消息：\n";
