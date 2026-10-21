@@ -23,6 +23,17 @@ public class MemoryConsolidationService {
     private static final String MERGE_PROMPT = """
             判断下面两条记忆是否在说同一条回答偏好。
             只输出 JSON：{"merge": true} 或 {"merge": false}。不要解释。""";
+    /**
+     * 单次判定的输出上限。
+     * <p>
+     * 结论只是一个短 JSON，但推理模型会先把预算花在 {@code reasoning_content} 上：
+     * 上限太小（例如 40）时推理阶段就耗尽预算，流正常结束（带 finish_reason）却没有任何 content，
+     * 客户端于是抛「LLM stream completed without content」，合并判定永远失败。
+     * 这里与 {@code MemoryExtractionClassifier} 取同一量级。
+     */
+    static final int MAX_OUTPUT_TOKENS = 600;
+    /** 与记忆抽取一致：输出不合规只重试一次，仍不合规就不合并。 */
+    private static final int MAX_ATTEMPTS = 2;
     private static final int MERGE_BATCH_SIZE = 40;
     private static final Timestamp MERGE_CURSOR_ORIGIN = Timestamp.from(Instant.EPOCH);
     private static final String MERGE_CURSOR_ORIGIN_ID = "";
@@ -145,14 +156,19 @@ public class MemoryConsolidationService {
         return merged;
     }
 
-    private Boolean decideMerge(String left, String right) {
+    Boolean decideMerge(String left, String right) {
         String user = "记忆一：\n" + left + "\n记忆二：\n" + right;
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             try {
-                String output = llmClient.streamChat(MERGE_PROMPT, user, 40, token -> { });
+                String output = llmClient.streamChat(MERGE_PROMPT, user, MAX_OUTPUT_TOKENS, token -> { });
                 Boolean parsed = parseMerge(output);
                 if (parsed != null) {
                     return parsed;
+                }
+                if (output == null || output.isBlank()) {
+                    // 推理模型把预算全花在 reasoning_content 上时 content 为空，按调用失败重试一次
+                    log.warn("Memory consolidation judge returned empty content (attempt {}/{})",
+                            attempt + 1, MAX_ATTEMPTS);
                 }
                 user = user + "\n上次输出不合规，只输出 JSON。";
             } catch (RuntimeException ex) {

@@ -62,9 +62,51 @@ class TopicBoundaryJudgeTest {
         assertThat(client.prompts.get(1)).contains("调用失败");
     }
 
+    @Test
+    void judgeBudgetIsLargeEnoughForReasoningModels() {
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("{\"decision\":\"SAME\"}");
+
+        TopicBoundaryJudge.judge("当前消息", client);
+
+        // 推理模型会先把预算花在 reasoning_content 上，预算太小就只会拿到空 content
+        assertThat(client.requestedTokens).containsExactly(TopicBoundaryJudge.MAX_OUTPUT_TOKENS);
+        assertThat(TopicBoundaryJudge.MAX_OUTPUT_TOKENS).isGreaterThanOrEqualTo(512);
+    }
+
+    @Test
+    void emptyContentIsTreatedAsFailureAndRetriedOnce() {
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("");
+        client.outputs.add("{\"decision\":\"NEW\"}");
+
+        TopicBoundaryJudge.Decision decision = TopicBoundaryJudge.judge("当前消息", client);
+
+        assertThat(decision.decision()).isEqualTo("NEW");
+        assertThat(decision.skipped()).isFalse();
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(client.prompts.get(1)).contains("不合规");
+        // 重试不再压缩预算，否则推理模型仍然只会吐 reasoning_content
+        assertThat(client.requestedTokens).containsOnly(TopicBoundaryJudge.MAX_OUTPUT_TOKENS);
+    }
+
+    @Test
+    void persistentEmptyContentStaysNotRun() {
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("");
+        client.outputs.add("");
+
+        TopicBoundaryJudge.Decision decision = TopicBoundaryJudge.judge("当前消息", client);
+
+        assertThat(decision.skipped()).isTrue();
+        assertThat(decision.degradationReason()).isEqualTo(TopicBoundaryJudge.NOT_RUN);
+        assertThat(client.calls).isEqualTo(2);
+    }
+
     private static final class ScriptedClient implements ChatLlmClient {
         private final List<String> outputs = new ArrayList<>();
         private final List<String> prompts = new ArrayList<>();
+        private final List<Integer> requestedTokens = new ArrayList<>();
         private int calls;
         private boolean enabled = true;
 
@@ -73,6 +115,7 @@ class TopicBoundaryJudgeTest {
                                   Consumer<String> onToken) {
             calls++;
             prompts.add(userPrompt);
+            requestedTokens.add(maximumOutputTokens);
             if (outputs.isEmpty()) {
                 return "";
             }

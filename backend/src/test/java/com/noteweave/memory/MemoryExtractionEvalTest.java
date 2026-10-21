@@ -46,11 +46,68 @@ class MemoryExtractionEvalTest {
             assertThat(client.extractionCalls).as(caseId + ": 理想输出一次通过，不触发重试").isEqualTo(1);
             assertPreferences(caseId, extraction, expected);
         }
-        // 点名用例必须在集子里：记忆/反馈的三条判定各自对应一个明确的期望。
+        // 点名用例必须在集子里：记忆/反馈的判定各自对应一个明确的期望。
         assertThat(caseIds).contains(
                 "remember-short-answers-is-a-preference-not-feedback",
                 "explicit-memory-question-is-not-a-memory",
-                "variable-name-too-long-is-not-user-feedback");
+                "variable-name-too-long-is-not-user-feedback",
+                "code-bug-is-not-answer-format-feedback",
+                "not-too-verbose-is-the-length-slot",
+                "short-answers-is-the-length-slot",
+                "thanks-thats-all-is-positive-feedback");
+    }
+
+    /** 「别太啰嗦」与「回答要简短」是同一个长度槽位的正反两种说法。 */
+    @Test
+    void bothWordingVariantsLandInTheAnswerLengthSlot() throws Exception {
+        JsonNode tooVerbose = evalCase("not-too-verbose-is-the-length-slot");
+        JsonNode concise = evalCase("short-answers-is-the-length-slot");
+
+        assertThat(tooVerbose.path("expected").path("slot").asText()).isEqualTo("answer.length");
+        assertThat(concise.path("expected").path("slot").asText()).isEqualTo("answer.length");
+        // 槽位相同，极性相反：一个禁止啰嗦，一个要求简短
+        assertThat(tooVerbose.path("expected").path("polarity").asText()).isEqualTo("FORBID");
+        assertThat(concise.path("expected").path("polarity").asText()).isEqualTo("REQUIRE");
+    }
+
+    /**
+     * 反馈判断的理想输出同样由 fixture 给出：CI 回放后断言模型输出被如何理解。
+     * 「谢谢，就这样」是正面反馈；「变量名太长」「这段代码有 bug」都不是对上一条回答的反馈。
+     */
+    @Test
+    void idealFeedbackJudgmentsProduceTheExpectedPolarityAndAspect() throws Exception {
+        JsonNode root = fixture();
+        List<String> judgedCaseIds = new ArrayList<>();
+        for (JsonNode evalCase : root.path("cases")) {
+            JsonNode expected = evalCase.path("expected").path("judgment");
+            if (expected.isMissingNode() || expected.isNull()) {
+                continue;
+            }
+            String caseId = evalCase.path("id").asText();
+            judgedCaseIds.add(caseId);
+            String idealJudgment = MAPPER.writeValueAsString(evalCase.path("ideal_judgment"));
+
+            MemoryFeedbackAspectJudge.Judgment judgment = MemoryFeedbackAspectJudge.judge(
+                    evalCase.path("message").asText(), new JudgmentClient(idealJudgment), MAPPER);
+
+            assertThat(judgment.degradationReason()).as(caseId + ": 理想输出必须是合法判断").isNull();
+            assertThat(judgment.feedback()).as(caseId)
+                    .isEqualTo(expected.path("feedback").asBoolean());
+            assertThat(judgment.polarity()).as(caseId)
+                    .isEqualTo(expected.path("polarity").asText());
+            if (expected.has("aspect")) {
+                assertThat(judgment.aspect()).as(caseId).isEqualTo(expected.path("aspect").asText());
+            }
+            if (expected.has("aspect_not")) {
+                // 例如「这段代码有 bug」说的是代码本身，不能判成对回答格式的反馈
+                assertThat(judgment.aspect()).as(caseId)
+                        .isNotEqualTo(expected.path("aspect_not").asText());
+            }
+        }
+        assertThat(judgedCaseIds).contains(
+                "thanks-thats-all-is-positive-feedback",
+                "variable-name-too-long-is-not-user-feedback",
+                "code-bug-is-not-answer-format-feedback");
     }
 
     /** fixture 自身也要说得通：条数与理想输出一致，每条都有 statement，最多 3 条。 */
@@ -71,6 +128,18 @@ class MemoryExtractionEvalTest {
             }
             for (JsonNode preference : ideal) {
                 assertThat(preference.path("statement").asText()).as(caseId + ": statement 不能为空").isNotBlank();
+            }
+            JsonNode judgment = expected.path("judgment");
+            if (!judgment.isMissingNode() && !judgment.isNull()) {
+                JsonNode idealJudgment = evalCase.path("ideal_judgment");
+                assertThat(idealJudgment.isObject())
+                        .as(caseId + ": 有 judgment 期望就必须给出 ideal_judgment").isTrue();
+                assertThat(idealJudgment.path("feedback").asBoolean())
+                        .as(caseId + ": ideal_judgment 与期望的 feedback 不一致")
+                        .isEqualTo(judgment.path("feedback").asBoolean());
+                assertThat(idealJudgment.path("polarity").asText())
+                        .as(caseId + ": ideal_judgment 与期望的 polarity 不一致")
+                        .isEqualTo(judgment.path("polarity").asText());
             }
         }
     }
@@ -107,6 +176,15 @@ class MemoryExtractionEvalTest {
         return previous.isNull() || previous.isMissingNode() ? null : previous.asText();
     }
 
+    private static JsonNode evalCase(String caseId) throws Exception {
+        for (JsonNode evalCase : fixture().path("cases")) {
+            if (caseId.equals(evalCase.path("id").asText())) {
+                return evalCase;
+            }
+        }
+        throw new AssertionError("评测集里找不到用例 " + caseId);
+    }
+
     private static MemoryConversationExtractionService service(ChatLlmClient client) {
         return new MemoryConversationExtractionService(
                 mock(JdbcTemplate.class), MAPPER, mock(TaskService.class),
@@ -139,6 +217,21 @@ class MemoryExtractionEvalTest {
             }
             extractionCalls++;
             return extractionOutput;
+        }
+
+        @Override
+        public boolean isEnabled() {
+            return true;
+        }
+    }
+
+    /** 反馈判断的模型桩：原样返回 fixture 里的 ideal_judgment，不发网络请求。 */
+    private record JudgmentClient(String output) implements ChatLlmClient {
+
+        @Override
+        public String streamChat(String systemPrompt, String userPrompt, int maximumOutputTokens,
+                                 Consumer<String> onToken) {
+            return output;
         }
 
         @Override

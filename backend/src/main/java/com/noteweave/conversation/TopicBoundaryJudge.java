@@ -23,6 +23,17 @@ final class TopicBoundaryJudge {
             SAME 表示与紧邻的上一个话题相同。NEW 表示确定是新话题。RETURN 表示回到更早的某个话题，并给出 topic_index。
             topic_index 从 0 开始，只统计更早且不同于当前话题的话题，按出现顺序编号。
             不要输出其他文字。""";
+    /**
+     * 单次调用的输出上限。
+     * <p>
+     * 结论只是一个短 JSON，但推理模型会先把预算花在 {@code reasoning_content} 上：
+     * 上限太小（例如 120）时推理阶段就耗尽预算，流正常结束（带 finish_reason）却没有任何 content，
+     * 客户端于是抛「LLM stream completed without content」，边界复核永远跑不出结论。
+     * 这里与 {@code MemoryExtractionClassifier} 取同一量级。
+     */
+    static final int MAX_OUTPUT_TOKENS = 600;
+    /** 与记忆抽取一致：调用失败或输出不合规只重试一次，仍失败就保持未复核。 */
+    private static final int MAX_ATTEMPTS = 2;
 
     private TopicBoundaryJudge() {
     }
@@ -32,12 +43,16 @@ final class TopicBoundaryJudge {
             return Decision.unavailable();
         }
         String user = userPrompt == null ? "" : userPrompt;
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             try {
-                String output = client.streamChat(PROMPT, user, 120, token -> { });
+                String output = client.streamChat(PROMPT, user, MAX_OUTPUT_TOKENS, token -> { });
                 Decision parsed = parse(output);
                 if (parsed != null) {
                     return parsed;
+                }
+                if (output == null || output.isBlank()) {
+                    // 推理模型把预算全花在 reasoning_content 上时 content 为空，按调用失败重试一次
+                    log.warn("话题边界复核返回空内容 (attempt {}/{})", attempt + 1, MAX_ATTEMPTS);
                 }
                 user = user + "\n上次输出不合规，只输出 JSON，decision 取 SAME、NEW、RETURN。RETURN 还要给出 topic_index。";
             } catch (RuntimeException ex) {
