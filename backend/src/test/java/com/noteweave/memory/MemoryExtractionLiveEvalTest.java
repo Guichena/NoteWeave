@@ -29,9 +29,10 @@ import org.springframework.transaction.PlatformTransactionManager;
  * 可用 {@code NOTEWEAVE_LLM_ENDPOINT}/{@code NOTEWEAVE_LLM_MODEL}/{@code NOTEWEAVE_LLM_API_KEY}
  * 或同名 {@code -Dnoteweave.live.llm.*} 覆盖；密钥永远不会被打印。
  * <p>
- * 判定看四件事：抽到几条偏好、explicit、feedback、以及链路据此判定的 {@code dissatisfied}；
+ * 判定看三件事：抽到几条偏好、explicit、feedback；
  * 偏好条数允许 fixture 给出 {@code preference_count_max}（例如「变量名太长」记不记都行，
- * 但不能记成负面反馈）。slot/polarity 的归类差异不影响 live 判定，那部分由离线评测按理想输出精确断言。
+ * 但不能记成负面反馈）。写不写跟进反馈由 {@link MemoryFeedbackAspectJudge} 的独立判定决定。
+ * slot/polarity 的归类差异不影响 live 判定，那部分由离线评测按理想输出精确断言。
  * 模型调用失败（{@code LLM_FAILED}）或不可用（{@code LLM_UNAVAILABLE}）一律记该例失败，
  * 不能用「本轮没抽到」冒充正确答案。
  * 分数只报告，不因得分低而失败；设置 {@code -Dnoteweave.live.llm.min-score=0.8} 后才按及格线断言。
@@ -64,7 +65,6 @@ class MemoryExtractionLiveEvalTest {
                     .anyMatch(MemoryConversationExtractionService.Preference::feedback);
             boolean allExplicit = preferences.stream()
                     .allMatch(MemoryConversationExtractionService.Preference::explicit);
-            boolean dissatisfied = MemoryConversationExtractionService.dissatisfied(extraction);
 
             JsonNode expected = evalCase.path("expected");
             boolean modelAnswered = !MemoryConversationExtractionService.METHOD_LLM_FAILED.equals(extraction.method())
@@ -73,8 +73,7 @@ class MemoryExtractionLiveEvalTest {
             int maxCount = expected.has("preference_count_max")
                     ? expected.path("preference_count_max").asInt() : minCount;
             boolean pass = modelAnswered
-                    && count >= minCount && count <= maxCount
-                    && dissatisfied == expected.path("dissatisfied").asBoolean();
+                    && count >= minCount && count <= maxCount;
             if (expected.has("all_explicit")) {
                 pass &= allExplicit == expected.path("all_explicit").asBoolean();
             }
@@ -87,8 +86,7 @@ class MemoryExtractionLiveEvalTest {
             // 只打用例 id 与判定结果：不含消息正文、提示词与密钥。
             System.out.println((pass ? "PASS " : "FAIL ") + caseId + " count=" + count
                     + " method=" + extraction.method()
-                    + " explicit=" + allExplicit + " feedback=" + anyFeedback
-                    + " dissatisfied=" + dissatisfied);
+                    + " explicit=" + allExplicit + " feedback=" + anyFeedback);
         }
 
         double score = total == 0 ? 0.0 : (double) passed / total;

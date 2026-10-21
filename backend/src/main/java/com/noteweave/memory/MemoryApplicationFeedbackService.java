@@ -36,6 +36,17 @@ public class MemoryApplicationFeedbackService {
     static final String SIGNAL_FOLLOW_UP = "FOLLOW_UP";
     static final String TARGET_MESSAGE = "CONVERSATION_MESSAGE";
 
+    /**
+     * 跟进反馈的处理结果：写接受、写负面，或这一轮不写。
+     * {@link #RETRYABLE} 表示模型没给出可用结论，本轮跳过并沿用记忆抽取的可重试标记。
+     */
+    public enum FollowUpResult {
+        ACCEPTED,
+        NEGATIVE,
+        SKIPPED,
+        RETRYABLE
+    }
+
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final MemoryOutcomePolicy outcomePolicy;
@@ -145,43 +156,75 @@ public class MemoryApplicationFeedbackService {
                 null, 1.0, null, null, null, sourceRef, false);
     }
 
+    /**
+     * 下一轮消息算不算跟进反馈、正/负/中性、针对哪个方面，全部由模型给出（见
+     * {@link MemoryFeedbackAspectJudge}），这里只按模型结论写接受、写负面，或这一轮不写。
+     * 模型没给出可用结论时本轮跳过，由调用方把任务标成可重试。
+     */
     @Transactional
-    public void recordFollowUp(String workspaceId, String userMessageId, String userContent, boolean dissatisfied) {
+    public FollowUpResult recordFollowUp(String workspaceId, String userMessageId, String userContent) {
         if (!enabled || userMessageId == null || userMessageId.isBlank()) {
-            return;
+            return FollowUpResult.SKIPPED;
         }
         String sourceRef = "follow-up:" + userMessageId;
         if (sourceExists(workspaceId, sourceRef)) {
-            return;
+            return FollowUpResult.SKIPPED;
         }
         String assistantMessageId = previousAssistantId(workspaceId, userMessageId);
         if (assistantMessageId == null) {
-            return;
+            return FollowUpResult.SKIPPED;
         }
         List<UsageRow> usages = loadUsages(workspaceId, TARGET_MESSAGE, assistantMessageId);
         if (usages.isEmpty()) {
-            return;
+            return FollowUpResult.SKIPPED;
         }
-        if (!dissatisfied) {
+        // 模型没配置时判断永远做不了，属于常态：跳过这一轮，不标可重试
+        if (!aspectJudge.available()) {
+            return FollowUpResult.SKIPPED;
+        }
+        MemoryFeedbackAspectJudge.Judgment judgment = aspectJudge.judge(userContent);
+        FollowUpResult result = followUpResult(judgment);
+        if (result == FollowUpResult.SKIPPED || result == FollowUpResult.RETRYABLE) {
+            return result;
+        }
+        if (result == FollowUpResult.ACCEPTED) {
             List<UsageRow> eligible = usages.stream().filter(row -> !alreadySignaled(row)).toList();
             if (eligible.isEmpty()) {
-                return;
+                return FollowUpResult.SKIPPED;
             }
             apply(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, eligible, "ACCEPTED",
                     null, 0.5, null, null, null, sourceRef, false);
-            return;
+            return FollowUpResult.ACCEPTED;
         }
-        MemoryFeedbackAspectJudge.Judgment judgment = aspectJudge.judge(userContent);
         List<UsageRow> selected = select(usages, "NEGATIVE", judgment.aspect());
         String degradation = degradation(usages, selected, "NEGATIVE", judgment);
         if (selected.isEmpty()) {
             insertAnswerLevel(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, "NEGATIVE",
                     judgment.aspect(), trimNote(userContent), degradation, sourceRef);
-            return;
+            return FollowUpResult.NEGATIVE;
         }
         apply(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, selected, "NEGATIVE",
                 null, updateWeight("NEGATIVE", judgment.aspect()), judgment.aspect(), trimNote(userContent),
                 degradation, sourceRef, betaFor("NEGATIVE", judgment.aspect()));
+        return FollowUpResult.NEGATIVE;
+    }
+
+    /**
+     * 代码只按模型结论分支：模型没给出结论→本轮跳过并标可重试；
+     * 不是对上一条回答的反馈或中性→不写；认可→写接受，不满→写负面。
+     */
+    static FollowUpResult followUpResult(MemoryFeedbackAspectJudge.Judgment judgment) {
+        if (judgment.notJudged()) {
+            return FollowUpResult.RETRYABLE;
+        }
+        if (!judgment.feedback()) {
+            return FollowUpResult.SKIPPED;
+        }
+        return switch (judgment.polarity()) {
+            case MemoryFeedbackAspectJudge.POLARITY_POSITIVE -> FollowUpResult.ACCEPTED;
+            case MemoryFeedbackAspectJudge.POLARITY_NEGATIVE -> FollowUpResult.NEGATIVE;
+            default -> FollowUpResult.SKIPPED;
+        };
     }
 
     /**

@@ -1,6 +1,6 @@
 {
   "schema_version": "memory-extraction-eval-v1",
-  "annotation_note": "记忆/反馈抽取的模型侧评测集：偏好、explicit 与 feedback 只由模型输出决定，没有关键词正则兜底。每个 case 的输入是「上一条助手回答（previous_answer，可为 null）+ 这条用户消息（message）」，也就是抽取任务的真实输入形状；ideal_output 是「理想模型输出」，CI 用 stub 客户端原样回放，live 测试让真实模型自己回答。expected.preference_count 是 CI 回放理想输出时的精确条数；preference_count_max 是 live 允许的上限（缺省等于 preference_count，只用于「记不记这条都行、但不能记成负面反馈」的用例）；all_explicit 表示抽到的每条偏好 explicit 都等于该值（0 条时恒成立）；any_feedback 表示是否存在 feedback=true 的偏好；dissatisfied 是链路据此判定的「对上一轮回答不满」，决定是否写跟进反馈。",
+  "annotation_note": "记忆/反馈抽取的模型侧评测集：偏好、explicit 与 feedback 只由模型输出决定，没有关键词正则兜底。每个 case 的输入是「上一条助手回答（previous_answer，可为 null）+ 这条用户消息（message）」，也就是抽取任务的真实输入形状；ideal_output 是「理想模型输出」，CI 用 stub 客户端原样回放，live 测试让真实模型自己回答。expected.preference_count 是 CI 回放理想输出时的精确条数；preference_count_max 是 live 允许的上限（缺省等于 preference_count，只用于「记不记这条都行、但不能记成负面反馈」的用例）；all_explicit 表示抽到的每条偏好 explicit 都等于该值（0 条时恒成立）；any_feedback 表示是否存在 feedback=true 的偏好；dissatisfied 只是人工记录该消息是否在抱怨上一轮回答：写不写跟进反馈改由 MemoryFeedbackAspectJudge 的独立模型判定（正/负/中性），CI 不再断言该字段。",
   "cases": [
     {
       "id": "remember-short-answers-is-a-preference-not-feedback",

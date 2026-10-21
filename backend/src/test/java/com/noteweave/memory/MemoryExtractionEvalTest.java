@@ -17,11 +17,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 记忆/反馈评测集的离线部分：stub 模型回放 fixture 里的「理想输出」，走真实的抽取方法
- * （分类器 → 抽取 → 解析 → 负面反馈判定），不发网络请求、不依赖 Spring 上下文。
+ * （分类器 → 抽取 → 解析），不发网络请求、不依赖 Spring 上下文。
  * <p>
- * 断言的是模型输出被如何理解：抽到几条偏好、explicit 与 feedback 字段、以及链路据此判定的
- * {@code dissatisfied}（决定是否写「对上一轮回答不满」的跟进反馈）。这三个字段都只由模型决定，
- * 没有关键词正则兜底，所以 fixture 就是行为契约。
+ * 断言的是模型输出被如何理解：抽到几条偏好、explicit 与 feedback 字段。
+ * 这些字段都只由模型决定，没有关键词正则兜底，所以 fixture 就是行为契约；
+ * 写不写跟进反馈由 {@link MemoryFeedbackAspectJudge} 的独立判定决定，不在这里断言。
  */
 class MemoryExtractionEvalTest {
 
@@ -92,11 +92,6 @@ class MemoryExtractionEvalTest {
             assertThat(anyFeedback).as(caseId + ": feedback 只由模型字段决定")
                     .isEqualTo(expected.path("any_feedback").asBoolean());
         }
-        // dissatisfied 是链路真正用来决定「写不写跟进反馈」的判定，必须与 feedback 字段一致。
-        assertThat(MemoryConversationExtractionService.dissatisfied(extraction))
-                .as(caseId + ": 负面反馈判定")
-                .isEqualTo(expected.path("dissatisfied").asBoolean());
-
         if (!preferences.isEmpty() && expected.has("slot")) {
             assertThat(preferences.get(0).assignment().slot()).as(caseId)
                     .isEqualTo(expected.path("slot").asText());

@@ -25,9 +25,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 从对话中自动提取长期记忆候选。
  * <p>
  * 用户消息在长度范围内都会进入异步任务。任务里先做一次短分类，只有包含回答方式要求或反馈的消息才完整抽取。
- * 一条偏好的槽位、是否算显式记忆（explicit）、是否算对上一条回答的负面反馈（feedback），只由模型输出字段决定，
+ * 一条偏好的槽位、是否算显式记忆（explicit）、是否算对已有回答的评价（feedback），只由模型输出字段决定，
  * 不再有关键词正则兜底：模型调用失败、超时或输出不是合法 JSON 时重试一次，仍失败则本轮不抽取、记日志，
  * 并把任务标成可重试，等既有的重驱入口再跑一次。
+ * 下一轮消息是不是跟进反馈、正/负/中性、针对哪个方面同样只由模型判断（{@link MemoryFeedbackAspectJudge}），
+ * 模型没给出结论时这一轮不写反馈，也按可重试处理。
  * 与已有记忆等价的信号不再新建一条，而是按会话累加证据。
  * 只提取回答方式上的偏好，资料中的事实不会写入记忆。
  */
@@ -248,11 +250,13 @@ public class MemoryConversationExtractionService {
             produced.add(new ExtractedCandidate(candidate.candidateId(), preference.statement(),
                     sourceType(preference), candidate.reviewStatus()));
         }
-        // 模型没给出结论时判不了“这一轮是不是不满”，不写跟进反馈，避免把沉默记成接受
-        if (!extraction.retryable() && applicationFeedback != null) {
-            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent, dissatisfied(extraction));
+        // 跟进反馈的正/负/中性只由模型判断；模型没给出结论时本轮跳过，并把任务标成可重试
+        boolean retryable = extraction.retryable();
+        if (!retryable && applicationFeedback != null) {
+            retryable = applicationFeedback.recordFollowUp(workspaceId, messageId, userContent)
+                    == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
         }
-        if (extraction.retryable()) {
+        if (retryable) {
             markTaskForRetry(taskId);
         } else {
             completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
@@ -297,14 +301,6 @@ public class MemoryConversationExtractionService {
         log.warn("Memory extraction gave up after {} attempts; no preference is extracted for this round",
                 MAX_LLM_ATTEMPTS);
         return new Extraction(List.of(), METHOD_LLM_FAILED, true);
-    }
-
-    /**
-     * 是否算作对上一条回答的负面反馈：只看模型有没有把抽到的偏好标成对已有回答的评价（feedback 字段）。
-     * 不再用关键词判断，避免把「变量名太长」这类描述记成对回答的不满。
-     */
-    static boolean dissatisfied(Extraction extraction) {
-        return extraction.preferences().stream().anyMatch(Preference::feedback);
     }
 
     private List<Preference> parse(String output) {
@@ -478,7 +474,7 @@ public class MemoryConversationExtractionService {
     }
 
     /**
-     * 本轮没抽到东西是因为模型不可用：不把任务当成功，标成可重试，
+     * 本轮没跑成是因为模型没给出结论（抽取失败，或跟进反馈判断失败）：不把任务当成功，标成可重试，
      * 之后可以走既有的重驱入口（{@code TaskService#redriveTask}）再跑一次。
      */
     private void markTaskForRetry(String taskId) {
@@ -486,7 +482,7 @@ public class MemoryConversationExtractionService {
         String status = jdbcTemplate.query("select task_status from task where id = ?",
                 rs -> rs.next() ? rs.getString(1) : null, taskId);
         if (status == null || !Set.of("PENDING", "RUNNING", "WAITING").contains(status)) return;
-        taskService.failTask(taskId, RETRY_PHASE, "记忆抽取模型不可用，本轮未抽取", RETRY_PHASE, true);
+        taskService.failTask(taskId, RETRY_PHASE, "模型不可用，本轮未完成记忆处理", RETRY_PHASE, true);
     }
 
     private static String bound(String value, int maximum) {

@@ -2,8 +2,10 @@ package com.noteweave.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -163,24 +165,52 @@ class MemoryConversationExtractionModelOnlyTest {
     }
 
     @Test
-    void feedbackFieldAloneDecidesWhetherTheAnswerWasDisliked() {
-        MemoryConversationExtractionService.Extraction complaint =
-                new MemoryConversationExtractionService.Extraction(List.of(
-                        new MemoryConversationExtractionService.Preference(
-                                "太长了", "style", false, null, null, "FORBID", true)), "LLM");
-        assertThat(MemoryConversationExtractionService.dissatisfied(complaint)).isTrue();
+    void followUpJudgmentFailureSkipsTheFeedbackAndMarksTheTaskRetryable() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        TaskService taskService = mock(TaskService.class);
+        MemoryApplicationFeedbackService feedback = mock(MemoryApplicationFeedbackService.class);
+        stubJdbc(jdbc);
+        // 反馈判断模型没给出结论：这一轮不写反馈，任务标成可重试
+        when(feedback.recordFollowUp(eq("ws-1"), eq("msg-1"), isNull()))
+                .thenReturn(MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE);
 
-        // 显式长期偏好即使谈长度也不是对上一轮的不满
-        MemoryConversationExtractionService.Extraction instruction =
-                new MemoryConversationExtractionService.Extraction(List.of(
-                        new MemoryConversationExtractionService.Preference("回答不要过长", "style", true)), "LLM");
-        assertThat(MemoryConversationExtractionService.dissatisfied(instruction)).isFalse();
+        MemoryConversationExtractionService.ExtractionResult result = service(jdbc, taskService, feedback)
+                .persistExtraction("task-1", "ws-1", "msg-1", "user-1",
+                        new MemoryConversationExtractionService.Extraction(
+                                List.of(), MemoryConversationExtractionService.METHOD_LLM));
 
-        // 模型什么都没抽出来时不再按关键词猜负面反馈
-        assertThat(MemoryConversationExtractionService.dissatisfied(new MemoryConversationExtractionService.Extraction(
-                List.of(), "LLM"))).isFalse();
-        assertThat(MemoryConversationExtractionService.dissatisfied(new MemoryConversationExtractionService.Extraction(
-                List.of(), MemoryConversationExtractionService.METHOD_CLASSIFIED_NO))).isFalse();
+        assertThat(result.candidates()).isEmpty();
+        verify(feedback).recordFollowUp("ws-1", "msg-1", null);
+        verify(taskService).failTask("task-1", MemoryConversationExtractionService.RETRY_PHASE,
+                "模型不可用，本轮未完成记忆处理", MemoryConversationExtractionService.RETRY_PHASE, true);
+        verify(taskService, never()).completeTask(anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void followUpJudgmentSuccessLetsTheTaskComplete() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        TaskService taskService = mock(TaskService.class);
+        MemoryApplicationFeedbackService feedback = mock(MemoryApplicationFeedbackService.class);
+        stubJdbc(jdbc);
+        when(feedback.recordFollowUp(eq("ws-1"), eq("msg-1"), isNull()))
+                .thenReturn(MemoryApplicationFeedbackService.FollowUpResult.ACCEPTED);
+
+        service(jdbc, taskService, feedback).persistExtraction("task-1", "ws-1", "msg-1", "user-1",
+                new MemoryConversationExtractionService.Extraction(
+                        List.of(), MemoryConversationExtractionService.METHOD_LLM));
+
+        verify(feedback).recordFollowUp("ws-1", "msg-1", null);
+        verify(taskService).completeTask("task-1", "COMPLETED", "没有发现需要长期记住的偏好", "msg-1");
+        verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+    }
+
+    /** 任务与消息查询的最小 JDBC 桩：没有已抽过的信号、没有已知记忆，任务当前是 RUNNING。 */
+    private void stubJdbc(JdbcTemplate jdbc) {
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(Object[].class))).thenReturn(0);
+        when(jdbc.query(anyString(), any(RowMapper.class), any(Object[].class))).thenReturn(List.of());
+        when(jdbc.query(anyString(), any(ResultSetExtractor.class), any(Object[].class)))
+                .thenAnswer(invocation -> ((String) invocation.getArgument(0)).contains("from task where id")
+                        ? "RUNNING" : "conversation:c-1");
     }
 
     @Test
@@ -235,7 +265,7 @@ class MemoryConversationExtractionModelOnlyTest {
         assertThat(result.candidates()).isEmpty();
         assertThat(result.method()).isEqualTo(MemoryConversationExtractionService.METHOD_LLM_FAILED);
         verify(taskService).failTask("task-1", MemoryConversationExtractionService.RETRY_PHASE,
-                "记忆抽取模型不可用，本轮未抽取", MemoryConversationExtractionService.RETRY_PHASE, true);
+                "模型不可用，本轮未完成记忆处理", MemoryConversationExtractionService.RETRY_PHASE, true);
         verify(taskService, never()).completeTask(anyString(), anyString(), anyString(), anyString());
         // 判不出这一轮是否不满，就不写跟进反馈，避免把沉默记成接受
         verifyNoInteractions(feedback);
