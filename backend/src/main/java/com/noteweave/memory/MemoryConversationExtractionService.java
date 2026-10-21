@@ -264,15 +264,19 @@ public class MemoryConversationExtractionService {
         if (llmClient != null && llmClient.isEnabled()) {
             String decision = MemoryExtractionClassifier.decide(llmClient, message);
             if ("NO".equals(decision)) {
-                return new Extraction(List.of(), "CLASSIFIED_NO");
+                // 分类器只做短判定，会漏掉隐式反馈；判 NO 也按规则再抽一次，method 仍标 RULE
+                log.debug("Memory extraction classifier answered NO; falling back to rules");
             }
             if ("YES".equals(decision)) {
                 try {
                     String output = llmClient.streamChat(SYSTEM_PROMPT, extractionPrompt(message, previousAnswer),
                             EXTRACTION_OUTPUT_TOKENS, token -> { });
                     List<Preference> parsed = parse(output);
-                    if (parsed != null) return new Extraction(parsed, "LLM");
-                    log.warn("Memory extraction output was not a JSON array; falling back to rules");
+                    // 空数组不算抽取成功：模型常以 [] 代替“没看懂”，仍回落规则
+                    if (parsed != null && !parsed.isEmpty()) return new Extraction(parsed, "LLM");
+                    log.warn(parsed == null
+                            ? "Memory extraction output was not a JSON array; falling back to rules"
+                            : "Memory extraction output had no preferences; falling back to rules");
                 } catch (RuntimeException ex) {
                     log.warn("Memory extraction via LLM failed; falling back to rules: {}", ex.getMessage());
                 }
