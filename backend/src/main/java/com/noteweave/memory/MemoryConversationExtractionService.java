@@ -64,13 +64,19 @@ public class MemoryConversationExtractionService {
     /**
      * 抽取提示词。槽位枚举直接取自 {@link MemorySlots#ALLOWED_SLOTS}；
      * 文本块里只有 slot 那一行的 %s 是格式占位符。
+     * <p>
+     * 第一行被测试桩用来识别抽取调用（见 {@code MemoryExtractionModelStub}），不要改写。
+     * feedback 的定义与 few-shot 用来区分「面向以后的长期偏好」和「对上一条回答的差评」：
+     * 「记住：以后回答不要太长」是前者，feedback 必须为 false；只评价代码/资料本身的消息输出 []。
      */
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
             你从用户的一条消息中找出用户希望助手长期遵守的表达偏好。
             只提取关于回答方式的偏好：语言、语气、长度、结构、格式、术语叫法、需要避免的写法、交互方式。
             不要提取事实、资料内容、一次性的任务要求，或只针对当前这个问题的要求。
             用户用喜欢、习惯、倾向、希望等说法表达的回答方式偏好（例如：我比较喜欢用表格对比），即使同一条消息里还提了别的问题，
             也视为长期偏好，explicit 记为 false。
+            评论用户自己的代码、配置、资料或话题内容里的具体事物（变量名、字段名、函数名、命名风格、段落长短）本身，
+            不是回答方式偏好，也不是对助手回答的反馈；这类消息除非同时要求助手以后怎么回答，否则输出 []。
             输出 JSON 数组，每项包含：
             - statement：用一句祈使句复述这条偏好，不超过 60 字，使用用户的语言；
             - category：style、structure、terminology、forbidden、interaction 之一；
@@ -78,8 +84,18 @@ public class MemoryConversationExtractionService {
             - slot：槽位，只能取以下之一：%s；无法归类时用 answer.style；
             - value：槽位取值，不超过 40 字；
             - polarity：REQUIRE 或 FORBID，用户要求避免或禁止时用 FORBID，否则 REQUIRE；
-            - feedback：用户是在评价已有回答（例如太长了、看不懂、别用英文）时为 true，否则 false。
-            最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。"""
+            - feedback：用户是否在评价刚刚那条助手回答本身。只有消息直接对上一条回答表示不满或纠正
+              （先说"刚才那段太长了""没看懂""别再用英文"这类评价）时才为 true。
+              面向以后的指令不算反馈：用了记住、以后、每次都这类长期措辞，或整条消息只是在规定以后怎么回答时，
+              即使话里出现"太长""不要""简短"这些字，feedback 也是 false——不要把它当成对上一轮回答的差评。
+              「上一条助手回答」只用来判断 feedback，不要从它里面提取偏好。
+            最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。
+
+            示例（消息 → 输出）：
+            - "记住，以后答复别铺开写一大段" → [{"statement":"以后回答别写太长","category":"style","explicit":true,"slot":"answer.length","value":"别写太长","polarity":"FORBID","feedback":false}]
+            - "这个字段名叫得太啰嗦" → []
+            - "刚才那段写得太啰嗦了，以后短一点" → [{"statement":"以后回答简短一点","category":"style","explicit":true,"slot":"answer.length","value":"简短","polarity":"REQUIRE","feedback":true}]
+            """
             .formatted(String.join("、", MemorySlots.ALLOWED_SLOTS));
 
     private static final Logger log = LoggerFactory.getLogger(MemoryConversationExtractionService.class);

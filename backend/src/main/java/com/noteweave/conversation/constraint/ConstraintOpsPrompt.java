@@ -12,7 +12,7 @@ import java.util.List;
 public final class ConstraintOpsPrompt {
 
     /** 提示词版本，写进 {@code rule_version}，标明模型路径的版本。 */
-    public static final String PROMPT_VERSION = "constraint-ops-v2";
+    public static final String PROMPT_VERSION = "constraint-ops-v3";
 
     /** 与 {@code ChatLlmClient} 的输出上限对齐：8 条 ops 的 JSON 足够，超出部分只会是解释文字。 */
     public static final int MAX_OUTPUT_TOKENS = 600;
@@ -53,12 +53,35 @@ public final class ConstraintOpsPrompt {
             用户明说"这次/仅本话题"时，即使同一句里还有长期措辞，也只能给 this-turn 或 current-topic。
 
             操作 op（四选一）：
-            - ADD：新增一条要求，或用一个新的取值替换同槽位的旧要求。
-            - UPDATE：用户明确改口或更正（"改用""不是……而是……""更正"），targetId 给出被改掉的约束 id。
+            - ADD：新增一条要求。该槽位当前没有 ACTIVE 约束时用它；新要求与旧约束作用范围不同、可以并存时也用它。
+            - UPDATE：用户改口或更正同一个槽位（"改用""换成""不是……而是……""更正"），targetId 填被改掉的
+              那条 ACTIVE 约束的 id。改口同时带窄化措辞（"这次""本次""就这个问题"）时 scope 填 this-turn：
+              这是在改那一条约束，不是在它旁边再叠一条更窄的。
             - REVOKE：用户取消之前某条要求（"取消""去掉""不用再"），给 targetId，或给 slot（可带 value）定位。
             - NOOP：这条消息没有对回答方式提出要求。没有约束时必须显式输出一条 NOOP，不要输出空数组。
-            重申已有的同值要求（例如"继续用英文"）给 NOOP，或给同值的 ADD，但 scope 不得比原来更窄。
             一次最多 8 条，按用户表达的顺序排列。
+
+            同槽位已经有 ACTIVE 约束时，按下面三条选 op，不要一看到"这次"就新加一条：
+            1. 取值与某条 ACTIVE 完全相同：算重申，给 NOOP。也可以给一条同值 ADD，但 scope 必须与那条
+               ACTIVE 一模一样，不能收窄成 this-turn 或 current-topic；拿不准就给 NOOP。
+               不论这句说成"继续""还是""保持"还是"这次也"，同值都不构成范围变更。
+               例外：消息明说进入另一个话题（"换个话题""另说一件"）时，同值也要给 ADD——
+               本话题的约束不跨话题生效，那就是一条新的要求。
+            2. 取值不同、且是在替换旧要求：用户说"改用""换成""不要……，改……"，或新要求不比旧要求更窄
+               （例如旧的是本话题的中文、新说"以后用英文"）。给 UPDATE + 那条 ACTIVE 的 targetId；
+               同一个 scope 里换取值给同 scope 的 ADD 也可以。只对这一条生效时 scope 填 this-turn。
+               不能改用 ADD 另加一条窄 scope 的约束：旧约束会继续生效，两条同时挂着，
+               用户看到的还是旧取值。没有可改的 ACTIVE 约束时退回 ADD。
+            3. 取值不同、新要求只是更窄的一层、用户也没有否定旧要求（例如旧的是会话级英文，新说"这次只用中文"）：
+               给 ADD，scope 按用户说的范围；原有的更宽约束继续有效，两条并存。
+
+            示例（假设用户提示词给出的 ACTIVE 里已有 language=英文、scope=conversation、id=a1；真实 id 以提示词为准）：
+            - 消息"本次换成中文吧" → [{"op":"UPDATE","slot":"language","value":"中文","polarity":"require","scope":"this-turn","targetId":"a1","confidence":0.9}]
+              （改口 + 窄化：改的是 a1 这一条，不是另加一条话题级的中文）
+            - 消息"这一条回答只用中文" → [{"op":"ADD","slot":"language","value":"中文","polarity":"require","scope":"current-topic","targetId":null,"confidence":0.85}]
+              （没有把旧要求换掉，只是叠加一条更窄的，a1 继续生效）
+            - 消息"接着用英文就好" → [{"op":"NOOP"}]
+              （同值重申，不新增更窄的同槽位约束）
 
             id 与取值：
             - targetId 只能是下面给出的 ACTIVE 约束 id，不得编造；没有就给 null。
