@@ -1,0 +1,80 @@
+package com.noteweave.conversation.constraint;
+
+import java.util.Locale;
+
+/**
+ * 约束抽取模型可用的槽位。
+ * <p>
+ * 三个名字各有用途，不要混用：
+ * <ul>
+ *   <li>{@link #wire()}：模型输出与提示词里用的字面量（{@code language}、{@code length-limit}）；</li>
+ *   <li>{@link #internalSlot()}：投影器内部的语义槽位（{@code answer.language}、{@code format.length.max}），
+ *       只用于判断同槽互斥，不入库；</li>
+ *   <li>{@link #dbKind()}：落库的 {@code conversation_constraint_v2.kind}，只有 LANGUAGE/FORMAT/NEGATION 三值。</li>
+ * </ul>
+ * 映射与 {@code ConversationConstraintProjectorV2} 的规则路径保持一致，避免两条路径对同一句话给出不同槽位。
+ */
+public enum ConstraintSlot {
+
+    LANGUAGE("language", "answer.language", "LANGUAGE"),
+    TABLE("table", "format.table", "FORMAT"),
+    CONCLUSION("conclusion", "format.conclusion", "FORMAT"),
+    BULLETS("bullets", "format.bullets", "FORMAT"),
+    /** 字数上限（不超过N字/控制在N字/字数），与 DETAIL 是两个独立维度。 */
+    LENGTH_LIMIT("length-limit", "format.length.max", "FORMAT"),
+    /** 详略（简短/简洁/精简 vs 详细/展开），与 LENGTH_LIMIT 是两个独立维度。 */
+    DETAIL("detail", "format.length.detail", "FORMAT"),
+    CITATION("citation", "format.citation", "FORMAT"),
+    CODE("code", "format.code", "FORMAT"),
+    /**
+     * 无目标的否定要求（"不要再贴大段配置"）；有目标时用被否定线索的槽位。
+     * 内部槽位只是前缀：合并器会给无目标的否定接上消息 id（{@code negation:<messageId>}），
+     * 让这类要求各自成行、互不撤回，与规则路径一致。
+     */
+    NEGATION("negation", "negation", "NEGATION");
+
+    private final String wire;
+    private final String internalSlot;
+    private final String dbKind;
+
+    ConstraintSlot(String wire, String internalSlot, String dbKind) {
+        this.wire = wire;
+        this.internalSlot = internalSlot;
+        this.dbKind = dbKind;
+    }
+
+    /** 提示词与模型输出里的字面量。 */
+    public String wire() {
+        return wire;
+    }
+
+    /** 投影器内部槽位，只用于冲突判定。 */
+    public String internalSlot() {
+        return internalSlot;
+    }
+
+    /** 落库的 {@code kind}。 */
+    public String dbKind() {
+        return dbKind;
+    }
+
+    /**
+     * 解析模型输出里的槽位；不认识的值返回 {@code null}，由校验器整体判失败，不做兜底猜测。
+     * 大小写与下划线写法都接受（{@code LENGTH_LIMIT}、{@code length_limit}），便于不同模型稳定输出。
+     */
+    public static ConstraintSlot fromWire(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT).replace('_', '-');
+        if (normalized.isEmpty()) {
+            return null;
+        }
+        for (ConstraintSlot slot : values()) {
+            if (slot.wire.equals(normalized)) {
+                return slot;
+            }
+        }
+        return null;
+    }
+}
