@@ -101,10 +101,27 @@ class ConversationRetrievalContextAssembler {
             return new Context(trimmedQuestion, trimmedQuestion, false, 0, "", "",
                     new ConversationContextProjectionService.Projection(List.of(), List.of()), frozen);
         }
+        // 主题锚点继续复用 v1 的主题短语规则，只是输入换成冻结快照里的原文窗口。
+        // 追问句本身不带主题词，缺了锚点，检索查询（关键词通道）会丢掉主题，召回为空。
+        List<ConversationTurn> turns = buildConversationTurns(history.stream()
+                .map(message -> new ConversationHistoryMessage(
+                        message.seq(), message.role(), message.text()))
+                .toList());
+        List<ConversationTurn> workingTurns = buildWorkingTurns(trimmedQuestion, turns);
+        String topicAnchor = workingTurns.isEmpty()
+                ? ""
+                : buildTopicAnchor(trimmedQuestion, workingTurns);
+        // 窗口轮次按用户提问数计，而不是按快照里的消息条数计（一问一答只算一轮）。
+        int windowTurnCount = (int) history.stream()
+                .filter(message -> "USER".equals(message.role()))
+                .count();
         String summary = projection.topicSummaries().stream()
                 .map(ContextProjectionV2.TopicSummary::text)
                 .reduce((first, second) -> first + "\n" + second).orElse("");
         StringBuilder question = new StringBuilder("当前问题：").append(trimmedQuestion);
+        if (!topicAnchor.isBlank() && !trimmedQuestion.contains(topicAnchor)) {
+            question.append("\n主题锚点：").append(topicAnchor);
+        }
         if (!summary.isBlank()) question.append("\n已冻结的相关主题摘要：\n").append(summary);
         question.append("\n连续原文窗口：");
         for (ContextProjectionV2.RawMessage message : history) {
@@ -115,7 +132,7 @@ class ConversationRetrievalContextAssembler {
             question.append("\n当前有效的用户约束：");
             projection.constraints().forEach(rule -> question.append("\n- ").append(rule.text()));
         }
-        return new Context(trimmedQuestion, question.toString(), true, history.size(), "",
+        return new Context(trimmedQuestion, question.toString(), true, windowTurnCount, topicAnchor,
                 summary, new ConversationContextProjectionService.Projection(List.of(), List.of()), frozen);
     }
 

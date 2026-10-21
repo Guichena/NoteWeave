@@ -12,6 +12,8 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -71,7 +73,7 @@ class ContextV2RolloutDefaultsTest {
     @Test
     void workspaceWithoutRolloutRowUsesActiveDefault() {
         ContextV2RolloutService rollout = new ContextV2RolloutService(
-                jdbcReturningMode(null), mock(WorkspaceAccessGuard.class), true, true, "ACTIVE");
+                jdbcWithoutRolloutRow(), mock(WorkspaceAccessGuard.class), true, true, "ACTIVE");
 
         assertThat(rollout.get(WORKSPACE_ID).mode()).isEqualTo("ACTIVE");
         assertThat(rollout.shadowEnabled(WORKSPACE_ID)).isTrue();
@@ -81,7 +83,7 @@ class ContextV2RolloutDefaultsTest {
     @Test
     void invalidDefaultModeFallsBackToOff() {
         ContextV2RolloutService rollout = new ContextV2RolloutService(
-                jdbcReturningMode(null), mock(WorkspaceAccessGuard.class), true, true, "TURBO");
+                jdbcWithoutRolloutRow(), mock(WorkspaceAccessGuard.class), true, true, "TURBO");
 
         assertThat(rollout.get(WORKSPACE_ID).mode()).isEqualTo("OFF");
         assertThat(rollout.shadowEnabled(WORKSPACE_ID)).isFalse();
@@ -91,7 +93,7 @@ class ContextV2RolloutDefaultsTest {
     @Test
     void activeModeStillRequiresTheGlobalActiveSwitch() {
         ContextV2RolloutService rollout = new ContextV2RolloutService(
-                jdbcReturningMode(null), mock(WorkspaceAccessGuard.class), true, false, "ACTIVE");
+                jdbcWithoutRolloutRow(), mock(WorkspaceAccessGuard.class), true, false, "ACTIVE");
 
         assertThatThrownBy(() -> rollout.set(WORKSPACE_ID, "ACTIVE"))
                 .isInstanceOfSatisfying(BusinessException.class,
@@ -114,11 +116,25 @@ class ContextV2RolloutDefaultsTest {
                 .replacePlaceholders(raw.toString(), placeholder -> null);
     }
 
-    private static JdbcTemplate jdbcReturningMode(String mode) {
+    /**
+     * 模拟 context_v2_workspace_rollout 里没有该工作台的行：查询必须真的执行一次
+     * ResultSetExtractor 并看到空结果集，才会回落到 {@code default-mode} 的默认值。
+     * 直接 stub 成 {@code thenReturn(null)} 只会把 null 当成查询结果，测不到兜底逻辑。
+     */
+    private static JdbcTemplate jdbcWithoutRolloutRow() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.query(anyString(), ArgumentMatchers.<ResultSetExtractor<String>>any(), any()))
-                .thenReturn(mode);
+                .thenAnswer(invocation -> {
+                    ResultSetExtractor<String> extractor = invocation.getArgument(1);
+                    return extractor.extractData(emptyResultSet());
+                });
         return jdbc;
+    }
+
+    private static ResultSet emptyResultSet() throws SQLException {
+        ResultSet resultSet = mock(ResultSet.class);
+        when(resultSet.next()).thenReturn(false);
+        return resultSet;
     }
 
     private static Path repositoryRoot() {

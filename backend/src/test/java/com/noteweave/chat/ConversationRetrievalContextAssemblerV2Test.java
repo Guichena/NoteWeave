@@ -88,6 +88,70 @@ class ConversationRetrievalContextAssemblerV2Test {
                 .doesNotContain("...");
     }
 
+    @Test
+    void derivesTopicAnchorFromTheFrozenWindowSoFollowUpsKeepTheirTopic() throws Exception {
+        String first = "先介绍 AlphaSpec 的关键要求";
+        String firstAnswer = "AlphaSpec 要求分阶段发布和证据留痕";
+        String second = "把它分成两点讲";
+        String secondAnswer = "第一点是分阶段发布，第二点是证据留痕";
+        String current = "第二点为什么重要";
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 5, current,
+                List.of(new ContextProjectionV2.RawMessage("m1", 1, "USER", first, sha(first)),
+                        new ContextProjectionV2.RawMessage("m2", 2, "ASSISTANT", firstAnswer, sha(firstAnswer)),
+                        new ContextProjectionV2.RawMessage("m3", 3, "USER", second, sha(second)),
+                        new ContextProjectionV2.RawMessage("m4", 4, "ASSISTANT", secondAnswer, sha(secondAnswer)),
+                        new ContextProjectionV2.RawMessage("m5", 5, "USER", current, sha(current))),
+                List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        var context = new ConversationRetrievalContextAssembler().assembleV2("m5", current, frozen);
+
+        assertThat(context.contextApplied()).isTrue();
+        assertThat(context.topicAnchor()).contains("AlphaSpec");
+        assertThat(context.retrievalQuestion()).contains("主题锚点：", "AlphaSpec");
+    }
+
+    @Test
+    void countsFrozenWindowTurnsPerQuestionNotPerMessage() throws Exception {
+        String first = "先介绍 AlphaSpec 的关键要求";
+        String firstAnswer = "AlphaSpec 要求分阶段发布";
+        String second = "把它分成两点讲";
+        String secondAnswer = "第一点分阶段发布，第二点证据留痕";
+        String current = "第二点为什么重要";
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 5, current,
+                List.of(new ContextProjectionV2.RawMessage("m1", 1, "USER", first, sha(first)),
+                        new ContextProjectionV2.RawMessage("m2", 2, "ASSISTANT", firstAnswer, sha(firstAnswer)),
+                        new ContextProjectionV2.RawMessage("m3", 3, "USER", second, sha(second)),
+                        new ContextProjectionV2.RawMessage("m4", 4, "ASSISTANT", secondAnswer, sha(secondAnswer)),
+                        new ContextProjectionV2.RawMessage("m5", 5, "USER", current, sha(current))),
+                List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        var context = new ConversationRetrievalContextAssembler().assembleV2("m5", current, frozen);
+
+        assertThat(context.windowTurnCount()).isEqualTo(2);
+        assertThat(context.retrievalQuestion()).contains("连续原文窗口：");
+    }
+
+    @Test
+    void leavesTopicAnchorBlankWhenTheFrozenWindowHasNoCompleteTurn() throws Exception {
+        String onlyQuestion = "先介绍 AlphaSpec 的关键要求";
+        String current = "第二点为什么重要";
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 2, current,
+                List.of(new ContextProjectionV2.RawMessage("m1", 1, "USER", onlyQuestion, sha(onlyQuestion)),
+                        new ContextProjectionV2.RawMessage("m2", 2, "USER", current, sha(current))),
+                List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        var context = new ConversationRetrievalContextAssembler().assembleV2("m2", current, frozen);
+
+        assertThat(context.topicAnchor()).isEmpty();
+        assertThat(context.retrievalQuestion()).doesNotContain("主题锚点：");
+    }
+
     private static String sha(String value) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                 .digest(value.getBytes(StandardCharsets.UTF_8)));
