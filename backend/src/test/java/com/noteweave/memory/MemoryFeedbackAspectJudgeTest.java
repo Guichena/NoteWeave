@@ -10,6 +10,8 @@ import com.noteweave.chat.ChatLlmClient;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,56 @@ class MemoryFeedbackAspectJudgeTest {
         assertThat(client.systemPrompts).singleElement().satisfies(prompt -> {
             assertThat(prompt).contains("feedback").contains("polarity").contains("aspect");
             assertThat(prompt).contains("POSITIVE").contains("NEGATIVE").contains("NEUTRAL");
+        });
+    }
+
+    @Test
+    void promptSeparatesEvaluatingTheAnswerFromCommentingOnTheDiscussedObject() {
+        String prompt = MemoryFeedbackAspectJudge.PROMPT;
+
+        // 第一行被 MemoryExtractionModelStub 用来识别反馈判断调用，不能改
+        assertThat(prompt).startsWith(MemoryExtractionModelStub.JUDGE_PROMPT_HEAD);
+        // 「评价助手回答」与「评价讨论对象」必须分成两类，而不是只说「评价上一条回答」
+        assertThat(prompt).contains("评价助手回答").contains("评价讨论对象");
+        assertThat(prompt).contains("代码").contains("文档");
+        assertThat(prompt).contains("不是对回答形式或质量的评价");
+        // 代码即使是助手给出的，评论代码本身也不算反馈（live 评测里「这段代码有 bug」被判成 NEGATIVE）
+        assertThat(prompt).contains("助手在上一条回答里给出的");
+        // 仍要求只输出 JSON，且三个字段都给出
+        assertThat(prompt).contains("只输出一个 JSON 对象");
+    }
+
+    @Test
+    void promptFewShotsAreSelfConsistentAndDifferFromTheEvalSentences() {
+        // 这里的正则只用来从提示词里取出 few-shot 文本，不参与任何判定
+        List<String> examples = new ArrayList<>();
+        List<MemoryFeedbackAspectJudge.Judgment> judgments = new ArrayList<>();
+        Matcher matcher = Pattern
+                .compile("^\\s*- \"(.+)\" → (\\{.+})$", Pattern.MULTILINE)
+                .matcher(MemoryFeedbackAspectJudge.PROMPT);
+        while (matcher.find()) {
+            examples.add(matcher.group(1));
+            // few-shot 里的输出必须自己就合规：枚举合法、feedback 与 polarity/aspect 不矛盾
+            judgments.add(MemoryFeedbackAspectJudge.readJudgment(objectMapper, matcher.group(2)));
+        }
+
+        // 本次加两个 few-shot：一个示范真反馈，一个示范评论讨论对象不算反馈
+        assertThat(examples).as("few-shot 数量").hasSize(2);
+        // 示例不能照抄评测原句，否则只是在背 eval，学不到「区分评价对象」这条规则
+        assertThat(examples).allSatisfy(example -> {
+            assertThat(example).isNotBlank().doesNotContain("变量名太长").doesNotContain("这段代码有 bug");
+        });
+        assertThat(judgments).doesNotContainNull();
+        assertThat(judgments).extracting(MemoryFeedbackAspectJudge.Judgment::feedback)
+                .as("既要示范真反馈，也要示范对讨论对象的评价不是反馈")
+                .contains(true, false);
+        assertThat(judgments).allSatisfy(judgment -> {
+            if (judgment.feedback()) {
+                assertThat(judgment.polarity()).isNotEqualTo(MemoryFeedbackAspectJudge.POLARITY_NEUTRAL);
+            } else {
+                assertThat(judgment.polarity()).isEqualTo(MemoryFeedbackAspectJudge.POLARITY_NEUTRAL);
+                assertThat(judgment.aspect()).isEqualTo(MemoryFeedbackAspectJudge.ASPECT_UNKNOWN);
+            }
         });
     }
 

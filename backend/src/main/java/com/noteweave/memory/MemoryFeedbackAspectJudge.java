@@ -50,11 +50,23 @@ public class MemoryFeedbackAspectJudge {
     static final String PROMPT = """
             判断这条用户消息是不是对上一条助手回答的反馈。
             只输出一个 JSON 对象，字段 feedback、polarity、aspect 都要给出，不要输出其他文字。
-            - feedback：这条消息是否在评价上一条助手回答，true 或 false。提问、补充要求、与上一条回答无关时为 false。
+            先分清这条消息在评价谁：
+            - 评价助手回答：说助手刚才答得怎么样——太长或不够细、语言不对、格式或结构不合适、
+              语气或风格不合适、没答到问题上、事实或引用有误。这是在评价回答本身，feedback 为 true。
+            - 评价讨论对象：说的是用户自己的代码、配置、日志、文档、资料，或第三方内容里的事物
+              （变量名、字段名、函数名、某段代码有没有 bug、某份文档写得含糊）。这是在评价被讨论的内容，
+              不是对回答形式或质量的评价，feedback 为 false；即使话里带着太长、有问题、不好这类评价词也一样。
+              哪怕那段代码是助手在上一条回答里给出的，说的仍然是代码本身，同样不算反馈。
+            只根据这条消息判断，看不到上一条回答：能读出用户在评价助手刚才的答复才算反馈；
+            提问、补充要求、与上一条回答无关、只是在描述讨论对象时，feedback 为 false。
             - polarity：feedback 为 true 时这条反馈是认可（POSITIVE）、不满（NEGATIVE）还是中性（NEUTRAL）；
               feedback 为 false 时用 NEUTRAL。
             - aspect：反馈针对的方面。LENGTH 表示长度，LANGUAGE 表示语言，FORMAT 表示格式或结构，
-              STYLE 表示语气或风格，CONTENT 表示事实、引用或是否答到问题上，UNKNOWN 表示无法判断。""";
+              STYLE 表示语气或风格，CONTENT 表示事实、引用或是否答到问题上，UNKNOWN 表示无法判断。
+              feedback 为 false 时用 UNKNOWN。
+            示例（消息 → 输出）：
+            - "你刚才那段答得太口语化了，像在聊天" → {"feedback":true,"polarity":"NEGATIVE","aspect":"STYLE"}
+            - "这个类里有个空指针，跑起来就崩" → {"feedback":false,"polarity":"NEUTRAL","aspect":"UNKNOWN"}""";
 
     private static final Logger log = LoggerFactory.getLogger(MemoryFeedbackAspectJudge.class);
 
