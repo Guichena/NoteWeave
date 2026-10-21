@@ -2,7 +2,7 @@
 
 > **仓库**：`/workspace/NoteWeave-merge`（git worktree）
 > **分支**：`merge/integration`｜**起点**：`c713463`｜**合并 HEAD**：`91986ee`｜**本文提交**：见 `git log --oneline -1 -- HANDOFF.md`
-> **范围**：`git log --oneline c713463..HEAD` 共 **89** 个提交（G 线 24 + D 线 60 + lease-g 2 + 合并提交 3），**191 个文件、+17202 / −1372**
+> **合并范围**：`git log --oneline c713463..91986ee` 共 **89** 个提交（G 线 24 + D 线 60 + lease-g 2 + 合并提交 3），**191 个文件、+17202 / −1372**；本文自身的文档提交不计入
 > **合并顺序**：`fix/batch-g2` → `fix/batch-d` → `fix/lease-g`，三次均 `--no-ff`
 > **资料来源（只读）**：`/workspace/audit-ds/handoff-d.md`、`/workspace/audit/merged/botcheck/handoff-g.md`、`/workspace/audit-ds/merge/logs/{m1,m2,m3,chain2,chain3,fe,live}.log`、`git log`
 > **安全声明**：本文不含任何 API key、访问令牌或口令。live 评测所需密钥只从环境变量读取，未写入仓库、命令历史或日志。
@@ -60,7 +60,7 @@
 
 ### 1.4 提交构成核对
 
-`c713463..HEAD` 的 89 个提交 = 24（G）+ 60（D）+ 2（L）+ 3（合并提交）。逐条清单：
+`c713463..91986ee` 的 89 个提交 = 24（G）+ 60（D）+ 2（L）+ 3（合并提交）；之后只有 `HANDOFF.md` 的文档提交。逐条清单：
 
 ```bash
 git log --oneline --reverse c713463..6488ce2   # G 线 24 个
