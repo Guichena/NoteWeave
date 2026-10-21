@@ -95,10 +95,16 @@ class ConstraintPolarityAnswerPromptEndToEndTest {
 
         topics.refresh(WORKSPACE, CONVERSATION);
 
+        // 行 id 的 index 是 op 在整条消息 ops 数组里的下标（不是同槽位内的序号）：
+        // 这里 language 在下标 0，table 在下标 1。
+        String tableId = ConstraintIds.of("m1", "table", 1);
+        String languageId = ConstraintIds.of("m1", "language", 0);
+
         // 1) 落库：极性是独立列，不是从正文反推的。
-        assertThat(polarityOf(ConstraintIds.of("m1", "table", 0))).isEqualTo("FORBID");
-        assertThat(polarityOf(ConstraintIds.of("m1", "language", 0))).isEqualTo("REQUIRE");
-        assertThat(textOf(ConstraintIds.of("m1", "table", 0))).isEqualTo("不要使用表格");
+        assertThat(constraintIdsOf("m1")).containsExactlyInAnyOrder(languageId, tableId);
+        assertThat(polarityOf(tableId)).isEqualTo("FORBID");
+        assertThat(polarityOf(languageId)).isEqualTo("REQUIRE");
+        assertThat(textOf(tableId)).isEqualTo("不要使用表格");
 
         // 2) 编译器按库读回极性。
         ContextProjectionV2 projection = compile();
@@ -152,6 +158,13 @@ class ConstraintPolarityAnswerPromptEndToEndTest {
     private static ConstraintOp op(ConstraintSlot slot, String value, ConstraintPolarity polarity) {
         return new ConstraintOp(ConstraintOp.Op.ADD, slot, value, ConstraintScope.CONVERSATION,
                 null, 0.9, polarity);
+    }
+
+    /** 一条消息落库的全部约束行 id：用来把「下标猜错」暴露成清晰的断言而不是空结果异常。 */
+    private List<String> constraintIdsOf(String messageId) {
+        return jdbc.queryForList("""
+                select id from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, messageId);
     }
 
     private String polarityOf(String constraintId) {

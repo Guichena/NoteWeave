@@ -148,6 +148,24 @@ class ConstraintOpMergerTest {
         assertThat(chinese.kind()).isEqualTo("LANGUAGE");
     }
 
+    /**
+     * 行 id 的下标是 op 在整条消息 ops 数组里的位置，不是同槽位内的序号：
+     * 「0 位要求英文，1 位禁止表格」得到的是 {@code ("table", 1)}，不是 {@code ("table", 0)}。
+     * 按库查行时必须用这个下标，否则会查不到任何行。
+     */
+    @Test
+    void rowIdIndexIsThePositionInTheWholeOpsArray() {
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION),
+                        add(ConstraintSlot.TABLE, null, ConstraintScope.CONVERSATION,
+                                ConstraintPolarity.FORBID))));
+
+        assertThat(rows).extracting(ConversationConstraintProjectorV2.Constraint::id)
+                .containsExactly(
+                        ConstraintIds.of("m1", "language", 0),
+                        ConstraintIds.of("m1", "table", 1));
+    }
+
     @Test
     void explicitThisTurnNarrowsTheNewRowOnUpdate() {
         String englishId = ConstraintIds.of("m1", "language", 0);
