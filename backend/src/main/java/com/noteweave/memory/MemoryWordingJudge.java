@@ -40,7 +40,9 @@ public class MemoryWordingJudge {
                 }
                 user = user + "\n上次输出不合规，只输出 JSON。";
             } catch (RuntimeException ex) {
-                log.warn("Memory wording judge failed: {}", ex.getMessage());
+                // 只打异常类型与原因码：异常消息里可能带用户正文或响应体。
+                log.warn("Memory wording judge failed: reason={}, type={}, attempt={}",
+                        "WORDING_JUDGE_CALL_FAILED", ex.getClass().getSimpleName(), attempt + 1);
                 user = user + "\n上次调用失败，只输出 JSON。";
             }
         }

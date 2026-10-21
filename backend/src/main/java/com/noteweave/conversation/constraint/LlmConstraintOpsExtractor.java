@@ -25,7 +25,8 @@ import org.springframework.stereotype.Component;
  *       由调用方跳过这条消息（本轮不产出约束）；不抛异常、不返回空 ops 冒充「模型认为没有约束」。</li>
  *   <li>重试有且只有一次：超时、调用失败、输出不合规都再试一次，仍失败就返回 {@link #TIMEOUT} /
  *       {@link #CALL_FAILED} / {@link #MALFORMED}。超时重试会把单条消息的墙钟上限翻倍
- *       （默认 8s → 16s），调用方在事务里，代价是已知的。</li>
+ *       （默认 8s → 16s）；抽取默认在切分事务提交之后执行，这段耗时不再占着会话行锁
+ *       （研究路径例外，仍在 turn 事务里）。</li>
  *   <li>超时自己管：{@code ChatLlmClient} 只有连接级超时，所以这里把一次调用丢到线程池上，
  *       {@code future.get(timeoutMs)} 到点就取消。底层 socket 仍可能拖到连接超时，属于已知限制。</li>
  *   <li>日志只留原因与条数：提示词里有用户原文，绝不打日志。</li>

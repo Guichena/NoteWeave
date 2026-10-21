@@ -2,12 +2,16 @@ package com.noteweave.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatLlmClient;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 /**
  * 反馈判断只由模型决定：没有关键词或正则判定，代码只校验模型输出的 JSON。
@@ -120,6 +124,33 @@ class MemoryFeedbackAspectJudgeTest {
     }
 
     @Test
+    void callFailureLogsOnlyTheReasonCodeAndExceptionType() {
+        ScriptedClient client = new ScriptedClient(ScriptedClient.LEAKY_THROW, ScriptedClient.LEAKY_THROW);
+        Logger logger = (Logger) LoggerFactory.getLogger(MemoryFeedbackAspectJudge.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+
+        try {
+            assertThat(MemoryFeedbackAspectJudge.judge("太长了", client, objectMapper).degradationReason())
+                    .isEqualTo(MemoryFeedbackAspectJudge.ASPECT_NOT_RUN);
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        // 异常消息里可能带用户正文或响应体：日志只留原因码与异常类型，不打 ex.getMessage()。
+        assertThat(appender.list).hasSize(2).allSatisfy(event -> {
+            assertThat(event.getFormattedMessage())
+                    .contains(MemoryFeedbackAspectJudge.CALL_FAILED)
+                    .contains("IllegalStateException")
+                    .doesNotContain("upstream body")
+                    .doesNotContain("这一段比我需要的长太多了");
+            assertThat(event.getThrowableProxy()).isNull();
+        });
+    }
+
+    @Test
     void unavailableModelIsUnknownRatherThanAPassedJudgment() {
         ScriptedClient client = new ScriptedClient();
         client.enabled = false;
@@ -166,6 +197,8 @@ class MemoryFeedbackAspectJudgeTest {
     private static final class ScriptedClient implements ChatLlmClient {
 
         static final String THROW = "THROW";
+        /** 模拟上游把用户正文或响应体拼进异常消息。 */
+        static final String LEAKY_THROW = "LEAKY_THROW";
 
         private final List<String> outputs = new ArrayList<>();
         private final List<String> prompts = new ArrayList<>();
@@ -188,6 +221,9 @@ class MemoryFeedbackAspectJudgeTest {
             String output = outputs.isEmpty() ? "" : outputs.remove(0);
             if (THROW.equals(output)) {
                 throw new IllegalStateException("model unavailable");
+            }
+            if (LEAKY_THROW.equals(output)) {
+                throw new IllegalStateException("upstream body: 用户原文 这一段比我需要的长太多了");
             }
             return output;
         }

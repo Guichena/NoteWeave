@@ -72,7 +72,8 @@ public class MemoryConsolidationService {
         try {
             consolidate();
         } catch (RuntimeException ex) {
-            log.warn("Memory consolidation failed: {}", ex.getMessage());
+            // 只打异常类型：异常消息里可能带记忆正文或响应体。
+            log.warn("Memory consolidation failed: type={}", ex.getClass().getSimpleName());
         }
     }
 
@@ -155,7 +156,8 @@ public class MemoryConsolidationService {
                 }
                 user = user + "\n上次输出不合规，只输出 JSON。";
             } catch (RuntimeException ex) {
-                log.warn("Memory consolidation judge failed: {}", ex.getMessage());
+                // 只打异常类型：异常消息里可能带记忆正文或响应体。
+                log.warn("Memory consolidation judge failed: type={}", ex.getClass().getSimpleName());
                 return null;
             }
         }

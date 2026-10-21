@@ -20,6 +20,8 @@ import org.springframework.stereotype.Component;
 public class MemoryFeedbackAspectJudge {
 
     public static final String ASPECT_NOT_RUN = "MEMORY_FEEDBACK_ASPECT_NOT_RUN";
+    /** 日志里的原因码：模型调用抛异常。只记类型，不记消息（消息里可能带用户正文或响应体）。 */
+    static final String CALL_FAILED = "MEMORY_FEEDBACK_ASPECT_CALL_FAILED";
 
     /**
      * 单次调用的输出上限。
@@ -103,7 +105,9 @@ public class MemoryFeedbackAspectJudge {
                 }
                 user = user + RETRY_INVALID;
             } catch (RuntimeException ex) {
-                log.warn("反馈判断失败: {}", ex.getMessage());
+                // 只打异常类型与原因码：异常消息里可能带用户正文或响应体。
+                log.warn("反馈判断失败: reason={}, type={}, attempt={}",
+                        CALL_FAILED, ex.getClass().getSimpleName(), attempt + 1);
                 user = user + RETRY_FAILED;
             }
         }

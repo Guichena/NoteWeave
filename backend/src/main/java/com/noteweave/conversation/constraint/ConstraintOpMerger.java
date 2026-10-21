@@ -31,7 +31,8 @@ import java.util.Objects;
  *   <li>没有目标的否定（{@code slot=negation} 且无取值）只撤回同 slot 同取值的旧行；没有取值时单独成行，
  *       既不撤回别人，也不被后来的约束撤回。</li>
  *   <li>同一条消息的多个 op 按数组顺序应用，同槽位后者胜；{@code confidence} 低于门槛的
- *       {@code ADD}/{@code UPDATE} 直接丢弃。</li>
+ *       {@code ADD}/{@code UPDATE}/{@code REVOKE} 直接丢弃——撤回和新增一样会改动生效中的约束，
+ *       模型没把握的撤回不能悄悄把一条有效要求撤掉。</li>
  * </ol>
  * <p>
  * 与设计文档的唯一差异：op 只有 {@code slot}/{@code value}，没有自由文本，因此正向新行的 {@code text}
@@ -45,7 +46,7 @@ import java.util.Objects;
 public final class ConstraintOpMerger {
 
     /** 合并规则版本：版本不同就说明两次重放的结论不可直接比较（例如后续改了冲突规则）。 */
-    public static final String MERGER_VERSION = "constraint-merger-v2";
+    public static final String MERGER_VERSION = "constraint-merger-v3";
 
     /** 默认不做置信度过滤：接线时把 {@code constraint-op-min-confidence} 传进构造器。 */
     public static final double NO_CONFIDENCE_FLOOR = 0.0;
@@ -204,6 +205,10 @@ public final class ConstraintOpMerger {
 
     /** REVOKE：先按 id，再按 slot（可带 value）撤回，不新增行。 */
     private void revoke(List<Row> rows, Step step, ConstraintOp op) {
+        if (op.confidence() < minConfidence) {
+            // 与 ADD/UPDATE 同一条门槛：低置信的撤回同样会改掉生效中的约束，不能放过。
+            return;
+        }
         List<Active> active = actives(rows);
         Active target = find(active, op.targetId());
         if (target != null) {

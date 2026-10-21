@@ -28,8 +28,8 @@ public enum ConstraintSlot {
     CODE("code", "format.code", "FORMAT"),
     /**
      * 无目标的否定要求（"不要再贴大段配置"）；有目标时用被否定线索的槽位。
-     * 内部槽位只是前缀：合并器会给无目标的否定接上消息 id（{@code negation:<messageId>}），
-     * 让这类要求各自成行、互不撤回。
+     * 内部槽位不再拼接消息 id：这类要求按消息各自成行，行 id 由 {@link ConstraintIds} 生成，
+     * 合并器只按「无取值的否定项」把它们当作互不干涉的独立行（既不撤回别人，也不被后来的约束撤回）。
      */
     NEGATION("negation", "negation", "NEGATION");
 

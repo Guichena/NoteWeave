@@ -47,7 +47,9 @@ final class MemoryExtractionClassifier {
                 }
                 user = user + "\n上次输出不合规，只回答 yes 或 no。";
             } catch (RuntimeException ex) {
-                log.warn("Memory extraction classifier failed: {}", ex.getMessage());
+                // 只打异常类型与原因码：异常消息里可能带用户正文或响应体。
+                log.warn("Memory extraction classifier failed: reason={}, type={}, attempt={}",
+                        "CLASSIFIER_CALL_FAILED", ex.getClass().getSimpleName(), attempt + 1);
                 user = user + "\n上次调用失败，只回答 yes 或 no。";
             }
         }

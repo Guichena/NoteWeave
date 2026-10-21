@@ -414,6 +414,45 @@ class ConstraintOpMergerTest {
     }
 
     @Test
+    void lowConfidenceRevokeIsDropped() {
+        String tableId = ConstraintIds.of("m1", "table", 0);
+        List<ConversationConstraintProjectorV2.Constraint> byTargetId = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC)),
+                step("m2", 2, revoke(tableId, 0.4))));
+
+        // 撤回和新增/改写走同一道门槛：没把握的撤回不生效，旧行保持 ACTIVE。
+        assertThat(byTargetId).singleElement().satisfies(row -> {
+            assertThat(row.status()).isEqualTo("ACTIVE");
+            assertThat(row.invalidAfterSeq()).isNull();
+            assertThat(row.supersededBy()).isNull();
+        });
+
+        List<ConversationConstraintProjectorV2.Constraint> bySlotAndValue = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION)),
+                step("m2", 2, revoke(ConstraintSlot.LANGUAGE, "英文", 0.2))));
+
+        // 按槽位+取值的撤回同样受门槛约束，不会因为没给 targetId 就绕过检查。
+        assertThat(bySlotAndValue).singleElement().satisfies(row -> {
+            assertThat(row.status()).isEqualTo("ACTIVE");
+            assertThat(row.invalidAfterSeq()).isNull();
+        });
+    }
+
+    @Test
+    void revokeAtTheConfidenceFloorStillApplies() {
+        String tableId = ConstraintIds.of("m1", "table", 0);
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC)),
+                step("m2", 2, revoke(tableId, MIN_CONFIDENCE))));
+
+        // 门槛是「低于才丢弃」：正好等于门槛的撤回仍然生效。
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.status()).isEqualTo("REVOKED");
+            assertThat(row.invalidAfterSeq()).isEqualTo(2);
+        });
+    }
+
+    @Test
     void multipleOpsInOneStepApplyInOrder() {
         List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
                 step("m1", 1,
@@ -509,8 +548,16 @@ class ConstraintOpMergerTest {
         return new ConstraintOp(ConstraintOp.Op.REVOKE, null, null, null, targetId, HIGH);
     }
 
+    private static ConstraintOp revoke(String targetId, double confidence) {
+        return new ConstraintOp(ConstraintOp.Op.REVOKE, null, null, null, targetId, confidence);
+    }
+
     private static ConstraintOp revoke(ConstraintSlot slot, String value) {
         return new ConstraintOp(ConstraintOp.Op.REVOKE, slot, value, null, null, HIGH);
+    }
+
+    private static ConstraintOp revoke(ConstraintSlot slot, String value, double confidence) {
+        return new ConstraintOp(ConstraintOp.Op.REVOKE, slot, value, null, null, confidence);
     }
 
     private static ConstraintOp noop() {
