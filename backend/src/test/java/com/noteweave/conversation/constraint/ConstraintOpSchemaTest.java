@@ -32,6 +32,32 @@ class ConstraintOpSchemaTest {
     }
 
     @Test
+    void polarityIsParsedAndDefaultsToRequire() {
+        ConstraintOpSchema.ParseResult result = ConstraintOpSchema.parse(MAPPER, """
+                [{"op":"ADD","slot":"table","value":"format.table","polarity":"FORBID"},
+                 {"op":"ADD","slot":"bullets","value":"format.bullets","polarity":"require"},
+                 {"op":"ADD","slot":"conclusion"}]
+                """);
+
+        assertThat(result.ok()).isTrue();
+        assertThat(result.ops()).extracting(ConstraintOp::polarity).containsExactly(
+                ConstraintPolarity.FORBID, ConstraintPolarity.REQUIRE, ConstraintPolarity.REQUIRE);
+        assertThat(result.ops().get(0).forbids()).isTrue();
+        // 「不要表格」按提示词就是 FORBID + 被否定对象的槽位，不是正向 table。
+        assertThat(result.ops().get(0).slot()).isEqualTo(ConstraintSlot.TABLE);
+    }
+
+    @Test
+    void unknownPolarityRejectsTheWholeArray() {
+        ConstraintOpSchema.ParseResult result = ConstraintOpSchema.parse(MAPPER,
+                "[{\"op\":\"ADD\",\"slot\":\"table\",\"polarity\":\"NEVER\"}]");
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.ops()).isEmpty();
+        assertThat(result.failure()).isEqualTo(ConstraintOpSchema.UNKNOWN_POLARITY);
+    }
+
+    @Test
     void confidenceDefaultsAndUndeclaredScopeStaysNull() {
         ConstraintOpSchema.ParseResult result = ConstraintOpSchema.parse(MAPPER,
                 "[{\"op\":\"ADD\",\"slot\":\"language\",\"value\":\"中文\"}]");

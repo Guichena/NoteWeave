@@ -41,6 +41,27 @@ class ConversationRetrievalContextAssemblerV2Test {
     }
 
     @Test
+    void rendersForbiddenConstraintAsANegativeAnswerInstruction() throws Exception {
+        String current = "换个角度解释";
+        String prohibition = "不要使用表格";
+        var projection = new ContextProjectionV2("context-projection-v2", "context-window-v2-test",
+                "workspace", "actor", "conversation", 2, current,
+                List.of(new ContextProjectionV2.RawMessage("current", 2, "USER", current, sha(current))),
+                List.of(),
+                List.of(new ContextProjectionV2.UserConstraint("constraint", "m1", "USER",
+                        "FORMAT", "CONVERSATION", prohibition, 1, null, "ACTIVE")),
+                List.of(), List.of(), 4096, 200, List.of(), "FULL");
+        var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
+
+        // 禁止项的 constraint_text 已经是可读句子，回答提示词直接渲染成「- 不要使用表格」。
+        assertThat(ChatService.renderV2UserConstraints(frozen))
+                .contains("当前有效的用户约束", "- " + prohibition)
+                .doesNotContain("format.table");
+        assertThat(new ConversationRetrievalContextAssembler().assembleV2("current", current, frozen)
+                .retrievalQuestion()).contains(prohibition).doesNotContain("format.table");
+    }
+
+    @Test
     void truncatesFrozenRawWindowWithV1Budgets() throws Exception {
         String current = "第二种写入顺序呢？";
         String longUser = "用户上下文" + "甲".repeat(200);

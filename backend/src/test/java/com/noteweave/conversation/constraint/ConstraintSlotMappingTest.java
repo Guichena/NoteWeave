@@ -46,6 +46,27 @@ class ConstraintSlotMappingTest {
     }
 
     @Test
+    void forbidTextIsReadableInsteadOfAnInternalSlotName() {
+        // 禁止项要直接落成回答提示词可读的句子，不能写 format.table 这种内部槽位名。
+        assertThat(ConstraintSlot.TABLE.forbidText("format.table")).isEqualTo("不要使用表格");
+        assertThat(ConstraintSlot.LANGUAGE.forbidText("中文")).isEqualTo("不要使用中文");
+        assertThat(ConstraintSlot.BULLETS.forbidText(null)).isEqualTo("不要使用分点");
+        assertThat(ConstraintSlot.NEGATION.forbidText(null)).isEqualTo("不要这样做");
+        assertThat(ConstraintSlot.NEGATION.forbidText("大段配置")).isEqualTo("不要大段配置");
+    }
+
+    @Test
+    void polarityWireValuesRoundTripAndRejectUnknownOnes() {
+        for (ConstraintPolarity polarity : ConstraintPolarity.values()) {
+            assertThat(ConstraintPolarity.fromWire(polarity.wire())).isEqualTo(polarity);
+        }
+        assertThat(ConstraintPolarity.fromWire("FORBID")).isEqualTo(ConstraintPolarity.FORBID);
+        assertThat(ConstraintPolarity.fromWire(" require ")).isEqualTo(ConstraintPolarity.REQUIRE);
+        assertThat(ConstraintPolarity.fromWire("maybe")).isNull();
+        assertThat(ConstraintPolarity.fromWire(null)).isNull();
+    }
+
+    @Test
     void thisTurnFoldsIntoCurrentTopicBecauseThePlannerOnlyKnowsTwoScopes() {
         assertThat(ConstraintScope.THIS_TURN.dbScope()).isEqualTo("CURRENT_TOPIC");
         assertThat(ConstraintScope.CURRENT_TOPIC.dbScope()).isEqualTo("CURRENT_TOPIC");

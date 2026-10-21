@@ -46,6 +46,8 @@ public interface ConstraintOpsExtractor {
      * <p>
      * {@code scope} 保持字符串：它来自 {@code conversation_constraint_v2.scope}，
      * 只有 {@code CURRENT_TOPIC}/{@code CONVERSATION} 两个落库值，不需要再经过枚举归一。
+     * {@code polarity} 让模型能区分「已要求用表格」与「已要求不要表格」：两者的 {@code slot}/{@code value}
+     * 相同，只看槽位会把禁止项误当成正向要求去 UPDATE 或重申。
      */
     record ActiveConstraint(
             String id,
@@ -53,8 +55,19 @@ public interface ConstraintOpsExtractor {
             String value,
             String scope,
             String text,
-            int validFromSeq
+            int validFromSeq,
+            ConstraintPolarity polarity
     ) {
+
+        public ActiveConstraint {
+            polarity = polarity == null ? ConstraintPolarity.REQUIRE : polarity;
+        }
+
+        /** 缺省极性为 {@code REQUIRE} 的构造器：既有调用点不用逐个改写。 */
+        public ActiveConstraint(String id, ConstraintSlot slot, String value, String scope,
+                                String text, int validFromSeq) {
+            this(id, slot, value, scope, text, validFromSeq, ConstraintPolarity.REQUIRE);
+        }
     }
 
     /** 抽取结果。 */

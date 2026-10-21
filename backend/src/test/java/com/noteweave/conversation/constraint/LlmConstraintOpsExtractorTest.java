@@ -179,6 +179,29 @@ class LlmConstraintOpsExtractorTest {
     }
 
     @Test
+    void promptTeachesPolarityAndExposesStoredPolarity() {
+        ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
+        client.outputs.add("[]");
+
+        ConstraintOpsExtractor.Request request = new ConstraintOpsExtractor.Request(
+                "m-2", 2, "不要表格，改用分点", "t-1",
+                List.of(new ConstraintOpsExtractor.ActiveConstraint(
+                        "constraint-abc", ConstraintSlot.TABLE, "format.table",
+                        "CONVERSATION", "不要使用表格", 1, ConstraintPolarity.FORBID)));
+
+        extractor(client, DEFAULT_TIMEOUT_MS).extract(request);
+
+        String systemPrompt = client.systemPrompts.get(0);
+        // 提示词必须让模型对带目标的否定输出 FORBID，而不是正向 table。
+        assertThat(systemPrompt).contains("polarity");
+        assertThat(systemPrompt).contains("forbid");
+        assertThat(systemPrompt).contains(
+                "{\"slot\":\"table\",\"value\":\"format.table\",\"polarity\":\"forbid\"}");
+        // 已存储约束的极性也要进用户提示词，模型才能区分「已要求表格」和「已要求不要表格」。
+        assertThat(client.userPrompts.get(0)).contains("\"polarity\":\"forbid\"");
+    }
+
+    @Test
     void lowConfidenceOpsAreHandedToTheMergerNotFilteredHere() {
         ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
         client.outputs.add("[{\"op\":\"ADD\",\"slot\":\"table\",\"confidence\":0.2}]");

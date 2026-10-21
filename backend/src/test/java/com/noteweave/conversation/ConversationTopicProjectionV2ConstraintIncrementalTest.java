@@ -3,10 +3,12 @@ package com.noteweave.conversation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.noteweave.conversation.constraint.ConstraintIds;
 import com.noteweave.conversation.constraint.ConstraintOp;
 import com.noteweave.conversation.constraint.ConstraintOpMerger;
 import com.noteweave.conversation.constraint.ConstraintOpsExtractor;
 import com.noteweave.conversation.constraint.ConstraintOpsPrompt;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.conversation.constraint.ConstraintScope;
 import com.noteweave.conversation.constraint.ConstraintSlot;
 import java.util.ArrayList;
@@ -138,6 +140,38 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         assertThat(constraintIds()).hasSize(2);
     }
 
+    @Test
+    void forbiddenPolaritySurvivesTheStepsJsonBaselineAcrossRefreshes() {
+        userMessage("m1", 1, "不要表格。");
+        extractor.responder = request -> forbiddenTableConstraint();
+
+        topics.refresh(WORKSPACE, CONVERSATION);
+
+        String forbidId = ConstraintIds.of("m1", "table", 0);
+        // 禁止项落成可读文本，极性写进 steps_json 的基线 ops。
+        assertThat(constraintText(forbidId)).isEqualTo("不要使用表格");
+        assertThat(stepsJson()).contains("\"polarity\":\"FORBID\"");
+
+        userMessage("m3", 3, "改用表格。");
+        extractor.responder = request -> "m3".equals(request.messageId())
+                ? tableConstraint() : forbiddenTableConstraint();
+
+        topics.refresh(WORKSPACE, CONVERSATION);
+
+        // 第二轮只抽 m3，但基线里的 m1 仍是 FORBID：正向 table 必须把禁止项顶掉。
+        assertThat(extractor.messageIds).containsExactly("m1", "m3");
+        assertThat(constraintStatus(forbidId)).isEqualTo("REVOKED");
+        String requireId = ConstraintIds.of("m3", "table", 0);
+        assertThat(constraintStatus(requireId)).isEqualTo("ACTIVE");
+        assertThat(constraintText(requireId)).isEqualTo("format.table");
+    }
+
+    private static ConstraintOpsExtractor.Result forbiddenTableConstraint() {
+        return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.ADD,
+                ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION, null, 0.9,
+                ConstraintPolarity.FORBID)), ConstraintOpsPrompt.PROMPT_VERSION);
+    }
+
     private static ConstraintOpsExtractor.Result tableConstraint() {
         return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.ADD,
                 ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION, null, 0.9)),
@@ -173,6 +207,22 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
                         + " from conversation_constraint_state_v2 where conversation_id = ?",
                 Number.class, CONVERSATION);
         return value == null ? 0 : value.intValue();
+    }
+
+    private String constraintStatus(String id) {
+        return jdbc.queryForObject("select status from conversation_constraint_v2 where id = ?",
+                String.class, id);
+    }
+
+    private String constraintText(String id) {
+        return jdbc.queryForObject("select constraint_text from conversation_constraint_v2 where id = ?",
+                String.class, id);
+    }
+
+    private String stepsJson() {
+        return jdbc.queryForObject("""
+                select steps_json from conversation_constraint_state_v2 where conversation_id = ?
+                """, String.class, CONVERSATION);
     }
 
     private List<String> constraintIds() {

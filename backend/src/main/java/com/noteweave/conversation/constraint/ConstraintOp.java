@@ -14,6 +14,8 @@ import java.util.Objects;
  * @param scope      作用范围；{@code null} 表示模型没有声明，由合并器按「不降级」处理
  * @param targetId   被撤回/被更新的已有约束 id；可为 {@code null}
  * @param confidence 置信度，必须在 {@code [0,1]}
+ * @param polarity   极性：{@link ConstraintPolarity#REQUIRE}（要求）/ {@link ConstraintPolarity#FORBID}
+ *                   （禁止）；{@code null} 按 {@code REQUIRE} 处理，兼容没有该字段的旧基线
  */
 public record ConstraintOp(
         Op op,
@@ -21,7 +23,8 @@ public record ConstraintOp(
         String value,
         ConstraintScope scope,
         String targetId,
-        double confidence
+        double confidence,
+        ConstraintPolarity polarity
 ) {
 
     /** 模型没给 confidence 时的缺省值：高于默认门槛，又不至于把猜测当确定。 */
@@ -39,6 +42,19 @@ public record ConstraintOp(
         if (!(confidence >= 0.0 && confidence <= 1.0)) {
             throw new IllegalArgumentException("confidence 必须在 0 和 1 之间");
         }
+        // 旧基线（steps_json）没有 polarity 字段：反序列化成 null 时按「要求」处理，语义与加字段前一致。
+        polarity = polarity == null ? ConstraintPolarity.REQUIRE : polarity;
+    }
+
+    /** 缺省极性为 {@code REQUIRE} 的构造器：既有调用点不用逐个改写。 */
+    public ConstraintOp(Op op, ConstraintSlot slot, String value, ConstraintScope scope,
+                        String targetId, double confidence) {
+        this(op, slot, value, scope, targetId, confidence, ConstraintPolarity.REQUIRE);
+    }
+
+    /** 是否是一条「不要这样做」的约束。 */
+    public boolean forbids() {
+        return polarity == ConstraintPolarity.FORBID;
     }
 
     /** 该操作是否必须带槽位。 */

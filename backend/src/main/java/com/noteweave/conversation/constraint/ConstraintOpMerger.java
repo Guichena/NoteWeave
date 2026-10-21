@@ -23,22 +23,18 @@ import java.util.Objects;
  *       没有 {@code targetId} 或 id 没命中时退化成 {@code ADD}；若退化后与旧行同槽位同值同 scope，
  *       那就是重申而不是更正，按 {@code ADD} 的重申规则保留旧行、不新插。</li>
  *   <li>{@code REVOKE}：按 {@code targetId}（或 {@code slot}+{@code value}）撤回，不新增行。</li>
- *   <li>否定约束（{@code slot=negation}）只撤回同 slot 同取值的旧行；没有取值时单独成行，
+ *   <li>极性：{@code polarity=FORBID} 表示「不要这样做」（{@code "不要表格"} 是 FORBID + table，
+ *       而不是正向 table）。同槽位、同 scope、指向同一取值的 REQUIRE 与 FORBID 互斥：后一条顶掉前一条；
+ *       取值不同的语言类要求可以并存（{@code "不要中文"} 不撤 {@code "英文"}）。</li>
+ *   <li>没有目标的否定（{@code slot=negation} 且无取值）只撤回同 slot 同取值的旧行；没有取值时单独成行，
  *       既不撤回别人，也不被后来的约束撤回。</li>
- *   <li>取值不同、且任一方是否定约束时不算冲突（{@code "不要中文"} 不撤 {@code "英文"}）。</li>
  *   <li>同一条消息的多个 op 按数组顺序应用，同槽位后者胜；{@code confidence} 低于门槛的
  *       {@code ADD}/{@code UPDATE} 直接丢弃。</li>
  * </ol>
  * <p>
- * 两点与设计文档的差异（以代码现状为准）：
- * <ul>
- *   <li>{@link ConstraintOp} 没有极性字段，因此「是否否定」只能由 {@code slot == NEGATION} 推导
- *       （见 {@link #forbid(ConstraintSlot)}）。提示词让模型对「不要用表格」给出 {@code slot=table}，
- *       这类带目标的否定在合并器看来与正向要求同形，无法区分；将来 {@code ConstraintOp} 补上极性字段后
- *       只需改 {@link #forbid(ConstraintSlot)} 与 {@link #conflicts(Active, ConstraintSlot, String)}。</li>
- *   <li>op 只有 {@code slot}/{@code value}，没有自由文本，因此新行的 {@code text} 取 {@code value}
- *       （缺失时取 {@link ConstraintSlot#wire()}）；需要中文原文的渲染得在接线层另取消息片段。</li>
- * </ul>
+ * 与设计文档的唯一差异：op 只有 {@code slot}/{@code value}，没有自由文本，因此正向新行的 {@code text}
+ * 取 {@code value}（缺失时取 {@link ConstraintSlot#wire()}）。禁止项的行文本由
+ * {@link ConstraintSlot#forbidText(String)} 渲染成「不要使用表格」，避免回答提示词把内部槽位名当成正向要求。
  * <p>
  * 合并器永远不产出 {@code UNRESOLVED}：op 表达不了这个状态，指代不明的消息由模型给出空数组或 {@code NOOP}，
  * 本轮就不产出行。
@@ -46,7 +42,7 @@ import java.util.Objects;
 public final class ConstraintOpMerger {
 
     /** 合并规则版本：版本不同就说明两次重放的结论不可直接比较（例如后续改了冲突规则）。 */
-    public static final String MERGER_VERSION = "constraint-merger-v1";
+    public static final String MERGER_VERSION = "constraint-merger-v2";
 
     /** 默认不做置信度过滤：接线时把 {@code constraint-op-min-confidence} 传进构造器。 */
     public static final double NO_CONFIDENCE_FLOOR = 0.0;
@@ -102,7 +98,8 @@ public final class ConstraintOpMerger {
                 continue;
             }
             active.add(new ConstraintOpsExtractor.ActiveConstraint(constraint.id(), row.slot(), row.value(),
-                    constraint.scope(), constraint.text(), constraint.validFromSeq()));
+                    constraint.scope(), constraint.text(), constraint.validFromSeq(),
+                    row.forbid() ? ConstraintPolarity.FORBID : ConstraintPolarity.REQUIRE));
         }
         return List.copyOf(active);
     }
@@ -151,25 +148,26 @@ public final class ConstraintOpMerger {
         String scope = scopeOf(op.scope());
         String scopeKey = scopeKey(scope, step.topicId());
         String id = ConstraintIds.of(step.messageId(), slot.wire(), index);
+        boolean forbid = forbid(slot, op);
         List<Active> active = actives(rows);
-        if (slot == ConstraintSlot.NEGATION && value == null) {
+        if (forbid && value == null) {
             // 没有指向具体线索的否定要求单独成行：不撤回旧约束，也不会被后来的约束撤回。
-            rows.add(row(id, step, slot, value, scope));
+            rows.add(row(id, step, slot, value, scope, forbid));
             return;
         }
-        Active restated = restated(active, slot, value, scopeKey);
+        Active restated = restated(active, slot, value, scopeKey, forbid);
         if (restated != null) {
             // 重申同值：保留旧行（包括更宽的 scope），既不新插也不收窄；
             // 但同 scope 里更老的冲突取值仍要撤回，否则会同时生效两条互斥要求。
-            retireConflicts(rows, active, step.seq(), slot, value, scopeKey, restated);
+            retireConflicts(rows, active, step.seq(), slot, value, scopeKey, forbid, restated);
             return;
         }
         for (Active previous : active) {
-            if (revocable(previous, slot, value, scopeKey)) {
+            if (revocable(previous, slot, value, scopeKey, forbid)) {
                 retire(rows, step.seq(), previous, id);
             }
         }
-        rows.add(row(id, step, slot, value, scope));
+        rows.add(row(id, step, slot, value, scope, forbid));
     }
 
     /** UPDATE：命中 targetId 时跨 scope 撤回旧行，再按 op.scope 落新行；否则退化成 ADD。 */
@@ -194,7 +192,7 @@ public final class ConstraintOpMerger {
         }
         String id = ConstraintIds.of(step.messageId(), slot.wire(), index);
         retire(rows, step.seq(), target, id);
-        rows.add(row(id, step, slot, value, updateScope(op.scope(), target)));
+        rows.add(row(id, step, slot, value, updateScope(op.scope(), target), forbid(slot, op)));
     }
 
     /** REVOKE：先按 id，再按 slot（可带 value）撤回，不新增行。 */
@@ -221,15 +219,17 @@ public final class ConstraintOpMerger {
     }
 
     /**
-     * 新取值是否是在重申旧值：同槽位、同取值，且旧行 scope 更宽或相同。
-     * 否定约束不参与重申——两次「不要再贴大段配置」是两条要求，不是确认。
+     * 新取值是否是在重申旧值：同槽位、同极性、同取值，且旧行 scope 更宽或相同。
+     * 无目标的否定（{@code slot=negation}）不参与重申——两次「不要再贴大段配置」是两条要求，不是确认。
+     * 极性必须相同：「不要表格」不是「用表格」的重申，否则禁止项会把自己撤掉。
      */
-    private static Active restated(List<Active> active, ConstraintSlot slot, String value, String scopeKey) {
+    private static Active restated(List<Active> active, ConstraintSlot slot, String value,
+                                   String scopeKey, boolean forbid) {
         if (slot == ConstraintSlot.NEGATION || value == null) {
             return null;
         }
         for (Active previous : active) {
-            if (previous.slot() != slot || previous.forbid()) {
+            if (previous.slot() != slot || previous.forbid() != forbid) {
                 continue;
             }
             if (!value.equals(previous.value()) || !covers(previous.scopeKey(), scopeKey)) {
@@ -248,22 +248,30 @@ public final class ConstraintOpMerger {
         return SCOPE_CONVERSATION.equals(previousScopeKey) && !SCOPE_CONVERSATION.equals(scopeKey);
     }
 
-    /** 同槽位、同 scope、未失效，且不属于「否定不同值」的行才能被新值顶掉。 */
-    private static boolean revocable(Active previous, ConstraintSlot slot, String value, String scopeKey) {
+    /** 同槽位、同 scope、未失效，且不与被顶掉的行并存的行才能被新值顶掉。 */
+    private static boolean revocable(Active previous, ConstraintSlot slot, String value,
+                                     String scopeKey, boolean forbid) {
         if (previous.slot() != slot || standalone(previous)) {
             return false;
         }
-        // 否定约束只撤回同值：'不要中文' 不撤 '英文'，另一个 '不要中文' 才顶掉它。
-        if (conflicts(previous, slot, value)) {
+        // 取值不同且不算互斥时两条并存：'不要中文' 不撤 '英文'，反过来也一样。
+        if (coexists(previous, value, forbid)) {
             return false;
         }
         return previous.scopeKey().equals(scopeKey);
     }
 
-    /** 取值不同、且任一方是否定约束：不是互斥冲突，两条并存。 */
-    private static boolean conflicts(Active previous, ConstraintSlot slot, String value) {
-        if (!previous.forbid() && !forbid(slot)) {
-            return false;
+    /**
+     * 同槽位两行能否并存。
+     * <ul>
+     *   <li>同极性：只有否定类且取值不同才并存（{@code "不要中文"} 不撤 {@code "不要英文"}）。</li>
+     *   <li>异极性：REQUIRE 与 FORBID 指向同一取值（或一方未限定取值）时互斥，后写的替换先写的；
+     *       取值不同的语言要求可以并存（{@code "不要中文"} 不撤 {@code "用英文"}）。</li>
+     * </ul>
+     */
+    private static boolean coexists(Active previous, String value, boolean forbid) {
+        if (previous.forbid() == forbid) {
+            return forbid && previous.value() != null && value != null && !previous.value().equals(value);
         }
         return previous.value() != null && value != null && !previous.value().equals(value);
     }
@@ -273,12 +281,12 @@ public final class ConstraintOpMerger {
      * 撤回行的 {@code supersededBy} 指向它，保证「确认」不会留下两条互斥要求。
      */
     private static void retireConflicts(List<Row> rows, List<Active> active, int seq, ConstraintSlot slot,
-            String value, String scopeKey, Active keep) {
+            String value, String scopeKey, boolean forbid, Active keep) {
         for (Active previous : active) {
             if (previous.index() == keep.index()) {
                 continue;
             }
-            if (revocable(previous, slot, value, scopeKey)) {
+            if (revocable(previous, slot, value, scopeKey, forbid)) {
                 retire(rows, seq, previous, keep.id());
             }
         }
@@ -290,7 +298,7 @@ public final class ConstraintOpMerger {
         rows.set(previous.index(), new Row(new ConversationConstraintProjectorV2.Constraint(
                 old.id(), old.sourceMessageId(), old.kind(), old.scope(), old.text(),
                 old.validFromSeq(), seq, STATUS_REVOKED, supersededBy),
-                row.slot(), row.value(), row.scopeKey()));
+                row.slot(), row.value(), row.forbid(), row.scopeKey()));
     }
 
     /** 当前 ACTIVE 行，按插入顺序；每个 op 应用前重算一次，避免拿着过期的索引改表。 */
@@ -302,7 +310,7 @@ public final class ConstraintOpMerger {
                 continue;
             }
             active.add(new Active(index, row.constraint().id(), row.slot(), row.value(),
-                    forbid(row.slot()), row.scopeKey()));
+                    row.forbid(), row.scopeKey()));
         }
         return active;
     }
@@ -319,12 +327,9 @@ public final class ConstraintOpMerger {
         return null;
     }
 
-    /**
-     * 该槽位是否表示否定要求。op 没有极性字段，只能由槽位推导（见类注释）；
-     * 将来 {@link ConstraintOp} 加极性时改这一处即可。
-     */
-    private static boolean forbid(ConstraintSlot slot) {
-        return slot == ConstraintSlot.NEGATION;
+    /** 是否是一条否定要求：{@code polarity=FORBID}，或没有目标的 {@code slot=negation}。 */
+    private static boolean forbid(ConstraintSlot slot, ConstraintOp op) {
+        return op.forbids() || slot == ConstraintSlot.NEGATION;
     }
 
     /** 没有取值的否定行是独立的一条要求：既不撤回别人，也不会被撤回。 */
@@ -337,10 +342,17 @@ public final class ConstraintOpMerger {
      * 语言与否定没有取值就不补，交给调用点决定丢弃还是单独成行。
      */
     private static String valueOf(ConstraintSlot slot, ConstraintOp op) {
+        if (slot == null) {
+            return null;
+        }
+        // 格式槽位是单值维度：取值统一用内部槽位，模型偶尔写成「表格」也不会让 REQUIRE/FORBID 判成两个取值。
+        if ("FORMAT".equals(slot.dbKind())) {
+            return slot.internalSlot();
+        }
         if (op.value() != null) {
             return op.value();
         }
-        if (slot == null || slot == ConstraintSlot.LANGUAGE || slot == ConstraintSlot.NEGATION) {
+        if (slot == ConstraintSlot.LANGUAGE || slot == ConstraintSlot.NEGATION) {
             return null;
         }
         return slot.internalSlot();
@@ -371,11 +383,14 @@ public final class ConstraintOpMerger {
                 : scope;
     }
 
-    private static Row row(String id, Step step, ConstraintSlot slot, String value, String scope) {
-        String text = value == null ? slot.wire() : value;
+    private static Row row(String id, Step step, ConstraintSlot slot, String value, String scope,
+                           boolean forbid) {
+        // 禁止项直接落可读文本「不要使用表格」：应答提示词与检索改写都只渲染 constraint_text，
+        // 写内部槽位名（format.table）会让模型把它当成正向要求。
+        String text = forbid ? slot.forbidText(value) : (value == null ? slot.wire() : value);
         return new Row(new ConversationConstraintProjectorV2.Constraint(
                 id, step.messageId(), slot.dbKind(), scope, text, step.seq(), null, STATUS_ACTIVE, null),
-                slot, value, scopeKey(scope, step.topicId()));
+                slot, value, forbid, scopeKey(scope, step.topicId()));
     }
 
     /**
@@ -394,9 +409,9 @@ public final class ConstraintOpMerger {
         }
     }
 
-    /** 内部行：约束行本身加上只用于冲突判定的槽位/取值/scope 键（都不入库）。 */
+    /** 内部行：约束行本身加上只用于冲突判定的槽位/取值/极性/scope 键（后四者只在合并器内部）。 */
     private record Row(ConversationConstraintProjectorV2.Constraint constraint, ConstraintSlot slot,
-                       String value, String scopeKey) {
+                       String value, boolean forbid, String scopeKey) {
     }
 
     /** 当前仍然生效的行：索引、id、槽位、取值、是否否定、scope 键。 */

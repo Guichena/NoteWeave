@@ -59,6 +59,26 @@ public enum ConstraintSlot {
     }
 
     /**
+     * 禁止项的渲染文本：{@code constraint_text} 直接存这句话，回答提示词与检索改写都按行渲染。
+     * <p>
+     * 只用于 {@code polarity=FORBID}（以及 {@link #NEGATION} 槽位）；正向槽位仍用取值本身。
+     * 不能把内部槽位名（{@code format.table}）写进提示词，否则回答模型看到的只是一条正向要求。
+     */
+    public String forbidText(String value) {
+        return switch (this) {
+            case LANGUAGE -> value == null ? "不要使用这种语言" : "不要使用" + value;
+            case TABLE -> "不要使用表格";
+            case CONCLUSION -> "不要先给结论";
+            case BULLETS -> "不要使用分点";
+            case LENGTH_LIMIT -> "不要限制字数";
+            case DETAIL -> "不要展开细节";
+            case CITATION -> "不要标注来源";
+            case CODE -> "不要给出代码";
+            case NEGATION -> value == null ? "不要这样做" : "不要" + value;
+        };
+    }
+
+    /**
      * 解析模型输出里的槽位；不认识的值返回 {@code null}，由校验器整体判失败，不做兜底猜测。
      * 大小写与下划线写法都接受（{@code LENGTH_LIMIT}、{@code length_limit}），便于不同模型稳定输出。
      */

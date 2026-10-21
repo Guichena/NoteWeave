@@ -28,6 +28,20 @@ class ConstraintOpTest {
     }
 
     @Test
+    void polarityDefaultsToRequireAndDrivesForbids() {
+        // 6 参构造器保留旧语义：没有极性就是「要求」。
+        assertThat(new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.TABLE, null, null, null, 0.8)
+                .polarity()).isEqualTo(ConstraintPolarity.REQUIRE);
+        // 旧 steps_json 反序列化出的 null 也按 REQUIRE 处理，不能抛 NPE。
+        assertThat(new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.TABLE, null, null, null, 0.8, null)
+                .polarity()).isEqualTo(ConstraintPolarity.REQUIRE);
+        ConstraintOp forbid = new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.TABLE,
+                "format.table", null, null, 0.8, ConstraintPolarity.FORBID);
+        assertThat(forbid.forbids()).isTrue();
+        assertThat(forbid.polarity()).isEqualTo(ConstraintPolarity.FORBID);
+    }
+
+    @Test
     void confidenceMustBeFiniteAndInsideTheUnitInterval() {
         assertThatThrownBy(() -> new ConstraintOp(ConstraintOp.Op.NOOP, null, null, null, null, 1.1))
                 .isInstanceOf(IllegalArgumentException.class);

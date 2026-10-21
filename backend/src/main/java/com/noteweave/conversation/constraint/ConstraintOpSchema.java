@@ -31,6 +31,8 @@ public final class ConstraintOpSchema {
     public static final String UNKNOWN_OP = "UNKNOWN_OP";
     public static final String UNKNOWN_SLOT = "UNKNOWN_SLOT";
     public static final String UNKNOWN_SCOPE = "UNKNOWN_SCOPE";
+    /** polarity 不在 REQUIRE/FORBID 内。 */
+    public static final String UNKNOWN_POLARITY = "UNKNOWN_POLARITY";
     /** ADD/UPDATE 没有槽位。 */
     public static final String MISSING_SLOT = "MISSING_SLOT";
     /** REVOKE 既没有 targetId 也没有槽位，撤回目标不确定。 */
@@ -109,6 +111,18 @@ public final class ConstraintOpSchema {
                 return ItemResult.invalid(UNKNOWN_SCOPE);
             }
         }
+        String rawPolarity = text(node, "polarity");
+        ConstraintPolarity polarity = null;
+        if (rawPolarity != null) {
+            polarity = ConstraintPolarity.fromWire(rawPolarity);
+            if (polarity == null) {
+                return ItemResult.invalid(UNKNOWN_POLARITY);
+            }
+        }
+        if (polarity == null) {
+            // 未声明按「要求」处理：与加 polarity 之前的语义完全一致。
+            polarity = ConstraintPolarity.REQUIRE;
+        }
         String value = text(node, "value");
         if (value != null && value.codePointCount(0, value.length()) > ConstraintOp.MAX_VALUE_CHARS) {
             return ItemResult.invalid(VALUE_TOO_LONG);
@@ -135,7 +149,7 @@ public final class ConstraintOpSchema {
         if (op == ConstraintOp.Op.REVOKE && slot == null && targetId == null) {
             return ItemResult.invalid(MISSING_TARGET);
         }
-        return new ItemResult(new ConstraintOp(op, slot, value, scope, targetId, confidence), null);
+        return new ItemResult(new ConstraintOp(op, slot, value, scope, targetId, confidence, polarity), null);
     }
 
     private static ConstraintOp.Op parseOp(String raw) {

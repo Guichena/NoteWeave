@@ -7,6 +7,7 @@ import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.conversation.constraint.ConstraintIds;
 import com.noteweave.conversation.constraint.ConstraintOp;
 import com.noteweave.conversation.constraint.ConstraintOpMerger;
+import com.noteweave.conversation.constraint.ConstraintOpsPrompt;
 import com.noteweave.conversation.constraint.ConstraintScope;
 import com.noteweave.conversation.constraint.ConstraintSlot;
 import com.noteweave.conversation.constraint.LlmConstraintOpsExtractor;
@@ -148,7 +149,8 @@ class ConversationConstraintProjectionV2ServiceTest {
 
     @Test
     void versionMarksTheModelOnlyPath() {
-        assertThat(service(new ScriptedClient()).version()).isEqualTo("model-only:constraint-ops-v1");
+        assertThat(service(new ScriptedClient()).version())
+                .isEqualTo("model-only:" + ConstraintOpsPrompt.PROMPT_VERSION);
     }
 
     @Test

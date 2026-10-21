@@ -221,6 +221,104 @@ class ConstraintOpMergerTest {
     }
 
     @Test
+    void forbiddenTableIsStoredAsAProhibitionAndReplacesThePositiveRow() {
+        String positiveId = ConstraintIds.of("m1", "table", 0);
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CONVERSATION)),
+                step("m2", 2, add(ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION,
+                        ConstraintPolarity.FORBID))));
+
+        ConversationConstraintProjectorV2.Constraint positive = row(rows, positiveId);
+        ConversationConstraintProjectorV2.Constraint forbid = row(rows, ConstraintIds.of("m2", "table", 0));
+        // 「不要表格」不是正向 table：旧要求被撤回，新行是可读的禁止项。
+        assertThat(positive.status()).isEqualTo("REVOKED");
+        assertThat(positive.invalidAfterSeq()).isEqualTo(2);
+        assertThat(positive.supersededBy()).isEqualTo(forbid.id());
+        assertThat(forbid.status()).isEqualTo("ACTIVE");
+        assertThat(forbid.kind()).isEqualTo("FORMAT");
+        assertThat(forbid.text()).isEqualTo("不要使用表格");
+    }
+
+    @Test
+    void requireTableReplacesTheForbiddenRowInTheSameScope() {
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC,
+                        ConstraintPolarity.FORBID)),
+                step("m2", 2, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC))));
+
+        ConversationConstraintProjectorV2.Constraint forbid = row(rows, ConstraintIds.of("m1", "table", 0));
+        ConversationConstraintProjectorV2.Constraint require = row(rows, ConstraintIds.of("m2", "table", 0));
+        // 同槽位 REQUIRE 与 FORBID 互斥：后说的替换先说的，不留两条矛盾要求。
+        assertThat(forbid.status()).isEqualTo("REVOKED");
+        assertThat(forbid.supersededBy()).isEqualTo(require.id());
+        assertThat(require.status()).isEqualTo("ACTIVE");
+        assertThat(require.text()).isEqualTo("format.table");
+    }
+
+    @Test
+    void oppositePolarityOnDifferentLanguageValuesCoexists() {
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION)),
+                step("m2", 2, add(ConstraintSlot.LANGUAGE, "中文", ConstraintScope.CONVERSATION,
+                        ConstraintPolarity.FORBID))));
+
+        // 「不要中文」与「用英文」不矛盾：两条都生效，禁止项渲染成可读文本。
+        ConversationConstraintProjectorV2.Constraint english = row(rows, ConstraintIds.of("m1", "language", 0));
+        ConversationConstraintProjectorV2.Constraint noChinese = row(rows, ConstraintIds.of("m2", "language", 0));
+        assertThat(english.status()).isEqualTo("ACTIVE");
+        assertThat(noChinese.status()).isEqualTo("ACTIVE");
+        assertThat(noChinese.text()).isEqualTo("不要使用中文");
+        assertThat(noChinese.kind()).isEqualTo("LANGUAGE");
+    }
+
+    @Test
+    void forbiddenLanguageWithTheSameValueReplacesTheRequirement() {
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "中文", ConstraintScope.CURRENT_TOPIC)),
+                step("m2", 2, add(ConstraintSlot.LANGUAGE, "中文", ConstraintScope.CURRENT_TOPIC,
+                        ConstraintPolarity.FORBID))));
+
+        ConversationConstraintProjectorV2.Constraint requirement = row(rows, ConstraintIds.of("m1", "language", 0));
+        ConversationConstraintProjectorV2.Constraint forbid = row(rows, ConstraintIds.of("m2", "language", 0));
+        // 同槽位同取值、极性相反：后一条顶掉前一条。
+        assertThat(requirement.status()).isEqualTo("REVOKED");
+        assertThat(requirement.supersededBy()).isEqualTo(forbid.id());
+        assertThat(forbid.status()).isEqualTo("ACTIVE");
+        assertThat(forbid.text()).isEqualTo("不要使用中文");
+    }
+
+    @Test
+    void updateToForbidRetiresTheRequirementAndKeepsTheOldWidth() {
+        String tableId = ConstraintIds.of("m1", "table", 0);
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CONVERSATION)),
+                step("m2", 2, update(ConstraintSlot.TABLE, null, null, tableId, HIGH,
+                        ConstraintPolarity.FORBID))));
+
+        ConversationConstraintProjectorV2.Constraint old = row(rows, tableId);
+        ConversationConstraintProjectorV2.Constraint replacement = row(rows, ConstraintIds.of("m2", "table", 0));
+        assertThat(old.status()).isEqualTo("REVOKED");
+        assertThat(old.supersededBy()).isEqualTo(replacement.id());
+        assertThat(replacement.status()).isEqualTo("ACTIVE");
+        assertThat(replacement.scope()).isEqualTo("CONVERSATION");
+        assertThat(replacement.text()).isEqualTo("不要使用表格");
+    }
+
+    @Test
+    void activeConstraintsExposeForbidForTheNextModelCall() {
+        List<ConstraintOpsExtractor.ActiveConstraint> active = merger.activeConstraints(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CONVERSATION,
+                        ConstraintPolarity.FORBID))));
+
+        assertThat(active).singleElement().satisfies(item -> {
+            assertThat(item.slot()).isEqualTo(ConstraintSlot.TABLE);
+            assertThat(item.value()).isEqualTo("format.table");
+            assertThat(item.text()).isEqualTo("不要使用表格");
+            assertThat(item.polarity()).isEqualTo(ConstraintPolarity.FORBID);
+        });
+    }
+
+    @Test
     void updateWithoutTargetDegradesToAdd() {
         // 没有 targetId 的 UPDATE 走 ADD 规则：换值即撤回同槽位同 scope 的旧行并插入新行。
         // 取值必须与旧行不同——同槽位同值同 scope 的 ADD 是重申，不会新插（见下一个用例）。
@@ -336,6 +434,7 @@ class ConstraintOpMergerTest {
         assertThat(table.scope()).isEqualTo("CURRENT_TOPIC");
         assertThat(table.text()).isEqualTo("format.table");
         assertThat(table.validFromSeq()).isEqualTo(2);
+        assertThat(table.polarity()).isEqualTo(ConstraintPolarity.REQUIRE);
         assertThat(merger.activeConstraints(List.of())).isEmpty();
     }
 
@@ -347,6 +446,11 @@ class ConstraintOpMergerTest {
         return new ConstraintOp(ConstraintOp.Op.ADD, slot, value, scope, null, confidence);
     }
 
+    private static ConstraintOp add(ConstraintSlot slot, String value, ConstraintScope scope,
+                                    ConstraintPolarity polarity) {
+        return new ConstraintOp(ConstraintOp.Op.ADD, slot, value, scope, null, HIGH, polarity);
+    }
+
     private static ConstraintOp update(ConstraintSlot slot, String value, ConstraintScope scope, String targetId) {
         return update(slot, value, scope, targetId, HIGH);
     }
@@ -354,6 +458,11 @@ class ConstraintOpMergerTest {
     private static ConstraintOp update(ConstraintSlot slot, String value, ConstraintScope scope, String targetId,
             double confidence) {
         return new ConstraintOp(ConstraintOp.Op.UPDATE, slot, value, scope, targetId, confidence);
+    }
+
+    private static ConstraintOp update(ConstraintSlot slot, String value, ConstraintScope scope, String targetId,
+            double confidence, ConstraintPolarity polarity) {
+        return new ConstraintOp(ConstraintOp.Op.UPDATE, slot, value, scope, targetId, confidence, polarity);
     }
 
     private static ConstraintOp revoke(String targetId) {
