@@ -3,7 +3,7 @@
 > **仓库**：`/workspace/NoteWeave-merge`（git worktree）
 > **分支**：`merge/integration`｜**起点**：`c713463`｜**合并 HEAD**：`91986ee`｜**代码 HEAD**：`7cc6696`（两项 d10 修复，其后只有文档提交）｜**本文提交**：见 `git log --oneline -1 -- HANDOFF.md`
 > **合并范围**：`git log --oneline c713463..91986ee` 共 **89** 个提交（G 线 24 + D 线 60 + lease-g 2 + 合并提交 3），**191 个文件、+17202 / −1372**
-> **合并之后的提交**：5 个文档提交（含本文）+ 2 个 d10 修复提交，共 7 个；`c713463..HEAD` 合计 **96** 个提交（§1.5）
+> **合并之后的提交**：6 个文档提交（含本文）+ 2 个 d10 修复提交，共 8 个；`c713463..HEAD` 合计 **97** 个提交（§1.5）
 > **合并顺序**：`fix/batch-g2` → `fix/batch-d` → `fix/lease-g`，三次均 `--no-ff`
 > **资料来源（只读）**：`/workspace/audit-ds/handoff-d.md`、`/workspace/audit/merged/botcheck/handoff-g.md`、`/workspace/audit/merged/botcheck/REVIEW-d10.md`、`/workspace/audit-ds/merge/logs/{m1,m2,m3,chain2,chain3,chain4,chain5,fe,live,d10a,d10b,d10-test}.log`、`git log`
 > **安全声明**：本文不含任何 API key、访问令牌或口令。live 评测所需密钥只从环境变量读取，未写入仓库、命令历史或日志。
@@ -71,7 +71,7 @@ git log --oneline --reverse 65becae..43d638a   # D 线 60 个
 git log --oneline --reverse 43d638a..16972d9   # L 线 2 个
 ```
 
-### 1.5 合并之后的提交（不属于合并范围，共 7 个）
+### 1.5 合并之后的提交（不属于合并范围，共 8 个）
 
 | 提交 | 类型 | 内容 |
 |---|---|---|
@@ -81,9 +81,10 @@ git log --oneline --reverse 43d638a..16972d9   # L 线 2 个
 | `e4bd04a` | docs | 明确合并范围以 `91986ee` 为界，避免与文档提交混淆 |
 | `baf8bcc` | fix | 删除记忆抽取的 `INSTRUCTION_LIKE` 关键词表（REVIEW-d10 问题 1） |
 | `7cc6696` | fix | 跟进反馈乐观冲突改为可重试（REVIEW-d10 问题 2） |
-| 本文提交 | docs | 补 d10 修复、已知问题、chain5 测试结果与交叉审查状态；用 `git log --oneline -1 -- HANDOFF.md` 取 hash |
+| `c18ef97` | docs | 补 d10 两项修复、已知问题（FORBID 文案、like/dislike 事务内调模型）、chain5 全量结果与交叉审查状态 |
+| 本文提交 | docs | 修正 d10 未修条目计数与复核命令；用 `git log --oneline -1 -- HANDOFF.md` 取 hash |
 
-所以 `git log --oneline c713463..HEAD` 现在是 **96** 个提交：89 个合并范围 + 5 个文档 + 2 个 d10 修复。**合并提交仍是 `65becae` / `5a2dc9a` / `91986ee`，两项修复是合并提交之上的普通提交，没有改写任何合并历史。**
+所以 `git log --oneline c713463..HEAD` 现在是 **97** 个提交：89 个合并范围 + 6 个文档 + 2 个 d10 修复。**合并提交仍是 `65becae` / `5a2dc9a` / `91986ee`，两项修复是合并提交之上的普通提交，没有改写任何合并历史。**
 
 ---
 
@@ -491,7 +492,11 @@ case DETAIL      -> "不要展开细节";
 > - 问题 1「抽取解析新增 `INSTRUCTION_LIKE` 词表，命中整批作废」→ `baf8bcc` 删除词表，保留围栏/白名单/整批作废；
 > - 问题 2「跟进反馈乐观冲突记 `SKIPPED`，任务被标完成、反馈永久丢」→ `7cc6696` 改为 `RETRYABLE`，补了「冲突 → 标可重试 → 重驱写回」的端到端用例。
 >
-> 未修的三条中/低危：问题 3（`detail`/`length-limit` 的 `forbidText` 固定句，见 §8.1）、问题 5 后半（点赞/点踩仍在事务内调模型，见 §8.2）、问题 4/5 前半/6（日志与围栏、版本重置窗口）。**按交接口径，Grok 侧 d10 这一轮本身仍标「交叉审查未完成」**——修的是被审查方，不是审查者。
+> 未修的 4 条：
+> - **问题 3（中）**：`detail` / `length-limit` 的 `forbidText` 固定句（§8.1）；
+> - **问题 4（低）**：`TopicBoundaryJudge` 仍把异常消息打进日志；
+> - **问题 5（低）**：反馈判断的用户消息没有数据围栏；点赞/点踩旧路径仍在事务内调模型（§8.2）；
+> - **问题 6（低）**：版本重置仍在模型成功之前提交。**按交接口径，Grok 侧 d10 这一轮本身仍标「交叉审查未完成」**——修的是被审查方，不是审查者。
 
 ### 9.2 明确标注为“交叉审查未完成”的范围
 
@@ -518,7 +523,7 @@ export JAVA_HOME=/home/box/.local/opt/jdk-17.0.20.1+1
 export PATH="$JAVA_HOME/bin:/home/box/.local/opt/apache-maven-3.9.9/bin:$PATH"
 cd /workspace/NoteWeave-merge
 
-# 提交与规模（应为 96 个提交；合并提交 3 个）
+# 提交与规模（应为 97 个提交；合并提交 3 个）
 git log --oneline --graph c713463..HEAD
 git log --oneline --merges c713463..HEAD
 git diff --shortstat c713463..91986ee
