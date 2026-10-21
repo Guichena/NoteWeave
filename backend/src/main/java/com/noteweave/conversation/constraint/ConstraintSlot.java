@@ -12,7 +12,7 @@ import java.util.Locale;
  *       只用于判断同槽互斥，不入库；</li>
  *   <li>{@link #dbKind()}：落库的 {@code conversation_constraint_v2.kind}，只有 LANGUAGE/FORMAT/NEGATION 三值。</li>
  * </ul>
- * 映射与 {@code ConversationConstraintProjectorV2} 的规则路径保持一致，避免两条路径对同一句话给出不同槽位。
+ * 内部槽位名沿用 M15 时期的命名，保证同一句话在提示词与合并器里指向同一个槽位。
  */
 public enum ConstraintSlot {
 
@@ -29,7 +29,7 @@ public enum ConstraintSlot {
     /**
      * 无目标的否定要求（"不要再贴大段配置"）；有目标时用被否定线索的槽位。
      * 内部槽位只是前缀：合并器会给无目标的否定接上消息 id（{@code negation:<messageId>}），
-     * 让这类要求各自成行、互不撤回，与规则路径一致。
+     * 让这类要求各自成行、互不撤回。
      */
     NEGATION("negation", "negation", "NEGATION");
 

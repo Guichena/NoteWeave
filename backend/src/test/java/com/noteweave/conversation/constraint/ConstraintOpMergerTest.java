@@ -48,6 +48,19 @@ class ConstraintOpMergerTest {
     }
 
     @Test
+    void undeclaredScopeDefaultsToTheCurrentTopicOnAdd() {
+        // 模型没给 scope 时不升级：默认只在本话题生效，换话题后自然失效。
+        List<ConversationConstraintProjectorV2.Constraint> rows =
+                merger.fold(List.of(step("m1", 1, add(ConstraintSlot.TABLE, null, null))));
+
+        assertThat(rows).singleElement().satisfies(row -> {
+            assertThat(row.scope()).isEqualTo("CURRENT_TOPIC");
+            assertThat(row.status()).isEqualTo("ACTIVE");
+            assertThat(row.supersededBy()).isNull();
+        });
+    }
+
+    @Test
     void restatementAlsoRetiresOlderConflictingValuesInTheSameScope() {
         // "用中文"(本话题) → "以后用英文"(会话) → "继续用英文"(本话题重申)
         List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(

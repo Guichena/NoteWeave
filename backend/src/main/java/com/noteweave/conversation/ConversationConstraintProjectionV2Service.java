@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class ConversationConstraintProjectionV2Service {
 
-    /** 写进 {@code rule_version}：与规则路径的 {@code constraint-projector-v2-*} 区分，也标明只有模型一条路径。 */
+    /** 写进 {@code rule_version}：标明抽取只有模型一条路径。 */
     public static final String VERSION = "model-only:" + ConstraintOpsPrompt.PROMPT_VERSION;
 
     private static final Logger log = LoggerFactory.getLogger(ConversationConstraintProjectionV2Service.class);

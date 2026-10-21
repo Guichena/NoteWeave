@@ -16,7 +16,7 @@ import java.util.Objects;
  */
 public final class ConstraintIds {
 
-    /** 与规则路径同一个前缀，方便按 id 分辨约束行。 */
+    /** 约束行的统一前缀，方便按 id 分辨约束行。 */
     static final String PREFIX = "constraint-";
     /** varchar(36) 减去前缀后留一位余量，取 24 位十六进制（96 bit）足以避免同一会话内撞号。 */
     private static final int DIGEST_CHARS = 24;

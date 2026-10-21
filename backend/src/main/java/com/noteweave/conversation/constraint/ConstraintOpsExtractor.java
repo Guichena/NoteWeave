@@ -64,7 +64,7 @@ public interface ConstraintOpsExtractor {
          * 模型给出了合法 ops。
          *
          * @param ops           操作列表，空列表表示模型明确认为没有约束
-         * @param promptVersion 提示词版本，写进 {@code rule_version} 以便区分模型/规则路径
+         * @param promptVersion 提示词版本，写进 {@code rule_version} 以便追溯模型路径的版本
          */
         record Ok(List<ConstraintOp> ops, String promptVersion) implements Result {
 

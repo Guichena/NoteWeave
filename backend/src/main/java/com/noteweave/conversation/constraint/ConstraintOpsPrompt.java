@@ -11,7 +11,7 @@ import java.util.List;
  */
 public final class ConstraintOpsPrompt {
 
-    /** 提示词版本，写进 {@code rule_version}，与规则路径的 {@code constraint-projector-v2-*} 区分。 */
+    /** 提示词版本，写进 {@code rule_version}，标明模型路径的版本。 */
     public static final String PROMPT_VERSION = "constraint-ops-v1";
 
     /** 与 {@code ChatLlmClient} 的输出上限对齐：8 条 ops 的 JSON 足够，超出部分只会是解释文字。 */

@@ -36,11 +36,11 @@ import java.util.Objects;
  *       这类带目标的否定在合并器看来与正向要求同形，无法区分；将来 {@code ConstraintOp} 补上极性字段后
  *       只需改 {@link #forbid(ConstraintSlot)} 与 {@link #conflicts(Active, ConstraintSlot, String)}。</li>
  *   <li>op 只有 {@code slot}/{@code value}，没有自由文本，因此新行的 {@code text} 取 {@code value}
- *       （缺失时取 {@link ConstraintSlot#wire()}）。规则路径的分句原文无法从 op 恢复，
- *       需要中文原文的渲染得在接线层另取消息片段。</li>
+ *       （缺失时取 {@link ConstraintSlot#wire()}）；需要中文原文的渲染得在接线层另取消息片段。</li>
  * </ul>
  * <p>
- * 合并器永远不产出 {@code UNRESOLVED}：op 表达不了这个状态，指代不明的约束由规则路径在折叠之外单独成行。
+ * 合并器永远不产出 {@code UNRESOLVED}：op 表达不了这个状态，指代不明的消息由模型给出空数组或 {@code NOOP}，
+ * 本轮就不产出行。
  */
 public final class ConstraintOpMerger {
 
@@ -332,7 +332,7 @@ public final class ConstraintOpMerger {
     }
 
     /**
-     * 取值缺失时按槽位补：格式槽位的取值就是槽位本身（与规则路径一致，便于同槽同值判定）；
+     * 取值缺失时按槽位补：格式槽位的取值就是槽位本身（便于同槽同值判定）；
      * 语言与否定没有取值就不补，交给调用点决定丢弃还是单独成行。
      */
     private static String valueOf(ConstraintSlot slot, ConstraintOp op) {

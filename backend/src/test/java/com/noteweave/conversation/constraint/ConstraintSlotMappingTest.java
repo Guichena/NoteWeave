@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 class ConstraintSlotMappingTest {
 
     @Test
-    void everySlotMapsToTheSameInternalSlotAsTheRulePath() {
+    void everySlotMapsToTheStableInternalSlot() {
         assertThat(ConstraintSlot.LANGUAGE.internalSlot()).isEqualTo("answer.language");
         assertThat(ConstraintSlot.TABLE.internalSlot()).isEqualTo("format.table");
         assertThat(ConstraintSlot.CONCLUSION.internalSlot()).isEqualTo("format.conclusion");
