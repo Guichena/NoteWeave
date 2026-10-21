@@ -1,0 +1,156 @@
+{
+  "schema_version": "memory-extraction-eval-v1",
+  "annotation_note": "记忆/反馈抽取的模型侧评测集：偏好、explicit 与 feedback 只由模型输出决定，没有关键词正则兜底。每个 case 的输入是「上一条助手回答（previous_answer，可为 null）+ 这条用户消息（message）」，也就是抽取任务的真实输入形状；ideal_output 是「理想模型输出」，CI 用 stub 客户端原样回放，live 测试让真实模型自己回答。expected.preference_count 是 CI 回放理想输出时的精确条数；preference_count_max 是 live 允许的上限（缺省等于 preference_count，只用于「记不记这条都行、但不能记成负面反馈」的用例）；all_explicit 表示抽到的每条偏好 explicit 都等于该值（0 条时恒成立）；any_feedback 表示是否存在 feedback=true 的偏好；dissatisfied 是链路据此判定的「对上一轮回答不满」，决定是否写跟进反馈。",
+  "cases": [
+    {
+      "id": "remember-short-answers-is-a-preference-not-feedback",
+      "note": "「记住：以后回答不要太长」是长期偏好，不是对上一轮回答的负面反馈。",
+      "message": "记住：以后回答不要太长",
+      "previous_answer": "缓存一致性有强一致和最终一致两种取舍，下面分四个层面展开说明……（一段很长的回答）",
+      "ideal_output": [
+        {
+          "statement": "以后回答不要太长",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.length",
+          "value": "不要太长",
+          "polarity": "FORBID",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.length",
+        "polarity": "FORBID"
+      }
+    },
+    {
+      "id": "explicit-memory-question-is-not-a-memory",
+      "note": "「我希望你解释一下缓存一致性」是任务请求，不是显式记忆，理想输出空数组。",
+      "message": "我希望你解释一下缓存一致性",
+      "previous_answer": null,
+      "ideal_output": [],
+      "expected": {
+        "preference_count": 0,
+        "any_feedback": false,
+        "dissatisfied": false
+      }
+    },
+    {
+      "id": "variable-name-too-long-is-not-user-feedback",
+      "note": "「变量名太长」评价的是代码里的变量名，不是对助手回答的不满，理想输出空数组。",
+      "message": "变量名太长",
+      "previous_answer": "可以这样重写：int userCount = users.size();",
+      "ideal_output": [],
+      "expected": {
+        "preference_count": 0,
+        "preference_count_max": 1,
+        "any_feedback": false,
+        "dissatisfied": false
+      }
+    },
+    {
+      "id": "too-long-with-a-request-is-negative-feedback",
+      "note": "典型真负面反馈：既表达对上一轮的不满，又提出以后简短的要求。",
+      "message": "太长了，以后回答简短点",
+      "previous_answer": "……（一段很长的回答）",
+      "ideal_output": [
+        {
+          "statement": "以后回答简短一点",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.length",
+          "value": "简短",
+          "polarity": "REQUIRE",
+          "feedback": true
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": true,
+        "dissatisfied": true,
+        "slot": "answer.length",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "implicit-preference-is-not-explicit",
+      "note": "典型隐式偏好：喜欢用表格，但没有「以后/每次/记住」这类长期措辞，explicit=false。",
+      "message": "我比较喜欢用表格对比",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "用表格对比",
+          "category": "structure",
+          "explicit": false,
+          "slot": "format.table",
+          "value": "表格",
+          "polarity": "REQUIRE",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": false,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "format.table",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "durable-language-preference",
+      "note": "典型长期语言偏好：显式记忆，不涉及反馈。",
+      "message": "以后回答都用中文",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "以后回答都用中文",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.language",
+          "value": "中文",
+          "polarity": "REQUIRE",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.language",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "forbidden-wording-preference",
+      "note": "典型禁止类偏好：polarity=FORBID，不是对上一轮回答的不满。",
+      "message": "以后不要用表情符号",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "不要使用表情符号",
+          "category": "forbidden",
+          "explicit": true,
+          "slot": "answer.constraint",
+          "value": "表情符号",
+          "polarity": "FORBID",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.constraint",
+        "polarity": "FORBID"
+      }
+    }
+  ]
+}

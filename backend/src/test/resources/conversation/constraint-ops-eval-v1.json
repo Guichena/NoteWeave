@@ -1,0 +1,1130 @@
+{
+  "schema_version": "constraint-ops-eval-v1",
+  "annotation_note": "约束抽取的模型侧评测集：抽取只走模型，没有关键词/正则规则，也没有规则兜底。每条 USER 消息的 ideal_ops 是「理想模型输出」，CI 用 stub 客户端原样回放，再由真实 merger 折叠；live 测试让真实模型自己给 ops，只比对最终 ACTIVE 的 slot/scope。targetId 里的 $active:<slot> 表示「从提示词给出的 ACTIVE 列表里取该槽位那一行的 id」，由测试桩解析，模拟模型按提示词引用已有约束。expected 每行用 (source_message_id, slot, op_index) 定位到稳定 id，status/scope/value 是落库字段；REVOKED 行额外给出 invalid_after_seq 与 superseded_by。",
+  "cases": [
+    {
+      "id": "dangling-this-not-constraint",
+      "note": "「这个不要」指代不明，不构成可复用的回答方式约束；只有「用中文解释」落成一次性语言要求（this-turn 落库折成 CURRENT_TOPIC）。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "这个不要，用中文解释一下",
+          "topic": "cache"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的，下面用中文说明缓存一致性的两种写入顺序。",
+          "topic": "cache"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "中文",
+              "scope": "this-turn",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "chinese-then-english-then-keep-english",
+      "note": "用中文（本话题）→ 以后用英文（会话级，显式改口，跨 scope 撤回）→ 继续用英文（重申，NOOP）。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "用中文解释一下",
+          "topic": "cache"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的。",
+          "topic": "cache"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "以后用英文",
+          "topic": "cache"
+        },
+        {
+          "id": "c4",
+          "seq": 4,
+          "role": "ASSISTANT",
+          "text": "OK.",
+          "topic": "cache"
+        },
+        {
+          "id": "c5",
+          "seq": 5,
+          "role": "USER",
+          "text": "继续用英文",
+          "topic": "cache"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "中文",
+              "scope": "this-turn",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "UPDATE",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "targetId": "$active:language",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c5",
+          "ops": [
+            {
+              "op": "NOOP"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "REVOKED",
+          "invalid_after_seq": 3,
+          "superseded_by": "c3:language:0"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "do-not-forget-english",
+      "note": "「不要忘记」是提醒而不是否定要求，理想输出是正向的语言约束。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "不要忘记用英文",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "english-then-chinese-replaces",
+      "note": "以后用英文 → 不要用英文，用中文写：同一槽位换取值，旧行撤回、新行落会话级。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后用英文",
+          "topic": "report"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "Understood.",
+          "topic": "report"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "不要用英文，用中文写",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "UPDATE",
+              "slot": "language",
+              "value": "中文",
+              "scope": "conversation",
+              "targetId": "$active:language",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "REVOKED",
+          "invalid_after_seq": 3,
+          "superseded_by": "c3:language:0"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "not-the-point-keep-english",
+      "note": "「这不是重点」不是新约束；继续用英文是重申，理想输出 NOOP，已有行不受影响。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后用英文",
+          "topic": "report"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "Understood.",
+          "topic": "report"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "这不是重点，继续用英文",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "NOOP"
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "this-time-chinese-only",
+      "note": "「这次只用中文」只影响本轮，落库 scope 折成 CURRENT_TOPIC。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "这次只用中文",
+          "topic": "cache"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "中文",
+              "scope": "this-turn",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "remember-short-answers",
+      "note": "「记住：以后回答不要太长」是长期偏好（会话级），不是对上一轮回答的负面反馈。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "记住：以后回答不要太长",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "detail",
+              "value": "不要太长",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "detail",
+          "op_index": 0,
+          "value": "不要太长",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "brief-then-detailed",
+      "note": "简短/详细是同一槽位的两个取向，后说的顶掉先说的。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后回答简短一点",
+          "topic": "global"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的。",
+          "topic": "global"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "以后回答详细一点",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "detail",
+              "value": "简短",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "detail",
+              "value": "详细",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "detail",
+          "op_index": 0,
+          "value": "简短",
+          "scope": "CONVERSATION",
+          "status": "REVOKED",
+          "invalid_after_seq": 3,
+          "superseded_by": "c3:detail:0"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "detail",
+          "op_index": 0,
+          "value": "详细",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "no-table-use-bullets",
+      "note": "一条消息里两个要求：表格（否定对象用被否定对象的槽位）与分点，两行都落库，互不撤回。ConstraintOp 暂无极性字段，否定语义由 kind/slot 承载。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "不要表格，改用分点",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "table",
+              "value": "format.table",
+              "scope": "conversation",
+              "confidence": 0.85
+            },
+            {
+              "op": "ADD",
+              "slot": "bullets",
+              "value": "format.bullets",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "table",
+          "op_index": 0,
+          "value": "format.table",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c1",
+          "slot": "bullets",
+          "op_index": 1,
+          "value": "format.bullets",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "each-time-conclusion-this-time-not-exception",
+      "note": "「每次都先给结论」是长期措辞；「这次也不例外」是强调，不是窄化，scope 必须是 CONVERSATION。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "每次都先给结论，这次也不例外",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "conclusion",
+              "value": "format.conclusion",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "conclusion",
+          "op_index": 0,
+          "value": "format.conclusion",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "same-topic-new-value-supersedes",
+      "note": "同话题内换语言取值：不需要用户说「更正」，新值直接顶掉旧值。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "这份报告用英文。",
+          "topic": "report"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "Sure.",
+          "topic": "report"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "用中文。",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "current-topic",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "中文",
+              "scope": "current-topic",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CURRENT_TOPIC",
+          "status": "REVOKED",
+          "invalid_after_seq": 3,
+          "superseded_by": "c3:language:0"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "conversation-wide-survives-topic-value",
+      "note": "会话级偏好不被本话题取值撤回，两条并存。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后都用英文。",
+          "topic": "report"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "OK.",
+          "topic": "report"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "这次回答只用中文。",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "中文",
+              "scope": "current-topic",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "complementary-slots-coexist",
+      "note": "结论/表格/字数上限/详略是四个不同槽位，可以同时生效。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后先给结论，用表格对比。",
+          "topic": "global"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的。",
+          "topic": "global"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "以后回答不超过300字，并且简短一点。",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "conclusion",
+              "value": "format.conclusion",
+              "scope": "conversation",
+              "confidence": 0.85
+            },
+            {
+              "op": "ADD",
+              "slot": "table",
+              "value": "format.table",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "length-limit",
+              "value": "300字",
+              "scope": "conversation",
+              "confidence": 0.85
+            },
+            {
+              "op": "ADD",
+              "slot": "detail",
+              "value": "简短",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "conclusion",
+          "op_index": 0,
+          "value": "format.conclusion",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c1",
+          "slot": "table",
+          "op_index": 1,
+          "value": "format.table",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "length-limit",
+          "op_index": 0,
+          "value": "300字",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "detail",
+          "op_index": 1,
+          "value": "简短",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "revoke-by-target-id",
+      "note": "按 targetId 撤回只作废那一行，不新增行，也不牵连引用槽位。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后用表格，并标注来源。",
+          "topic": "global"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的。",
+          "topic": "global"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "表格不要了。",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "table",
+              "value": "format.table",
+              "scope": "conversation",
+              "confidence": 0.85
+            },
+            {
+              "op": "ADD",
+              "slot": "citation",
+              "value": "format.citation",
+              "scope": "conversation",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "REVOKE",
+              "targetId": "$active:table",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "table",
+          "op_index": 0,
+          "value": "format.table",
+          "scope": "CONVERSATION",
+          "status": "REVOKED",
+          "invalid_after_seq": 3
+        },
+        {
+          "source_message_id": "c1",
+          "slot": "citation",
+          "op_index": 1,
+          "value": "format.citation",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "update-this-turn-narrows",
+      "note": "显式改口允许跨 scope 撤回；this-turn 的新行落成 CURRENT_TOPIC。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后用英文。",
+          "topic": "report"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "OK.",
+          "topic": "report"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "这次改用中文。",
+          "topic": "report"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "UPDATE",
+              "slot": "language",
+              "value": "中文",
+              "scope": "this-turn",
+              "targetId": "$active:language",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "REVOKED",
+          "invalid_after_seq": 3,
+          "superseded_by": "c3:language:0"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "language",
+          "op_index": 0,
+          "value": "中文",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "different-topics-do-not-revoke",
+      "note": "CURRENT_TOPIC 的 scope 键带话题 id，换话题后同槽同值的要求各自生效。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "用表格对比 RDB 和 AOF。",
+          "topic": "redis-persistence"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "好的。",
+          "topic": "redis-persistence"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "换个话题，用表格列出过期键删除策略。",
+          "topic": "redis-expiry"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "table",
+              "value": "format.table",
+              "scope": "current-topic",
+              "confidence": 0.85
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "table",
+              "value": "format.table",
+              "scope": "current-topic",
+              "confidence": 0.85
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "table",
+          "op_index": 0,
+          "value": "format.table",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        },
+        {
+          "source_message_id": "c3",
+          "slot": "table",
+          "op_index": 0,
+          "value": "format.table",
+          "scope": "CURRENT_TOPIC",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "restating-same-value-keeps-original",
+      "note": "同值重申是确认：不新建重复行，也不把旧行标成 REVOKED。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "以后用英文。",
+          "topic": "global"
+        },
+        {
+          "id": "c2",
+          "seq": 2,
+          "role": "ASSISTANT",
+          "text": "OK.",
+          "topic": "global"
+        },
+        {
+          "id": "c3",
+          "seq": 3,
+          "role": "USER",
+          "text": "以后也继续用英文。",
+          "topic": "global"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        },
+        {
+          "message_id": "c3",
+          "ops": [
+            {
+              "op": "ADD",
+              "slot": "language",
+              "value": "英文",
+              "scope": "conversation",
+              "confidence": 0.9
+            }
+          ]
+        }
+      ],
+      "expected": [
+        {
+          "source_message_id": "c1",
+          "slot": "language",
+          "op_index": 0,
+          "value": "英文",
+          "scope": "CONVERSATION",
+          "status": "ACTIVE"
+        }
+      ]
+    },
+    {
+      "id": "explicit-memory-is-not-a-constraint",
+      "note": "「我希望你解释一下缓存一致性」是任务请求，不是回答方式要求，理想输出 NOOP。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "我希望你解释一下缓存一致性",
+          "topic": "cache"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "NOOP"
+            }
+          ]
+        }
+      ],
+      "expected": []
+    },
+    {
+      "id": "variable-name-too-long-is-not-a-constraint",
+      "note": "「变量名太长」是代码评价，不是对回答方式的长期要求，理想输出 NOOP。",
+      "messages": [
+        {
+          "id": "c1",
+          "seq": 1,
+          "role": "USER",
+          "text": "变量名太长",
+          "topic": "code-review"
+        }
+      ],
+      "ideal_ops": [
+        {
+          "message_id": "c1",
+          "ops": [
+            {
+              "op": "NOOP"
+            }
+          ]
+        }
+      ],
+      "expected": []
+    }
+  ]
+}
