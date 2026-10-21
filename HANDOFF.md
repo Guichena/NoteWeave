@@ -1,7 +1,7 @@
 # NoteWeave 合并交接文档（`merge/integration`）
 
 > **仓库**：`/workspace/NoteWeave-merge`（git worktree）
-> **分支**：`merge/integration`｜**起点**：`c713463`｜**HEAD**：`91986ee`
+> **分支**：`merge/integration`｜**起点**：`c713463`｜**合并 HEAD**：`91986ee`｜**本文提交**：`7ce7f99`
 > **范围**：`git log --oneline c713463..HEAD` 共 **89** 个提交（G 线 24 + D 线 60 + lease-g 2 + 合并提交 3），**191 个文件、+17202 / −1372**
 > **合并顺序**：`fix/batch-g2` → `fix/batch-d` → `fix/lease-g`，三次均 `--no-ff`
 > **资料来源（只读）**：`/workspace/audit-ds/handoff-d.md`、`/workspace/audit/merged/botcheck/handoff-g.md`、`/workspace/audit-ds/merge/logs/{m1,m2,m3,chain2,chain3,fe,live}.log`、`git log`
