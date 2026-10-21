@@ -32,6 +32,16 @@ class NoteWeavePropertiesKafkaRetryTest {
         assertThat(new NoteWeaveProperties.Kafka(true, null, 5, 2_000L).retryMaxBackoffMs()).isEqualTo(2_000L);
     }
 
+    /** 单次退避上限本身也要有上界，否则 10 次重试的累计退避会顶到 max.poll.interval.ms。 */
+    @Test
+    void backoffCapIsClampedToItsOwnUpperBound() {
+        assertThat(new NoteWeaveProperties.Kafka(true, null, 10, NoteWeaveProperties.Kafka.MAX_RETRY_MAX_BACKOFF_MS)
+                .retryMaxBackoffMs()).isEqualTo(NoteWeaveProperties.Kafka.MAX_RETRY_MAX_BACKOFF_MS);
+        assertThat(new NoteWeaveProperties.Kafka(true, null, 10, Long.MAX_VALUE).retryMaxBackoffMs())
+                .isEqualTo(NoteWeaveProperties.Kafka.MAX_RETRY_MAX_BACKOFF_MS);
+        assertThat(NoteWeaveProperties.Kafka.MAX_RETRY_MAX_BACKOFF_MS).isLessThan(1_800_000L);
+    }
+
     @Test
     void rootPropertiesDefaultKafkaRetryBudget() {
         NoteWeaveProperties properties = new NoteWeaveProperties(null, null, null, null, null, null);

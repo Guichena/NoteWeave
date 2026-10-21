@@ -230,14 +230,18 @@ public class TaskOutboxDispatcherService {
         }
     }
 
-    /** 解析与切片从快照 PENDING 重新开始；切片阶段还要停在 CHUNKING，切片消费者才接受消息。 */
+    /**
+     * 解析与切片从快照 PENDING 重新开始；切片阶段还要停在 CHUNKING，切片消费者才接受消息。
+     * 只在快照处于失败态（{@code parse_status='FAILED'}）时复位：旧死信被人工重驱时，
+     * 已经重跑成功的资料不能被重新打回 PROCESSING。
+     */
     private void resetParseState(PipelineTarget target, String processingStage) {
         int moved = jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = ?,
                     embedding_task_id = null, embedding_batch_version = null,
                     index_attempt_count = 0, next_index_retry_at = null
-                where id = ? and source_id = ? and parse_status <> 'DELETED'
+                where id = ? and source_id = ? and parse_status = 'FAILED'
                 """, processingStage, target.snapshotId(), target.sourceId());
         if (moved != 1) {
             log.info("Skip source pipeline reset for redrive: snapshotId={}, stage={}",
@@ -252,13 +256,17 @@ public class TaskOutboxDispatcherService {
                 """, target.sourceId(), target.workspaceId());
     }
 
-    /** 向量化与索引在解析完成之后重跑，快照停在对应阶段，并清掉批次租约让批次可以被重新占用。 */
+    /**
+     * 向量化与索引在解析完成之后重跑，快照停在对应阶段，并清掉批次租约让批次可以被重新占用。
+     * 只在索引失败态（{@code parse_status='PARSED' and index_status='FAILED'}）时复位，
+     * 与 {@code SourceReprocessService.requeueIndexing} 的守卫一致：已经索引就绪的资料不能被打回 INDEXING。
+     */
     private void resetIndexState(PipelineTarget target, String processingStage) {
         int moved = jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'PARSED', index_status = 'INDEXING', processing_stage = ?,
                     index_attempt_count = 0, next_index_retry_at = null
-                where id = ? and source_id = ? and parse_status = 'PARSED'
+                where id = ? and source_id = ? and parse_status = 'PARSED' and index_status = 'FAILED'
                 """, processingStage, target.snapshotId(), target.sourceId());
         if (moved != 1) {
             log.info("Skip source index reset for redrive: snapshotId={}, stage={}",

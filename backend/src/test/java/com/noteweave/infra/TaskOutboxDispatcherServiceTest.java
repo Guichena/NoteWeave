@@ -335,6 +335,77 @@ class TaskOutboxDispatcherServiceTest {
         verify(taskService).redriveTask("task-1", false);
     }
 
+    /** 旧解析死信被人工重驱时，已经重跑就绪的资料不能被打回 PROCESSING，只复位 outbox 行与任务。 */
+    @Test
+    void redriveOfStaleParseDeadLetterShouldNotResetReadySource() {
+        insertDeadLetter("outbox-parse-stale", "task-1", SourcePipelineStages.TOPIC_PARSE, """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","snapshotId":"snapshot-1"}
+                """);
+        seedSource("READY", "PARSED", "INDEXED");
+        seedSnapshot("snapshot-1", "PARSED", "INDEXED", SourcePipelineStages.STAGE_READY, 0, false);
+        TaskService taskService = mock(TaskService.class);
+
+        redrive("outbox-parse-stale", taskService);
+
+        assertThat(status("outbox-parse-stale")).isEqualTo("READY");
+        java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
+        assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
+        assertThat(snapshot.get("index_status")).isEqualTo("INDEXED");
+        assertThat(snapshot.get("processing_stage")).isEqualTo(SourcePipelineStages.STAGE_READY);
+        java.util.Map<String, Object> source = source();
+        assertThat(source.get("status")).isEqualTo("READY");
+        assertThat(source.get("parse_status")).isEqualTo("PARSED");
+        assertThat(source.get("index_status")).isEqualTo("INDEXED");
+        verify(taskService).redriveTask("task-1", false);
+    }
+
+    /** 切片死信重驱同理：快照已经切片完成（PARSED）时不再复位到 CHUNKING。 */
+    @Test
+    void redriveOfStaleChunkDeadLetterShouldNotResetParsedSnapshot() {
+        insertDeadLetter("outbox-chunk-stale", "task-1", SourcePipelineStages.TOPIC_CHUNK, """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","snapshotId":"snapshot-1"}
+                """);
+        seedSource("READY", "PARSED", "INDEXED");
+        seedSnapshot("snapshot-1", "PARSED", "INDEXED", SourcePipelineStages.STAGE_READY, 0, false);
+        TaskService taskService = mock(TaskService.class);
+
+        redrive("outbox-chunk-stale", taskService);
+
+        java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
+        assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
+        assertThat(snapshot.get("index_status")).isEqualTo("INDEXED");
+        assertThat(snapshot.get("processing_stage")).isEqualTo(SourcePipelineStages.STAGE_READY);
+        assertThat(source().get("status")).isEqualTo("READY");
+    }
+
+    /** 索引死信重驱同理：已经索引就绪的快照保持 INDEXED，已完成批次的租约也不被清掉。 */
+    @Test
+    void redriveOfStaleIndexDeadLetterShouldNotReopenIndexedSnapshot() {
+        insertDeadLetter("outbox-index-stale", "task-1", SourcePipelineStages.TOPIC_INDEX, """
+                {"workspaceId":"workspace-1","sourceId":"source-1","sourceSnapshotId":"snapshot-1",
+                 "taskId":"task-1","embeddingsObjectKey":"workspace/workspace-1/source/source-1/snapshot/snapshot-1/e.bin"}
+                """);
+        seedSource("READY", "PARSED", "INDEXED");
+        seedSnapshot("snapshot-1", "PARSED", "INDEXED", SourcePipelineStages.STAGE_READY, 0, false);
+        seedBatch("batch-1", "COMPLETED", "lease-1");
+        TaskService taskService = mock(TaskService.class);
+
+        redrive("outbox-index-stale", taskService);
+
+        assertThat(status("outbox-index-stale")).isEqualTo("READY");
+        java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
+        assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
+        assertThat(snapshot.get("index_status")).isEqualTo("INDEXED");
+        assertThat(snapshot.get("processing_stage")).isEqualTo(SourcePipelineStages.STAGE_READY);
+        java.util.Map<String, Object> source = source();
+        assertThat(source.get("status")).isEqualTo("READY");
+        assertThat(source.get("index_status")).isEqualTo("INDEXED");
+        java.util.Map<String, Object> batch = batch("batch-1");
+        assertThat(batch.get("status")).isEqualTo("COMPLETED");
+        assertThat(batch.get("lease_token")).isEqualTo("lease-1");
+        verify(taskService).redriveTask("task-1", false);
+    }
+
     @Test
     void redriveWithoutSourceIdentityShouldOnlyResetOutboxRow() {
         insertDeadLetter("outbox-anonymous", "task-1", SourcePipelineStages.TOPIC_PARSE, "{\"taskId\":\"task-1\"}");

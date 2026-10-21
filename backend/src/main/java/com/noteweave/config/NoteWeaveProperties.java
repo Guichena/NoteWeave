@@ -126,13 +126,20 @@ public record NoteWeaveProperties(
         public static final int MIN_RETRY_MAX_ATTEMPTS = 1;
         /** 允许配置的重试次数上限，避免消费位点长时间滞留。 */
         public static final int MAX_RETRY_MAX_ATTEMPTS = 10;
+        /**
+         * 允许配置的单次退避上限，单位毫秒。10 次退避的最坏累计约 13 分钟，
+         * 仍低于默认 {@code max.poll.interval.ms}（1800000 ms），不会因退避把消费实例踢出消费组。
+         */
+        public static final long MAX_RETRY_MAX_BACKOFF_MS = 300_000L;
 
         @ConstructorBinding
         public Kafka {
             retryMaxAttempts = retryMaxAttempts <= 0
                     ? DEFAULT_RETRY_MAX_ATTEMPTS
                     : Math.min(Math.max(retryMaxAttempts, MIN_RETRY_MAX_ATTEMPTS), MAX_RETRY_MAX_ATTEMPTS);
-            retryMaxBackoffMs = retryMaxBackoffMs <= 0 ? DEFAULT_RETRY_MAX_BACKOFF_MS : retryMaxBackoffMs;
+            retryMaxBackoffMs = retryMaxBackoffMs <= 0
+                    ? DEFAULT_RETRY_MAX_BACKOFF_MS
+                    : Math.min(retryMaxBackoffMs, MAX_RETRY_MAX_BACKOFF_MS);
         }
 
         /** 兼容既有构造点：只关心启用开关与主题时沿用默认重试预算。 */
