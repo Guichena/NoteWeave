@@ -89,8 +89,8 @@ public class ConversationTopicProjectionV2Service {
                 .toList();
         boolean embed = embeddings != null && embeddings.isEnabled();
         if (embed) {
-            messages = TopicSegmentationVectors.attach(messages, standaloneQueries(workspaceId, conversationId),
-                    embeddings);
+            // 切分向量始终取用户原话，检索改写的 standalone query 不参与（M5-M08）
+            messages = TopicSegmentationVectors.attach(messages, embeddings);
         }
         TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, persisted);
         if (embed && projection.degradationReasons().contains(TopicSegmenterV2.VECTOR_UNAVAILABLE)) {
@@ -190,6 +190,7 @@ public class ConversationTopicProjectionV2Service {
         return projection;
     }
 
+    /** 已落库 answer_run 的检索改写快照：仅用于检索侧诊断与回归校验，话题切分不再消费。 */
     Map<String, String> standaloneQueries(String workspaceId, String conversationId) {
         Map<String, String> queries = new HashMap<>();
         jdbc.query("""
