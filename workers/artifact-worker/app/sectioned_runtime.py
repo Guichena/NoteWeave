@@ -9,6 +9,11 @@ from types import SimpleNamespace
 
 from app.node_contracts import STATE_FIELDS
 from app.node_executor import NodeExecutionError, NodeExecutionResult, NodeExecutor
+from app.execution_heartbeat import (
+    ArtifactExecutionSuperseded,
+    artifact_heartbeat_is_active,
+    checkpoint_artifact_execution,
+)
 
 
 _TEXT = {"type": "string", "minLength": 1, "pattern": r"\S"}
@@ -136,7 +141,19 @@ def _parallel(name, items, worker, llm_client, max_workers):
         while next_index < min(used_workers, len(items)):
             submit_next()
         while pending:
-            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+            done, _ = wait(
+                pending,
+                timeout=1.0 if artifact_heartbeat_is_active() else None,
+                return_when=FIRST_COMPLETED,
+            )
+            try:
+                checkpoint_artifact_execution()
+            except ArtifactExecutionSuperseded:
+                for future in pending:
+                    future.cancel()
+                raise
+            if not done:
+                continue
             for future in sorted(done, key=lambda item: pending[item]):
                 index = pending.pop(future)
                 if future.cancelled():

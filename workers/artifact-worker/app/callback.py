@@ -5,7 +5,10 @@ import hashlib
 import hmac
 import base64
 import logging
+import os
 import re
+import socket
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, request
@@ -45,6 +48,13 @@ from app.video_visual_material import merge_captured_video_frames
 from app.video_frame_observation import verify_frame_observation_batch
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
+from app.execution_heartbeat import (
+    ArtifactExecutionSuperseded,
+    artifact_execution_heartbeat,
+    checkpoint_artifact_execution,
+    material_execution_lease,
+    stop_material_execution_heartbeat,
+)
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
 from app.registry import capability_names_match, is_frame_text_ocr_operation
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID
@@ -109,6 +119,7 @@ class JavaArtifactCallbackClient:
         self.internal_auth_token = internal_auth_token.strip()
         self.callback_secret = callback_secret.strip()
         self.delivery_token = delivery_token.strip()
+        self.callback_task_type = "ARTIFACT_JOB"
 
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         response = self._request("GET", f"/internal/worker/artifact-tasks/{task_id}/input")
@@ -295,6 +306,26 @@ class JavaArtifactCallbackClient:
         bundle.verify_file_bytes(content.__getitem__)
         return content
 
+    def send_heartbeat(self, task_id: str, *, phase: str = "EXECUTING") -> dict[str, Any]:
+        # 不带幂等键。重复键会被当成重复回调，跳过 recordHeartbeat，配额租约就不会续。
+        # outbox 租约在幂等检查之前就续，但配额租约只在 recordHeartbeat 里续。
+        normalized_phase = (phase or "").strip() or "EXECUTING"
+        if len(normalized_phase) > 64:
+            normalized_phase = normalized_phase[:64]
+        task_type = (self.callback_task_type or "ARTIFACT_JOB").strip() or "ARTIFACT_JOB"
+        return self._request(
+            "POST",
+            f"/internal/worker/tasks/{task_id}/heartbeat",
+            {
+                "worker_type": "artifact",
+                "worker_instance_id": _artifact_worker_instance_id(),
+                "phase": normalized_phase,
+                "heartbeat_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+            task_id=task_id,
+            callback_task_type=task_type,
+        )
+
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")
         self._request(
@@ -406,6 +437,14 @@ class JavaArtifactCallbackClient:
         return json.loads(text) if text else {}
 
 
+def _prefer_superseded(exc: BaseException) -> None:
+    """Drop the local result when a heartbeat already lost the task."""
+    try:
+        checkpoint_artifact_execution()
+    except ArtifactExecutionSuperseded as superseded:
+        raise superseded from exc
+
+
 def run_artifact_task_with_callbacks(
     task_id: str,
     client: ArtifactCallbackClient | None = None,
@@ -418,6 +457,18 @@ def run_artifact_task_with_callbacks(
         settings.callback_secret,
         delivery_token,
     )
+    with artifact_execution_heartbeat(
+        callback_client,
+        task_id,
+        interval_seconds=settings.artifact_heartbeat_interval_seconds,
+    ):
+        return _execute_artifact_task_callbacks(task_id, callback_client)
+
+
+def _execute_artifact_task_callbacks(
+    task_id: str,
+    callback_client: ArtifactCallbackClient,
+) -> ArtifactWorkerExecutionResponse:
     task_input = callback_client.fetch_task_input(task_id)
     try:
         referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
@@ -438,13 +489,21 @@ def run_artifact_task_with_callbacks(
                 callback_client.retrieve_passages(task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id))
         else:
             events, result = run_artifact_task(task_input)
+        checkpoint_artifact_execution()
+    except ArtifactExecutionSuperseded:
+        raise
     except Exception as exc:
+        _prefer_superseded(exc)
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
         raise
     try:
+        checkpoint_artifact_execution()
         return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+    except ArtifactExecutionSuperseded:
+        raise
     except ArtifactCallbackHttpError as exc:
+        _prefer_superseded(exc)
         # 宿主拒收产物内容（内容 IR、候选、文件清单不合规）时重试也不会通过，必须上报失败；
         # 否则消费者会把这个 409 当成旧投递跳过，任务会一直停在运行中
         rejected_code = _rejected_artifact_content_code(exc)
@@ -472,20 +531,38 @@ def run_video_material_task_with_callbacks(
     callback_client = client or JavaArtifactCallbackClient(
         settings.java_base_url, settings.internal_auth_token,
         settings.callback_secret, delivery_token)
-    try:
-        parent_input = callback_client.fetch_parent_material_input(task_id)
-        task_input = parent_input.to_acquisition_input()
-        events, result = run_artifact_task(task_input)
-        return _emit_material_callbacks_for_result(
-            task_id, events, result, callback_client, task_input)
-    except ArtifactCallbackHttpError as exc:
-        if _report_material_failure(callback_client, task_id):
-            setattr(exc, "artifact_failure_reported", True)
-        raise
-    except Exception as exc:
-        if _report_material_failure(callback_client, task_id):
-            setattr(exc, "artifact_failure_reported", True)
-        raise
+    # 采集在 Kafka 处理函数返回后还要跑字幕、抽帧、画面观察。心跳必须跨过这些
+    # 后台阶段，否则 70 分钟 outbox 租约到期后任务会被重投。
+    _bind_material_callback_type(callback_client)
+    with material_execution_lease(
+        callback_client, task_id,
+        interval_seconds=settings.artifact_heartbeat_interval_seconds,
+    ):
+        try:
+            parent_input = callback_client.fetch_parent_material_input(task_id)
+            task_input = parent_input.to_acquisition_input()
+            events, result = run_artifact_task(task_input)
+            checkpoint_artifact_execution()
+            response = _emit_material_callbacks_for_result(
+                task_id, events, result, callback_client, task_input)
+        except ArtifactExecutionSuperseded:
+            stop_material_execution_heartbeat(task_id)
+            raise
+        except ArtifactCallbackHttpError as exc:
+            stop_material_execution_heartbeat(task_id)
+            _prefer_superseded(exc)
+            if _report_material_failure(callback_client, task_id):
+                setattr(exc, "artifact_failure_reported", True)
+            raise
+        except Exception as exc:
+            stop_material_execution_heartbeat(task_id)
+            _prefer_superseded(exc)
+            if _report_material_failure(callback_client, task_id):
+                setattr(exc, "artifact_failure_reported", True)
+            raise
+        if not _is_waiting_status(response.status):
+            stop_material_execution_heartbeat(task_id)
+        return response
 
 
 def _report_material_failure(client: JavaArtifactCallbackClient, task_id: str) -> bool:
@@ -585,10 +662,63 @@ def resume_waiting_artifact_task_with_callbacks(
     waiting_record = get_waiting_task(task_id)
     task_input = (ArtifactTaskInput.model_validate(waiting_record["task_input"])
                   if waiting_record is not None else None)
+    material_only = (
+        task_input is not None
+        and task_input.input_payload.writeback_mode == "MATERIAL_ONLY"
+    )
     retrieval_options = {}
     if task_input is not None and isinstance(callback_client, JavaArtifactCallbackClient) and callback_client.delivery_token:
         retrieval_options["passage_search"] = lambda task_id, query, limit: callback_client.retrieve_passages(
             task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id)
+    if material_only:
+        # 下一段采集仍在本次恢复返回之后执行，沿用同一条心跳直到任务终态。
+        _bind_material_callback_type(callback_client)
+        lease_scope = material_execution_lease(
+            callback_client,
+            task_id,
+            interval_seconds=settings.artifact_heartbeat_interval_seconds,
+        )
+    else:
+        lease_scope = artifact_execution_heartbeat(
+            callback_client,
+            task_id,
+            interval_seconds=settings.artifact_heartbeat_interval_seconds,
+        )
+    with lease_scope:
+        try:
+            response = _resume_waiting_artifact_task(
+                task_id,
+                callback_client=callback_client,
+                task_input=task_input,
+                request_id=request_id,
+                callback_receipt=callback_receipt,
+                callback_operation=callback_operation,
+                retrieval_options=retrieval_options,
+            )
+        except Exception:
+            if material_only:
+                stop_material_execution_heartbeat(task_id)
+            raise
+        if material_only and not _is_waiting_status(response.status):
+            stop_material_execution_heartbeat(task_id)
+        return response
+
+
+def _bind_material_callback_type(client: object) -> None:
+    if isinstance(client, JavaArtifactCallbackClient):
+        client.callback_task_type = "VIDEO_MATERIAL"
+
+
+def _resume_waiting_artifact_task(
+    task_id: str,
+    *,
+    callback_client: ArtifactCallbackClient,
+    task_input: ArtifactTaskInput | None,
+    request_id: str,
+    callback_receipt: dict[str, object] | None,
+    callback_operation: dict[str, object] | None,
+    retrieval_options: dict[str, object],
+) -> ArtifactWorkerExecutionResponse:
     try:
         events, result = wake_waiting_task(
             task_id,
@@ -598,9 +728,14 @@ def resume_waiting_artifact_task_with_callbacks(
             remove_on_success=False,
             **retrieval_options,
         )
+        checkpoint_artifact_execution()
+    except ArtifactExecutionSuperseded:
+        release_waiting_task_claim(task_id)
+        raise
     except ValueError:
         raise
     except Exception as exc:
+        _prefer_superseded(exc)
         if task_input is not None \
                 and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
             if isinstance(callback_client, JavaArtifactCallbackClient):
@@ -609,6 +744,7 @@ def resume_waiting_artifact_task_with_callbacks(
             _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
         raise
     try:
+        checkpoint_artifact_execution()
         if not _is_waiting_status(result.job_snapshot.status):
             cache_waiting_task_delivery(task_id, events, result)
         if task_input is not None \
@@ -619,7 +755,11 @@ def resume_waiting_artifact_task_with_callbacks(
                 task_id, events, result, callback_client, task_input)
         else:
             response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+    except ArtifactExecutionSuperseded:
+        release_waiting_task_claim(task_id)
+        raise
     except ValueError as exc:
+        _prefer_superseded(exc)
         if task_input is not None \
                 and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
             if isinstance(callback_client, JavaArtifactCallbackClient):
@@ -629,6 +769,7 @@ def resume_waiting_artifact_task_with_callbacks(
         release_waiting_task_claim(task_id)
         raise
     except Exception as exc:
+        _prefer_superseded(exc)
         if task_input is not None \
                 and task_input.input_payload.writeback_mode == "MATERIAL_ONLY" \
                 and isinstance(callback_client, JavaArtifactCallbackClient):
@@ -986,6 +1127,12 @@ def _callback_idempotency_key(
         "|".join([task_id, callback_type, discriminator]).encode("utf-8")
     ).hexdigest()[:32]
     return f"artifact-worker-{callback_type}-{digest}"
+
+
+def _artifact_worker_instance_id() -> str:
+    raw = os.environ.get("HOSTNAME") or socket.gethostname() or "artifact-worker"
+    cleaned = re.sub(r"[^A-Za-z0-9._:-]", "-", raw).strip("-")[:120]
+    return cleaned or "artifact-worker"
 
 
 def _task_callback_token(secret: str, task_type: str, task_id: str) -> str:

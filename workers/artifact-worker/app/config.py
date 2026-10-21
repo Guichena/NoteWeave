@@ -61,6 +61,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES"),
     )
     mcp_process_timeout_seconds: int = Field(default=3600, ge=1, le=21_600)
+    # Keep this below the host quota lease (NOTEWEAVE_QUOTA_LEASE_SECONDS, default 300).
+    artifact_heartbeat_interval_seconds: float = Field(default=60, gt=0)
     transcription_pool_size: int = Field(default=1, ge=1, le=8)
     transcription_queue_capacity: int = Field(default=8, ge=1, le=64)
 

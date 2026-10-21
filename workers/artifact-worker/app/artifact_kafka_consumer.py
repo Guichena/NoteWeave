@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from app.artifact_command_contract import ArtifactCommand, VideoMaterialCommand
 from app.callback import (ArtifactCallbackHttpError, run_artifact_task_with_callbacks,
                           run_video_material_task_with_callbacks)
+from app.execution_heartbeat import ArtifactExecutionSuperseded
 from app.config import Settings, load_settings
 from app.error_sanitizer import sanitize_error_message
 
@@ -90,6 +91,17 @@ def consume_artifact_commands(
         try:
             selected_executor = material_executor if isinstance(command, VideoMaterialCommand) else executor
             selected_executor(command.task_id, delivery_token=command.delivery_token)
+        except ArtifactExecutionSuperseded as exc:
+            # The host took the task back. Do not submit a result and do not
+            # run this delivery again; the outbox will redispatch if it still owns it.
+            logger.info(
+                "Artifact execution abandoned after heartbeat: task_id=%s reason=%s",
+                command.task_id,
+                exc.reason,
+            )
+            skipped += 1
+            _commit(messages)
+            continue
         except ArtifactCallbackHttpError as exc:
             if bool(getattr(exc, "artifact_failure_reported", False)):
                 completed += 1
