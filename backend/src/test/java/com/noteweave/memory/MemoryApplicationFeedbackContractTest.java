@@ -9,12 +9,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.Ids;
 import java.lang.reflect.Field;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -33,6 +37,38 @@ class MemoryApplicationFeedbackContractTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired MemoryConversationExtractionService extractionService;
     @Autowired MemoryApplicationFeedbackService feedbackService;
+    @Autowired MemoryExtractionModelStub modelStub;
+
+    /** 抽取与反馈判断都只由模型决定，这里用离线模型桩给出确定输出，不发起任何网络调用。 */
+    @TestConfiguration
+    static class StubModelConfig {
+
+        @Bean
+        @Primary
+        MemoryExtractionModelStub memoryExtractionModelStub() {
+            Map<String, String> outputs = new LinkedHashMap<>();
+            // 槽位只由模型决定（旧的关键词推断已移除）：桩必须显式给出 slot，
+            // 否则会落到 category 的兜底槽位，准备不出 answer.length / terminology.term 两条记忆。
+            outputs.put("记住：以后回答要简短",
+                    "[{\"statement\":\"以后回答要简短\",\"category\":\"style\",\"explicit\":true,"
+                            + "\"slot\":\"answer.length\",\"value\":\"简短\",\"polarity\":\"REQUIRE\"}]");
+            outputs.put("记住：术语统一称为缓存",
+                    "[{\"statement\":\"术语统一称为缓存\",\"category\":\"terminology\",\"explicit\":true,"
+                            + "\"slot\":\"terminology.term\",\"value\":\"缓存\",\"polarity\":\"REQUIRE\"}]");
+            // 负面反馈由模型的 feedback 字段决定，不再看关键词
+            outputs.put("太长了",
+                    "[{\"statement\":\"太长了\",\"category\":\"style\",\"explicit\":false,\"feedback\":true}]");
+            Map<String, String> judgments = new LinkedHashMap<>();
+            // 方面只由模型给出：旧的关键词词表已经删掉，这里显式预置模型的结论
+            judgments.put("太长了", "{\"feedback\":true,\"polarity\":\"NEGATIVE\",\"aspect\":\"LENGTH\"}");
+            judgments.put("内容不准确", "{\"feedback\":true,\"polarity\":\"NEGATIVE\",\"aspect\":\"CONTENT\"}");
+            judgments.put("谢谢，这样讲很清楚",
+                    "{\"feedback\":true,\"polarity\":\"POSITIVE\",\"aspect\":\"UNKNOWN\"}");
+            // 反馈判断调用失败：这一轮不写反馈，任务标成可重试
+            judgments.put("再帮我看看日志", MemoryExtractionModelStub.THROW);
+            return new MemoryExtractionModelStub(outputs, judgments);
+        }
+    }
 
     @Test
     void ratingFollowsTheLastSubmissionAndContentReasonsDoNotChangeSlots() throws Exception {
@@ -95,7 +131,8 @@ class MemoryApplicationFeedbackContractTest {
     @Test
     void followUpAcceptsAtHalfWeightAndAComplaintOnlyHitsTheLengthSlot() throws Exception {
         Prepared prepared = prepareInjectedAnswer();
-        String followUpId = send(prepared.conversationId(), "那一致性呢", "follow-1", null);
+        // 只有模型判成认可（POSITIVE）的跟进才写 ACCEPTED
+        String followUpId = send(prepared.conversationId(), "谢谢，这样讲很清楚", "follow-1", null);
         consume(followUpId);
         assertThat(utility(prepared.lengthId())).isCloseTo(0.78125, within(0.0001));
         assertThat(utility(prepared.termId())).isCloseTo(0.78125, within(0.0001));
@@ -153,6 +190,43 @@ class MemoryApplicationFeedbackContractTest {
         } finally {
             setEnabled(true);
         }
+    }
+
+    /**
+     * 模型判成「不是对上一条回答的反馈、中性」时什么都不写：
+     * 旧实现把「不是不满」一律记成 ACCEPTED/0.5，沉默会累积成正向。
+     */
+    @Test
+    void neutralFollowUpWritesNothing() throws Exception {
+        Prepared prepared = prepareInjectedAnswer();
+        String questionId = send(prepared.conversationId(), "顺便问一下缓存一致性", "follow-neutral", null);
+
+        consume(questionId);
+
+        assertThat(utility(prepared.lengthId())).isCloseTo(0.75, within(0.0001));
+        assertThat(utility(prepared.termId())).isCloseTo(0.75, within(0.0001));
+        assertThat(count(prepared.lengthId(), "positive_outcome_count")).isZero();
+        assertThat(jdbc.queryForObject("""
+                select count(*) from memory_application_outcome
+                where workspace_id = ? and signal_kind = 'FOLLOW_UP'
+                """, Integer.class, prepared.workspaceId())).isZero();
+    }
+
+    /** 反馈判断模型失败：这一轮不写反馈，沿用记忆抽取的 retryable 标记等重驱。 */
+    @Test
+    void judgeFailureSkipsTheFollowUpAndMarksTheExtractionTaskRetryable() throws Exception {
+        Prepared prepared = prepareInjectedAnswer();
+        String questionId = send(prepared.conversationId(), "再帮我看看日志", "follow-fail", null);
+
+        consume(questionId);
+
+        assertThat(jdbc.queryForObject("""
+                select task_status from task where task_type = 'MEMORY_EXTRACTION' and target_id = ?
+                """, String.class, questionId)).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from memory_application_outcome
+                where workspace_id = ? and signal_kind = 'FOLLOW_UP'
+                """, Integer.class, prepared.workspaceId())).isZero();
     }
 
     private Prepared prepareInjectedAnswer() throws Exception {
@@ -217,18 +291,30 @@ class MemoryApplicationFeedbackContractTest {
 
     private JsonNode feedback(String workspaceId, String runId, String rating, String reason) throws Exception {
         Map<String, String> body = reason == null ? Map.of("rating", rating) : Map.of("rating", rating, "reason", reason);
-        return data(post("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/feedback", workspaceId, runId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(mapper.writeValueAsString(body)));
+        // 反馈方面由模型判断，这里打开模型桩，避免依赖任何关键词词表
+        modelStub.enable();
+        try {
+            return data(post("/api/v2/workspaces/{workspaceId}/answer-runs/{runId}/feedback", workspaceId, runId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(mapper.writeValueAsString(body)));
+        } finally {
+            modelStub.disable();
+        }
     }
 
+    /** 只在抽取这一步打开模型桩：同一次请求里的回答生成仍然走模板回退。 */
     private void consume(String messageId) throws Exception {
         JsonNode payload = mapper.readTree(jdbc.queryForObject(
                 "select payload_json from task_outbox where topic = ? and message_key = ?",
                 String.class, TOPIC, messageId));
-        extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
-                payload.path("message_id").asText(), payload.path("user_id").asText(),
-                payload.path("content").asText());
+        modelStub.enable();
+        try {
+            extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
+                    payload.path("message_id").asText(), payload.path("user_id").asText(),
+                    payload.path("content").asText());
+        } finally {
+            modelStub.disable();
+        }
     }
 
     private String send(String conversationId, String content, String clientRequestId, String regeneratedFrom)

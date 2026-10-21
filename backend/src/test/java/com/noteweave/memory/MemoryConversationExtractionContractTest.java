@@ -9,12 +9,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -32,6 +36,25 @@ class MemoryConversationExtractionContractTest {
     @Autowired ObjectMapper mapper;
     @Autowired JdbcTemplate jdbc;
     @Autowired MemoryConversationExtractionService extractionService;
+    @Autowired MemoryExtractionModelStub modelStub;
+
+    /** 抽取只由模型决定，这里用离线模型桩给出确定输出，不发起任何网络调用。 */
+    @TestConfiguration
+    static class StubModelConfig {
+
+        @Bean
+        @Primary
+        MemoryExtractionModelStub memoryExtractionModelStub() {
+            Map<String, String> outputs = new LinkedHashMap<>();
+            outputs.put("记住：以后回答先给结论再展开",
+                    "[{\"statement\":\"以后回答先给结论再展开\",\"category\":\"structure\",\"explicit\":true,"
+                            + "\"slot\":\"format.structure\"}]");
+            outputs.put("以后不要使用表情符号",
+                    "[{\"statement\":\"以后不要使用表情符号\",\"category\":\"forbidden\",\"explicit\":true,"
+                            + "\"slot\":\"answer.constraint\"}]");
+            return new MemoryExtractionModelStub(outputs);
+        }
+    }
 
     @Test
     void explicitLongTermPreferenceInChatBecomesActiveMemoryThroughTheGate() throws Exception {
@@ -40,11 +63,11 @@ class MemoryConversationExtractionContractTest {
         String preferenceMessage = send(conversationId, "记住：以后回答先给结论再展开。", "extract-1");
         String ordinaryMessage = send(conversationId, "解释一下缓存一致性", "extract-2");
 
-        // 普通消息也会入队；模型关闭时规则抽不出偏好
+        // 普通消息也会入队；模型只回一个空数组，说明这条消息没有偏好
         assertThat(jdbc.queryForObject("select count(*) from task_outbox where topic = ? and message_key = ?",
                 Integer.class, TOPIC, ordinaryMessage)).isEqualTo(1);
         MemoryConversationExtractionService.ExtractionResult ordinary = consume(payloadOf(ordinaryMessage));
-        assertThat(ordinary.method()).isEqualTo("RULE");
+        assertThat(ordinary.method()).isEqualTo(MemoryConversationExtractionService.METHOD_LLM);
         assertThat(ordinary.candidates()).isEmpty();
         JsonNode payload = mapper.readTree(jdbc.queryForObject(
                 "select payload_json from task_outbox where topic = ? and message_key = ?",
@@ -52,7 +75,7 @@ class MemoryConversationExtractionContractTest {
         assertThat(payload.path("user_id").asText()).isNotBlank();
 
         MemoryConversationExtractionService.ExtractionResult result = consume(payload);
-        assertThat(result.method()).isEqualTo("RULE");
+        assertThat(result.method()).isEqualTo(MemoryConversationExtractionService.METHOD_LLM);
         assertThat(result.candidates()).singleElement().satisfies(candidate -> {
             assertThat(candidate.statement()).isEqualTo("以后回答先给结论再展开");
             assertThat(candidate.sourceType()).isEqualTo("CONVERSATION_FEEDBACK");
@@ -136,10 +159,16 @@ class MemoryConversationExtractionContractTest {
         assertThat(reinforced.path("confidence").path("alpha").asDouble()).isCloseTo(4.5, within(0.001));
     }
 
+    /** 只在抽取这一步打开模型桩：同一次请求里的回答生成仍然走模板回退。 */
     private MemoryConversationExtractionService.ExtractionResult consume(JsonNode payload) {
-        return extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
-                payload.path("message_id").asText(), payload.path("user_id").asText(),
-                payload.path("content").asText());
+        modelStub.enable();
+        try {
+            return extractionService.extract(payload.path("task_id").asText(), payload.path("workspace_id").asText(),
+                    payload.path("message_id").asText(), payload.path("user_id").asText(),
+                    payload.path("content").asText());
+        } finally {
+            modelStub.disable();
+        }
     }
 
     private JsonNode payloadOf(String messageId) throws Exception {

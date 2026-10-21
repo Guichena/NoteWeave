@@ -40,8 +40,11 @@ public record NoteWeaveProperties(
         if (worker == null) {
             worker = new Worker("http://localhost:18092");
         }
-        if (kafka == null || kafka.topics() == null) {
-            kafka = new Kafka(kafka == null || kafka.enabled(), defaultTopics());
+        if (kafka == null) {
+            kafka = new Kafka(true, defaultTopics());
+        } else if (kafka.topics() == null) {
+            // 仅补齐主题缺省值，保留已配置的重试预算
+            kafka = new Kafka(kafka.enabled(), defaultTopics(), kafka.retryMaxAttempts(), kafka.retryMaxBackoffMs());
         }
         if (elasticsearch == null) {
             elasticsearch = new Elasticsearch(true, "localhost", 9200, "http", "noteweave_chunk", "", "");
@@ -109,7 +112,40 @@ public record NoteWeaveProperties(
     public record Worker(String artifactBaseUrl) {
     }
 
-    public record Kafka(boolean enabled, Topics topics) {
+    /**
+     * Kafka 消费重试预算：{@code retryMaxAttempts} 次退避后进入 DLT，
+     * 单次退避上限为 {@code retryMaxBackoffMs}（指数退避 {@code min(1000 << retry, cap)} 叠加抖动）。
+     */
+    public record Kafka(boolean enabled, Topics topics, int retryMaxAttempts, long retryMaxBackoffMs) {
+
+        /** 默认重试次数：约 1s+2s+4s+8s+16s 五次退避后进入 DLT。 */
+        public static final int DEFAULT_RETRY_MAX_ATTEMPTS = 5;
+        /** 默认单次退避上限，单位毫秒。 */
+        public static final long DEFAULT_RETRY_MAX_BACKOFF_MS = 30_000L;
+        /** 允许配置的重试次数下限。 */
+        public static final int MIN_RETRY_MAX_ATTEMPTS = 1;
+        /** 允许配置的重试次数上限，避免消费位点长时间滞留。 */
+        public static final int MAX_RETRY_MAX_ATTEMPTS = 10;
+        /**
+         * 允许配置的单次退避上限，单位毫秒。10 次退避的最坏累计约 13 分钟，
+         * 仍低于默认 {@code max.poll.interval.ms}（1800000 ms），不会因退避把消费实例踢出消费组。
+         */
+        public static final long MAX_RETRY_MAX_BACKOFF_MS = 300_000L;
+
+        @ConstructorBinding
+        public Kafka {
+            retryMaxAttempts = retryMaxAttempts <= 0
+                    ? DEFAULT_RETRY_MAX_ATTEMPTS
+                    : Math.min(Math.max(retryMaxAttempts, MIN_RETRY_MAX_ATTEMPTS), MAX_RETRY_MAX_ATTEMPTS);
+            retryMaxBackoffMs = retryMaxBackoffMs <= 0
+                    ? DEFAULT_RETRY_MAX_BACKOFF_MS
+                    : Math.min(retryMaxBackoffMs, MAX_RETRY_MAX_BACKOFF_MS);
+        }
+
+        /** 兼容既有构造点：只关心启用开关与主题时沿用默认重试预算。 */
+        public Kafka(boolean enabled, Topics topics) {
+            this(enabled, topics, DEFAULT_RETRY_MAX_ATTEMPTS, DEFAULT_RETRY_MAX_BACKOFF_MS);
+        }
     }
 
     public record Topics(

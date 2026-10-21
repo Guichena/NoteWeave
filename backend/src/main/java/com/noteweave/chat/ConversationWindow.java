@@ -2,7 +2,7 @@ package com.noteweave.chat;
 
 import com.noteweave.answer.strategy.AnswerContext;
 
-/** 最近对话原文只进入生成提示，不进入检索查询。 */
+/** 最近对话上下文只进入生成提示，不进入检索查询。 */
 final class ConversationWindow {
     static final String ATTRIBUTE = "conversation_window";
 
@@ -17,7 +17,7 @@ final class ConversationWindow {
         if (window == null || window.isBlank()) {
             return;
         }
-        builder.append("最近对话原文（只用于理解追问，不要向用户复述）：\n");
+        builder.append("最近对话上下文（含主题摘要与用户约束，不要向用户复述）：\n");
         builder.append(window.trim()).append("\n\n");
     }
 }

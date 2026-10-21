@@ -392,9 +392,10 @@ class SourceFourStagePipelineContractTest {
         SourceRetrievalProjectionService projection = new SourceRetrievalProjectionService(jdbc, embeddings,
                 projectionRepository, indexManager, writer, withIndex, tagCodec);
         SourceRetrievalProjectionCoordinator coordinator = new SourceRetrievalProjectionCoordinator(projection,
-                finalizer, writer, indexManager, jdbc, transactionManager, taskService, new SnapshotEmbeddingStore(storage));
+                finalizer, writer, indexManager, jdbc, transactionManager, taskService, new SnapshotEmbeddingStore(storage),
+                new SourceTopicNames(properties));
         SourceReprocessService reprocess = new SourceReprocessService(jdbc, mapper, accessGuard, taskService, async,
-                sourceParsePort, storage, catalogVersionService, eventPublisher);
+                sourceParsePort, storage, catalogVersionService, eventPublisher, new SourceTopicNames(properties));
         return new Pipeline(parse, coordinator, reprocess, embeddings, writer);
     }
 

@@ -22,6 +22,7 @@ import com.noteweave.conversation.EffectiveRetrievalConfig;
 import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.conversation.ContextV2RolloutService;
 import com.noteweave.conversation.ContextV2ShadowSnapshotService;
+import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
 import com.noteweave.quota.WorkloadQuotaService;
@@ -30,18 +31,23 @@ import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.Instant;
+import java.util.regex.Pattern;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ChatService {
+
+    /** 控制文本归一化时忽略的空白与常见标点，仅用于判断约束是否重复。 */
+    private static final Pattern CONTROL_TEXT_NOISE = Pattern.compile("[\\s\\u3000\\p{P}]+");
 
     private final JdbcTemplate jdbcTemplate;
     private final MemoryCompilerService memoryCompilerService;
@@ -260,7 +266,8 @@ public class ChatService {
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS,
                 Boolean.toString(chatControlPack.hasControls() || !v2UserControls.isBlank()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
-                renderChatControlSection(chatControlPack) + v2UserControls);
+                renderChatControlSection(chatControlPack, conversationContext.frozenV2(),
+                        !conversationContext.contextApplied()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         if (conversationContext.contextApplied()) {
@@ -364,35 +371,113 @@ public class ChatService {
                 .toList();
     }
 
-    private void appendChatControlSection(StringBuilder builder, MemoryControlPackResponse chatControlPack) {
+    private static void appendChatControlSection(StringBuilder builder, MemoryControlPackResponse chatControlPack,
+                                                Set<String> suppressedKeys) {
         if (chatControlPack == null || !chatControlPack.hasControls()) {
             return;
         }
+        Set<String> seen = new HashSet<>(suppressedKeys);
+        List<String> styleConstraints = distinctControlValues(chatControlPack.styleConstraints(), seen);
+        List<String> structureConstraints = distinctControlValues(chatControlPack.structureConstraints(), seen);
+        List<String> terminologyPolicy = distinctControlValues(chatControlPack.terminologyPolicy(), seen);
+        List<String> forbiddenPatterns = distinctControlValues(chatControlPack.forbiddenPatterns(), seen);
+        List<String> evidencePolicy = distinctControlValues(chatControlPack.evidencePolicy(), seen);
+        List<String> interactionPolicy = distinctControlValues(chatControlPack.interactionPolicy(), seen);
+        List<String> reviewChecklist = distinctControlValues(chatControlPack.reviewChecklist(), seen);
+        if (styleConstraints.isEmpty() && structureConstraints.isEmpty() && terminologyPolicy.isEmpty()
+                && forbiddenPatterns.isEmpty() && evidencePolicy.isEmpty() && interactionPolicy.isEmpty()
+                && reviewChecklist.isEmpty()) {
+            return;
+        }
         builder.append("## 表达控制\n");
-        appendControlLine(builder, "- 风格约束：", chatControlPack.styleConstraints());
-        appendControlLine(builder, "- 结构约束：", chatControlPack.structureConstraints());
-        appendControlLine(builder, "- 术语口径：", chatControlPack.terminologyPolicy());
-        appendControlLine(builder, "- 禁用路径：", chatControlPack.forbiddenPatterns());
-        appendControlLine(builder, "- 交互策略：", chatControlPack.interactionPolicy());
-        appendControlLine(builder, "- 复核清单：", chatControlPack.reviewChecklist());
+        appendControlLine(builder, "- 风格约束：", styleConstraints);
+        appendControlLine(builder, "- 结构约束：", structureConstraints);
+        appendControlLine(builder, "- 术语口径：", terminologyPolicy);
+        appendControlLine(builder, "- 禁用路径：", forbiddenPatterns);
+        appendControlLine(builder, "- 证据口径：", evidencePolicy);
+        appendControlLine(builder, "- 交互策略：", interactionPolicy);
+        appendControlLine(builder, "- 复核清单：", reviewChecklist);
         builder.append("\n");
     }
 
-    private String renderChatControlSection(MemoryControlPackResponse chatControlPack) {
-        StringBuilder builder = new StringBuilder();
-        appendChatControlSection(builder, chatControlPack);
-        return builder.toString();
+    /**
+     * 同一用户约束可能同时出现在控制包与 v2 冻结约束中，按归一化文本去重，
+     * 已由冻结约束（优先保留）表达过的控制项不再重复输出。
+     */
+    private static List<String> distinctControlValues(List<String> values, Set<String> seen) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        List<String> distinct = new ArrayList<>();
+        for (String value : values) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            String key = normalizeControlText(value);
+            if (!key.isEmpty() && !seen.add(key)) {
+                continue;
+            }
+            distinct.add(value);
+        }
+        return distinct;
     }
 
+    /** 去空白与常见标点，仅用于判断两条控制文本是否表达同一约束。 */
+    static String normalizeControlText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return CONTROL_TEXT_NOISE.matcher(text).replaceAll("");
+    }
+
+    static Set<String> frozenConstraintKeys(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
+        if (frozen == null) {
+            return Set.of();
+        }
+        Set<String> keys = new LinkedHashSet<>();
+        frozen.projection().constraints().forEach(rule -> {
+            String key = normalizeControlText(rule.text());
+            if (!key.isEmpty()) {
+                keys.add(key);
+            }
+        });
+        return keys;
+    }
+
+    /** 合并控制包与 v2 冻结用户约束，同一约束（归一化文本相同）只保留一次。 */
+    static String renderChatControlSection(MemoryControlPackResponse chatControlPack,
+                                           ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
+        return renderChatControlSection(chatControlPack, frozen, true);
+    }
+
+    /**
+     * @param renderFrozenConstraints 对话窗口已经带着同一批冻结约束时传 false：控制包里重复的控制项仍然
+     *                                按冻结约束去重，但不再单独渲染一遍，避免提示词里出现两份用户约束
+     */
+    static String renderChatControlSection(MemoryControlPackResponse chatControlPack,
+                                           ContextV2ShadowSnapshotService.FrozenAnswer frozen,
+                                           boolean renderFrozenConstraints) {
+        StringBuilder builder = new StringBuilder();
+        appendChatControlSection(builder, chatControlPack, frozenConstraintKeys(frozen));
+        return renderFrozenConstraints
+                ? builder.append(renderV2UserConstraints(frozen)).toString()
+                : builder.toString();
+    }
+
+    /**
+     * 冻结约束按极性渲染：{@code REQUIRE} 直接给要求，{@code FORBID} 前置「禁止：」，
+     * 让回答模型不用从正文反推「不要使用表格」是一条禁止项。
+     */
     static String renderV2UserConstraints(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
         if (frozen == null || frozen.projection().constraints().isEmpty()) return "";
         StringBuilder builder = new StringBuilder("## 当前有效的用户约束（冻结会话）\n");
-        frozen.projection().constraints().forEach(rule -> builder.append("- ")
+        frozen.projection().constraints().forEach(rule -> builder
+                .append(rule.polarity() == ConstraintPolarity.FORBID ? "- 禁止：" : "- ")
                 .append(rule.text()).append("\n"));
         return builder.append("\n").toString();
     }
 
-    private void appendControlLine(StringBuilder builder, String prefix, List<String> values) {
+    private static void appendControlLine(StringBuilder builder, String prefix, List<String> values) {
         if (values == null || values.isEmpty()) {
             return;
         }

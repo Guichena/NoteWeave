@@ -2,7 +2,7 @@ package com.noteweave.retrieval.projection;
 
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
-import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.source.SourceTopicNames;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.sql.Timestamp;
@@ -26,24 +26,30 @@ public class SourceEmbeddingBatchRepository {
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    private final SourceTopicNames topicNames;
     private final int leaseSeconds;
 
-    public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager) {
-        this(jdbc, manager, 7200);
+    public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager,
+            SourceTopicNames topicNames) {
+        this(jdbc, manager, topicNames, 7200);
     }
 
     @Autowired
     public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager,
             com.noteweave.config.NoteWeaveProperties properties,
+            SourceTopicNames topicNames,
             @Value("${noteweave.kafka.max-poll-interval-ms:1800000}") int pollMillis,
             @Value("${noteweave.pipeline.embedding-lease-seconds:7200}") int configuredLeaseSeconds) {
-        this(jdbc, manager, com.noteweave.source.SourcePipelineProcessingBudget.embeddingLeaseSeconds(
-                properties, pollMillis, configuredLeaseSeconds));
+        this(jdbc, manager, topicNames,
+                com.noteweave.source.SourcePipelineProcessingBudget.embeddingLeaseSeconds(
+                        properties, pollMillis, configuredLeaseSeconds));
     }
 
-    public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager, int leaseSeconds) {
+    public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager,
+            SourceTopicNames topicNames, int leaseSeconds) {
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(manager);
+        this.topicNames = java.util.Objects.requireNonNull(topicNames, "topicNames");
         if (leaseSeconds < 1 || leaseSeconds > 86400) throw new IllegalArgumentException("批次租约必须在 1 至 86400 秒之间");
         this.leaseSeconds = leaseSeconds;
     }
@@ -171,7 +177,7 @@ public class SourceEmbeddingBatchRepository {
             jdbc.update("""
                     insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                     values (?, ?, ?, ?, ?, 'READY')
-                    """, Ids.newId(), task, SourcePipelineStages.TOPIC_INDEX, snapshot, Json.write(MAPPER, payload));
+                    """, Ids.newId(), task, topicNames.index(), snapshot, Json.write(MAPPER, payload));
             return true;
         }));
     }
@@ -308,7 +314,7 @@ public class SourceEmbeddingBatchRepository {
         jdbc.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')
-                """, Ids.newId(), task, SourcePipelineStages.TOPIC_EMBED, snapshot + ":" + batch, Json.write(MAPPER, payload));
+                """, Ids.newId(), task, topicNames.embed(), snapshot + ":" + batch, Json.write(MAPPER, payload));
     }
 
     private Map<String, Object> identity(String workspace, String source, String snapshot, String task) {

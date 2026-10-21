@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationTopicSummaryV2Service {
     static final String COMPILER_VERSION = "topic-summary-v2-incremental-a2";
     private static final String SUMMARY_TOPIC = "noteweave.conversation.summary";
+    /** 表 conversation_topic_summary_revision_v2 里“进行中/已成功”的状态；其余状态（STALE）需要重建。 */
+    private static final List<String> LIVE_STATUSES = List.of("BUILDING", "READY");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper mapper;
@@ -62,11 +64,14 @@ public class ConversationTopicSummaryV2Service {
         int queued = 0;
         for (Segment segment : segments) {
             int end = Math.min(segment.endSeq(), coveredEnd);
-            Integer existing = jdbc.queryForObject("""
-                    select count(*) from conversation_topic_summary_revision_v2
+            // 只有进行中（BUILDING）或已成功（READY）的摘要才算“同一终点已存在”：
+            // STALE 摘要的原文窗口没变，但摘要本身作废了，必须允许在同一终点重建
+            List<ExistingRevision> existing = jdbc.query("""
+                    select id, status from conversation_topic_summary_revision_v2
                     where segment_id = ? and end_seq = ?
-                    """, Integer.class, segment.id(), end);
-            if (existing != null && existing > 0) continue;
+                    """, (rs, index) -> new ExistingRevision(rs.getString(1), rs.getString(2)),
+                    segment.id(), end);
+            if (existing.stream().anyMatch(revision -> LIVE_STATUSES.contains(revision.status()))) continue;
             List<SourceMessage> messages = loadMessages(workspaceId, conversationId,
                     segment.startSeq(), end);
             if (messages.size() != end - segment.startSeq() + 1) continue;
@@ -74,22 +79,37 @@ public class ConversationTopicSummaryV2Service {
             BaseSummary base = latestReadyBefore(segment.id(), end);
             List<SourceMessage> delta = base == null ? messages : messages.stream()
                     .filter(message -> message.seq() > base.endSeq()).toList();
-            String revisionId = Ids.newId();
-            Integer maximum = jdbc.queryForObject("""
-                    select max(revision_no) from conversation_topic_summary_revision_v2
-                    where segment_id = ?
-                    """, Integer.class, segment.id());
-            int revisionNo = maximum == null ? 1 : maximum + 1;
             String digest = sourceDigest(messages);
-            jdbc.update("""
-                    insert into conversation_topic_summary_revision_v2(
-                        id, workspace_id, conversation_id, topic_id, segment_id, revision_no,
-                        start_seq, end_seq, source_digest, status, summary_text, compiler_version,
-                        base_revision_id)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BUILDING', '', ?, ?)
-                    """, revisionId, workspaceId, conversationId, segment.topicId(), segment.id(),
-                    revisionNo, segment.startSeq(), end, digest, COMPILER_VERSION,
-                    base == null ? null : base.revisionId());
+            String revisionId;
+            if (existing.isEmpty()) {
+                revisionId = Ids.newId();
+                Integer maximum = jdbc.queryForObject("""
+                        select max(revision_no) from conversation_topic_summary_revision_v2
+                        where segment_id = ?
+                        """, Integer.class, segment.id());
+                int revisionNo = maximum == null ? 1 : maximum + 1;
+                jdbc.update("""
+                        insert into conversation_topic_summary_revision_v2(
+                            id, workspace_id, conversation_id, topic_id, segment_id, revision_no,
+                            start_seq, end_seq, source_digest, status, summary_text, compiler_version,
+                            base_revision_id)
+                        values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'BUILDING', '', ?, ?)
+                        """, revisionId, workspaceId, conversationId, segment.topicId(), segment.id(),
+                        revisionNo, segment.startSeq(), end, digest, COMPILER_VERSION,
+                        base == null ? null : base.revisionId());
+            } else {
+                // (segment_id, end_seq) 唯一：作废的旧摘要原地重建，不再插入重复终点的新行
+                revisionId = existing.get(0).id();
+                int rebuilt = jdbc.update("""
+                        update conversation_topic_summary_revision_v2
+                        set status = 'BUILDING', start_seq = ?, end_seq = ?, source_digest = ?,
+                            summary_text = '', content_hash = null, summary_method = null,
+                            compiler_version = ?, base_revision_id = ?, ready_at = null
+                        where id = ? and status not in ('BUILDING', 'READY')
+                        """, segment.startSeq(), end, digest, COMPILER_VERSION,
+                        base == null ? null : base.revisionId(), revisionId);
+                if (rebuilt != 1) continue;
+            }
             String taskId = tasks.createTask(workspaceId, "CONVERSATION_SUMMARY",
                     "TOPIC_SUMMARY_REVISION_V2", revisionId, "QUEUED",
                     "Conversation topic summary queued");
@@ -242,6 +262,7 @@ public class ConversationTopicSummaryV2Service {
     }
 
     private record Segment(String id, String topicId, int startSeq, int endSeq) {}
+    private record ExistingRevision(String id, String status) {}
     private record BaseSummary(String revisionId, int endSeq, String text) {}
     private record SourceMessage(String id, int seq, String role, String text) {}
     private record Revision(String workspaceId, String conversationId, int startSeq, int endSeq,
