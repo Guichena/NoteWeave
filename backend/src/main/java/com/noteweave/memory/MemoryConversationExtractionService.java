@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 一条偏好的槽位、是否算显式记忆（explicit）、是否算对已有回答的评价（feedback），只由模型输出字段决定，
  * 不再有关键词正则兜底：模型调用失败、超时或输出不是合法 JSON 时重试一次，仍失败则本轮不抽取、记日志，
  * 并把任务标成可重试，等既有的重驱入口再跑一次。
+ * 注入防护只靠数据围栏（{@link MemoryPromptFence}）、槽位白名单和整批作废，不维护指令关键词表：
+ * 命中某个词不说明模型越权，按词表丢弃会连带丢掉用户真实的偏好复述。
  * 下一轮消息是不是跟进反馈、正/负/中性、针对哪个方面同样只由模型判断（{@link MemoryFeedbackAspectJudge}），
  * 模型没给出结论时这一轮不写反馈，也按可重试处理。
  * 与已有记忆等价的信号不再新建一条，而是按会话累加证据。
@@ -66,18 +67,6 @@ public class MemoryConversationExtractionService {
 
     /** {@link #slot(JsonNode)} 的哨兵：模型给了不在白名单里的槽位，整批作废。 */
     private static final String UNKNOWN_SLOT = "\u0000unknown-slot";
-
-    /**
-     * 指令注入句。只匹配「让模型改变行为」的句子，不按主题词拦：
-     * 「不要忽略以上要求」这类带否定的正常偏好不命中（前置否定用 lookbehind 排除）。
-     */
-    private static final Pattern INSTRUCTION_LIKE = Pattern.compile(
-            "(?<!不要)(?<!不得)(?<!别)(?<!勿)(忽略|无视|跳过|忘记|覆盖|绕过)(掉)?"
-                    + "(以上|上面|前面|之前|此前|先前|上述|所有|全部)(的)?(要求|指令|规则|提示词|提示|限制|约束|设定)"
-                    + "|(你现在是|从现在开始你是|从现在起你是|you are now|act as (an? )?(admin|system))"
-                    + "|(系统提示词|系统提示|system prompt|system message)"
-                    + "|ignore (all )?(the )?(previous|above|prior) (instructions|rules|prompts)",
-            Pattern.CASE_INSENSITIVE);
 
     /**
      * 抽取提示词。槽位枚举直接取自 {@link MemorySlots#ALLOWED_SLOTS}；
@@ -399,8 +388,9 @@ public class MemoryConversationExtractionService {
      * 不能因为「其它项看着正常」就把它写进记忆。
      * <p>
      * 校验的是「模型有没有越权」而不是「措辞好不好」：槽位必须属于
-     * {@link MemorySlots#ALLOWED_SLOTS}（模型没给槽位时仍按 category 兜底），
-     * statement/value 不能是指令句。
+     * {@link MemorySlots#ALLOWED_SLOTS}（模型没给槽位时仍按 category 兜底），statement 不能为空。
+     * 不维护指令关键词表：statement/value 里出现「忽略以上要求」「系统提示」这类字样不算违规，
+     * 是否只是数据由提示词围栏和模型判断，词表会误杀用户真实的偏好复述。
      */
     private List<Preference> parse(String output) {
         if (output == null) return null;
@@ -429,9 +419,8 @@ public class MemoryConversationExtractionService {
     private static Preference preference(JsonNode node) {
         if (node == null || !node.isObject()) return null;
         String statement = node.path("statement").asText("").trim();
-        if (statement.isBlank() || looksLikeInstruction(statement)) return null;
+        if (statement.isBlank()) return null;
         String value = node.path("value").asText(null);
-        if (value != null && !value.isBlank() && looksLikeInstruction(value)) return null;
         String category = node.path("category").asText("style").trim().toLowerCase(Locale.ROOT);
         String slot = slot(node);
         if (UNKNOWN_SLOT.equals(slot)) return null;
@@ -458,14 +447,6 @@ public class MemoryConversationExtractionService {
             return UNKNOWN_SLOT;
         }
         return normalized;
-    }
-
-    /**
-     * 指令注入句：正文里让模型「忽略规则」「复述系统提示」「扮演角色」的句子不是偏好复述。
-     * 只拦指令本身，不按主题词拦——「不要忽略用户的要求」这类偏好仍按普通语句放行。
-     */
-    static boolean looksLikeInstruction(String text) {
-        return text != null && INSTRUCTION_LIKE.matcher(text).find();
     }
 
     private String insertSignal(String workspaceId, String userId, String messageId, int index,
