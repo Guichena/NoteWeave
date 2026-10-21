@@ -118,6 +118,57 @@ class ConversationConstraintProjectorV2Test {
     }
 
     @Test
+    void plainNegationPhrasesInConversationDoNotBecomeConstraints() {
+        // 评审反例：只表示语气的"不是/不用"没有指向语言/格式/长度目标，不能投影成约束
+        for (String text : List.of("这不是我要的。", "不用了。", "不是这个意思。")) {
+            assertThat(projector.project(List.of(message("c1", 1, "USER", text)))).as(text).isEmpty();
+        }
+    }
+
+    @Test
+    void plainNegationPhrasesDoNotRevokeOrReplaceEarlierConstraint() {
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("c1", 1, "USER", "以后用英文。"),
+                message("c2", 2, "USER", "这不是我要的。"),
+                message("c3", 3, "USER", "不用了。"),
+                message("c4", 4, "USER", "不是这个意思。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("英文");
+            assertThat(constraint.status()).isEqualTo("ACTIVE");
+            assertThat(constraint.invalidAfterSeq()).isNull();
+            assertThat(constraint.supersededBy()).isNull();
+        });
+    }
+
+    @Test
+    void negationStillCountsWhenItPointsAtLanguageFormatOrLength() {
+        // 正例：否定词后面跟着语言/格式/长度目标，仍然投影成 NEGATION
+        for (String text : List.of("不要用英文。", "不是用英文。", "不用表格。", "别太长。", "不要写大段。")) {
+            assertThat(projector.project(List.of(message("n1", 1, "USER", text))))
+                    .as(text).singleElement().satisfies(constraint -> {
+                        assertThat(constraint.kind()).as(text).isEqualTo("NEGATION");
+                        assertThat(constraint.status()).isEqualTo("ACTIVE");
+                        assertThat(constraint.text()).as(text).isEqualTo(text.substring(0, text.length() - 1));
+                    });
+        }
+    }
+
+    @Test
+    void negationWordsEmbeddedInLongerWordsAreNotNegations() {
+        // "别人/差别"里的"别"不是否定词："别人用英文写的"是陈述，不能读成"别用英文"
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("b1", 1, "USER", "别人用英文写的。"),
+                message("b2", 2, "USER", "差别在于中文和英文的时态。")));
+
+        assertThat(constraints).singleElement().satisfies(constraint -> {
+            assertThat(constraint.kind()).isEqualTo("LANGUAGE");
+            assertThat(constraint.text()).isEqualTo("英文");
+        });
+    }
+
+    @Test
     void laterValueOfSameKindRevokesEarlierOneWithoutCorrectionKeyword() {
         List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
                 message("k1", 1, "USER", "这份报告用英文。"),

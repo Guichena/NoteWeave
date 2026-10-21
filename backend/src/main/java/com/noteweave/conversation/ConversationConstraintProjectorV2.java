@@ -17,13 +17,25 @@ public final class ConversationConstraintProjectorV2 {
     /** 长期生效的措辞。 */
     private static final java.util.regex.Pattern DURABLE = java.util.regex.Pattern.compile(
             "以后|今后|往后|之后都|从现在起|从今以后|每次|每一次|一律|始终|总是|一直都?要");
+    /** 语言名字面量；否定判定复用同一份词表，避免两处清单漂移。 */
+    private static final String LANGUAGE_NAME = "简体中文|繁体中文|中文|英文|英语|日文|日语|韩文";
     private static final java.util.regex.Pattern LANGUAGE = java.util.regex.Pattern.compile(
-            "(?:改用|改成|换成|使用|用)(简体中文|繁体中文|中文|英文|英语|日文|日语|韩文)");
+            "(?:改用|改成|换成|使用|用)(" + LANGUAGE_NAME + ")");
+    /** 不带"用"的语言名（"不是英文"）。 */
+    private static final java.util.regex.Pattern LANGUAGE_WORD = java.util.regex.Pattern.compile(LANGUAGE_NAME);
+    /** 否定也要能指向的长度目标（"别太长""不要再贴大段配置"）；这些词单独出现是抱怨，不是正向格式要求。 */
+    private static final java.util.regex.Pattern LENGTH_WORD = java.util.regex.Pattern.compile(
+            "太长|过长|大段|长篇|大篇幅|整段|一大堆|一堆|废话|啰嗦|冗长");
     private static final java.util.regex.Pattern FORMAT_CUE = java.util.regex.Pattern.compile(
             "先给结论|结论先行|先说结论|用表格|表格对比|分点|分条|列表|列出|不超过\\d+字|控制在\\d+字|"
                     + "字数|简短|简洁|精简|详细一点|展开讲|附上(?:来源|引用|出处)|标注(?:来源|出处)|带上代码|给出代码");
+    /**
+     * 否定词。单独一个"别"只在不是别的词的语素时才是否定（"别太长"是要求，"特别/区别/别人/别的"不是）。
+     */
     private static final java.util.regex.Pattern NEGATION = java.util.regex.Pattern.compile(
-            "不要|别再|不许|不是|不用|禁止|避免");
+            "不要|别再|不许|不是|不用|禁止|避免|(?<![特区告级性分辨差识派类离个干作道])别(?![人处的些])");
+    /** 否定词后面最多隔几个字符就必须出现目标，超过这个距离的否定只是语气。 */
+    private static final int NEGATION_TARGET_WINDOW = 8;
     /**
      * 紧贴在语言/格式线索前面、并落在同一分句内的否定前缀。
      * 除"不要""别""不是""不用""禁止""避免""不"外，允许夹一个紧邻的副词或动词（"不要再用""禁止使用"），
@@ -98,9 +110,11 @@ public final class ConversationConstraintProjectorV2 {
 
     /**
      * 识别一条用户消息里的显式要求，每条消息最多产出一条约束，优先级：
-     * 指代不明 > （未被否定的）语言 > （未被否定的）格式 > 否定。
+     * 指代不明 > （未被否定的）语言 > （未被否定的）格式 > 约束形态的否定。
      * 否定先于语言和格式生效："不是用英文""禁止用表格"里的线索是被拒绝的取值，不能当成正向要求；
      * 只有否定前缀和线索同处一个分句时才算否定，"不要用英文，用中文写"里的"用中文"仍然生效。
+     * 否定还必须是约束形态：否定词后面跟着语言/格式/长度目标（"不要用英文""不用表格""别太长"）。
+     * 只有否定语气、没有目标的"不是""不用"（"这不是我要的""不用了""不是这个意思"）不产生约束。
      * 否定约束继承被否定线索的槽位，这样"不要用表格"才能撤回之前的"用表格"。
      * 带"以后""每次""从现在起"等长期措辞的要求在整个会话内生效，否则只在当前话题内生效。
      */
@@ -131,7 +145,7 @@ public final class ConversationConstraintProjectorV2 {
             ruleText = clause(text, format.start());
             slot = formatSlot(format.group());
             value = slot;
-        } else if ((negation = NEGATION.matcher(text)).find()) {
+        } else if ((negation = negationWithTarget(text)) != null) {
             kind = "NEGATION";
             ruleText = clause(text, negation.start());
             forbid = true;
@@ -192,6 +206,33 @@ public final class ConversationConstraintProjectorV2 {
             }
         }
         return null;
+    }
+
+    /**
+     * 约束形态的否定：否定词后面同一分句内还要跟着语言/格式/长度目标。
+     * "不要用英文""不用表格""别太长""不是用英文"是要求；
+     * "这不是我要的""不用了""不是这个意思"只有否定语气，没有可约束的目标，不产生约束。
+     */
+    private static java.util.regex.Matcher negationWithTarget(String text) {
+        java.util.regex.Matcher matcher = NEGATION.matcher(text);
+        while (matcher.find()) {
+            if (hasNegationTarget(text, matcher.start(), matcher.end())) return matcher;
+        }
+        return null;
+    }
+
+    /** 否定词后面 {@value #NEGATION_TARGET_WINDOW} 个字符以内（不得跨分句）是否出现语言/格式/长度目标。 */
+    private static boolean hasNegationTarget(String text, int negatorStart, int negatorEnd) {
+        int end = negatorEnd;
+        while (end < text.length() && end - negatorEnd < NEGATION_TARGET_WINDOW
+                && CLAUSE_BREAK.indexOf(text.charAt(end)) < 0) {
+            end++;
+        }
+        String window = text.substring(negatorStart, end);
+        return LANGUAGE.matcher(window).find()
+                || LANGUAGE_WORD.matcher(window).find()
+                || FORMAT_CUE.matcher(window).find()
+                || LENGTH_WORD.matcher(window).find();
     }
 
     /** 格式线索所属的语义槽位：同一槽位里的取值互斥，不同槽位可以同时生效。 */
