@@ -250,9 +250,8 @@ public class MemoryConversationExtractionService {
             transactionTemplate.executeWithoutResult(status -> completeTask(taskId, "记忆候选已提取", messageId));
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
         }
-        boolean retryable = Boolean.TRUE.equals(transactionTemplate.execute(status ->
-                applicationFeedback.recordFollowUp(workspaceId, messageId, content)
-                        == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE));
+        boolean retryable = applicationFeedback.recordFollowUp(workspaceId, messageId, content)
+                == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
         if (retryable) {
             markTaskForRetry(taskId);
         } else {
@@ -283,8 +282,21 @@ public class MemoryConversationExtractionService {
 
     ExtractionResult persistExtraction(String taskId, String workspaceId, String messageId, String userId,
                                        Extraction extraction, String userContent) {
+        // 跟进反馈的判断模型在事务外先跑完（写入由 recordFollowUp 自己放进短事务），
+        // 不能等拿到了 memory_usage_log / memory_item 的行锁再去等模型。
+        MemoryApplicationFeedbackService.FollowUpResult followUp = followUp(
+                workspaceId, messageId, extraction, userContent);
         return transactionTemplate.execute(status -> persist(
-                taskId, workspaceId, messageId, userId, extraction, userContent));
+                taskId, workspaceId, messageId, userId, extraction, followUp));
+    }
+
+    /** 抽取本身可重试时不再判断跟进反馈；其余情况沿用 {@code recordFollowUp} 的结论。 */
+    private MemoryApplicationFeedbackService.FollowUpResult followUp(
+            String workspaceId, String messageId, Extraction extraction, String userContent) {
+        if (extraction.retryable() || applicationFeedback == null) {
+            return MemoryApplicationFeedbackService.FollowUpResult.SKIPPED;
+        }
+        return applicationFeedback.recordFollowUp(workspaceId, messageId, userContent);
     }
 
     private boolean alreadyExtracted(String workspaceId, String messageId) {
@@ -295,7 +307,8 @@ public class MemoryConversationExtractionService {
     }
 
     private ExtractionResult persist(String taskId, String workspaceId, String messageId, String userId,
-                                     Extraction extraction, String userContent) {
+                                     Extraction extraction,
+                                     MemoryApplicationFeedbackService.FollowUpResult followUp) {
         if (alreadyExtracted(workspaceId, messageId)) {
             completeTask(taskId, "记忆候选已提取", messageId);
             return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
@@ -330,11 +343,8 @@ public class MemoryConversationExtractionService {
                     sourceType(preference), candidate.reviewStatus()));
         }
         // 跟进反馈的正/负/中性只由模型判断；模型没给出结论时本轮跳过，并把任务标成可重试
-        boolean retryable = extraction.retryable();
-        if (!retryable && applicationFeedback != null) {
-            retryable = applicationFeedback.recordFollowUp(workspaceId, messageId, userContent)
-                    == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
-        }
+        boolean retryable = extraction.retryable()
+                || followUp == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
         if (retryable) {
             markTaskForRetry(taskId);
         } else {
