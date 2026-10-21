@@ -36,6 +36,8 @@ public class ConversationTopicProjectionV2Service {
     /** 约束基线只在本类内部读写：独立 mapper，避免全局 Jackson 命名策略影响持久化格式。 */
     private static final ObjectMapper STATE_MAPPER = new ObjectMapper();
     private static final TypeReference<List<ConstraintOpMerger.Step>> STEP_LIST = new TypeReference<>() {};
+    /** 乐观检查失败后的落库重试上限：重读发生在会话行锁内，一次重读即可拿到权威状态。 */
+    private static final int CONSTRAINT_APPLY_ATTEMPTS = 3;
     private final JdbcTemplate jdbc;
     private final ConversationTopicSummaryV2Service summaries;
     private final EmbeddingClient embeddings;
@@ -233,48 +235,95 @@ public class ConversationTopicProjectionV2Service {
         if (extraction.extracted() == 0) {
             return;
         }
-        List<ConstraintOpMerger.Step> merged = new ArrayList<>(segmentation.constraintState().steps());
-        merged.addAll(extraction.steps());
-        String stepsJson = writeSteps(merged);
         Boolean applied = independentTransaction(segmentation.conversationId(),
-                () -> applyConstraintsInTransaction(segmentation.workspaceId(),
-                        segmentation.conversationId(), segmentation.constraintState(),
-                        extraction, stepsJson));
+                () -> applyConstraintsInTransaction(segmentation, segmentation.constraintState(), extraction));
         if (!Boolean.TRUE.equals(applied)) {
-            // 抽取期间另一个 refresh 先写成功：放弃这次结果，下一轮从它推进后的 watermark 重抽。
-            log.warn("约束抽取结果被并发刷新覆盖，本轮放弃: conversationId={}, seq={}",
+            // 只剩「进度行已被消息删除清掉」这一种：库里已按删除对账，这里没写任何行，下一轮从 0 重抽。
+            log.warn("约束抽取结果未能落库，本轮放弃: conversationId={}, seq={}",
                     segmentation.conversationId(), extraction.processedSeq());
         }
     }
 
     /**
      * 短事务：先按 watermark 与 lock_version 做乐观检查，检查通过才写约束行。
-     * 检查失败返回 false，调用方不再写任何行，watermark 也不前进。
+     * <p>
+     * 检查失败说明抽取期间另一个 refresh 先提交了：胜者的水位还没覆盖本轮已抽取的消息，
+     * 直接编译库里的行会把过期约束冻进这次回答的快照。会话行锁已经在下面拿住，重读到的状态就是
+     * 权威状态，因此用最新基线把本轮已抽取的 ops 重新折叠（
+     * {@link ConversationConstraintProjectionV2Service#refold}，<b>不重复调用模型</b>）后有限次重试。
+     * 胜者已经处理过本轮全部消息时，库里就是正确的约束，直接当作成功。
+     * 只有进度行被删除（消息删除路径，库中约束已由它自己按 REVOKED 对账）才放弃。
      * <p>
      * 这里重新拿会话行锁（只覆盖几条 upsert，不含模型调用）：消息删除也拿同一把锁并
      * 把约束标 REVOKED/清空正文，不重新加锁的话，删除后本轮 upsert 会把旧行又写回 ACTIVE。
      */
-    private Boolean applyConstraintsInTransaction(String workspaceId, String conversationId,
+    private Boolean applyConstraintsInTransaction(Segmentation segmentation,
                                                   ConstraintState state,
-                                                  ConversationConstraintProjectionV2Service.Extraction extraction,
-                                                  String stepsJson) {
+                                                  ConversationConstraintProjectionV2Service.Extraction extraction) {
+        String workspaceId = segmentation.workspaceId();
+        String conversationId = segmentation.conversationId();
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
         if (locked.isEmpty()) {
             return false;
         }
-        int updated = jdbc.update("""
-                update conversation_constraint_state_v2
-                set processed_seq = ?, steps_json = ?, rule_version = ?,
-                    lock_version = lock_version + 1, updated_at = current_timestamp
-                where conversation_id = ? and workspace_id = ?
-                  and lock_version = ? and processed_seq = ?
-                """, extraction.processedSeq(), stepsJson, constraintProjection.version(),
-                conversationId, workspaceId, state.lockVersion(), state.processedSeq());
-        if (updated != 1) {
-            return false;
+        ConstraintState current = state;
+        ConversationConstraintProjectionV2Service.Extraction pending = extraction;
+        for (int attempt = 1; attempt <= CONSTRAINT_APPLY_ATTEMPTS; attempt++) {
+            List<ConstraintOpMerger.Step> merged = new ArrayList<>(current.steps());
+            merged.addAll(pending.steps());
+            int updated = jdbc.update("""
+                    update conversation_constraint_state_v2
+                    set processed_seq = ?, steps_json = ?, rule_version = ?,
+                        lock_version = lock_version + 1, updated_at = current_timestamp
+                    where conversation_id = ? and workspace_id = ?
+                      and lock_version = ? and processed_seq = ?
+                    """, pending.processedSeq(), writeSteps(merged), constraintProjection.version(),
+                    conversationId, workspaceId, current.lockVersion(), current.processedSeq());
+            if (updated == 1) {
+                persistConstraints(workspaceId, conversationId, pending);
+                return true;
+            }
+            ConstraintState latest = latestState(workspaceId, conversationId);
+            if (latest == null) {
+                return false;
+            }
+            pending = constraintProjection.refold(segmentation.projection().segments(),
+                    latest.processedSeq(), latest.steps(), pending.steps());
+            if (pending.steps().isEmpty()) {
+                log.info("约束已由并发刷新先行写入，本轮采用库中结果: conversationId={}, processedSeq={}",
+                        conversationId, latest.processedSeq());
+                return true;
+            }
+            current = latest;
         }
+        return false;
+    }
+
+    /** 冲突后重读库里的最新基线。只读；版本已升级或进度行已被删除时按相应语义归一。 */
+    private ConstraintState latestState(String workspaceId, String conversationId) {
+        List<ConstraintState> rows = jdbc.query("""
+                select processed_seq, steps_json, rule_version, lock_version
+                from conversation_constraint_state_v2
+                where conversation_id = ? and workspace_id = ?
+                """, (rs, index) -> new ConstraintState(rs.getInt("processed_seq"), rs.getInt("lock_version"),
+                rs.getString("rule_version"), readSteps(rs.getString("steps_json"))),
+                conversationId, workspaceId);
+        if (rows.isEmpty()) {
+            return null;
+        }
+        ConstraintState latest = rows.get(0);
+        if (!constraintProjection.version().equals(latest.ruleVersion())) {
+            // 规则版本已升级：旧基线不能按新规则继续折叠，等价于 readConstraintState 的归零重抽。
+            return new ConstraintState(0, latest.lockVersion(), constraintProjection.version(), List.of());
+        }
+        return latest;
+    }
+
+    /** 约束行落库与对账：只处理本轮已处理的区间，快照里没有的旧行删除。 */
+    private void persistConstraints(String workspaceId, String conversationId,
+                                    ConversationConstraintProjectionV2Service.Extraction extraction) {
         Set<String> snapshotIds = new HashSet<>(extraction.snapshot().size());
         for (ConversationConstraintProjectorV2.Constraint constraint : extraction.snapshot()) {
             snapshotIds.add(constraint.id());
@@ -323,7 +372,6 @@ public class ConversationTopicProjectionV2Service {
                     where id = ? and workspace_id = ? and conversation_id = ?
                     """, persistedId, workspaceId, conversationId);
         }
-        return true;
     }
 
     /**

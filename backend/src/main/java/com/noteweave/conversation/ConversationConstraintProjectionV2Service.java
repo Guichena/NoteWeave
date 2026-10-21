@@ -134,6 +134,44 @@ public class ConversationConstraintProjectionV2Service {
     }
 
     /**
+     * 冲突重放：用库里最新的基线重新折叠本轮已经抽取到的 ops，<b>不再调用模型</b>。
+     * <p>
+     * 乐观检查失败说明抽取期间另一个 refresh 先提交了，它的 watermark {@code watermarkSeq}
+     * 已经覆盖了双方重复处理过的消息。这里只保留 seq 在其之后的步骤重新折叠，
+     * 结果与「从最新基线继续增量抽取」一致，但不会像 {@link #extract} 那样再调一次模型。
+     *
+     * @param segments       当前切分，用来像 {@link #extract} 一样按最新话题重算基线步骤的 topicId
+     * @param watermarkSeq   库里最新的已处理水位
+     * @param baselineSteps  库里最新的基线步骤
+     * @param extractedSteps 本轮抽取到的步骤
+     * @return 重放结果：{@code steps} 只含水位之后仍需落库的步骤，为空表示胜者已覆盖本轮全部消息
+     */
+    Extraction refold(List<TopicSegmenterV2.Segment> segments, int watermarkSeq,
+                      List<ConstraintOpMerger.Step> baselineSteps,
+                      List<ConstraintOpMerger.Step> extractedSteps) {
+        List<ConstraintOpMerger.Step> all = new ArrayList<>();
+        if (baselineSteps != null) {
+            for (ConstraintOpMerger.Step step : baselineSteps) {
+                all.add(withCurrentTopic(step, segments));
+            }
+        }
+        List<ConstraintOpMerger.Step> kept = new ArrayList<>();
+        if (extractedSteps != null) {
+            for (ConstraintOpMerger.Step step : extractedSteps) {
+                if (step.seq() > watermarkSeq) {
+                    all.add(step);
+                    kept.add(step);
+                }
+            }
+        }
+        int processedSeq = Math.max(0, watermarkSeq);
+        for (ConstraintOpMerger.Step step : kept) {
+            processedSeq = Math.max(processedSeq, step.seq());
+        }
+        return new Extraction(List.copyOf(kept), processedSeq, merger.fold(all), kept.size(), 0);
+    }
+
+    /**
      * 一次增量抽取的结果。
      *
      * @param steps        本轮新增的步骤（只含新消息，按会话顺序）

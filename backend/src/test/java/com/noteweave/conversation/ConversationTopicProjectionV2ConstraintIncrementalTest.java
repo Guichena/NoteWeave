@@ -3,6 +3,8 @@ package com.noteweave.conversation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.conversation.constraint.ConstraintIds;
 import com.noteweave.conversation.constraint.ConstraintOp;
 import com.noteweave.conversation.constraint.ConstraintOpMerger;
@@ -32,8 +34,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>
  * 用内存 H2 起最小的几张表直接构造服务，不启动 Spring 上下文，模型用 stub。
  * 覆盖审查阻断项里的三点：重复调用不再重抽旧消息、模型调用期间没有活动事务、
- * 抽取期间状态被并发改写时一条约束都不写且下次重抽；另外钉住两段事务的 REQUIRES_NEW
- * 传播行为，以及调用方自带事务（研究路径）时不再另开连接等外层行锁。
+ * 抽取期间状态被并发改写时重新读取水位并重放（不重复调用模型）、进度行被删除时才放弃；
+ * 另外钉住两段事务的 REQUIRES_NEW 传播行为，以及调用方自带事务（研究路径）时不再另开连接等外层行锁。
  */
 class ConversationTopicProjectionV2ConstraintIncrementalTest {
 
@@ -134,28 +136,64 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
     }
 
     @Test
-    void concurrentStateChangeAbandonsTheExtractionWithoutWriting() {
+    void concurrentWinnerWithAnEarlierCutoffIsReappliedWithoutCallingTheModelAgain() {
         userMessage("m1", 1, "以后都用表格。");
+        userMessage("m3", 3, "这次用中文。");
+        extractor.responder = request -> "m3".equals(request.messageId())
+                ? languageConstraint("中文") : tableConstraint();
+        // 抽取期间另一个 refresh（cutoff 只到 m1）先提交：水位推进到 1，它的行也落库了。
+        extractor.onCall = request -> {
+            if ("m1".equals(request.messageId())) {
+                winnerApplied(1, new ConstraintOpMerger.Step("m1", 1, "",
+                        List.of(new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.TABLE, "format.table",
+                                ConstraintScope.CONVERSATION, null, 0.9))));
+            }
+        };
+
+        topics.refresh(WORKSPACE, CONVERSATION);
+
+        // 冲突后不重抽：模型每条消息只调一次，重试用的是已经拿到的 ops。
+        assertThat(extractor.messageIds).containsExactly("m1", "m3");
+        // 重新读取水位后把 m3 折进胜者的基线：这次回答要用的两条约束都在库里、都是 ACTIVE。
+        assertThat(processedSeq()).isEqualTo(3);
+        assertThat(constraintText(ConstraintIds.of("m1", "table", 0))).isEqualTo("format.table");
+        assertThat(constraintText(ConstraintIds.of("m3", "language", 0))).isEqualTo("中文");
+        assertThat(constraintStatus(ConstraintIds.of("m1", "table", 0))).isEqualTo("ACTIVE");
+        assertThat(constraintStatus(ConstraintIds.of("m3", "language", 0))).isEqualTo("ACTIVE");
+        assertThat(stepsJson()).contains("m1").contains("m3");
+    }
+
+    @Test
+    void concurrentWinnerThatAlreadyCoveredEveryMessageIsReusedWithoutRewriting() {
+        userMessage("m1", 1, "以后用英文。");
+        // 胜者的 cutoff 与本轮相同：它写下的行就是本轮要编译到的行。
+        extractor.onCall = request -> winnerApplied(1, new ConstraintOpMerger.Step("m1", 1, "",
+                List.of(new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.LANGUAGE, "英文",
+                        ConstraintScope.CONVERSATION, null, 0.9))));
+
+        topics.refresh(WORKSPACE, CONVERSATION);
+
+        // 本轮没有需要补写的消息：不再推进水位、也不覆盖胜者的行。
+        assertThat(extractor.messageIds).containsExactly("m1");
+        assertThat(processedSeq()).isEqualTo(1);
+        assertThat(lockVersion()).isEqualTo(1);
+        assertThat(constraintText(ConstraintIds.of("m1", "language", 0))).isEqualTo("英文");
+    }
+
+    @Test
+    void deletedProgressRowIsStillAbandonedWithoutWriting() {
+        userMessage("m1", 1, "以后用英文。");
+        // 消息删除清理了进度行（它自己已经把约束标 REVOKED）：本轮不再把行写回。
         extractor.onCall = request -> jdbc.update("""
-                update conversation_constraint_state_v2
-                set lock_version = lock_version + 1
-                where conversation_id = ?
+                delete from conversation_constraint_state_v2 where conversation_id = ?
                 """, CONVERSATION);
 
         topics.refresh(WORKSPACE, CONVERSATION);
 
-        // 乐观检查失败：约束一行都不写，watermark 停在 0，基线与状态留给下一轮。
         assertThat(constraintIds()).isEmpty();
-        assertThat(processedSeq()).isZero();
-        assertThat(lockVersion()).isEqualTo(1);
-
-        extractor.onCall = request -> { };
-        topics.refresh(WORKSPACE, CONVERSATION);
-
-        // 下一次重抽成功：这次状态没被改写，结果正常落库。
-        assertThat(extractor.messageIds).containsExactly("m1", "m1");
-        assertThat(constraintIds()).hasSize(1);
-        assertThat(processedSeq()).isEqualTo(1);
+        assertThat(jdbc.queryForList("""
+                select conversation_id from conversation_constraint_state_v2
+                """, String.class)).isEmpty();
     }
 
     @Test
@@ -223,6 +261,41 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.ADD,
                 ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION, null, 0.9)),
                 ConstraintOpsPrompt.PROMPT_VERSION);
+    }
+
+    private static ConstraintOpsExtractor.Result languageConstraint(String value) {
+        return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.ADD,
+                ConstraintSlot.LANGUAGE, value, ConstraintScope.CONVERSATION, null, 0.9)),
+                ConstraintOpsPrompt.PROMPT_VERSION);
+    }
+
+    /** 模拟「另一个 refresh 先提交」：水位与基线写进库，约束行按合并结果落 ACTIVE。 */
+    private void winnerApplied(int processedSeq, ConstraintOpMerger.Step step) {
+        jdbc.update("""
+                update conversation_constraint_state_v2
+                set processed_seq = ?, steps_json = ?, lock_version = lock_version + 1
+                where conversation_id = ?
+                """, processedSeq, stepsJson(List.of(step)), CONVERSATION);
+        for (ConversationConstraintProjectorV2.Constraint row
+                : new ConstraintOpMerger(0.55).fold(List.of(step))) {
+            jdbc.update("""
+                    insert into conversation_constraint_v2(id, workspace_id, conversation_id,
+                        source_message_id, kind, scope, constraint_text, valid_from_seq,
+                        invalid_after_seq, status, superseded_by, polarity, rule_version)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, row.id(), WORKSPACE, CONVERSATION, row.sourceMessageId(), row.kind(),
+                    row.scope(), row.text(), row.validFromSeq(), row.invalidAfterSeq(), row.status(),
+                    row.supersededBy(), row.polarity().dbValue(),
+                    ConversationConstraintProjectionV2Service.VERSION);
+        }
+    }
+
+    private static String stepsJson(List<ConstraintOpMerger.Step> steps) {
+        try {
+            return new ObjectMapper().writeValueAsString(steps);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private void userMessage(String id, int seq, String text) {
