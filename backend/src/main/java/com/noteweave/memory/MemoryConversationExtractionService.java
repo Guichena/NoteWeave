@@ -62,6 +62,8 @@ public class MemoryConversationExtractionService {
     private static final Pattern LEADING_CUE = Pattern.compile("^(请)?(记住|请记得)[：:，,\\s]*");
     private static final Pattern FEEDBACK_CUE = Pattern.compile(
             "太长|太短|太啰嗦|看不懂|听不懂|说人话|简单点|详细点|别用英文|不要用英文|少用英文");
+    /** 判定负面反馈时允许的整条消息长度：只有短句抱怨才算，长消息里的零散措辞不算。 */
+    private static final int MAX_FEEDBACK_MESSAGE_CHARS = 60;
     private static final Set<String> CATEGORIES = Set.of("style", "structure", "terminology", "forbidden", "interaction");
 
     private static final String SYSTEM_PROMPT = """
@@ -249,9 +251,8 @@ public class MemoryConversationExtractionService {
                     sourceType(preference), candidate.reviewStatus()));
         }
         if (applicationFeedback != null) {
-            boolean dissatisfied = extraction.preferences().stream().anyMatch(Preference::feedback)
-                    || (userContent != null && FEEDBACK_CUE.matcher(userContent).find());
-            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent, dissatisfied);
+            applicationFeedback.recordFollowUp(workspaceId, messageId, userContent,
+                    dissatisfied(extraction, userContent));
         }
         completeTask(taskId, produced.isEmpty() ? "没有发现需要长期记住的偏好"
                 : "提取到 " + produced.size() + " 条记忆候选", messageId);
@@ -299,6 +300,27 @@ public class MemoryConversationExtractionService {
             if (preferences.size() == MAX_STATEMENTS) break;
         }
         return preferences;
+    }
+
+    /**
+     * 是否算作对上一条回答的负面反馈。只有两种情况算：抽出了 feedback 类偏好；
+     * 或整条消息是一句短的抱怨，且这句话没有抽成可执行偏好。
+     * 「以后回答不要太长」这类带长期措辞的指令只作为偏好，不回头惩罚上一条回答。
+     */
+    static boolean dissatisfied(Extraction extraction, String userContent) {
+        if (extraction.preferences().stream().anyMatch(Preference::feedback)) return true;
+        if (userContent == null || userContent.length() > MAX_FEEDBACK_MESSAGE_CHARS) return false;
+        for (String sentence : SENTENCE_BREAK.split(userContent)) {
+            String trimmed = sentence.trim();
+            if (trimmed.isEmpty() || !FEEDBACK_CUE.matcher(trimmed).find()) continue;
+            // 带长期措辞的句子是可执行偏好指令，不针对上一条回答
+            if (DURABLE_CUE.matcher(trimmed).find()) continue;
+            // 已经抽成偏好的句子不再重复算作负面反馈
+            if (extraction.preferences().stream().anyMatch(item -> !item.statement().isEmpty()
+                    && (item.statement().contains(trimmed) || trimmed.contains(item.statement())))) continue;
+            return true;
+        }
+        return false;
     }
 
     static String categorize(String statement) {
