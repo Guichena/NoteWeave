@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from threading import Lock
 
-from app.registry import list_custom_mcp_servers, resolve_capability_binding
+from app.registry import (
+    canonical_capability_name,
+    canonical_tool_name,
+    list_custom_mcp_servers,
+    resolve_capability_binding,
+)
 
 
 _provider_status_lock = Lock()
@@ -129,13 +134,13 @@ _BUILTIN_PROVIDER_CANDIDATE_CATALOG = [
         "preference_rank": 200,
     },
     {
-        "capability_name": "ANALYZE_FRAME",
+        "capability_name": "OCR_FRAME",
         "provider_id": "builtin-bilibili-mcp",
-        "display_name": "Bilibili Frame OCR",
+        "display_name": "Bilibili Frame Text OCR",
         "endpoint_kind": "mcp",
         "discovery_status": "REGISTERED",
         "server_id": "builtin-bilibili-mcp",
-        "tool_name": "analyze_frames",
+        "tool_name": "ocr_frames",
         "mapping_source": "mcp_mapping",
         "supported_routes": ["VIDEO_URL"],
         "supported_actions": ["COURSE_NOTES"],
@@ -372,9 +377,9 @@ def get_capability_provider_discovery_status(
         (
             candidate["discovery_status"]
             for candidate in _provider_candidate_catalog()
-            if candidate["capability_name"] == capability_name
+            if canonical_capability_name(str(candidate["capability_name"])) == canonical_capability_name(capability_name)
             and (provider_id is None or candidate["provider_id"] == provider_id)
-            and (tool_name is None or candidate["tool_name"] == tool_name)
+            and (tool_name is None or canonical_tool_name(str(candidate["tool_name"])) == canonical_tool_name(tool_name))
         ),
         "REGISTERED",
     )
@@ -440,10 +445,11 @@ def get_capability_provider_last_discovered_at(
 
 
 def list_capability_provider_candidates(capability_name: str) -> list[dict[str, object]]:
+    canonical_name = canonical_capability_name(capability_name)
     return [
         dict(candidate)
         for candidate in _provider_candidate_catalog()
-        if candidate["capability_name"] == capability_name
+        if canonical_capability_name(str(candidate["capability_name"])) == canonical_name
     ]
 
 

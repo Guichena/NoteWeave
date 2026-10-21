@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Lock
 
 from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
+from app.registry import canonical_capability_name
 from app.artifact_repository import sync_artifact_runtime_trace
 from app.file_store_lease import FileStoreLease
 
@@ -323,7 +324,7 @@ def _wake_waiting_task(
 
 
 def wake_waiting_tasks_for_capability(capability_name: str) -> list[dict[str, object]]:
-    normalized_capability_name = capability_name.strip().upper()
+    normalized_capability_name = canonical_capability_name(capability_name)
     resume_attempts: list[dict[str, object]] = []
 
     for record in list_waiting_tasks():
@@ -331,16 +332,16 @@ def wake_waiting_tasks_for_capability(capability_name: str) -> list[dict[str, ob
             continue
         approval_request = record.get("approval_request") or {}
         unavailable_capabilities = [
-            str(item).strip().upper()
+            canonical_capability_name(str(item))
             for item in record.get("unavailable_capabilities", [])
         ]
-        approval_capability_name = str(
+        approval_capability_name = canonical_capability_name(str(
             approval_request.get("capability_name", "")
-        ).strip().upper()
+        ))
         blocked_operations = [
             dict(item)
             for item in record.get("blocked_operations", [])
-            if str(item.get("capability_name", "")).strip().upper() == normalized_capability_name
+            if canonical_capability_name(str(item.get("capability_name", ""))) == normalized_capability_name
         ]
         if normalized_capability_name not in unavailable_capabilities and normalized_capability_name != approval_capability_name:
             continue
@@ -413,8 +414,8 @@ def wake_waiting_tasks_for_acquisition_request(
         if not matched_operation:
             continue
         if normalized_capability_name:
-            matched_capability_name = str(matched_operation.get("capability_name", "")).strip().upper()
-            if matched_capability_name and matched_capability_name != normalized_capability_name:
+            matched_capability_name = canonical_capability_name(str(matched_operation.get("capability_name", "")))
+            if matched_capability_name and matched_capability_name != canonical_capability_name(normalized_capability_name):
                 continue
 
         try:

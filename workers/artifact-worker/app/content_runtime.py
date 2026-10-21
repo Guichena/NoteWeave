@@ -32,7 +32,16 @@ from app.models import (
     ContextPack,
     SourceScopeItem,
 )
-from app.registry import resolve_style_profile
+from app.registry import (
+    FRAME_TEXT_OCR_CAPABILITY,
+    FRAME_TEXT_OCR_OPERATION,
+    canonical_capability_name,
+    capability_names_match,
+    is_frame_text_ocr_capability,
+    is_frame_text_ocr_operation,
+    operation_capability_name,
+    resolve_style_profile,
+)
 from app.acquisition_runtime import get_acquisition_result_payload
 from app.video_material_bundle import VideoMaterialBundleV1
 from app.provider_job_status import resolve_provider_job_status
@@ -67,7 +76,7 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
         capture_frames = task_input.input_payload.skill_key.strip().lower() == "bilibili_course_note_pdf"
         if capture_frames:
             required_capabilities.append("CAPTURE_VIDEO_FRAMES")
-            required_capabilities.append("ANALYZE_FRAME")
+            required_capabilities.append(FRAME_TEXT_OCR_CAPABILITY)
         return ContentAcquisitionPlan(
             strategy_key=f"acq-{task_input.task_id}",
             primary_strategy="VIDEO_TRANSCRIPT_PIPELINE",
@@ -94,10 +103,10 @@ def build_content_acquisition_plan(task_input: ArtifactTaskInput) -> ContentAcqu
                     status="PLANNED",
                 )] if capture_frames else []),
                 *([ContentAcquisitionStep(
-                    step_id=f"{task_input.task_id}-analyze-frames",
-                    step_type="ANALYZE_FRAMES",
-                    description="Observe verified video frame text after capture.",
-                    capability_name="ANALYZE_FRAME",
+                    step_id=f"{task_input.task_id}-ocr-frames",
+                    step_type=FRAME_TEXT_OCR_OPERATION,
+                    description="Recognize visible text in verified video frames. This is OCR only; visual semantics stay unverified.",
+                    capability_name=FRAME_TEXT_OCR_CAPABILITY,
                     status="PLANNED",
                 )] if capture_frames else []),
                 ContentAcquisitionStep(
@@ -508,18 +517,21 @@ def build_acquisition_receipt(
     overall_status = wait_status or "COMPLETED"
     cco_index = _index_ccos_by_source(canonical_content_objects)
     cco_stats = _index_cco_stats_by_source(canonical_content_objects)
-    provider_bindings = {
-        binding["capability_name"]: binding
-        for binding in capability_resolution.provider_bindings
-    }
-    resolved_bindings = {
-        binding["capability_name"]: binding
-        for binding in capability_resolution.resolved_bindings
+    provider_bindings = _index_capability_bindings(capability_resolution.provider_bindings)
+    resolved_bindings = _index_capability_bindings(capability_resolution.resolved_bindings)
+    frozen_plans = {
+        item.source_id: item
+        for item in plan.content_acquisition_plan.source_plans
     }
     source_receipts: list[AcquisitionSourceReceipt] = []
 
     for descriptor in descriptors:
-        source_plan = descriptor["source_plan"]
+        source_plan = dict(descriptor["source_plan"])
+        frozen = frozen_plans.get(str(source_plan["source_id"]))
+        if frozen is not None:
+            # Resume keeps the checkpointed operation keys, so stored request IDs stay valid.
+            source_plan["planned_operations"] = list(frozen.planned_operations)
+            source_plan["required_capabilities"] = list(frozen.required_capabilities)
         required_capabilities = source_plan["required_capabilities"]
         wait_capability = next(
             (
@@ -806,9 +818,9 @@ def _adapt_source_inputs(task_input: ArtifactTaskInput, action_key: str) -> list
         if adapter_route == "VIDEO_URL" and task_input.input_payload.skill_key.strip().lower() \
                 == "bilibili_course_note_pdf":
             planned_operations.insert(-1, "CAPTURE_FRAMES")
-            planned_operations.insert(-1, "ANALYZE_FRAMES")
+            planned_operations.insert(-1, FRAME_TEXT_OCR_OPERATION)
             required_capabilities.append("CAPTURE_VIDEO_FRAMES")
-            required_capabilities.append("ANALYZE_FRAME")
+            required_capabilities.append(FRAME_TEXT_OCR_CAPABILITY)
         normalization_target_kind = _resolve_normalization_target_kind(
             action_key,
             normalized_source_type,
@@ -1057,13 +1069,7 @@ def _build_source_plan_notes(
 
 
 def _resolve_operation_capability(operation_key: str) -> str:
-    return {
-        "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
-        "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
-        "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
-        "ANALYZE_FRAMES": "ANALYZE_FRAME",
-        "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
-    }.get(operation_key, "")
+    return operation_capability_name(operation_key)
 
 
 def _video_operation_arguments(
@@ -1095,7 +1101,7 @@ def _video_operation_arguments(
         return {"video_url": _resolve_input_locator(descriptor),
                 "interval_ms": interval_ms, "max_frames": max_frames,
                 "output_dir": str(output_dir)}
-    if operation_key == "ANALYZE_FRAMES":
+    if is_frame_text_ocr_operation(operation_key):
         source_id = str(descriptor["source_plan"]["source_id"])
         capture_request_id = _build_operation_request_id(
             task_id=task_input.task_id, source_id=source_id, operation_key="CAPTURE_FRAMES")
@@ -1146,7 +1152,7 @@ def _is_bilibili_pdf_async_provider(
         return True
     if capability_name == "CAPTURE_VIDEO_FRAMES" and server_id == "builtin-bilibili-mcp":
         return True
-    if capability_name == "ANALYZE_FRAME" and server_id == "builtin-bilibili-mcp":
+    if is_frame_text_ocr_capability(capability_name) and server_id == "builtin-bilibili-mcp":
         return True
     if capability_name == "TRANSCRIBE_AUDIO" and server_id in {"builtin-asr", "builtin-media"}:
         return True
@@ -1229,6 +1235,23 @@ def _read_text_file(path_value: object) -> str:
         return ""
 
 
+def _index_capability_bindings(bindings: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+    """Index bindings by the stored name and its canonical alias.
+
+    Frozen plans still say ANALYZE_FRAME while the operation map says OCR_FRAME.
+    """
+    indexed: dict[str, dict[str, object]] = {}
+    for binding in bindings:
+        name = str(binding.get("capability_name", ""))
+        indexed[name] = binding
+        indexed.setdefault(canonical_capability_name(name), binding)
+    return indexed
+
+
+def _capability_is_listed(names: list[str], capability_name: str) -> bool:
+    return any(capability_names_match(str(item), capability_name) for item in names)
+
+
 def _capability_wait_status(
     capability_name: str,
     *,
@@ -1239,7 +1262,7 @@ def _capability_wait_status(
     if not capability_name:
         return "COMPLETED"
     if wait_status == "WAITING_FOR_CAPABILITY":
-        if capability_name in capability_resolution.unavailable_capabilities:
+        if _capability_is_listed(capability_resolution.unavailable_capabilities, capability_name):
             return "WAITING_FOR_CAPABILITY"
     if wait_status == "WAITING_FOR_APPROVAL":
         provider_binding = provider_bindings.get(capability_name, {})

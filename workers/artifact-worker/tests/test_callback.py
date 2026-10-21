@@ -167,7 +167,7 @@ class FakeCallbackClient:
 def _ack_frame_observation(task_id: str, client, *, frames=None, defer_resume=False):
     entries = [] if frames is None else frames
     operation = next(op for op in list_acquisition_operations(task_id=task_id)
-                     if op["operation_key"] == "ANALYZE_FRAMES")
+                     if op["operation_key"] in {"OCR_FRAMES", "ANALYZE_FRAMES"})
     token = dispatch_acquisition_operation(operation["request_id"])["operation"]["callback_token"]
     response = acknowledge_acquisition_operation_with_callbacks(
         callback_token=token, final_status="ACKNOWLEDGED",
@@ -666,7 +666,7 @@ def test_duplicate_acquisition_ack_should_retry_complete_delivery_after_transpor
         )
         assert frame_ack.resumed_tasks[0].status == "WAITING_FOR_PROVIDER"
         observation = next(op for op in list_acquisition_operations(task_id="task-a-waiting")
-                           if op["operation_key"] == "ANALYZE_FRAMES")
+                           if op["operation_key"] in {"OCR_FRAMES", "ANALYZE_FRAMES"})
         observation_token = dispatch_acquisition_operation(
             observation["request_id"])["operation"]["callback_token"]
         observation_payload = {"schema_version": "frame-observation-batch-v1",
@@ -906,7 +906,7 @@ def test_resumed_video_worker_publishes_full_subtitle_before_candidate_callback(
             task.task_id, client=client, request_id=frames["request_id"]
         ).status == "WAITING_FOR_PROVIDER"
         observation_operation = next(op for op in list_acquisition_operations(task_id=task.task_id)
-                                     if op["operation_key"] == "ANALYZE_FRAMES")
+                                     if op["operation_key"] in {"OCR_FRAMES", "ANALYZE_FRAMES"})
         assert observation_operation["tool_arguments"]["files"] == [
             {"file_id": "frame1", "checksum_sha256": image_digest}]
         observation, _ = _ack_frame_observation(task.task_id, client, defer_resume=True,
@@ -1172,7 +1172,7 @@ def test_acquisition_ack_with_callbacks_should_resume_waiting_task_and_complete_
     ]
     assert len(client.completed_results) == 1
     assert client.completed_results[0].job_snapshot.status == "COMPLETED"
-    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "ANALYZE_FRAMES"
+    assert client.completed_results[0].result_payload["resume_scope"]["matched_operation_key"] == "OCR_FRAMES"
     assert client.completed_results[0].result_payload["acquisition_callback_trace"]["status"] == "ATTACHED"
     assert (
         client.completed_results[0].result_payload["acquisition_callback_trace"]["receipt"]["receipt_id"]

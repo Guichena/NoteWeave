@@ -10,7 +10,7 @@ from app.capability_provider import (
     get_capability_provider_status,
     list_capability_provider_candidates,
 )
-from app.registry import resolve_capability_binding
+from app.registry import canonical_capability_name, resolve_capability_binding
 
 
 def resolve_capability_bindings(
@@ -173,8 +173,14 @@ def _select_capability_binding(
                 selected_candidate,
             )
 
+    requested_name = capability_name.strip().upper()
+    reported_name = (
+        requested_name
+        if canonical_capability_name(requested_name) == binding.capability_name
+        else binding.capability_name
+    )
     return {
-        "capability_name": binding.capability_name,
+        "capability_name": reported_name,
         "provider_id": selected_provider_id,
         "server_id": selected_server_id,
         "tool_name": selected_tool_name,

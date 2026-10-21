@@ -268,7 +268,7 @@ export const versionDetails: Record<string, ArtifactVersionDetail> = Object.from
       ...builtinCapabilities(["GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT"]),
       { capability_name: "EXTRACT_TRANSCRIPT", scope_type: "SYSTEM_MCP", server_id: "bilibili", tool_name: "get_subtitle", runtime_status: "READY" },
       { capability_name: "CAPTURE_VIDEO_FRAMES", scope_type: "SYSTEM_MCP", server_id: "bilibili", tool_name: "capture_bilibili_frames", runtime_status: "READY" },
-      { capability_name: "ANALYZE_FRAME", scope_type: "SYSTEM_MCP", server_id: "bilibili", tool_name: "analyze_frames", runtime_status: "READY" }
+      { capability_name: "OCR_FRAME", scope_type: "SYSTEM_MCP", server_id: "bilibili", tool_name: "ocr_frames", runtime_status: "READY" }
     ]
   }), 1500, [
     file("file-bili-pdf", "PDF", "es-chinese-analyzer.pdf", "application/pdf", 1_842_331),

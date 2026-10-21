@@ -46,12 +46,12 @@ def list_system_mcp_servers() -> list[CustomMcpServerRegistration]:
                     selection_reason_hint="system_bilibili_frame_capture",
                 ),
                 CustomMcpToolRegistration(
-                    capability_name="ANALYZE_FRAME",
-                    tool_name="analyze_frames",
+                    capability_name="OCR_FRAME",
+                    tool_name="ocr_frames",
                     supported_routes=["VIDEO_URL"],
                     supported_actions=["COURSE_NOTES"],
                     preference_rank=200,
-                    selection_reason_hint="system_bilibili_frame_observation",
+                    selection_reason_hint="system_bilibili_frame_ocr",
                 ),
             ],
         )

@@ -12,13 +12,15 @@ import app.runner as runner_module
 from app.action_compat import resolve_action_compatibility, resolve_action_key_from_skill_key
 from app.compiler import build_execution_plan
 from app.artifact_skill_catalog import CATALOG_DIGEST, list_artifact_skill_definitions, resolve_artifact_skill_definition
-from app.content_runtime import build_canonical_content_objects
+from app.capability_resolver import resolve_capability_bindings, resolve_capability_providers
+from app.content_runtime import build_acquisition_receipt, build_canonical_content_objects
 from app.composer import render_markdown, resolve_artifact_title
 from app.intent_compiler import compile_execution_spec
 from app.llm_client import FakeLlmClient
 from app.generation_runtime import ArtifactConfigurationRequiredError
 from app.registry import resolve_skill_definition
 from app.models import (
+    ArtifactCapabilityResolution,
     ArtifactExecutionPlan,
     ArtifactJobSnapshot,
     ArtifactSectionDraft,
@@ -874,12 +876,68 @@ def test_build_execution_plan_should_allow_skill_first_bilibili_request_with_url
     assert plan.content_acquisition_plan.primary_strategy == "VIDEO_TRANSCRIPT_PIPELINE"
     assert plan.content_acquisition_plan.route_summary == {"VIDEO_URL": 1}
     assert plan.content_acquisition_plan.required_capabilities == [
-        "EXTRACT_TRANSCRIPT", "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME"]
+        "EXTRACT_TRANSCRIPT", "CAPTURE_VIDEO_FRAMES", "OCR_FRAME"]
     assert [operation for operation in plan.content_acquisition_plan.source_plans[0].planned_operations
-            if operation in {"EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"}] == [
-                "EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"]
+            if operation in {"EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "OCR_FRAMES"}] == [
+                "EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "OCR_FRAMES"]
     assert plan.content_acquisition_plan.source_plans[0].source_id == "input-url-1"
     assert plan.content_acquisition_plan.source_plans[0].adapter_route == "VIDEO_URL"
+
+
+def test_frozen_analyze_frame_plan_still_binds_frame_text_ocr() -> None:
+    task_input = _build_task_input(
+        task_id="artifact-bilibili-legacy-frame-ocr",
+        target_id="artifact-bilibili-legacy-frame-ocr-target",
+        action_key="AUTO",
+        skill_key="bilibili_course_note_pdf",
+        style_profile_key="teaching",
+        structure_constraints=["输出课程概要、知识点、重点难点、复习题。"],
+        generation_brief="基于这个 B 站链接生成讲义 PDF。",
+        user_requirement="整理成图文讲义并保留章节结构。",
+        source_scope=[],
+        inputs={"url": "https://www.bilibili.com/video/BV1NoteWeaveDemo"},
+    )
+    plan = build_execution_plan(task_input)
+
+    def restore_alias(names: list[str]) -> list[str]:
+        return ["ANALYZE_FRAME" if name == "OCR_FRAME" else name for name in names]
+
+    plan.lazy_loaded_capabilities = restore_alias(plan.lazy_loaded_capabilities)
+    plan.content_acquisition_plan.required_capabilities = restore_alias(
+        plan.content_acquisition_plan.required_capabilities)
+    source_plan = plan.content_acquisition_plan.source_plans[0]
+    source_plan.required_capabilities = restore_alias(source_plan.required_capabilities)
+    source_plan.planned_operations = [
+        "ANALYZE_FRAMES" if operation == "OCR_FRAMES" else operation
+        for operation in source_plan.planned_operations
+    ]
+    resolved_bindings = resolve_capability_bindings(
+        plan.lazy_loaded_capabilities, task_input=task_input,
+        action_key=plan.action_key, skill_graph_key=plan.skill_graph_key,
+    )
+    provider_bindings, unavailable, pending = resolve_capability_providers(
+        plan.lazy_loaded_capabilities, task_input=task_input,
+        action_key=plan.action_key, skill_graph_key=plan.skill_graph_key,
+    )
+    assert any(binding["capability_name"] == "ANALYZE_FRAME" and binding["tool_name"] == "ocr_frames"
+               for binding in resolved_bindings)
+    receipt = build_acquisition_receipt(
+        task_input, plan,
+        ArtifactCapabilityResolution(
+            lazy_loaded_capabilities=plan.lazy_loaded_capabilities,
+            resolved_bindings=resolved_bindings,
+            provider_bindings=provider_bindings,
+            unavailable_capabilities=unavailable,
+        ),
+        [],
+        "WAITING_FOR_APPROVAL" if pending else "",
+    )
+    operation = next(item for item in receipt.source_receipts[0].operations
+                     if item.operation_key == "ANALYZE_FRAMES")
+    assert operation.request_id.endswith("-analyze_frames")
+    assert operation.capability_name == "OCR_FRAME"
+    assert operation.tool_name == "ocr_frames"
+    assert operation.server_id == "builtin-bilibili-mcp"
 
 
 def test_build_canonical_content_objects_should_materialize_skill_input_url_as_virtual_source() -> None:
