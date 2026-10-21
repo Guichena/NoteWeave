@@ -109,10 +109,11 @@ class ConstraintOpsEvalTest {
         }
     }
 
+    /** 用公开构造器接线：门槛值与 fixture 一致，内部构造的合并器与显式 new 的等价。 */
     private ConversationConstraintProjectionV2Service service(ChatLlmClient client) {
         return new ConversationConstraintProjectionV2Service(
                 new LlmConstraintOpsExtractor(client, MAPPER, TIMEOUT_MS, MIN_CONFIDENCE),
-                new ConstraintOpMerger(MIN_CONFIDENCE));
+                MIN_CONFIDENCE);
     }
 
     private static void assertRow(List<ConversationConstraintProjectorV2.Constraint> rows,

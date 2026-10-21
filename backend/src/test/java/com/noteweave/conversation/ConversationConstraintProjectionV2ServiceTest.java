@@ -409,6 +409,33 @@ class ConversationConstraintProjectionV2ServiceTest {
         assertThat(client.calls).isEqualTo(2);
     }
 
+    @Test
+    void publicConstructorMatchesTheExplicitMergerWiring() {
+        // 评测类走公开构造器 (extractor, minConfidence)；这里钉住它与显式注入合并器的结果一致，
+        // 免得两条接线（同一个门槛值）以后悄悄分叉。
+        String ops = """
+                [{"op":"ADD","slot":"table","value":"format.table","scope":"conversation","confidence":0.9}]
+                """;
+        ScriptedClient explicitClient = new ScriptedClient();
+        explicitClient.outputs.add(ops);
+        explicitClient.outputs.add("[]");
+        ScriptedClient thresholdClient = new ScriptedClient();
+        thresholdClient.outputs.add(ops);
+        thresholdClient.outputs.add("[]");
+
+        List<ConversationConstraintProjectorV2.Constraint> viaMerger =
+                service(explicitClient).project(messages(), segments);
+        List<ConversationConstraintProjectorV2.Constraint> viaThreshold =
+                new ConversationConstraintProjectionV2Service(
+                        new LlmConstraintOpsExtractor(thresholdClient, MAPPER, TIMEOUT_MS, MIN_CONFIDENCE),
+                        MIN_CONFIDENCE)
+                        .project(messages(), segments);
+
+        assertThat(viaThreshold).isEqualTo(viaMerger);
+        assertThat(viaThreshold).extracting(ConversationConstraintProjectorV2.Constraint::status)
+                .containsExactly("ACTIVE");
+    }
+
     private ConversationConstraintProjectionV2Service service(ScriptedClient client) {
         return new ConversationConstraintProjectionV2Service(
                 new LlmConstraintOpsExtractor(client, MAPPER, TIMEOUT_MS, MIN_CONFIDENCE), merger);
