@@ -1241,10 +1241,14 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForObject("""
                 select count(*) from conversation_constraint_v2 where conversation_id = ?
                 """, Integer.class, conversationId)).isEqualTo(2);
-        // 重放更新也要把 rule_version 拉齐，旧行不能停在插入时的版本
+        // 约束抽取是增量的：只有新消息才调模型。抽到新消息后整表快照重新落库，
+        // 旧行的 rule_version 也会跟着拉齐，不会停在插入时的版本。
         jdbcTemplate.update("""
                 update conversation_constraint_v2 set rule_version = 'legacy' where conversation_id = ?
                 """, conversationId);
+        submit(conversationId, Map.of(
+                "content", "继续。", "answer_mode", "QA",
+                "client_request_id", "constraint-shadow-4"), 200);
         topicProjectionV2Service.refresh(workspaceId, conversationId);
         assertThat(jdbcTemplate.queryForList("""
                 select rule_version from conversation_constraint_v2 where conversation_id = ?

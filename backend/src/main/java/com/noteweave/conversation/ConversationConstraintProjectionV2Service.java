@@ -16,12 +16,13 @@ import org.springframework.stereotype.Service;
  * <p>
  * 这里只有模型一条路径，没有任何关键词/正则兜底，也没有模式开关：
  * <ul>
- *   <li>模型不可用、超时、调用失败、输出不合规 —— 抽取器内部已重试一次，仍失败则该消息本轮不抽取：
- *       不产出行、只记日志。这条消息此前落库的行也不会被触碰，因为持久化侧只做 upsert，
- *       从不删除或对账（见 {@link ConversationTopicProjectionV2Service}）。</li>
- *   <li>模型明确输出空数组或 {@code NOOP} 是终局结论，同样不产出行，不会退回规则。</li>
- *   <li>重抽复用现成的重放机制：{@code refresh} 每次都会把整段会话重放一遍，
- *       本轮失败的消息在下一轮自动重抽。所以不新增「待重抽」标记表，也就不需要新的数据库迁移。</li>
+ *   <li>模型不可用、超时、调用失败、输出不合规 —— 抽取器内部已重试一次，仍失败则从该消息起停止本轮抽取：
+ *       不产出行、只记日志，watermark 不越过它。下一次 refresh 从这条消息继续重抽，
+ *       不再整段会话全量重放（见 {@link #extract}）。</li>
+ *   <li>模型明确输出空数组或 {@code NOOP} 是终局结论，同样不产出行，不会退回规则；
+ *       它仍然记成一步，避免下一轮把它当成没抽过的消息再调一次模型。</li>
+ *   <li>增量抽取的进度（已处理的 seq 与已抽取的 ops）由 {@link ConversationTopicProjectionV2Service}
+ *       持久化，模型调用因此不需要待在会话行锁事务里。</li>
  * </ul>
  * 冲突判定只在合并器里实现一次，本类不解释自然语言，也不做置信度过滤。
  */
@@ -56,7 +57,8 @@ public class ConversationConstraintProjectionV2Service {
     }
 
     /**
-     * 把整段会话投影成一份约束快照。
+     * 把整段会话投影成一份约束快照：等价于「watermark=0、没有基线步骤」的增量抽取。
+     * 离线回归与评测走这里。
      *
      * @param messages 会话消息，按 {@code seq} 升序；助手消息会被跳过
      * @param segments 已算出的话题划分，用来给模型标出 {@code CURRENT_TOPIC} 的隔离边界
@@ -66,36 +68,106 @@ public class ConversationConstraintProjectionV2Service {
             List<TopicSegmenterV2.Message> messages,
             List<TopicSegmenterV2.Segment> segments
     ) {
-        if (messages == null || messages.isEmpty()) {
-            return List.of();
+        return extract(messages, segments, 0, List.of()).snapshot();
+    }
+
+    /**
+     * 增量抽取：只对 {@code seq > watermarkSeq} 的 USER 消息调用模型，再和基线步骤一起折叠成整表快照。
+     * <p>
+     * 基线步骤是此前几轮已经抽取过的 ops（落库在 {@code conversation_constraint_state_v2.steps_json}），
+     * 只有它们能让合并器在跨轮次时继续判断「同槽位新值顶掉旧值」「按 targetId 撤回」。
+     * <p>
+     * 抽取不可用时从该消息起停住而不是跳过它：watermark 停在失败消息之前，
+     * 下一次 refresh 会重抽这条消息，不会把没抽到的消息永久漏掉，也不会整段重放。
+     *
+     * @param messages      会话消息，按 {@code seq} 升序；助手消息与已处理过的消息会被跳过
+     * @param segments      已算出的话题划分
+     * @param watermarkSeq  已经处理到的消息 seq；调用方保证它之前的所有 USER 消息都已抽取
+     * @param baselineSteps 已经抽取过的步骤，按会话顺序；可为空
+     * @return 本轮新增的步骤、新的 watermark 与整表快照
+     */
+    public Extraction extract(
+            List<TopicSegmenterV2.Message> messages,
+            List<TopicSegmenterV2.Segment> segments,
+            int watermarkSeq,
+            List<ConstraintOpMerger.Step> baselineSteps
+    ) {
+        int processedSeq = Math.max(0, watermarkSeq);
+        List<ConstraintOpMerger.Step> all = new ArrayList<>();
+        if (baselineSteps != null) {
+            for (ConstraintOpMerger.Step step : baselineSteps) {
+                all.add(withCurrentTopic(step, segments));
+            }
         }
-        List<ConstraintOpMerger.Step> steps = new ArrayList<>();
+        if (messages == null || messages.isEmpty()) {
+            return new Extraction(List.of(), processedSeq, merger.fold(all), 0, 0);
+        }
+        List<ConstraintOpMerger.Step> added = new ArrayList<>();
+        int extracted = 0;
         int skipped = 0;
         for (TopicSegmenterV2.Message message : messages) {
-            if (!"USER".equals(message.role())) {
+            if (!"USER".equals(message.role()) || message.seq() <= processedSeq) {
                 continue;
             }
             String topicId = topicIdAt(segments, message.seq());
             ConstraintOpsExtractor.Result result = extractor.extract(new ConstraintOpsExtractor.Request(
                     message.messageId(), message.seq(), message.text(), topicId,
-                    merger.activeConstraints(steps)));
+                    merger.activeConstraints(all)));
             if (result instanceof ConstraintOpsExtractor.Result.Ok ok) {
-                steps.add(new ConstraintOpMerger.Step(message.messageId(), message.seq(), topicId, ok.ops()));
+                ConstraintOpMerger.Step step =
+                        new ConstraintOpMerger.Step(message.messageId(), message.seq(), topicId, ok.ops());
+                all.add(step);
+                added.add(step);
+                processedSeq = message.seq();
+                extracted++;
                 continue;
             }
             skipped++;
             // 只打序号与原因：提示词里有用户原文，不能进日志。
-            log.warn("约束抽取不可用，本轮跳过该消息: seq={}, reason={}", message.seq(), reason(result));
+            log.warn("约束抽取不可用，本轮从该消息起停止: seq={}, reason={}", message.seq(), reason(result));
+            break;
         }
         if (skipped > 0) {
-            log.warn("约束抽取本轮跳过 {} 条消息：不产出新约束行，这些消息已落库的约束保持不变，下次重放重新抽取", skipped);
+            log.warn("约束抽取本轮停在 seq={}：该消息此前落库的约束保持不变，下次从这条消息重抽", processedSeq);
         }
-        return merger.fold(steps);
+        return new Extraction(List.copyOf(added), processedSeq, merger.fold(all), extracted, skipped);
+    }
+
+    /**
+     * 一次增量抽取的结果。
+     *
+     * @param steps        本轮新增的步骤（只含新消息，按会话顺序）
+     * @param processedSeq 本轮处理到的 USER 消息 seq；失败处停住，下一轮从这里重抽
+     * @param snapshot     基线 + 新步骤折叠出的整表快照
+     * @param extracted    本轮成功抽取的消息条数
+     * @param skipped      本轮因抽取不可用而停住的消息条数（0 或 1）
+     */
+    public record Extraction(List<ConstraintOpMerger.Step> steps, int processedSeq,
+                             List<ConversationConstraintProjectorV2.Constraint> snapshot,
+                             int extracted, int skipped) {
+
+        public Extraction {
+            steps = steps == null ? List.of() : List.copyOf(steps);
+            snapshot = snapshot == null ? List.of() : List.copyOf(snapshot);
+        }
     }
 
     private static String reason(ConstraintOpsExtractor.Result result) {
         return result instanceof ConstraintOpsExtractor.Result.Unusable unusable
                 ? unusable.reason() : "NO_RESULT";
+    }
+
+    /**
+     * 话题边界复核可能把已抽取的消息归到别的话题。基线步骤按当前切分重算 {@code topicId}，
+     * 让 {@code CURRENT_TOPIC} 的隔离键与整段重放保持一致。
+     */
+    private static ConstraintOpMerger.Step withCurrentTopic(ConstraintOpMerger.Step step,
+                                                           List<TopicSegmenterV2.Segment> segments) {
+        String topicId = topicIdAt(segments, step.seq());
+        if (topicId.isEmpty() || topicId.equals(step.topicId())) {
+            return step;
+        }
+        return new ConstraintOpMerger.Step(step.messageId(), step.seq(), topicId, step.ops());
     }
 
     private static String topicIdAt(List<TopicSegmenterV2.Segment> segments, int seq) {

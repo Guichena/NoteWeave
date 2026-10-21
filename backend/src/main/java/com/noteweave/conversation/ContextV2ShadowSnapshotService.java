@@ -15,7 +15,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Freezes Answer shadow Context and prepares Research Context at its input cutoff. */
 @Service
@@ -29,11 +31,13 @@ public class ContextV2ShadowSnapshotService {
     private final ConversationContextCompilerV2Service compiler;
     private final ContextV2RolloutService rollout;
     private final boolean researchActiveEnabled;
+    private final TransactionTemplate transactionTemplate;
 
     public ContextV2ShadowSnapshotService(JdbcTemplate jdbc, ObjectMapper mapper,
                                           ConversationTopicProjectionV2Service topics,
                                           ConversationContextCompilerV2Service compiler,
                                           ContextV2RolloutService rollout,
+                                          PlatformTransactionManager transactionManager,
                                           @Value("${noteweave.context.v2.research-active-enabled:false}")
                                           boolean researchActiveEnabled) {
         this.jdbc = jdbc;
@@ -42,9 +46,13 @@ public class ContextV2ShadowSnapshotService {
         this.compiler = compiler;
         this.rollout = rollout;
         this.researchActiveEnabled = researchActiveEnabled;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * 不整体标注 {@code @Transactional}：话题切分与约束抽取在各自的事务里完成，
+     * 模型调用必须发生在事务与会话行锁之外。编译与快照落库另起一个短事务。
+     */
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose) {
@@ -58,6 +66,22 @@ public class ContextV2ShadowSnapshotService {
                 queryMessageId, workspaceId, conversationId);
         if (cutoff == null) throw new IllegalArgumentException("Answer Run query identity is invalid");
         topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
+        transactionTemplate.executeWithoutResult(status -> persistSnapshot(workspaceId, actorId,
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose));
+    }
+
+    private void persistSnapshot(String workspaceId, String actorId, String conversationId,
+                                 String queryMessageId, String answerRunId, int cutoff,
+                                 String currentInput, String taskPurpose) {
+        if (exists(answerRunId)) return;
+        // 与消息删除同一把锁：删除的 redaction 扫描必须能看到这份快照，插入也不能落在删除之后。
+        List<String> locked = jdbc.query("""
+                select id from conversation where id = ? and workspace_id = ? for update
+                """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
+        if (locked.isEmpty()) {
+            throw new BusinessException("CONVERSATION_NOT_FOUND", "Conversation does not belong to Workspace",
+                    HttpStatus.NOT_FOUND);
+        }
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
                 cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
         requireCurrentMemories(workspaceId, projection);

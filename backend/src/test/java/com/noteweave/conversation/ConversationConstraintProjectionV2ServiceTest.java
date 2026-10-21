@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.conversation.constraint.ConstraintIds;
+import com.noteweave.conversation.constraint.ConstraintOp;
 import com.noteweave.conversation.constraint.ConstraintOpMerger;
+import com.noteweave.conversation.constraint.ConstraintScope;
+import com.noteweave.conversation.constraint.ConstraintSlot;
 import com.noteweave.conversation.constraint.LlmConstraintOpsExtractor;
 import java.util.ArrayList;
 import java.util.List;
@@ -407,6 +410,67 @@ class ConversationConstraintProjectionV2ServiceTest {
         assertThat(rows).isEmpty();
         // 每条消息只调用一次：空数组是终局结论，不触发重试，也没有第二条规则路径。
         assertThat(client.calls).isEqualTo(2);
+    }
+
+    @Test
+    void incrementalExtractionSkipsMessagesAtOrBelowTheWatermark() {
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("[]");
+
+        ConversationConstraintProjectionV2Service.Extraction extraction = service(client)
+                .extract(messages("以后都用表格", "用中文写。"), segments, 1, List.of());
+
+        // 只有 seq 3 的 USER 消息进模型；seq 1 已经处理过，助手消息永远不进。
+        assertThat(client.calls).isEqualTo(1);
+        assertThat(extraction.extracted()).isEqualTo(1);
+        assertThat(extraction.processedSeq()).isEqualTo(3);
+        assertThat(extraction.steps()).extracting(ConstraintOpMerger.Step::messageId).containsExactly("m3");
+        assertThat(client.userPrompts.get(0)).contains("用中文写").doesNotContain("以后都用表格");
+    }
+
+    @Test
+    void watermarkStopsAtTheFirstUnusableMessageSoItIsRetriedNextRound() {
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("THROW");
+        client.outputs.add("THROW");
+
+        ConversationConstraintProjectionV2Service.Extraction extraction =
+                service(client).extract(messages(), segments, 0, List.of());
+
+        // 第一条就失败：重试一次后停住，watermark 不前移，后面的消息这一轮不抽。
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(extraction.extracted()).isZero();
+        assertThat(extraction.processedSeq()).isZero();
+        assertThat(extraction.skipped()).isEqualTo(1);
+        assertThat(extraction.snapshot()).isEmpty();
+    }
+
+    @Test
+    void baselineStepsKeepCrossRoundSupersedeAndTargetIdsIntact() {
+        String englishId = ConstraintIds.of("m1", "language", 0);
+        ConstraintOpMerger.Step baseline = new ConstraintOpMerger.Step("m1", 1, "topic-1", List.of(
+                new ConstraintOp(ConstraintOp.Op.ADD, ConstraintSlot.LANGUAGE, "英文",
+                        ConstraintScope.CONVERSATION, null, 0.9)));
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add("""
+                [{"op":"ADD","slot":"language","value":"中文","scope":"conversation","confidence":0.9}]
+                """);
+
+        ConversationConstraintProjectionV2Service.Extraction extraction = service(client)
+                .extract(messages("以后用英文。", "改用中文。"), segments, 1, List.of(baseline));
+
+        // 基线里的旧行仍然参与合并：同槽位新值顶掉它，撤回指针指向新行。
+        assertThat(extraction.snapshot()).hasSize(2);
+        ConversationConstraintProjectorV2.Constraint english = row(extraction.snapshot(), englishId);
+        ConversationConstraintProjectorV2.Constraint chinese =
+                row(extraction.snapshot(), ConstraintIds.of("m3", "language", 0));
+        assertThat(english.status()).isEqualTo("REVOKED");
+        assertThat(english.invalidAfterSeq()).isEqualTo(3);
+        assertThat(english.supersededBy()).isEqualTo(chinese.id());
+        assertThat(chinese.status()).isEqualTo("ACTIVE");
+        assertThat(chinese.text()).isEqualTo("中文");
+        // 旧行作为 ACTIVE 候选进提示词，模型才有机会用 targetId 更正它。
+        assertThat(client.userPrompts.get(0)).contains("\"id\":\"" + englishId + "\"");
     }
 
     @Test

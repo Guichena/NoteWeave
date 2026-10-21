@@ -102,6 +102,12 @@ public class ConversationMessageDeletionService {
                     (select message_seq from conversation_message where id = ?)
                 where workspace_id = ? and conversation_id = ? and source_message_id = ?
                 """, messageId, workspaceId, conversationId, messageId);
+        // 增量抽取的基线里存着从消息正文抽出的取值：被删消息的派生文本不能留在那里。
+        // 整行删掉，下次投影（若发生）从 0 重抽，不做半份基线继续折叠。
+        jdbcTemplate.update("""
+                delete from conversation_constraint_state_v2
+                where workspace_id = ? and conversation_id = ?
+                """, workspaceId, conversationId);
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }
