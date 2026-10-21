@@ -330,6 +330,82 @@ class ConversationConstraintProjectorV2Test {
     }
 
     @Test
+    void lengthCuesAreSplitIntoCapAndDetailSlots() {
+        // 评审 M5-M15②：长度类线索不再共用一个兜底桶，字数上限和详略是两个维度
+        assertThat(ConversationConstraintProjectorV2.SLOT_LENGTH_MAX)
+                .isNotEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("不超过300字"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_MAX);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("控制在300字"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_MAX);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("字数"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_MAX);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("简短"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("简洁"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("精简"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("详细一点"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        assertThat(ConversationConstraintProjectorV2.formatSlot("展开讲"))
+                .isEqualTo(ConversationConstraintProjectorV2.SLOT_LENGTH_DETAIL);
+        // 非长度格式仍然各有专属槽位，不受长度拆分影响
+        assertThat(ConversationConstraintProjectorV2.formatSlot("用表格")).isEqualTo("format.table");
+        assertThat(ConversationConstraintProjectorV2.formatSlot("分点")).isEqualTo("format.bullets");
+    }
+
+    @Test
+    void lengthCapAndLengthDetailStayActiveTogether() {
+        // 字数上限和详略是两个互不相干的维度，后一条不能顶掉前一条
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("e1", 1, "USER", "以后回答不超过300字。"),
+                message("e2", 2, "USER", "以后回答简短一点。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::scope)
+                .containsOnly("CONVERSATION");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::status)
+                .containsOnly("ACTIVE");
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::invalidAfterSeq)
+                .containsOnlyNulls();
+        assertThat(constraints).extracting(ConversationConstraintProjectorV2.Constraint::supersededBy)
+                .containsOnlyNulls();
+    }
+
+    @Test
+    void lengthDetailSlotKeepsShortAndDetailedMutuallyExclusive() {
+        // 拆分后"简短"和"详细"仍在同一槽位：同 scope 内的新取向照旧顶掉旧取向
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("e3", 1, "USER", "以后回答简短一点。"),
+                message("e4", 2, "USER", "以后回答详细一点。")));
+
+        assertThat(constraints).hasSize(2);
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(2);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(1).id());
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void negatedLengthCapOnlyRevokesTheCapNotTheDetail() {
+        // 否定继承被否定线索的槽位：撤"字数限制"只作废字数上限，详略偏好继续生效
+        List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                message("e5", 1, "USER", "以后回答不超过300字。"),
+                message("e6", 2, "USER", "以后回答简短一点。"),
+                message("e7", 3, "USER", "不要字数限制。")));
+
+        assertThat(constraints).hasSize(3);
+        assertThat(constraints.get(0).status()).isEqualTo("REVOKED");
+        assertThat(constraints.get(0).invalidAfterSeq()).isEqualTo(3);
+        assertThat(constraints.get(0).supersededBy()).isEqualTo(constraints.get(2).id());
+        assertThat(constraints.get(1).status()).isEqualTo("ACTIVE");
+        assertThat(constraints.get(1).invalidAfterSeq()).isNull();
+        assertThat(constraints.get(2).kind()).isEqualTo("NEGATION");
+        assertThat(constraints.get(2).status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
     void constraintsOfDifferentKindOrScopeInTheSameTopicAllStayActive() {
         List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
                 message("d1", 1, "USER", "每次回答都控制在300字以内。"),

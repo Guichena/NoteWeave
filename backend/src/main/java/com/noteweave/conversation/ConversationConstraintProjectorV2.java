@@ -11,6 +11,12 @@ public final class ConversationConstraintProjectorV2 {
     public static final String RULE_VERSION = "constraint-projector-v2-a5";
     /** 语言只有一个语义槽位：一次回答只用一种语言，"用英文"和"用中文"互斥。 */
     static final String SLOT_LANGUAGE = "answer.language";
+    /**
+     * 长度类格式线索拆成两个维度：字数上限和详略，维度内互斥、维度之间可以同时生效。
+     * 槽位只在投影内部使用，不入库。
+     */
+    static final String SLOT_LENGTH_MAX = "format.length.max";
+    static final String SLOT_LENGTH_DETAIL = "format.length.detail";
     /** 会话级 scope：比当前话题更宽，同值重申不能把它降级。 */
     private static final String SCOPE_CONVERSATION = "CONVERSATION";
     /** 没有指向具体线索的否定要求（"不要再贴大段配置"）单独占一个槽位，不撤回任何旧约束。 */
@@ -96,7 +102,7 @@ public final class ConversationConstraintProjectorV2 {
             // 用户明说"这次/仅本话题"时作用范围就限在当前话题：既不能升级成会话级，
             // 也不能借"更正/改用"之类的措辞撤回会话级偏好（"以后用英文，这次改用中文"）。
             boolean narrowed = detected.narrowed();
-            // 撤回按语义槽位（语言 / 表格 / 结论 / 分点 / 字数 / 引用 / 代码）而不是按 kind：
+            // 撤回按语义槽位（语言 / 表格 / 结论 / 分点 / 字数上限 / 详略 / 引用 / 代码）而不是按 kind：
             // 同一槽位里的取值互斥，"用表格"和"先给结论"这类互补格式可以同时生效。
             // 同 scope 内出现新的 ACTIVE 取值时，上一条立即失效，不要求用户说出关键词。
             // 跨 scope 只有用户明说"更正/改用/换成/不要"才撤回，否则一个话题里的临时要求
@@ -215,7 +221,7 @@ public final class ConversationConstraintProjectorV2 {
 
     /**
      * 槽位是否有独立取值。语言槽位的取值是"英文/中文"，格式槽位的取值就是槽位本身
-     * （"简短一点"和"详细一点"都落在 format.length），同值判断对格式槽位没有意义。
+     * （"简短一点"和"详细一点"都落在 {@value #SLOT_LENGTH_DETAIL}），同值判断对格式槽位没有意义。
      */
     private static boolean hasDistinctValue(String slot) {
         return SLOT_LANGUAGE.equals(slot);
@@ -289,7 +295,14 @@ public final class ConversationConstraintProjectorV2 {
                 || LENGTH_WORD.matcher(window).find();
     }
 
-    /** 格式线索所属的语义槽位：同一槽位里的取值互斥，不同槽位可以同时生效。 */
+    /**
+     * 格式线索所属的语义槽位：同一槽位里的取值互斥，不同槽位可以同时生效。
+     * 长度类线索不再和其他格式共用一个兜底桶，而是按维度拆开：
+     * "不超过300字/控制在N字/字数"是硬上限，落在 {@value #SLOT_LENGTH_MAX}；
+     * "简短/简洁/精简"与"详细一点/展开讲"是同一个详略维度里互斥的两个取值，
+     * 落在 {@value #SLOT_LENGTH_DETAIL}。因此"不超过300字"和"简短一点"可以同时生效，
+     * 而"简短一点"之后的"详细一点"仍然顶掉它。
+     */
     static String formatSlot(String cue) {
         if (cue.contains("表格")) return "format.table";
         if (cue.contains("结论")) return "format.conclusion";
@@ -298,6 +311,12 @@ public final class ConversationConstraintProjectorV2 {
         }
         if (cue.contains("代码")) return "format.code";
         if (cue.contains("来源") || cue.contains("引用") || cue.contains("出处")) return "format.citation";
+        if (cue.contains("不超过") || cue.contains("控制在") || cue.contains("字数")) return SLOT_LENGTH_MAX;
+        if (cue.contains("简短") || cue.contains("简洁") || cue.contains("精简")
+                || cue.contains("详细") || cue.contains("展开")) {
+            return SLOT_LENGTH_DETAIL;
+        }
+        // 兜底只接未登记的线索，当前 FORMAT_CUE 里的每条线索都有专属槽位。
         return "format.length";
     }
 
