@@ -94,7 +94,7 @@ public class WorkerTaskCallbackService {
             return terminalAck(taskId, task.taskStatus());
         }
         renewDelivery(taskId, deliveryToken, requireDelivery);
-        validateCallbackOwnership(task);
+        validateHeartbeatOwnership(task);
         validateWorkerType(task, request.workerType());
         WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "HEARTBEAT", request);
         if (duplicate != null) return duplicate;
@@ -296,6 +296,35 @@ public class WorkerTaskCallbackService {
             throw new BusinessException(
                     "WORKER_CALLBACK_OWNER_MISMATCH",
                     "Worker type does not own this task",
+                    HttpStatus.CONFLICT
+            );
+        }
+    }
+
+    private void validateHeartbeatOwnership(TaskService.TaskRef task) {
+        if ("VIDEO_MATERIAL".equals(task.taskType())) {
+            validateVideoMaterialOwnership(task);
+            return;
+        }
+        validateCallbackOwnership(task);
+    }
+
+    private void validateVideoMaterialOwnership(TaskService.TaskRef task) {
+        if (!"VIDEO_LEARNING_REQUEST".equals(task.targetType())) {
+            throw new BusinessException(
+                    "WORKER_CALLBACK_TASK_TYPE_INVALID",
+                    "Task is not owned by an external worker",
+                    HttpStatus.CONFLICT
+            );
+        }
+        Integer matches = jdbcTemplate.queryForObject("""
+                select count(*) from video_learning_request
+                where id = ? and material_task_id = ? and workspace_id = ?
+                """, Integer.class, task.targetId(), task.taskId(), task.workspaceId());
+        if (matches == null || matches != 1) {
+            throw new BusinessException(
+                    "WORKER_CALLBACK_OWNER_MISMATCH",
+                    "Task target or workspace ownership does not match",
                     HttpStatus.CONFLICT
             );
         }

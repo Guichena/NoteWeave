@@ -171,8 +171,44 @@ def test_send_heartbeat_uses_the_host_callback_without_an_idempotency_key(
     assert len(str(body["worker_instance_id"])) <= 120
     assert str(body["heartbeat_at"]).endswith("Z")
     assert captured["delivery"] == "delivery-1"
-    assert captured["callback"]
+    assert captured["callback"] == callback_module._task_callback_token(
+        "callback-secret", "ARTIFACT_JOB", "task-1")
     assert captured["idempotency"] is None
+
+
+def test_video_material_heartbeat_uses_the_material_callback_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps({
+                "success": True,
+                "data": {"task_id": "task-1", "status": "HEARTBEAT_RECORDED", "result_ref": ""},
+            }).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        captured["callback"] = req.get_header("X-noteweave-task-callback-token")
+        return FakeResponse()
+
+    monkeypatch.setattr(callback_module, "credential_safe_urlopen", fake_urlopen)
+    client = JavaArtifactCallbackClient(
+        "http://java-host:8081", "internal-token", "callback-secret", "delivery-1",
+    )
+    client.callback_task_type = "VIDEO_MATERIAL"
+    client.send_heartbeat("task-1")
+
+    assert captured["callback"] == callback_module._task_callback_token(
+        "callback-secret", "VIDEO_MATERIAL", "task-1")
+    assert captured["callback"] != callback_module._task_callback_token(
+        "callback-secret", "ARTIFACT_JOB", "task-1")
 
 
 def test_heartbeat_is_called_during_execution_and_stops_afterwards(
@@ -328,6 +364,152 @@ class _Messages:
 
     def commit(self) -> None:
         self.commit_count += 1
+
+
+def _material_parent():
+    from app.video_material_task import VideoMaterialTaskInput
+
+    return VideoMaterialTaskInput.model_validate({
+        "schema_version": "video-material-input.v1",
+        "task_id": "material-task-heartbeat",
+        "request_id": "parent-1",
+        "workspace_id": "workspace-1",
+        "input_snapshot_id": "parent-1",
+        "template_version": "original-v1",
+        "inputs": {
+            "url": "https://www.bilibili.com/video/BV1234567890?p=2",
+            "part": "2",
+            "language": "zh-CN",
+            "frame_density": "STANDARD",
+            "asr_fallback": "ALLOW",
+        },
+    })
+
+
+def _waiting_material_result(task_id: str) -> ArtifactTaskResult:
+    return ArtifactTaskResult(
+        result_title="Video material",
+        result_payload={},
+        trace_summary="waiting for the provider",
+        job_snapshot=ArtifactJobSnapshot(
+            task_id=task_id,
+            workspace_id="workspace-1",
+            target_id="parent-1",
+            action_key="VIDEO_MATERIAL",
+            status="WAITING_FOR_PROVIDER",
+        ),
+        version_snapshot=ArtifactVersionSnapshot(
+            version_id="",
+            artifact_type="VIDEO_MATERIAL",
+            title="Video material",
+            status="NOT_APPLICABLE",
+            summary="No version",
+        ),
+    )
+
+
+def test_video_material_heartbeat_outlives_the_provider_wait_and_stops_on_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.execution_heartbeat import stop_material_execution_heartbeat
+
+    _enable_fast_heartbeat(monkeypatch)
+    parent = _material_parent()
+    task = parent.to_acquisition_input()
+    calls: list[str] = []
+    seen = threading.Event()
+
+    class Client:
+        delivery_token = "delivery-1"
+        java_base_url = "http://java-host:8081"
+
+        def fetch_parent_material_input(self, task_id: str):
+            return parent
+
+        def send_heartbeat(self, task_id: str, *, phase: str = "EXECUTING") -> dict[str, object]:
+            calls.append(task_id)
+            if len(calls) >= 2:
+                seen.set()
+            return {
+                "success": True,
+                "code": "OK",
+                "data": {"task_id": task_id, "status": "HEARTBEAT_RECORDED", "result_ref": ""},
+            }
+
+    client = Client()
+    monkeypatch.setattr(
+        callback_module, "run_artifact_task",
+        lambda _task: ([], _waiting_material_result(parent.task_id)),
+    )
+    try:
+        response = callback_module.run_video_material_task_with_callbacks(parent.task_id, client=client)
+        assert response.status == "WAITING_FOR_PROVIDER"
+        assert seen.wait(2)
+        held = len(calls)
+        time.sleep(0.2)
+        assert len(calls) > held
+
+        completed = callback_module.ArtifactWorkerExecutionResponse(
+            task_id=parent.task_id, status="COMPLETED", progress_events=0, result_title="Video material",
+        )
+        monkeypatch.setattr(callback_module, "get_waiting_task", lambda _task_id: {
+            "task_input": task.model_dump(mode="json"),
+        })
+        monkeypatch.setattr(
+            callback_module, "_resume_waiting_artifact_task",
+            lambda *_args, **_kwargs: completed,
+        )
+        resumed = callback_module.resume_waiting_artifact_task_with_callbacks(
+            parent.task_id, client=client,
+        )
+        assert resumed.status == "COMPLETED"
+        stopped = len(calls)
+        time.sleep(0.2)
+        assert len(calls) == stopped
+    finally:
+        stop_material_execution_heartbeat(parent.task_id)
+
+
+def test_stale_video_material_heartbeat_stops_the_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.execution_heartbeat import stop_material_execution_heartbeat
+
+    _enable_fast_heartbeat(monkeypatch)
+    parent = _material_parent()
+    finished = False
+
+    class Client:
+        delivery_token = "delivery-1"
+        heartbeats: list[str] = []
+
+        def fetch_parent_material_input(self, task_id: str):
+            return parent
+
+        def send_heartbeat(self, task_id: str, *, phase: str = "EXECUTING") -> dict[str, object]:
+            self.heartbeats.append(task_id)
+            raise ArtifactCallbackHttpError(
+                409, json.dumps({"success": False, "code": "WORKER_CALLBACK_DELIVERY_STALE"}))
+
+    client = Client()
+
+    def slow(_task, **_kwargs):
+        nonlocal finished
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            checkpoint_artifact_execution()
+            time.sleep(0.01)
+        finished = True
+        return [], _waiting_material_result(parent.task_id)
+
+    monkeypatch.setattr(callback_module, "run_artifact_task", slow)
+    try:
+        with pytest.raises(ArtifactExecutionSuperseded, match="WORKER_CALLBACK_DELIVERY_STALE"):
+            callback_module.run_video_material_task_with_callbacks(parent.task_id, client=client)
+        assert finished is False
+        assert client.heartbeats
+    finally:
+        stop_material_execution_heartbeat(parent.task_id)
 
 
 def test_consumer_abandons_superseded_execution_without_retrying() -> None:

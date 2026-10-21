@@ -52,6 +52,8 @@ from app.execution_heartbeat import (
     ArtifactExecutionSuperseded,
     artifact_execution_heartbeat,
     checkpoint_artifact_execution,
+    material_execution_lease,
+    stop_material_execution_heartbeat,
 )
 from app.system_mcp_executor import submit_system_mcp_acquisition_operation
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID
@@ -116,6 +118,7 @@ class JavaArtifactCallbackClient:
         self.internal_auth_token = internal_auth_token.strip()
         self.callback_secret = callback_secret.strip()
         self.delivery_token = delivery_token.strip()
+        self.callback_task_type = "ARTIFACT_JOB"
 
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         response = self._request("GET", f"/internal/worker/artifact-tasks/{task_id}/input")
@@ -308,6 +311,7 @@ class JavaArtifactCallbackClient:
         normalized_phase = (phase or "").strip() or "EXECUTING"
         if len(normalized_phase) > 64:
             normalized_phase = normalized_phase[:64]
+        task_type = (self.callback_task_type or "ARTIFACT_JOB").strip() or "ARTIFACT_JOB"
         return self._request(
             "POST",
             f"/internal/worker/tasks/{task_id}/heartbeat",
@@ -318,6 +322,7 @@ class JavaArtifactCallbackClient:
                 "heartbeat_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             },
             task_id=task_id,
+            callback_task_type=task_type,
         )
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
@@ -525,27 +530,38 @@ def run_video_material_task_with_callbacks(
     callback_client = client or JavaArtifactCallbackClient(
         settings.java_base_url, settings.internal_auth_token,
         settings.callback_secret, delivery_token)
-    # 宿主 /heartbeat 只接受 ARTIFACT_JOB。VIDEO_MATERIAL 会得到
-    # WORKER_CALLBACK_TASK_TYPE_INVALID，不能用来续约，所以这条路径不发心跳。
-    try:
-        parent_input = callback_client.fetch_parent_material_input(task_id)
-        task_input = parent_input.to_acquisition_input()
-        events, result = run_artifact_task(task_input)
-        checkpoint_artifact_execution()
-        return _emit_material_callbacks_for_result(
-            task_id, events, result, callback_client, task_input)
-    except ArtifactExecutionSuperseded:
-        raise
-    except ArtifactCallbackHttpError as exc:
-        _prefer_superseded(exc)
-        if _report_material_failure(callback_client, task_id):
-            setattr(exc, "artifact_failure_reported", True)
-        raise
-    except Exception as exc:
-        _prefer_superseded(exc)
-        if _report_material_failure(callback_client, task_id):
-            setattr(exc, "artifact_failure_reported", True)
-        raise
+    # 采集在 Kafka 处理函数返回后还要跑字幕、抽帧、画面观察。心跳必须跨过这些
+    # 后台阶段，否则 70 分钟 outbox 租约到期后任务会被重投。
+    _bind_material_callback_type(callback_client)
+    with material_execution_lease(
+        callback_client, task_id,
+        interval_seconds=settings.artifact_heartbeat_interval_seconds,
+    ):
+        try:
+            parent_input = callback_client.fetch_parent_material_input(task_id)
+            task_input = parent_input.to_acquisition_input()
+            events, result = run_artifact_task(task_input)
+            checkpoint_artifact_execution()
+            response = _emit_material_callbacks_for_result(
+                task_id, events, result, callback_client, task_input)
+        except ArtifactExecutionSuperseded:
+            stop_material_execution_heartbeat(task_id)
+            raise
+        except ArtifactCallbackHttpError as exc:
+            stop_material_execution_heartbeat(task_id)
+            _prefer_superseded(exc)
+            if _report_material_failure(callback_client, task_id):
+                setattr(exc, "artifact_failure_reported", True)
+            raise
+        except Exception as exc:
+            stop_material_execution_heartbeat(task_id)
+            _prefer_superseded(exc)
+            if _report_material_failure(callback_client, task_id):
+                setattr(exc, "artifact_failure_reported", True)
+            raise
+        if not _is_waiting_status(response.status):
+            stop_material_execution_heartbeat(task_id)
+        return response
 
 
 def _report_material_failure(client: JavaArtifactCallbackClient, task_id: str) -> bool:
@@ -653,22 +669,43 @@ def resume_waiting_artifact_task_with_callbacks(
     if task_input is not None and isinstance(callback_client, JavaArtifactCallbackClient) and callback_client.delivery_token:
         retrieval_options["passage_search"] = lambda task_id, query, limit: callback_client.retrieve_passages(
             task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id)
-    # MATERIAL_ONLY 是 VIDEO_MATERIAL，宿主心跳路由不接受。
-    heartbeat_client = None if material_only else callback_client
-    with artifact_execution_heartbeat(
-        heartbeat_client,
-        task_id,
-        interval_seconds=settings.artifact_heartbeat_interval_seconds,
-    ):
-        return _resume_waiting_artifact_task(
+    if material_only:
+        # 下一段采集仍在本次恢复返回之后执行，沿用同一条心跳直到任务终态。
+        _bind_material_callback_type(callback_client)
+        lease_scope = material_execution_lease(
+            callback_client,
             task_id,
-            callback_client=callback_client,
-            task_input=task_input,
-            request_id=request_id,
-            callback_receipt=callback_receipt,
-            callback_operation=callback_operation,
-            retrieval_options=retrieval_options,
+            interval_seconds=settings.artifact_heartbeat_interval_seconds,
         )
+    else:
+        lease_scope = artifact_execution_heartbeat(
+            callback_client,
+            task_id,
+            interval_seconds=settings.artifact_heartbeat_interval_seconds,
+        )
+    with lease_scope:
+        try:
+            response = _resume_waiting_artifact_task(
+                task_id,
+                callback_client=callback_client,
+                task_input=task_input,
+                request_id=request_id,
+                callback_receipt=callback_receipt,
+                callback_operation=callback_operation,
+                retrieval_options=retrieval_options,
+            )
+        except Exception:
+            if material_only:
+                stop_material_execution_heartbeat(task_id)
+            raise
+        if material_only and not _is_waiting_status(response.status):
+            stop_material_execution_heartbeat(task_id)
+        return response
+
+
+def _bind_material_callback_type(client: object) -> None:
+    if isinstance(client, JavaArtifactCallbackClient):
+        client.callback_task_type = "VIDEO_MATERIAL"
 
 
 def _resume_waiting_artifact_task(

@@ -68,20 +68,32 @@ class ArtifactLeaseHeartbeat:
             return self._reason
 
     def start(self) -> None:
-        thread = Thread(
-            target=self._run,
-            name=f"artifact-heartbeat-{self.task_id[:40]}",
-            daemon=True,
-        )
-        self._thread = thread
+        with self._lock:
+            if self._closed or self._thread is not None:
+                return
+            thread = Thread(
+                target=self._run,
+                name=f"artifact-heartbeat-{self.task_id[:40]}",
+                daemon=True,
+            )
+            self._thread = thread
         thread.start()
 
     def close(self) -> None:
-        self._closed = True
+        with self._lock:
+            self._closed = True
+            thread = self._thread
         self._stop.set()
-        thread = self._thread
-        if thread is not None and thread is not current_thread():
+        # ident stays unset until start() returns. Joining that thread raises.
+        if thread is not None and thread.ident is not None and thread is not current_thread():
             thread.join(timeout=1.0)
+
+    def running(self) -> bool:
+        thread = self._thread
+        return bool(thread is not None and thread.is_alive() and not self._closed)
+
+    def abandoned(self) -> bool:
+        return self._superseded.is_set()
 
     def checkpoint(self) -> None:
         if self._superseded.is_set():
@@ -94,6 +106,8 @@ class ArtifactLeaseHeartbeat:
             self._superseded.set()
 
     def _run(self) -> None:
+        if self._closed:
+            return
         while not self._stop.is_set():
             if not self._beat_once():
                 return
@@ -162,6 +176,64 @@ def artifact_execution_heartbeat(
     finally:
         heartbeat.close()
         _CURRENT.reset(token)
+
+
+_MATERIAL_HEARTBEATS: dict[str, ArtifactLeaseHeartbeat] = {}
+_MATERIAL_GUARD = Lock()
+
+
+def ensure_material_execution_heartbeat(
+    client: object,
+    task_id: str,
+    *,
+    interval_seconds: float,
+) -> ArtifactLeaseHeartbeat | None:
+    """Keep one VIDEO_MATERIAL heartbeat alive across provider stages.
+
+    The Kafka handler returns as soon as the task is waiting. Subtitle and
+    frame tools then run on background threads, and the next stage starts
+    only after the previous tool finishes. Stopping the heartbeat when the
+    handler returns lets the 70-minute outbox lease expire and the row is
+    republished. The caller stops this heartbeat when the attempt ends.
+    """
+    sender = getattr(client, "send_heartbeat", None)
+    if client is None or not callable(sender) or interval_seconds <= 0:
+        return None
+    if hasattr(client, "delivery_token") and not str(getattr(client, "delivery_token") or "").strip():
+        return None
+    with _MATERIAL_GUARD:
+        current = _MATERIAL_HEARTBEATS.get(task_id)
+        if current is not None and (current.abandoned() or current.running()):
+            return current
+        heartbeat = ArtifactLeaseHeartbeat(sender, task_id, interval_seconds)
+        _MATERIAL_HEARTBEATS[task_id] = heartbeat
+    heartbeat.start()
+    return heartbeat
+
+
+def stop_material_execution_heartbeat(task_id: str) -> None:
+    with _MATERIAL_GUARD:
+        heartbeat = _MATERIAL_HEARTBEATS.pop(task_id, None)
+    if heartbeat is not None:
+        heartbeat.close()
+
+
+@contextmanager
+def material_execution_lease(
+    client: object,
+    task_id: str,
+    *,
+    interval_seconds: float,
+) -> Iterator[ArtifactLeaseHeartbeat | None]:
+    """Bind the material heartbeat for this call without stopping it on exit."""
+    heartbeat = ensure_material_execution_heartbeat(
+        client, task_id, interval_seconds=interval_seconds)
+    token = _CURRENT.set(heartbeat) if heartbeat is not None else None
+    try:
+        yield heartbeat
+    finally:
+        if token is not None:
+            _CURRENT.reset(token)
 
 
 def artifact_heartbeat_is_active() -> bool:
