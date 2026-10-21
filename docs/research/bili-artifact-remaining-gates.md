@@ -6,7 +6,7 @@
 
 继续验收：仓库真实 24,953 字节设计文档经上传、解析为 76 个窗口；后段两个 Workflow History 窗口同时进入实际 `study_guide` Version Citation。该 Version 公开文件下载 4,902 字节、摘要正确；单对象暂时缺失时下载 409 `ARTIFACT_FILE_DEGRADED`，恢复后 200；公开回滚得到 Version 2，源/回滚文件摘要一致；隔离 Backend、MinIO 分别重启后两个版本仍可下载。Edge 从真实前端保存 Version 2 Markdown 后，磁盘摘要与数据库一致。仍未完成中途崩溃和 Worker 文件过期后的非 Markdown 恢复。
 
-本清单按已运行的合同与实际环境记录，详细结果见 `bili-artifact-baseline.md`。计划中的目标设计不等于已交付能力。当前生产入口 `noteweave.video-learning.enabled`、Context v2 的全局 ACTIVE、Research ACTIVE 与 Artifact ACTIVE 均默认关闭。
+本清单按已运行的合同与实际环境记录，详细结果见 `bili-artifact-baseline.md`。计划中的目标设计不等于已交付能力。当前生产入口 `noteweave.video-learning.enabled` 默认关闭；Context v2 的全局开关与默认模式（ACTIVE）已默认开启，Research ACTIVE 与 Artifact ACTIVE 仍默认关闭。
 
 2026-09-27 用户要求当前批次先跳过依赖真实模型输出的质量门禁，继续前后端功能接入。视频素材 Bundle 仍作为内部复用对象；用户界面以四种独立产物和各自状态、重试、Version 为主。模型效果门禁仅延期，不记为通过。
 

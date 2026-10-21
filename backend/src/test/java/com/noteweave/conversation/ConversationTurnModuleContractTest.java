@@ -36,7 +36,13 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
-@SpringBootTest
+// 本用例集校验 V1 前缀窗口（recent_message_refs / segment_summary_refs）契约，
+// 因此显式关闭 Context V2；V2 的产品默认值是开启的，见 application.yml。
+@SpringBootTest(properties = {
+        "noteweave.context.v2.shadow-enabled=false",
+        "noteweave.context.v2.active-enabled=false",
+        "noteweave.context.v2.default-mode=OFF"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ConversationTurnModuleContractTest {

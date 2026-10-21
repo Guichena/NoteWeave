@@ -50,10 +50,10 @@ spring:
 
 noteweave:
   context:
-    v2:
-      shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:false}
-      active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:false}
-      default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:OFF}
+    v2:  # 话题感知上下文窗口默认开启；与 docker-compose.yml / .env.example 保持一致
+      shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:true}
+      active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:true}
+      default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:ACTIVE}
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
