@@ -11,10 +11,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -242,7 +244,9 @@ public class ConversationTopicProjectionV2Service {
         if (updated != 1) {
             return false;
         }
+        Set<String> snapshotIds = new HashSet<>(extraction.snapshot().size());
         for (ConversationConstraintProjectorV2.Constraint constraint : extraction.snapshot()) {
+            snapshotIds.add(constraint.id());
             Integer count = jdbc.queryForObject("select count(*) from conversation_constraint_v2 where id = ?",
                     Integer.class, constraint.id());
             if (count == null || count == 0) {
@@ -256,15 +260,35 @@ public class ConversationTopicProjectionV2Service {
                         constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
                         constraintProjection.version());
             } else {
-                // 重放时也把 rule_version 拉齐，否则旧行会一直停在插入时的版本。
+                // 落库必须与合并器输出逐字段一致：id 只由 (messageId, slot, index) 决定，重抽同一条
+                // 消息时取值、槽位（kind）与 scope 都可能变，只改状态字段会把旧正文留在库里继续生效。
                 jdbc.update("""
                         update conversation_constraint_v2
-                        set invalid_after_seq = ?, status = ?, superseded_by = ?, rule_version = ?
+                        set kind = ?, scope = ?, constraint_text = ?, valid_from_seq = ?,
+                            invalid_after_seq = ?, status = ?, superseded_by = ?, rule_version = ?
                         where id = ? and workspace_id = ? and conversation_id = ?
-                        """, constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
-                        constraintProjection.version(),
+                        """, constraint.kind(), constraint.scope(), constraint.text(),
+                        constraint.validFromSeq(), constraint.invalidAfterSeq(), constraint.status(),
+                        constraint.supersededBy(), constraintProjection.version(),
                         constraint.id(), workspaceId, conversationId);
             }
+        }
+        // 合并器每次从基线重算整表：快照里没有的行同样要清掉——重放改成 NOOP/空数组、槽位或下标
+        // 变了、旧规则版本留下的行都不会再出现在快照里，但只要还留着 ACTIVE，编译器按库读约束就会
+        // 继续把用户已经作废的要求注入回答。真实的撤回/失效行仍由快照带着 REVOKED 落库，历史不丢。
+        // 只对账本轮已处理的区间：抽取失败或尚未抽取的消息（valid_from_seq 在 watermark 之后）整行不动。
+        List<String> persistedIds = jdbc.queryForList("""
+                select id from conversation_constraint_v2
+                where workspace_id = ? and conversation_id = ? and valid_from_seq <= ?
+                """, String.class, workspaceId, conversationId, extraction.processedSeq());
+        for (String persistedId : persistedIds) {
+            if (snapshotIds.contains(persistedId)) {
+                continue;
+            }
+            jdbc.update("""
+                    delete from conversation_constraint_v2
+                    where id = ? and workspace_id = ? and conversation_id = ?
+                    """, persistedId, workspaceId, conversationId);
         }
         return true;
     }
