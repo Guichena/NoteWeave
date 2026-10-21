@@ -92,6 +92,7 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
             return new Result.Unusable(DISABLED);
         }
         String userPrompt = ConstraintOpsPrompt.userPrompt(request);
+        String lastFailure = null;
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
             boolean lastAttempt = attempt + 1 >= MAX_ATTEMPTS;
             String output;
@@ -123,9 +124,11 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
                 return new Result.Ok(parsed.ops(), ConstraintOpsPrompt.PROMPT_VERSION);
             }
             log.info("约束抽取输出不合规: reason={}, attempt={}", parsed.failure(), attempt + 1);
+            lastFailure = parsed.failure();
             userPrompt = ConstraintOpsPrompt.retryPrompt(userPrompt);
         }
-        log.warn("约束抽取输出始终不合规: reason={}", MALFORMED);
+        // detail 只带校验器的原因常量（例如 MISSING_FORBID_VALUE）：输出正文可能含用户原文，不能进日志。
+        log.warn("约束抽取输出始终不合规: reason={}, detail={}", MALFORMED, lastFailure);
         return new Result.Unusable(MALFORMED);
     }
 

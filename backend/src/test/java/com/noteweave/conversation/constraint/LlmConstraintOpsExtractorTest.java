@@ -101,6 +101,20 @@ class LlmConstraintOpsExtractorTest {
     }
 
     @Test
+    void languageForbidWithoutValueIsAFailureNotAnEmptyResult() {
+        ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
+        client.outputs.add("[{\"op\":\"ADD\",\"slot\":\"language\",\"polarity\":\"forbid\",\"confidence\":0.9}]");
+        client.outputs.add("[{\"op\":\"ADD\",\"slot\":\"language\",\"polarity\":\"forbid\",\"confidence\":0.9}]");
+
+        ConstraintOpsExtractor.Result result = extractor(client, DEFAULT_TIMEOUT_MS).extract(request("不要用中文"));
+
+        // 缺 value 的否定不能冒充「模型认为没有约束」：显式失败，重试一次后仍失败，调用方停在该消息。
+        assertThat(unusableReason(result)).isEqualTo(LlmConstraintOpsExtractor.MALFORMED);
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(client.userPrompts.get(1)).contains("只输出 JSON 数组");
+    }
+
+    @Test
     void retryRecoversFromMalformedOutput() {
         ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
         client.outputs.add("不是 JSON");

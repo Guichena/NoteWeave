@@ -13,6 +13,8 @@ import java.util.Locale;
  * 这是一个「全有或全无」的校验器：任一必填项非法就让整批失败，绝不返回半截结果。
  * 理由是一半的 ops 比没有 ops 更危险——缺失的那一半会让调用方以为旧约束已被撤回。
  * 未知字段忽略（模型常附带解释性字段），未知的枚举值、越界的 confidence、缺失的目标一律判失败。
+ * 语言类否定没有取值（{@code polarity=forbid} + {@code slot=language} 但没给 {@code value}）
+ * 同样判整批失败：这种 op 落不了行，放过它会让合并器静默丢弃这条要求（见 {@link #MISSING_FORBID_VALUE}）。
  * <p>
  * 失败原因只用于日志与降级判断，不写库、不回传模型。
  */
@@ -39,6 +41,13 @@ public final class ConstraintOpSchema {
     public static final String MISSING_TARGET = "MISSING_TARGET";
     public static final String INVALID_CONFIDENCE = "INVALID_CONFIDENCE";
     public static final String VALUE_TOO_LONG = "VALUE_TOO_LONG";
+    /**
+     * 语言类否定缺 {@code value}：{@code polarity=forbid} + {@code slot=language} 却没说禁止哪种语言。
+     * <p>
+     * 「不要用中文」这种输出落不了行（合并器拿不到取值就写不出可渲染的禁止项），
+     * 所以不能当成「模型认为没有约束」放过：整批判失败，调用方不推进水位，下一轮重抽。
+     */
+    public static final String MISSING_FORBID_VALUE = "MISSING_FORBID_VALUE";
 
     private ConstraintOpSchema() {
     }
@@ -145,6 +154,14 @@ public final class ConstraintOpSchema {
         }
         if ((op == ConstraintOp.Op.ADD || op == ConstraintOp.Op.UPDATE) && slot == null) {
             return ItemResult.invalid(MISSING_SLOT);
+        }
+        if ((op == ConstraintOp.Op.ADD || op == ConstraintOp.Op.UPDATE)
+                && slot == ConstraintSlot.LANGUAGE
+                && polarity == ConstraintPolarity.FORBID
+                && value == null) {
+            // 「不要用中文」缺 value：合并器写不出可渲染的禁止项，只能丢弃。
+            // 与其静默丢一条要求并推进水位，不如整批判无效，让调用方停在这条消息上重抽。
+            return ItemResult.invalid(MISSING_FORBID_VALUE);
         }
         if (op == ConstraintOp.Op.REVOKE && slot == null && targetId == null) {
             return ItemResult.invalid(MISSING_TARGET);

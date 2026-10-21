@@ -153,6 +153,42 @@ class ConstraintOpSchemaTest {
     }
 
     @Test
+    void languageForbidWithoutValueInvalidatesTheWholeArray() {
+        // 「不要用中文」缺 value：合并器写不出可渲染的禁止项，只能丢掉这条要求。
+        // 不能当成「模型认为没有约束」放过——那会让水位越过这条消息，要求永久丢失。
+        ConstraintOpSchema.ParseResult add = ConstraintOpSchema.parse(MAPPER,
+                "[{\"op\":\"ADD\",\"slot\":\"language\",\"polarity\":\"forbid\",\"confidence\":0.9}]");
+        assertThat(add.ok()).isFalse();
+        assertThat(add.ops()).isEmpty();
+        assertThat(add.failure()).isEqualTo(ConstraintOpSchema.MISSING_FORBID_VALUE);
+
+        assertThat(ConstraintOpSchema.parse(MAPPER,
+                "[{\"op\":\"UPDATE\",\"targetId\":\"constraint-1\",\"slot\":\"language\",\"polarity\":\"forbid\"}]")
+                .failure())
+                .isEqualTo(ConstraintOpSchema.MISSING_FORBID_VALUE);
+
+        // 同批里的合法 op 一起作废：一半的 ops 比没有 ops 更危险。
+        ConstraintOpSchema.ParseResult mixed = ConstraintOpSchema.parse(MAPPER, """
+                [{"op":"ADD","slot":"language","polarity":"forbid"},
+                 {"op":"ADD","slot":"table","value":"format.table","confidence":0.9}]
+                """);
+        assertThat(mixed.ok()).isFalse();
+        assertThat(mixed.ops()).isEmpty();
+    }
+
+    @Test
+    void languageForbidWithValueAndLanguageRevokeWithoutValueStayValid() {
+        ConstraintOpSchema.ParseResult forbid = ConstraintOpSchema.parse(MAPPER,
+                "[{\"op\":\"ADD\",\"slot\":\"language\",\"value\":\"中文\",\"polarity\":\"forbid\"}]");
+        assertThat(forbid.ok()).isTrue();
+        assertThat(forbid.ops().get(0).value()).isEqualTo("中文");
+        assertThat(forbid.ops().get(0).forbids()).isTrue();
+
+        // REVOKE 不落新行，没有 value 仍然合法：撤回整个语言槽位。
+        assertThat(ConstraintOpSchema.parse(MAPPER, "[{\"op\":\"REVOKE\",\"slot\":\"language\"}]").ok()).isTrue();
+    }
+
+    @Test
     void confidenceOutsideTheUnitIntervalIsRejected() {
         assertThat(ConstraintOpSchema.parse(MAPPER,
                 "[{\"op\":\"ADD\",\"slot\":\"table\",\"confidence\":1.5}]").failure())

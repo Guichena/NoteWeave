@@ -146,6 +146,9 @@ public final class ConstraintOpMerger {
         String value = valueOf(slot, op);
         if (slot == ConstraintSlot.LANGUAGE && value == null) {
             // 没有说清用哪种语言的要求落不了行，记下来只会是一条空约束。
+            // 正常路径到不了这里：{@code ConstraintOpSchema} 已把「语言类否定缺 value」判为整批无效
+            // （{@code MISSING_FORBID_VALUE}），调用方因此停在该消息上重抽而不是丢一条要求。
+            // 保留这条兜底只是为了重放历史 {@code steps_json} 时不写出空禁止项。
             return;
         }
         String scope = scopeOf(op.scope());
@@ -191,6 +194,7 @@ public final class ConstraintOpMerger {
         }
         String value = valueOf(slot, op);
         if (slot == ConstraintSlot.LANGUAGE && value == null) {
+            // 同上：校验器已把这类 op 判为整批无效（{@code MISSING_FORBID_VALUE}），这里只兜底历史步骤。
             return;
         }
         String id = ConstraintIds.of(step.messageId(), slot.wire(), index);

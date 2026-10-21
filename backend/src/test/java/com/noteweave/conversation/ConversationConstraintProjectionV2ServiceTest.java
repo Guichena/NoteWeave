@@ -448,6 +448,46 @@ class ConversationConstraintProjectionV2ServiceTest {
     }
 
     @Test
+    void languageForbidWithoutValueStopsTheWatermarkAndIsRetriedNextRound() {
+        // 模型把「不要用中文」写成 FORBID + language 却没给 value：落不了行。
+        String forbiddenWithoutValue =
+                "[{\"op\":\"ADD\",\"slot\":\"language\",\"polarity\":\"forbid\",\"confidence\":0.9}]";
+        List<TopicSegmenterV2.Message> oneUserMessage =
+                List.of(new TopicSegmenterV2.Message("m1", 1, "USER", "不要用中文回答"));
+
+        ScriptedClient client = new ScriptedClient();
+        client.outputs.add(forbiddenWithoutValue);
+        client.outputs.add(forbiddenWithoutValue);
+
+        ConversationConstraintProjectionV2Service.Extraction first =
+                service(client).extract(oneUserMessage, segments, 0, List.of());
+
+        // 不能静默丢弃：该轮判无效，watermark 停在 0，下轮从同一条消息重抽。
+        assertThat(client.calls).isEqualTo(2);
+        assertThat(first.extracted()).isZero();
+        assertThat(first.skipped()).isEqualTo(1);
+        assertThat(first.processedSeq()).isZero();
+        assertThat(first.steps()).isEmpty();
+        assertThat(first.snapshot()).isEmpty();
+
+        // 下一轮模型补齐 value：同一条消息重抽成功，禁止项以可读文本落行。
+        client.outputs.add("""
+                [{"op":"ADD","slot":"language","value":"中文","polarity":"forbid","scope":"conversation","confidence":0.9}]
+                """);
+        ConversationConstraintProjectionV2Service.Extraction retried =
+                service(client).extract(oneUserMessage, segments, 0, List.of());
+
+        assertThat(retried.processedSeq()).isEqualTo(1);
+        assertThat(retried.extracted()).isEqualTo(1);
+        assertThat(retried.snapshot()).singleElement().satisfies(row -> {
+            assertThat(row.id()).isEqualTo(ConstraintIds.of("m1", "language", 0));
+            assertThat(row.kind()).isEqualTo("LANGUAGE");
+            assertThat(row.text()).isEqualTo("不要使用中文");
+            assertThat(row.status()).isEqualTo("ACTIVE");
+        });
+    }
+
+    @Test
     void baselineStepsKeepCrossRoundSupersedeAndTargetIdsIntact() {
         String englishId = ConstraintIds.of("m1", "language", 0);
         ConstraintOpMerger.Step baseline = new ConstraintOpMerger.Step("m1", 1, "topic-1", List.of(
