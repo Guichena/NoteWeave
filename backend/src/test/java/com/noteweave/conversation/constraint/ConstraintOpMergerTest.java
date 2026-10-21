@@ -284,6 +284,25 @@ class ConstraintOpMergerTest {
                 .isEqualTo(ConstraintIds.of("m1", "language", 0));
     }
 
+    @Test
+    void activeConstraintsExposeSlotValueAndScopeForTheNextModelCall() {
+        List<ConstraintOpsExtractor.ActiveConstraint> active = merger.activeConstraints(List.of(
+                step("m1", 1, add(ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION)),
+                step("m2", 2, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC)),
+                step("m3", 3, revoke(ConstraintIds.of("m1", "language", 0)))));
+
+        // 被撤回的行不再出现在提示词里；剩下的行带上只存在于合并器内部的槽位与取值。
+        assertThat(active).extracting(ConstraintOpsExtractor.ActiveConstraint::id)
+                .containsExactly(ConstraintIds.of("m2", "table", 0));
+        ConstraintOpsExtractor.ActiveConstraint table = active.get(0);
+        assertThat(table.slot()).isEqualTo(ConstraintSlot.TABLE);
+        assertThat(table.value()).isEqualTo("format.table");
+        assertThat(table.scope()).isEqualTo("CURRENT_TOPIC");
+        assertThat(table.text()).isEqualTo("format.table");
+        assertThat(table.validFromSeq()).isEqualTo(2);
+        assertThat(merger.activeConstraints(List.of())).isEmpty();
+    }
+
     private static ConstraintOp add(ConstraintSlot slot, String value, ConstraintScope scope) {
         return add(slot, value, scope, HIGH);
     }

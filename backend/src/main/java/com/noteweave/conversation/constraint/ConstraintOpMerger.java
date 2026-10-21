@@ -77,6 +77,36 @@ public final class ConstraintOpMerger {
      * @return 不可变的约束行列表，顺序等于行的创建顺序（被撤回的行留在原位）
      */
     public List<ConversationConstraintProjectorV2.Constraint> fold(List<Step> steps) {
+        List<Row> rows = foldRows(steps);
+        List<ConversationConstraintProjectorV2.Constraint> output = new ArrayList<>(rows.size());
+        for (Row row : rows) {
+            output.add(row.constraint());
+        }
+        return List.copyOf(output);
+    }
+
+    /**
+     * 折叠到当前状态后仍然 ACTIVE 的行，供下一次模型调用作为 {@code targetId} 的候选。
+     * <p>
+     * 槽位与取值只存在于合并器内部（不入库），所以必须由合并器给出，不能从落库的 {@code kind} 反推。
+     *
+     * @param steps 已经应用过的步骤，按会话顺序
+     * @return 不可变的 ACTIVE 约束列表，顺序等于行的创建顺序
+     */
+    public List<ConstraintOpsExtractor.ActiveConstraint> activeConstraints(List<Step> steps) {
+        List<ConstraintOpsExtractor.ActiveConstraint> active = new ArrayList<>();
+        for (Row row : foldRows(steps)) {
+            ConversationConstraintProjectorV2.Constraint constraint = row.constraint();
+            if (!STATUS_ACTIVE.equals(constraint.status())) {
+                continue;
+            }
+            active.add(new ConstraintOpsExtractor.ActiveConstraint(constraint.id(), row.slot(), row.value(),
+                    constraint.scope(), constraint.text(), constraint.validFromSeq()));
+        }
+        return List.copyOf(active);
+    }
+
+    private List<Row> foldRows(List<Step> steps) {
         if (steps == null || steps.isEmpty()) {
             return List.of();
         }
@@ -100,11 +130,7 @@ public final class ConstraintOpMerger {
                 }
             }
         }
-        List<ConversationConstraintProjectorV2.Constraint> output = new ArrayList<>(rows.size());
-        for (Row row : rows) {
-            output.add(row.constraint());
-        }
-        return List.copyOf(output);
+        return List.copyOf(rows);
     }
 
     /** ADD：重申判定 → 同 scope 顶掉同槽位旧值 → 插入新行。 */

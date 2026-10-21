@@ -19,10 +19,13 @@ import org.springframework.stereotype.Component;
 /**
  * 基于现有 {@link ChatLlmClient} 的约束抽取实现。
  * <p>
- * 三条硬约束：
+ * 四条硬约束：
  * <ul>
  *   <li>失败必须显式：非法 JSON / 超时 / 调用异常都返回 {@link ConstraintOpsExtractor.Result.Unusable}，
- *       由调用方回落到规则路径；不抛异常、不返回空 ops 冒充「模型认为没有约束」。</li>
+ *       由调用方跳过这条消息（本轮不产出约束）；不抛异常、不返回空 ops 冒充「模型认为没有约束」。</li>
+ *   <li>重试有且只有一次：超时、调用失败、输出不合规都再试一次，仍失败就返回 {@link #TIMEOUT} /
+ *       {@link #CALL_FAILED} / {@link #MALFORMED}。超时重试会把单条消息的墙钟上限翻倍
+ *       （默认 8s → 16s），调用方在事务里，代价是已知的。</li>
  *   <li>超时自己管：{@code ChatLlmClient} 只有连接级超时，所以这里把一次调用丢到线程池上，
  *       {@code future.get(timeoutMs)} 到点就取消。底层 socket 仍可能拖到连接超时，属于已知限制。</li>
  *   <li>日志只留原因与条数：提示词里有用户原文，绝不打日志。</li>
@@ -44,6 +47,8 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
     public static final String EMPTY_MESSAGE = "EMPTY_MESSAGE";
 
     private static final Logger log = LoggerFactory.getLogger(LlmConstraintOpsExtractor.class);
+    /** 一条消息最多两次模型调用：超时/调用失败/输出不合规都只重试一次。 */
+    private static final int MAX_ATTEMPTS = 2;
     /** 超时后线程仍可能在等 socket；留两个线程，避免一次超时把后续消息全部堵住。 */
     private static final int WORKER_THREADS = 2;
 
@@ -87,12 +92,17 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
             return new Result.Unusable(DISABLED);
         }
         String userPrompt = ConstraintOpsPrompt.userPrompt(request);
-        for (int attempt = 0; attempt < 2; attempt++) {
+        for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            boolean lastAttempt = attempt + 1 >= MAX_ATTEMPTS;
             String output;
             try {
                 output = call(userPrompt);
             } catch (TimeoutException ex) {
-                log.warn("约束抽取超时: reason={}, timeoutMs={}", TIMEOUT, timeoutMs);
+                log.warn("约束抽取超时: reason={}, timeoutMs={}, attempt={}", TIMEOUT, timeoutMs, attempt + 1);
+                if (!lastAttempt) {
+                    // 同一提示词重试：超时与提示词无关，没必要追加格式要求。
+                    continue;
+                }
                 return new Result.Unusable(TIMEOUT);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
@@ -100,7 +110,11 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
                 return new Result.Unusable(CALL_FAILED);
             } catch (RuntimeException ex) {
                 // 只打异常类型：异常消息里可能带响应体或请求地址。
-                log.warn("约束抽取调用失败: reason={}, type={}", CALL_FAILED, ex.getClass().getSimpleName());
+                log.warn("约束抽取调用失败: reason={}, type={}, attempt={}",
+                        CALL_FAILED, ex.getClass().getSimpleName(), attempt + 1);
+                if (!lastAttempt) {
+                    continue;
+                }
                 return new Result.Unusable(CALL_FAILED);
             }
             ConstraintOpSchema.ParseResult parsed = ConstraintOpSchema.parse(objectMapper, output);

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,12 +18,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.chat.ChatService;
 import com.noteweave.common.Ids;
+import com.noteweave.conversation.constraint.ConstraintOp;
+import com.noteweave.conversation.constraint.ConstraintOpsExtractor;
+import com.noteweave.conversation.constraint.ConstraintOpsPrompt;
+import com.noteweave.conversation.constraint.ConstraintScope;
+import com.noteweave.conversation.constraint.ConstraintSlot;
 import com.noteweave.research.ResearchAgentIncrementalFinalizationService;
 import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
 import com.noteweave.security.CurrentUserProvider;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
@@ -59,6 +66,8 @@ class ConversationTurnModuleContractTest {
     @Autowired ResearchAgentIncrementalFinalizationService researchFinalizationService;
     @SpyBean ChatService chatService;
     @SpyBean ConversationContextProjectionService contextProjectionService;
+    // 约束抽取只走模型：默认（测试 profile 关闭 LLM）返回 Unusable，需要时在用例里用 stub 换掉输出。
+    @SpyBean ConstraintOpsExtractor constraintOpsExtractor;
 
     @Test
     void sameAnswerSubmissionReturnsTheOriginalReceipt() throws Exception {
@@ -1226,6 +1235,7 @@ class ConversationTurnModuleContractTest {
         submit(conversationId, Map.of(
                 "content", "更正：不要英文，改用中文。", "answer_mode", "QA",
                 "client_request_id", "constraint-shadow-3"), 200);
+        stubConstraintModel();
 
         topicProjectionV2Service.refresh(workspaceId, conversationId);
         assertThat(jdbcTemplate.queryForObject("""
@@ -1239,7 +1249,7 @@ class ConversationTurnModuleContractTest {
         assertThat(jdbcTemplate.queryForList("""
                 select rule_version from conversation_constraint_v2 where conversation_id = ?
                 """, String.class, conversationId))
-                .containsOnly(ConversationConstraintProjectorV2.RULE_VERSION);
+                .containsOnly(ConversationConstraintProjectionV2Service.VERSION);
         assertThat(jdbcTemplate.queryForObject("""
                 select status from conversation_constraint_v2 where source_message_id = ?
                 """, String.class, first.path("message_id").asText())).isEqualTo("REVOKED");
@@ -1248,6 +1258,59 @@ class ConversationTurnModuleContractTest {
                 join conversation_message m on m.id = c.source_message_id
                 where c.conversation_id = ? and m.role <> 'USER'
                 """, Integer.class, conversationId)).isZero();
+    }
+
+    @Test
+    void shadowConstraintProjectionKeepsPersistedConstraintsWhenTheModelIsUnavailable() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        JsonNode first = submit(conversationId, Map.of(
+                "content", "这份报告用英文。", "answer_mode", "QA",
+                "client_request_id", "constraint-outage-1"), 200);
+        // 模拟上一轮已经落库的一条约束：模型这轮不可用时它必须原样保留。
+        jdbcTemplate.update("""
+                insert into conversation_constraint_v2(id, workspace_id, conversation_id,
+                    source_message_id, kind, scope, constraint_text, valid_from_seq,
+                    status, rule_version)
+                values (?, ?, ?, ?, 'LANGUAGE', 'CONVERSATION', '英文', 1, 'ACTIVE', 'model-only:constraint-ops-v1')
+                """, Ids.newId(), workspaceId, conversationId, first.path("message_id").asText());
+
+        topicProjectionV2Service.refresh(workspaceId, conversationId);
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from conversation_constraint_v2 where conversation_id = ?
+                """, Integer.class, conversationId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select constraint_text from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, first.path("message_id").asText())).isEqualTo("英文");
+        assertThat(jdbcTemplate.queryForObject("""
+                select status from conversation_constraint_v2 where source_message_id = ?
+                """, String.class, first.path("message_id").asText())).isEqualTo("ACTIVE");
+    }
+
+    /**
+     * 用 stub 顶替模型：只按消息内容给出 ops，不发任何网络请求。
+     * 中文/英文两个分支的顺序不能反："更正：不要英文，改用中文。"两种都含。
+     */
+    private void stubConstraintModel() {
+        doAnswer(invocation -> {
+            ConstraintOpsExtractor.Request request = invocation.getArgument(0);
+            String text = request.message();
+            if (text.contains("中文")) {
+                String targetId = request.active().isEmpty() ? null : request.active().get(0).id();
+                return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.UPDATE,
+                        ConstraintSlot.LANGUAGE, "中文", ConstraintScope.CONVERSATION, targetId, 0.9)),
+                        ConstraintOpsPrompt.PROMPT_VERSION);
+            }
+            if (text.contains("英文")) {
+                return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.ADD,
+                        ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION, null, 0.9)),
+                        ConstraintOpsPrompt.PROMPT_VERSION);
+            }
+            return new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(ConstraintOp.Op.NOOP,
+                    null, null, null, null, ConstraintOp.DEFAULT_CONFIDENCE)),
+                    ConstraintOpsPrompt.PROMPT_VERSION);
+        }).when(constraintOpsExtractor).extract(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

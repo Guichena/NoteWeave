@@ -27,16 +27,18 @@ public class ConversationTopicProjectionV2Service {
     private final EmbeddingClient embeddings;
     private final TopicBoundaryReviewService reviews;
     private final TopicSegmenterV2 segmenter = new TopicSegmenterV2();
-    private final ConversationConstraintProjectorV2 constraintProjector = new ConversationConstraintProjectorV2();
+    private final ConversationConstraintProjectionV2Service constraintProjection;
 
     public ConversationTopicProjectionV2Service(JdbcTemplate jdbc,
                                                  ConversationTopicSummaryV2Service summaries,
                                                  EmbeddingClient embeddings,
-                                                 TopicBoundaryReviewService reviews) {
+                                                 TopicBoundaryReviewService reviews,
+                                                 ConversationConstraintProjectionV2Service constraintProjection) {
         this.jdbc = jdbc;
         this.summaries = summaries;
         this.embeddings = embeddings;
         this.reviews = reviews;
+        this.constraintProjection = constraintProjection;
     }
 
     @Transactional
@@ -162,9 +164,9 @@ public class ConversationTopicProjectionV2Service {
                         reviews.initialState(segment.status()));
             }
         }
-        for (ConversationConstraintProjectorV2.Constraint constraint : constraintProjector.project(rows.stream()
-                .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(), row.text()))
-                .toList())) {
+        // 约束只走模型路径：抽取失败的消息本轮不产出行，下面只做 upsert，该消息已落库的约束保持不变。
+        for (ConversationConstraintProjectorV2.Constraint constraint
+                : constraintProjection.project(messages, projection.segments())) {
             Integer count = jdbc.queryForObject("select count(*) from conversation_constraint_v2 where id = ?",
                     Integer.class, constraint.id());
             if (count == null || count == 0) {
@@ -176,7 +178,7 @@ public class ConversationTopicProjectionV2Service {
                         """, constraint.id(), workspaceId, conversationId, constraint.sourceMessageId(),
                         constraint.kind(), constraint.scope(), constraint.text(), constraint.validFromSeq(),
                         constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
-                        ConversationConstraintProjectorV2.RULE_VERSION);
+                        constraintProjection.version());
             } else {
                 // 重放时也把 rule_version 拉齐，否则旧行会一直停在插入时的版本。
                 jdbc.update("""
@@ -184,7 +186,7 @@ public class ConversationTopicProjectionV2Service {
                         set invalid_after_seq = ?, status = ?, superseded_by = ?, rule_version = ?
                         where id = ? and workspace_id = ? and conversation_id = ?
                         """, constraint.invalidAfterSeq(), constraint.status(), constraint.supersededBy(),
-                        ConversationConstraintProjectorV2.RULE_VERSION,
+                        constraintProjection.version(),
                         constraint.id(), workspaceId, conversationId);
             }
         }

@@ -115,27 +115,43 @@ class LlmConstraintOpsExtractorTest {
     }
 
     @Test
-    void timeoutIsUnusable() {
+    void timeoutIsUnusableAfterOneRetry() {
         ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
         client.sleepMillis = 1_000L;
         client.outputs.add("[]");
 
-        ConstraintOpsExtractor.Result result = extractor(client, 80L).extract(request("以后都用表格"));
+        ConstraintOpsExtractor.Result result = extractor(client, 150L).extract(request("以后都用表格"));
 
         assertThat(unusableReason(result)).isEqualTo(LlmConstraintOpsExtractor.TIMEOUT);
-        // 调用没有产出可用结果：脚本里的输出没有被消费掉。
+        // 超时也只重试一次：两次都超时，且调用没有产出可用结果，脚本里的输出没有被消费掉。
+        assertThat(client.calls).isEqualTo(2);
         assertThat(client.outputs).hasSize(1);
     }
 
     @Test
-    void callFailureIsUnusableWithoutRetry() {
+    void callFailureIsUnusableAfterOneRetry() {
         ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
+        client.outputs.add("THROW");
         client.outputs.add("THROW");
 
         ConstraintOpsExtractor.Result result = extractor(client, DEFAULT_TIMEOUT_MS).extract(request("以后都用表格"));
 
         assertThat(unusableReason(result)).isEqualTo(LlmConstraintOpsExtractor.CALL_FAILED);
-        assertThat(client.calls).isEqualTo(1);
+        assertThat(client.calls).isEqualTo(2);
+    }
+
+    @Test
+    void callFailureRetryCanRecover() {
+        ScriptedOpsLlmClient client = new ScriptedOpsLlmClient();
+        client.outputs.add("THROW");
+        client.outputs.add("[{\"op\":\"ADD\",\"slot\":\"table\",\"scope\":\"conversation\"}]");
+
+        ConstraintOpsExtractor.Result result = extractor(client, DEFAULT_TIMEOUT_MS).extract(request("以后都用表格"));
+
+        assertThat(result).isInstanceOf(ConstraintOpsExtractor.Result.Ok.class);
+        assertThat(((ConstraintOpsExtractor.Result.Ok) result).ops()).extracting(ConstraintOp::slot)
+                .containsExactly(ConstraintSlot.TABLE);
+        assertThat(client.calls).isEqualTo(2);
     }
 
     @Test

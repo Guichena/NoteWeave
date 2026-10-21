@@ -7,7 +7,7 @@ import java.util.List;
  * <p>
  * 实现只负责「拿到 ops 或明确失败」，不负责合并、不写库：冲突判定统一由 {@code ConstraintOpMerger} 做。
  * 失败必须显式表达（{@link Result.Unusable}），不允许用空 ops 冒充「模型认为没有约束」——
- * 前者会回落到规则路径，后者是终局结论。
+ * 前者让调用方跳过这轮抽取，后者是终局结论。
  */
 public interface ConstraintOpsExtractor {
 
