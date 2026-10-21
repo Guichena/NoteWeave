@@ -25,7 +25,9 @@ import java.util.Objects;
  *   <li>{@code REVOKE}：按 {@code targetId}（或 {@code slot}+{@code value}）撤回，不新增行。</li>
  *   <li>极性：{@code polarity=FORBID} 表示「不要这样做」（{@code "不要表格"} 是 FORBID + table，
  *       而不是正向 table）。同槽位、同 scope、指向同一取值的 REQUIRE 与 FORBID 互斥：后一条顶掉前一条；
- *       取值不同的语言类要求可以并存（{@code "不要中文"} 不撤 {@code "英文"}）。</li>
+ *       取值不同的语言类要求可以并存（{@code "不要中文"} 不撤 {@code "英文"}）。
+ *       格式槽位是单值维度，同槽位的两行永远互斥，与取值的写法无关（{@code "简短"} 撤 {@code "简短"} 以外的
+ *       取向、{@code "表格"} 与 {@code format.table} 是同一目标）。</li>
  *   <li>没有目标的否定（{@code slot=negation} 且无取值）只撤回同 slot 同取值的旧行；没有取值时单独成行，
  *       既不撤回别人，也不被后来的约束撤回。</li>
  *   <li>同一条消息的多个 op 按数组顺序应用，同槽位后者胜；{@code confidence} 低于门槛的
@@ -33,7 +35,8 @@ import java.util.Objects;
  * </ol>
  * <p>
  * 与设计文档的唯一差异：op 只有 {@code slot}/{@code value}，没有自由文本，因此正向新行的 {@code text}
- * 取 {@code value}（缺失时取 {@link ConstraintSlot#wire()}）。禁止项的行文本由
+ * 取 {@code value}（缺失时格式槽位取 {@link ConstraintSlot#internalSlot()}、其它槽位取
+ * {@link ConstraintSlot#wire()}）。禁止项的行文本由
  * {@link ConstraintSlot#forbidText(String)} 渲染成「不要使用表格」，避免回答提示词把内部槽位名当成正向要求。
  * <p>
  * 合并器永远不产出 {@code UNRESOLVED}：op 表达不了这个状态，指代不明的消息由模型给出空数组或 {@code NOOP}，
@@ -255,7 +258,7 @@ public final class ConstraintOpMerger {
             return false;
         }
         // 取值不同且不算互斥时两条并存：'不要中文' 不撤 '英文'，反过来也一样。
-        if (coexists(previous, value, forbid)) {
+        if (coexists(previous, slot, value, forbid)) {
             return false;
         }
         return previous.scopeKey().equals(scopeKey);
@@ -264,12 +267,18 @@ public final class ConstraintOpMerger {
     /**
      * 同槽位两行能否并存。
      * <ul>
+     *   <li>格式槽位：单值维度，同槽位的两行永远互斥（后者替换前者），与取值的写法无关——
+     *       {@code 简短} 与 {@code 详细} 是同一维度的两个取向，
+     *       {@code 表格} 与 {@code format.table} 是同一目标的两种写法。</li>
      *   <li>同极性：只有否定类且取值不同才并存（{@code "不要中文"} 不撤 {@code "不要英文"}）。</li>
      *   <li>异极性：REQUIRE 与 FORBID 指向同一取值（或一方未限定取值）时互斥，后写的替换先写的；
      *       取值不同的语言要求可以并存（{@code "不要中文"} 不撤 {@code "用英文"}）。</li>
      * </ul>
      */
-    private static boolean coexists(Active previous, String value, boolean forbid) {
+    private static boolean coexists(Active previous, ConstraintSlot slot, String value, boolean forbid) {
+        if ("FORMAT".equals(slot.dbKind())) {
+            return false;
+        }
         if (previous.forbid() == forbid) {
             return forbid && previous.value() != null && value != null && !previous.value().equals(value);
         }
@@ -338,16 +347,16 @@ public final class ConstraintOpMerger {
     }
 
     /**
-     * 取值缺失时按槽位补：格式槽位的取值就是槽位本身（便于同槽同值判定）；
+     * 取值优先用模型给的，缺失时按槽位补：格式槽位补内部槽位名（{@code format.table}），
      * 语言与否定没有取值就不补，交给调用点决定丢弃还是单独成行。
+     * <p>
+     * 取值同时是落库的 {@code constraint_text}，所以不能无条件换成内部槽位名：
+     * 同一格式槽位里的不同取值（{@code 简短} vs {@code 详细}）是互斥的两个取向，
+     * 归一成槽位名会把「改口」误判成「重申」，还会让提示词里出现 {@code format.length.detail}。
      */
     private static String valueOf(ConstraintSlot slot, ConstraintOp op) {
         if (slot == null) {
             return null;
-        }
-        // 格式槽位是单值维度：取值统一用内部槽位，模型偶尔写成「表格」也不会让 REQUIRE/FORBID 判成两个取值。
-        if ("FORMAT".equals(slot.dbKind())) {
-            return slot.internalSlot();
         }
         if (op.value() != null) {
             return op.value();

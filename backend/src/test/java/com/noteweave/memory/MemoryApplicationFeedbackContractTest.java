@@ -47,10 +47,14 @@ class MemoryApplicationFeedbackContractTest {
         @Primary
         MemoryExtractionModelStub memoryExtractionModelStub() {
             Map<String, String> outputs = new LinkedHashMap<>();
+            // 槽位只由模型决定（旧的关键词推断已移除）：桩必须显式给出 slot，
+            // 否则会落到 category 的兜底槽位，准备不出 answer.length / terminology.term 两条记忆。
             outputs.put("记住：以后回答要简短",
-                    "[{\"statement\":\"以后回答要简短\",\"category\":\"style\",\"explicit\":true}]");
+                    "[{\"statement\":\"以后回答要简短\",\"category\":\"style\",\"explicit\":true,"
+                            + "\"slot\":\"answer.length\",\"value\":\"简短\",\"polarity\":\"REQUIRE\"}]");
             outputs.put("记住：术语统一称为缓存",
-                    "[{\"statement\":\"术语统一称为缓存\",\"category\":\"terminology\",\"explicit\":true}]");
+                    "[{\"statement\":\"术语统一称为缓存\",\"category\":\"terminology\",\"explicit\":true,"
+                            + "\"slot\":\"terminology.term\",\"value\":\"缓存\",\"polarity\":\"REQUIRE\"}]");
             // 负面反馈由模型的 feedback 字段决定，不再看关键词
             outputs.put("太长了",
                     "[{\"statement\":\"太长了\",\"category\":\"style\",\"explicit\":false,\"feedback\":true}]");

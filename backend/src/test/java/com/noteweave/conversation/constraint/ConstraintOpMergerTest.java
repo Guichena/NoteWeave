@@ -81,6 +81,43 @@ class ConstraintOpMergerTest {
     }
 
     @Test
+    void differentValuesOfTheSameFormatSlotReplaceEachOtherAndKeepTheModelText() {
+        // 「简短」→「详细」是同一格式槽位（format.length.detail）的两个取向：
+        // 后说的顶掉先说的，但两行的 constraint_text 必须保留模型给的取值，不能写成内部槽位名。
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.DETAIL, "简短", ConstraintScope.CONVERSATION)),
+                step("m3", 3, add(ConstraintSlot.DETAIL, "详细", ConstraintScope.CONVERSATION))));
+
+        ConversationConstraintProjectorV2.Constraint brief = row(rows, ConstraintIds.of("m1", "detail", 0));
+        ConversationConstraintProjectorV2.Constraint detailed = row(rows, ConstraintIds.of("m3", "detail", 0));
+        assertThat(brief.status()).isEqualTo("REVOKED");
+        assertThat(brief.invalidAfterSeq()).isEqualTo(3);
+        assertThat(brief.supersededBy()).isEqualTo(detailed.id());
+        assertThat(brief.text()).isEqualTo("简短");
+        assertThat(brief.kind()).isEqualTo("FORMAT");
+        assertThat(detailed.status()).isEqualTo("ACTIVE");
+        assertThat(detailed.text()).isEqualTo("详细");
+    }
+
+    @Test
+    void forbiddenTableReplacesThePositiveRowEvenWhenTheValuesAreSpelledDifferently() {
+        // 格式槽位是单值维度：取值写法不同（「表格」vs format.table）也指向同一目标，
+        // 所以 REQUIRE 与 FORBID 照样互斥，不会留下两条互相矛盾的要求。
+        List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
+                step("m1", 1, add(ConstraintSlot.TABLE, "表格", ConstraintScope.CONVERSATION)),
+                step("m2", 2, add(ConstraintSlot.TABLE, "format.table", ConstraintScope.CONVERSATION,
+                        ConstraintPolarity.FORBID))));
+
+        ConversationConstraintProjectorV2.Constraint positive = row(rows, ConstraintIds.of("m1", "table", 0));
+        ConversationConstraintProjectorV2.Constraint forbid = row(rows, ConstraintIds.of("m2", "table", 0));
+        assertThat(positive.status()).isEqualTo("REVOKED");
+        assertThat(positive.supersededBy()).isEqualTo(forbid.id());
+        assertThat(positive.text()).isEqualTo("表格");
+        assertThat(forbid.status()).isEqualTo("ACTIVE");
+        assertThat(forbid.text()).isEqualTo("不要使用表格");
+    }
+
+    @Test
     void differentSlotsCoexistWhileSameSlotValuesAreExclusive() {
         List<ConversationConstraintProjectorV2.Constraint> rows = merger.fold(List.of(
                 step("m1", 1, add(ConstraintSlot.TABLE, null, ConstraintScope.CURRENT_TOPIC),
