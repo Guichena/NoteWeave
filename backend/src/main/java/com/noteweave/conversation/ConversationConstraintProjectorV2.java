@@ -8,7 +8,7 @@ import java.util.List;
 
 /** Shadow extraction of explicit user instructions; no assistant text becomes a constraint. */
 public final class ConversationConstraintProjectorV2 {
-    public static final String RULE_VERSION = "constraint-projector-v2-a6";
+    public static final String RULE_VERSION = "constraint-projector-v2-a7";
     /** 语言只有一个语义槽位：一次回答只用一种语言，"用英文"和"用中文"互斥。 */
     static final String SLOT_LANGUAGE = "answer.language";
     /**
@@ -65,7 +65,8 @@ public final class ConversationConstraintProjectorV2 {
      * "不是""不用""不要"不在这里：它们单独出现只是语气（"这不是重点""不用了"），
      * 出现在别的分句里也不修饰本条线索（"这个不要，用中文解释一下"），整句匹配会把
      * "以后用英文"降级成当前话题；只有构成约束形态的否定（"不用英文""不要用英文"）
-     * 才算更正，见 {@link #isCorrection}。
+     * 才算更正，见 {@link #isCorrection}。否定和正向线索同时出现时（"不要用英文，用中文写"），
+     * 只要被否定的目标与本条投影出的正向约束同槽，也说明用户在改口。
      */
     private static final java.util.regex.Pattern EXPLICIT_CORRECTION = java.util.regex.Pattern.compile(
             "更正|纠正|改正|改用|改成|改为|换用|换成|换为|别再|禁止|避免|取消|去掉|撤销|替换");
@@ -209,10 +210,16 @@ public final class ConversationConstraintProjectorV2 {
      * （"不用英文""不是用表格"）也算更正；单独的语气词（"这不是重点""不用了"）不算，
      * 否则一句口语就能把会话级偏好降级成当前话题。"不要"同样不进整句词表：只有它紧贴目标、
      * 让本条消息本身成为否定约束时才算更正，"这个不要，用中文解释一下"里的"不要"在另一个分句。
+     * 否定和正向线索并存时按槽位判断："不要用英文，用中文写"里的否定指向语言槽，
+     * 与本条的正向语言约束同槽，所以是对会话级语言的显式更正；
+     * 而"不要用表格，用中文写"里的否定指向格式槽，不动会话级语言偏好，
+     * "这个不要，用中文解释一下"里的否定没有槽位目标，两句都不算更正。
      */
     private static boolean isCorrection(String text, Detected detected) {
         if (EXPLICIT_CORRECTION.matcher(text).find()) return true;
-        return detected.forbid() && detected.value() != null;
+        if (detected.forbid() && detected.value() != null) return true;
+        Cue negatedCue = firstNegatedCue(text);
+        return negatedCue != null && negatedCue.slot().equals(detected.slot());
     }
 
     /**

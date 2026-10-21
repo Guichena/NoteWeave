@@ -551,6 +551,49 @@ class ConversationConstraintProjectorV2Test {
     }
 
     @Test
+    void constraintShapedNegationOfTheProjectedSlotCountsAsCorrection() {
+        // 评审回归：「以后用英文」之后说「不要用英文，用中文写」。同一条消息里的否定指向语言槽，
+        // 与本条投影出的正向语言约束同槽，说明用户在改口，会话级英文必须撤回
+        for (String text : List.of("不要用英文，用中文写。", "别用英文，用中文写。", "不用英文，用中文写。")) {
+            List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                    message("e1", 1, "USER", "以后用英文。"),
+                    message("e2", 2, "USER", text)));
+
+            assertThat(constraints).as(text).hasSize(2);
+            assertThat(constraints.get(0).scope()).as(text).isEqualTo("CONVERSATION");
+            assertThat(constraints.get(0).text()).as(text).isEqualTo("英文");
+            assertThat(constraints.get(0).status()).as(text).isEqualTo("REVOKED");
+            assertThat(constraints.get(0).invalidAfterSeq()).as(text).isEqualTo(2);
+            assertThat(constraints.get(0).supersededBy()).as(text).isEqualTo(constraints.get(1).id());
+            assertThat(constraints.get(1).kind()).as(text).isEqualTo("LANGUAGE");
+            assertThat(constraints.get(1).text()).as(text).isEqualTo("中文");
+            assertThat(constraints.get(1).scope()).as(text).isEqualTo("CURRENT_TOPIC");
+            assertThat(constraints.get(1).status()).as(text).isEqualTo("ACTIVE");
+        }
+    }
+
+    @Test
+    void negationWithoutSlotTargetOrOfAnotherSlotIsNotACorrection() {
+        // 只有同槽的约束形态否定才算更正：「这个不要，用中文解释一下」「这不是重点，用中文解释一下」
+        // 里的否定没有槽位目标，「不要用表格，用中文写」里的否定指向格式槽，都不撤回会话级英文
+        for (String text : List.of("这个不要，用中文解释一下。", "这不是重点，用中文解释一下。",
+                "不要用表格，用中文写。")) {
+            List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
+                    message("f1", 1, "USER", "以后用英文。"),
+                    message("f2", 2, "USER", text)));
+
+            assertThat(constraints).as(text).hasSize(2);
+            assertThat(constraints.get(0).scope()).as(text).isEqualTo("CONVERSATION");
+            assertThat(constraints.get(0).status()).as(text).isEqualTo("ACTIVE");
+            assertThat(constraints.get(0).invalidAfterSeq()).as(text).isNull();
+            assertThat(constraints.get(0).supersededBy()).as(text).isNull();
+            assertThat(constraints.get(1).kind()).as(text).isEqualTo("LANGUAGE");
+            assertThat(constraints.get(1).text()).as(text).isEqualTo("中文");
+            assertThat(constraints.get(1).status()).as(text).isEqualTo("ACTIVE");
+        }
+    }
+
+    @Test
     void buXuIsANegationPrefixSoTheCueIsNotReadAsAPositiveFormat() {
         // 「不许」也是否定词：不能把"不许用表格"读成正向的 format.table
         List<ConversationConstraintProjectorV2.Constraint> constraints = projector.project(List.of(
