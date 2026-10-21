@@ -7,69 +7,103 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-/** 槽位推断：长度词表覆盖详略、字数、篇幅和长一点/短一点这类说法。 */
+/**
+ * 槽位只由模型输出决定：这里只校验「模型给的槽位被规范化保留」和「模型没给合法槽位时按模型给的 category 兜底」。
+ * 语句里的关键词（中文、表格、简短……）不再参与槽位推断，相关断言已随关键词推断一起删除。
+ */
 class MemorySlotsTest {
 
-    @ParameterizedTest(name = "「{0}」归入长度槽")
+    @ParameterizedTest(name = "模型给出的「{0}」原样保留")
     @ValueSource(strings = {
-            "回答别太啰嗦",
-            "请精简回答",
-            "希望回答更详细",
-            "控制字数在三百字以内",
-            "篇幅尽量收窄",
-            "回答再长一点",
-            "回答短一点"
+            "answer.language",
+            "answer.length",
+            "answer.style",
+            "answer.constraint",
+            "format.structure",
+            "format.table",
+            "terminology.term",
+            "interaction.style"
     })
-    void lengthVocabularyMapsToLengthSlot(String statement) {
-        MemorySlots.Assignment assignment = complete(statement);
-
-        assertThat(assignment.slot()).isEqualTo("answer.length");
-    }
-
-    @ParameterizedTest(name = "「{0}」仍归入 {1}")
-    @CsvSource({
-            "回答简短一些, answer.length",
-            "太长了, answer.length",
-            "回答用简洁的段落, answer.length",
-            "用户可能偏好更长的解释, answer.style",
-            "回答语气正式一些, answer.style",
-            "以后回答先给结论再展开, format.structure",
-            "回答使用英文, answer.language",
-            "用表格对比不同方案, format.table",
-            "以后不要使用表情符号, answer.constraint",
-            "以后统一称为检索增强生成, terminology.term",
-            "回答前先追问确认需求, interaction.style"
-    })
-    void slotInferenceKeepsExistingVocabulary(String statement, String expectedSlot) {
-        assertThat(complete(statement).slot()).isEqualTo(expectedSlot);
-    }
-
-    @Test
-    void languageAndLengthPriorityIsStable() {
-        // 语言词先于长度词判定：同时出现时仍归入语言槽
-        assertThat(complete("用英文简短回答").slot()).isEqualTo("answer.language");
-    }
-
-    @Test
-    void lengthWordsDoNotChangeCategory() {
-        // 只影响槽位推断，类别判定不变：啰嗦属于表达风格信号
-        assertThat(MemorySlots.categoryOf("回答别太啰嗦")).isEqualTo("forbidden");
-        assertThat(MemorySlots.categoryOf("希望回答更详细")).isEqualTo("style");
-    }
-
-    @Test
-    void explicitSlotStillWinsOverLengthInference() {
+    void modelProvidedSlotIsKeptAsIs(String slot) {
         MemorySlots.Assignment assignment = MemorySlots.complete(
-                MemorySlots.categoryOf("希望回答更详细"), "希望回答更详细", "PREFERENCE",
-                "answer.style", "详细一点", "REQUIRE");
+                "style", "回答语气正式一些", "PREFERENCE", slot, "正式", "REQUIRE");
 
-        assertThat(assignment.slot()).isEqualTo("answer.style");
-        assertThat(assignment.value()).isEqualTo("详细一点");
-        assertThat(assignment.polarity()).isEqualTo("REQUIRE");
+        assertThat(assignment.slot()).isEqualTo(slot);
     }
 
-    private static MemorySlots.Assignment complete(String statement) {
-        return MemorySlots.complete(
-                MemorySlots.categoryOf(statement), statement, "PREFERENCE", null, null, null);
+    @ParameterizedTest(name = "模型给出的「{0}」规范化为「{1}」")
+    @CsvSource({
+            "Answer.Length, answer.length",
+            "' Format.Table ', format.table",
+            "TERMINOLOGY.TERM, terminology.term"
+    })
+    void modelSlotIsNormalized(String slot, String expectedSlot) {
+        assertThat(MemorySlots.complete("style", "回答语气正式一些", "PREFERENCE", slot, "正式", "REQUIRE").slot())
+                .isEqualTo(expectedSlot);
+    }
+
+    @Test
+    void slotKeywordsInTheStatementNoLongerDecideTheSlot() {
+        // 「中文」「表格」「简短」以前会各自推出 answer.language / format.table / answer.length
+        assertThat(complete("style", "以后回答都用中文").slot()).isEqualTo("answer.style");
+        assertThat(complete("style", "以后用表格对比不同方案").slot()).isEqualTo("answer.style");
+        assertThat(complete("style", "回答简短一点").slot()).isEqualTo("answer.style");
+        // 模型给的槽位与语句措辞冲突时，以模型为准
+        assertThat(MemorySlots.complete("style", "以后回答都用中文", "PREFERENCE",
+                "answer.length", "不要太长", "REQUIRE").slot()).isEqualTo("answer.length");
+    }
+
+    @Test
+    void missingOrInvalidSlotFallsBackToTheModelCategory() {
+        assertThat(complete("style", "以后回答都用中文").slot()).isEqualTo("answer.style");
+        assertThat(complete("structure", "以后回答先给结论再展开").slot()).isEqualTo("format.structure");
+        assertThat(complete("forbidden", "以后不要使用表情符号").slot()).isEqualTo("answer.constraint");
+        assertThat(complete("terminology", "以后统一称为检索增强生成").slot()).isEqualTo("terminology.term");
+        assertThat(complete("interaction", "回答前先追问确认需求").slot()).isEqualTo("interaction.style");
+        // 不合规范的值当作没给
+        assertThat(complete("structure", "以后回答先给结论再展开", "不是槽位").slot())
+                .isEqualTo("format.structure");
+        assertThat(complete("forbidden", "以后不要使用表情符号", "answer").slot())
+                .isEqualTo("answer.constraint");
+    }
+
+    @Test
+    void everyAllowedSlotIsWellFormedAndCoversTheCategoryFallback() {
+        assertThat(MemorySlots.ALLOWED_SLOTS).hasSize(8).doesNotHaveDuplicates();
+        for (String slot : MemorySlots.ALLOWED_SLOTS) {
+            assertThat(MemorySlots.normalizeSlot(slot)).isEqualTo(slot);
+        }
+        // 兜底槽位也在枚举内，避免模型留空时写出枚举外的槽位
+        assertThat(MemorySlots.ALLOWED_SLOTS).contains(
+                MemorySlots.slotForCategory("style"),
+                MemorySlots.slotForCategory("forbidden"),
+                MemorySlots.slotForCategory("terminology"),
+                MemorySlots.slotForCategory("structure"),
+                MemorySlots.slotForCategory("interaction"));
+    }
+
+    @Test
+    void valueAndPolarityStillFollowTheExistingRules() {
+        MemorySlots.Assignment assignment = MemorySlots.complete(
+                "forbidden", "以后不要使用表情符号", "PREFERENCE", "answer.constraint", null, null);
+
+        assertThat(assignment.value()).isEqualTo("以后不要使用表情符号");
+        assertThat(assignment.polarity()).isEqualTo("FORBID");
+    }
+
+    @Test
+    void publicSlotStillHidesInternalKeys() {
+        assertThat(MemorySlots.publicSlot(null)).isEqualTo("unknown");
+        assertThat(MemorySlots.publicSlot("legacy:answer.length")).isEqualTo("unknown");
+        assertThat(MemorySlots.publicSlot("Answer.Length")).isEqualTo("answer.length");
+        assertThat(MemorySlots.publicSlot("不是槽位")).isEqualTo("unknown");
+    }
+
+    private static MemorySlots.Assignment complete(String category, String statement) {
+        return MemorySlots.complete(category, statement, "PREFERENCE", null, null, null);
+    }
+
+    private static MemorySlots.Assignment complete(String category, String statement, String slot) {
+        return MemorySlots.complete(category, statement, "PREFERENCE", slot, null, null);
     }
 }

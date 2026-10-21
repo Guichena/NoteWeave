@@ -47,9 +47,11 @@ class MemoryConversationExtractionContractTest {
         MemoryExtractionModelStub memoryExtractionModelStub() {
             Map<String, String> outputs = new LinkedHashMap<>();
             outputs.put("记住：以后回答先给结论再展开",
-                    "[{\"statement\":\"以后回答先给结论再展开\",\"category\":\"structure\",\"explicit\":true}]");
+                    "[{\"statement\":\"以后回答先给结论再展开\",\"category\":\"structure\",\"explicit\":true,"
+                            + "\"slot\":\"format.structure\"}]");
             outputs.put("以后不要使用表情符号",
-                    "[{\"statement\":\"以后不要使用表情符号\",\"category\":\"forbidden\",\"explicit\":true}]");
+                    "[{\"statement\":\"以后不要使用表情符号\",\"category\":\"forbidden\",\"explicit\":true,"
+                            + "\"slot\":\"answer.constraint\"}]");
             return new MemoryExtractionModelStub(outputs);
         }
     }

@@ -25,7 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 从对话中自动提取长期记忆候选。
  * <p>
  * 用户消息在长度范围内都会进入异步任务。任务里先做一次短分类，只有包含回答方式要求或反馈的消息才完整抽取。
- * 一条偏好是否算显式记忆（explicit）、是否算对上一条回答的负面反馈（feedback），只由模型输出字段决定，
+ * 一条偏好的槽位、是否算显式记忆（explicit）、是否算对上一条回答的负面反馈（feedback），只由模型输出字段决定，
  * 不再有关键词正则兜底：模型调用失败、超时或输出不是合法 JSON 时重试一次，仍失败则本轮不抽取、记日志，
  * 并把任务标成可重试，等既有的重驱入口再跑一次。
  * 与已有记忆等价的信号不再新建一条，而是按会话累加证据。
@@ -59,6 +59,10 @@ public class MemoryConversationExtractionService {
     static final String RETRY_PHASE = "MEMORY_EXTRACTION_LLM_UNAVAILABLE";
     private static final Set<String> CATEGORIES = Set.of("style", "structure", "terminology", "forbidden", "interaction");
 
+    /**
+     * 抽取提示词。槽位枚举直接取自 {@link MemorySlots#ALLOWED_SLOTS}；
+     * 文本块里只有 slot 那一行的 %s 是格式占位符。
+     */
     private static final String SYSTEM_PROMPT = """
             你从用户的一条消息中找出用户希望助手长期遵守的表达偏好。
             只提取关于回答方式的偏好：语言、语气、长度、结构、格式、术语叫法、需要避免的写法、交互方式。
@@ -69,11 +73,12 @@ public class MemoryConversationExtractionService {
             - statement：用一句祈使句复述这条偏好，不超过 60 字，使用用户的语言；
             - category：style、structure、terminology、forbidden、interaction 之一；
             - explicit：用户是否明确要求长期遵守（例如使用了以后、每次、记住、总是等说法），true 或 false；
-            - slot：槽位，形如 answer.language、answer.length、answer.style、answer.constraint、format.structure、format.table、terminology.term、interaction.style，无法归类时留空；
+            - slot：槽位，只能取以下之一：%s；无法归类时用 answer.style；
             - value：槽位取值，不超过 40 字；
             - polarity：REQUIRE 或 FORBID，用户要求避免或禁止时用 FORBID，否则 REQUIRE；
             - feedback：用户是在评价已有回答（例如太长了、看不懂、别用英文）时为 true，否则 false。
-            最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。""";
+            最多 3 项。没有符合条件的偏好时输出 []。只输出 JSON，不要解释。"""
+            .formatted(String.join("、", MemorySlots.ALLOWED_SLOTS));
 
     private static final Logger log = LoggerFactory.getLogger(MemoryConversationExtractionService.class);
 
@@ -318,7 +323,8 @@ public class MemoryConversationExtractionService {
                 preferences.add(new Preference(bound(statement, MAX_STATEMENT_CHARS),
                         CATEGORIES.contains(category) ? category : "style",
                         node.path("explicit").asBoolean(false),
-                        node.path("slot").asText(null),
+                        // 槽位只认模型给的；不合法就留空，由 MemorySlots 按模型给的 category 兜底
+                        MemorySlots.normalizeSlot(node.path("slot").asText(null)),
                         node.path("value").asText(null),
                         node.path("polarity").asText(null),
                         node.path("feedback").asBoolean(false)));

@@ -184,6 +184,39 @@ class MemoryConversationExtractionModelOnlyTest {
     }
 
     @Test
+    void modelSlotDecidesTheSlotAndThePromptListsTheEnum() {
+        ScriptedClient client = new ScriptedClient("yes",
+                "[{\"statement\":\"以后回答都用中文\",\"category\":\"style\",\"explicit\":true,"
+                        + "\"slot\":\"format.table\",\"value\":\"表格\",\"polarity\":\"REQUIRE\"}]");
+
+        MemoryConversationExtractionService.Extraction extraction =
+                service(client).extractPreferences("以后回答都用中文", null);
+
+        // 槽位以模型输出为准，即使语句里有「中文」这类旧词表也不再改写
+        assertThat(extraction.preferences()).singleElement()
+                .satisfies(preference -> assertThat(preference.assignment().slot()).isEqualTo("format.table"));
+        // 提示词里给出完整枚举，模型不需要猜槽位名
+        assertThat(client.systemPrompts).singleElement().satisfies(prompt ->
+                assertThat(MemorySlots.ALLOWED_SLOTS).allSatisfy(slot -> assertThat(prompt).contains(slot)));
+    }
+
+    @Test
+    void invalidModelSlotFallsBackToTheModelCategory() {
+        ScriptedClient missing = new ScriptedClient("yes",
+                "[{\"statement\":\"以后回答都用中文\",\"category\":\"style\",\"explicit\":true}]");
+        assertThat(service(missing).extractPreferences("以后回答都用中文", null).preferences())
+                .singleElement()
+                .satisfies(preference -> assertThat(preference.assignment().slot()).isEqualTo("answer.style"));
+
+        ScriptedClient invalid = new ScriptedClient("yes",
+                "[{\"statement\":\"以后回答先给结论\",\"category\":\"structure\",\"explicit\":true,"
+                        + "\"slot\":\"不是槽位\"}]");
+        assertThat(service(invalid).extractPreferences("以后回答先给结论", null).preferences())
+                .singleElement()
+                .satisfies(preference -> assertThat(preference.assignment().slot()).isEqualTo("format.structure"));
+    }
+
+    @Test
     void modelFailureLeavesTheTaskRetryableAndSkipsFollowUpFeedback() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         TaskService taskService = mock(TaskService.class);
@@ -237,6 +270,7 @@ class MemoryConversationExtractionModelOnlyTest {
         private final String classifierAnswer;
         private final Deque<String> extractionOutputs = new ArrayDeque<>();
         private final List<String> prompts = new ArrayList<>();
+        private final List<String> systemPrompts = new ArrayList<>();
         private int extractionCalls;
         private boolean enabled = true;
 
@@ -253,6 +287,7 @@ class MemoryConversationExtractionModelOnlyTest {
             }
             extractionCalls++;
             prompts.add(userPrompt);
+            systemPrompts.add(systemPrompt);
             String output = extractionOutputs.isEmpty()
                     ? MemoryExtractionModelStub.NO_PREFERENCE : extractionOutputs.removeFirst();
             if (THROW.equals(output)) {
