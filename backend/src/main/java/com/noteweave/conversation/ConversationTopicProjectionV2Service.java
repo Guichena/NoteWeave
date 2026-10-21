@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -24,6 +25,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** Shadow C1 projection. Published v1 context selection remains unchanged. */
@@ -53,6 +56,9 @@ public class ConversationTopicProjectionV2Service {
         this.reviews = reviews;
         this.constraintProjection = constraintProjection;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        // 切分落库与乐观应用都必须是独立事务：默认的 REQUIRED 一旦碰上带事务的调用方，
+        // 就会静默把这两段（以及中间的模型调用）并回调用方的事务里，退化成「长事务持会话行锁」。
+        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public TopicSegmenterV2.Projection refresh(String workspaceId, String conversationId) {
@@ -69,13 +75,37 @@ public class ConversationTopicProjectionV2Service {
      * 两段事务：切分与落库在会话行锁里完成并提交，约束抽取在事务外只处理新增消息，
      * 之后用短事务 + 乐观检查（watermark/lock_version 未变）应用 ops。
      * 这样模型调用既不占会话行锁，也不在任何数据库事务里。
+     * <p>
+     * 两段事务固定用 {@code PROPAGATION_REQUIRES_NEW}（见 {@link #independentTransaction}），
+     * 调用方自带事务也不会把它们并进去。
      */
     private TopicSegmenterV2.Projection refreshAtCutoff(String workspaceId,
                                                         String conversationId, Integer cutoffSeq) {
-        Segmentation segmentation = Objects.requireNonNull(transactionTemplate.execute(
-                status -> segment(workspaceId, conversationId, cutoffSeq)));
+        Segmentation segmentation = Objects.requireNonNull(independentTransaction(conversationId,
+                () -> segment(workspaceId, conversationId, cutoffSeq)));
         applyConstraints(segmentation);
         return segmentation.projection();
+    }
+
+    /**
+     * 一段必须独立提交的写。
+     * <p>
+     * 正常走 {@code REQUIRES_NEW}：调用方即使带着事务，写也不会并进去，模型调用更不会被卷进事务。
+     * <p>
+     * 唯一的例外是「调用方已经在事务里，而那个事务正握着会话行锁」。这时另起事务会在第二条连接上
+     * 等同一把 {@code for update} 行锁，直到锁超时（自锁等待，MySQL 默认 50s），比并进调用方事务
+     * 还糟。当前只有研究路径是这个情形（{@code ContextV2ShadowSnapshotService.compileResearch}：
+     * turn 事务里先 {@code update conversation} 分配 seq，再进到这里），因此这一种情况仍加入外层
+     * 事务并打 WARN——研究路径的模型调用依旧跑在外层事务内，要彻底修好得把 compileResearch 移出
+     * turn 事务（本批不动研究路径）。
+     */
+    private <T> T independentTransaction(String conversationId, Supplier<T> body) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            log.warn("切分/约束落库退化为加入调用方事务（未走 REQUIRES_NEW，避免等外层会话行锁）: "
+                    + "conversationId={}", conversationId);
+            return body.get();
+        }
+        return transactionTemplate.execute(status -> body.get());
     }
 
     private Segmentation segment(String workspaceId, String conversationId, Integer cutoffSeq) {
@@ -206,9 +236,10 @@ public class ConversationTopicProjectionV2Service {
         List<ConstraintOpMerger.Step> merged = new ArrayList<>(segmentation.constraintState().steps());
         merged.addAll(extraction.steps());
         String stepsJson = writeSteps(merged);
-        Boolean applied = transactionTemplate.execute(status -> applyConstraintsInTransaction(
-                segmentation.workspaceId(), segmentation.conversationId(),
-                segmentation.constraintState(), extraction, stepsJson));
+        Boolean applied = independentTransaction(segmentation.conversationId(),
+                () -> applyConstraintsInTransaction(segmentation.workspaceId(),
+                        segmentation.conversationId(), segmentation.constraintState(),
+                        extraction, stepsJson));
         if (!Boolean.TRUE.equals(applied)) {
             // 抽取期间另一个 refresh 先写成功：放弃这次结果，下一轮从它推进后的 watermark 重抽。
             log.warn("约束抽取结果被并发刷新覆盖，本轮放弃: conversationId={}, seq={}",

@@ -21,14 +21,19 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 「只抽新增消息 + 模型调用在事务外 + 短事务乐观检查」的接线测试。
  * <p>
  * 用内存 H2 起最小的几张表直接构造服务，不启动 Spring 上下文，模型用 stub。
  * 覆盖审查阻断项里的三点：重复调用不再重抽旧消息、模型调用期间没有活动事务、
- * 抽取期间状态被并发改写时一条约束都不写且下次重抽。
+ * 抽取期间状态被并发改写时一条约束都不写且下次重抽；另外钉住两段事务的 REQUIRES_NEW
+ * 传播行为，以及调用方自带事务（研究路径）时不再另开连接等外层行锁。
  */
 class ConversationTopicProjectionV2ConstraintIncrementalTest {
 
@@ -48,13 +53,16 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         jdbc = new JdbcTemplate(dataSource);
         createSchema();
         extractor = new StubExtractor();
+        topics = projectionService(new DataSourceTransactionManager(dataSource));
+        jdbc.update("insert into conversation(id, workspace_id) values (?, ?)", CONVERSATION, WORKSPACE);
+    }
+
+    private ConversationTopicProjectionV2Service projectionService(PlatformTransactionManager manager) {
         ConversationConstraintProjectionV2Service constraintProjection =
                 new ConversationConstraintProjectionV2Service(extractor, new ConstraintOpMerger(0.55));
-        topics = new ConversationTopicProjectionV2Service(jdbc,
+        return new ConversationTopicProjectionV2Service(jdbc,
                 mock(ConversationTopicSummaryV2Service.class), null,
-                mock(TopicBoundaryReviewService.class), constraintProjection,
-                new DataSourceTransactionManager(dataSource));
-        jdbc.update("insert into conversation(id, workspace_id) values (?, ?)", CONVERSATION, WORKSPACE);
+                mock(TopicBoundaryReviewService.class), constraintProjection, manager);
     }
 
     @Test
@@ -87,6 +95,42 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
         // 抽取阶段不持有切分会话行锁的那个事务。
         assertThat(extractor.transactionActive).containsExactly(false, false);
         assertThat(extractor.messageIds).hasSize(2);
+    }
+
+    @Test
+    void segmentationAndApplyOpenIndependentTransactions() {
+        userMessage("m1", 1, "以后都用表格。");
+        RecordingTransactionManager recorder = new RecordingTransactionManager(jdbc.getDataSource());
+
+        projectionService(recorder).refresh(WORKSPACE, CONVERSATION);
+
+        // 切分落库与乐观应用都显式声明 REQUIRES_NEW：即使将来有调用方带事务，
+        // 这两段也不会被并进去，模型调用更不会被卷进调用方的事务。
+        assertThat(recorder.propagations).containsExactly(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW,
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        assertThat(extractor.transactionActive).containsExactly(false);
+        assertThat(processedSeq()).isEqualTo(1);
+    }
+
+    @Test
+    void callerHoldingTheConversationLockIsNotForcedIntoASecondConnection() {
+        userMessage("m1", 1, "以后都用表格。");
+        RecordingTransactionManager recorder = new RecordingTransactionManager(jdbc.getDataSource());
+        ConversationTopicProjectionV2Service recording = projectionService(recorder);
+
+        // 模拟研究路径：外层 turn 事务先 update conversation 分配 seq，再在事务里刷新切分。
+        new TransactionTemplate(recorder).executeWithoutResult(status -> {
+            jdbc.update("update conversation set workspace_id = workspace_id where id = ?", CONVERSATION);
+            recording.refresh(WORKSPACE, CONVERSATION);
+        });
+
+        // 外层事务已握着会话行锁：这里不再开第二条连接（否则要到锁超时才失败），
+        // 代价是模型调用仍在外层事务内——研究路径的已知残留，本批不改研究路径。
+        assertThat(recorder.propagations).containsExactly(TransactionDefinition.PROPAGATION_REQUIRED);
+        assertThat(extractor.transactionActive).containsExactly(true);
+        assertThat(processedSeq()).isEqualTo(1);
+        assertThat(constraintIds()).hasSize(1);
     }
 
     @Test
@@ -301,6 +345,34 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
                     updated_at timestamp not null default current_timestamp
                 )
                 """);
+    }
+
+    /** 记录每次开事务时用的传播行为，用来验证 REQUIRES_NEW 与「调用方带事务」两种情形。 */
+    private static final class RecordingTransactionManager implements PlatformTransactionManager {
+
+        private final PlatformTransactionManager delegate;
+        final List<Integer> propagations = new ArrayList<>();
+
+        RecordingTransactionManager(javax.sql.DataSource dataSource) {
+            this.delegate = new DataSourceTransactionManager(dataSource);
+        }
+
+        @Override
+        public TransactionStatus getTransaction(TransactionDefinition definition) {
+            propagations.add(definition == null
+                    ? TransactionDefinition.PROPAGATION_REQUIRED : definition.getPropagationBehavior());
+            return delegate.getTransaction(definition);
+        }
+
+        @Override
+        public void commit(TransactionStatus status) {
+            delegate.commit(status);
+        }
+
+        @Override
+        public void rollback(TransactionStatus status) {
+            delegate.rollback(status);
+        }
     }
 
     /** 脚本化抽取器：记录调用顺序与调用时是否有活动事务，返回值可按用例替换。 */
