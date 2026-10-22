@@ -1,0 +1,8 @@
+d74a4b1c 2026-10-10T00:27:09-07:00 ci: 冒烟环境关闭向量化、重排与检索投影，验证 Provider 不可用时的失败关闭
+45c80bbd 2026-10-10T00:14:16-07:00 ci: 冒烟失败时输出任务错误与服务日志
+fac84dc2 2026-10-09T23:33:47-07:00 ci: 修复后端、产物 Worker 与 Compose 冒烟三个失败任务
+79aa3e4c 2026-10-09T00:46:04-07:00 feat(frontend): 按简历五项能力重做工作台界面，研究、资料、产物、记忆页面全面更新
+3ab20d53 2026-09-26T10:46:25+08:00 feat: consolidate NoteWeave v2 research and workbench updates
+fd60682a 2026-08-05T18:03:43+08:00 feat: complete NoteWeave v2 runtime hardening
+3b743598 2026-07-19T00:31:07+08:00 chore: checkpoint current NoteWeave v2 rebuild
+307138bc 2026-07-05T15:34:06+08:00 Implement NoteWeave v2 memory and agent foundations

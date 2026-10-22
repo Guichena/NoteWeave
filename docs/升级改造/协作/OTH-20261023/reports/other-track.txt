@@ -1,0 +1,184 @@
+NoteWeave AI 接手说明
+统计日期：2026-10-22
+
+当前材料用于统计与分工。收到用户明确的实施指令后，再开展代码改造；阅读本文件不代表可以自动部署、开启开关或调用付费模型。
+
+一、共同基线
+统一基线分支：codex/instabox-integration-20261022。
+已部署产品代码：083b299ffd15984d1e15afc68dd1e684c742de89；后续已有文档提交。
+修复分支 merge/integration 已合入，不能重新整批应用相同修复。
+本机整合工作区：C:/Users/20412/.codex/worktrees/instabox-integration/NoteWeave。
+原工作区 D:/java-projects/NoteWeave 保留旧分支和未提交内容，不能误当作部署版源码。
+其他机器先取得整合分支，不照搬 Windows 路径。
+目标 SSH Host：insta1。
+远端实际项目：/data/workspace/noteweave。
+部署源码：/data/workspace/noteweave/.deploy/20261022-integration/source。
+服务器主仓库已完整检出 Git 整合分支；部署源码目录是固定在 083b299f 的独立 Git worktree。
+开发从主仓库整合基线另建分支，不能在部署 worktree 中直接改代码；主仓库文档更新不代表产品重新部署。
+运行入口：/data/workspace/noteweave/.deploy/run-current.sh。
+服务器根目录入口：/data/workspace/noteweave/AI接手入口.txt。
+原 research 改造计划：/data/workspace/noteweave/.omx/plans/research-completion-redesign-2026-10-20.md；文件已随整合分支保存在服务器。
+本机来源的应用配置已同步，共 188 项，包含模型、DeepSeek 搜索与读取、业务开关、并发、服务间认证和连接池。基础设施实际凭据、服务器运行身份、已有登录账号、容器地址、持久化路径和 Wiki 物理索引按服务器环境适配。
+环境文件与发布 Compose 覆盖均已同步并核对实际容器；只修改 .env 可能被更高优先级覆盖。详情见 HANDOFF.md 第 15 节。
+配置迁移没有运行新的 research 质量评测，历史未通过结论保持。
+不要误用另一份 /data/home/NoteWeave。
+数据库已迁移至 V192，后续从 V193 统一登记；两条线不能各自抢用同一个编号，不修改已应用迁移。
+
+二、分工规则
+你不是唯一开发者，不撤销其他人的改动。两个 AI 各自从整合分支建立 codex/ 开发分支，按编号认领工作包。
+research AI 负责 research Java、research Worker、研究界面和质量评测。
+其他线路 AI 负责聊天、记忆、检索流水线、artifact 与构建配置。
+共享文件包括 ConversationTurnModule、ContextV2ShadowSnapshotService、ChatService、公共模型客户端、公共类型、配置、Compose 和迁移目录。修改前约定单一文件负责人，不能两边直接覆盖。
+RES-05 由 research AI 负责；OTH-01 由其他线路 AI 负责，并与 research AI 核对研究渲染。
+先实施认领范围，做最小有效验证，再交接提交和结果。代码完成、集成通过、真实质量通过必须分别记录。
+完整运行原文和 .codex-tmp 诊断不会自动随 Git 提供；需要原文时向持有者取得脱敏归档，不能臆造。
+不得公开 .env、密钥、会话令牌或远端含有效环境值的 Compose 文件。
+
+三、统计口径
+research 7 个工作包，其他线路 16 个工作包，共 23 个。
+工作包包含诊断、代码、产品语义和验收，不等于 23 个已经确认的代码缺陷。
+另有 19 个缺少明细的 G2 编号和 1 个数据库队列架构提案，单列，不能直接相加。
+完整记录以 docs/升级改造/协作/任务总账-2026-10-22.json 为准；HANDOFF.md 第 13 节为入口，旧第 7 节仅作历史来源。
+
+四、你的职责：其他改造线路
+处理聊天、约束、记忆、检索流水线、artifact 和构建环境的剩余问题。
+优先认领 OTH-01 和 OTH-02，再按依赖推进其他任务。
+research 的业务功能、研究上下文事务 RES-05、研究质量评测及研究浏览器流程由 research AI 负责。
+
+旧清单状态需要更新：跟进反馈冲突 RETRYABLE 已由 7cc6696 修复，不能重做 R5；artifact Worker 完整回归 687 项已通过；前端类型和构建已通过，但干净环境复现和完整 e2e 仍未验收。
+上述通过记录来自上一批，本轮统计没有重新运行检查。研究 Worker 1039 项、后端专项 90 项也不能当作全项目全部通过。
+旧 11 项笔记/Wiki 失败记录保留，当前不对未重跑的完整测试作通过或失败断言。
+
+五、你的工作包
+OTH-01 [P0] 约束原意与 FORBID 渲染一致性
+任务性质：代码改造
+当前状态：固定文案丢失 value 已核对
+代码范围：backend/src/main/java/com/noteweave/conversation/constraint/ConstraintSlot.java；backend/src/main/java/com/noteweave/conversation/constraint/ConstraintOpMerger.java；backend/src/main/java/com/noteweave/chat/ChatService.java；backend/src/main/java/com/noteweave/memory/MemorySlots.java
+完成标准：存储与最终提示不反转用户原意，不引入双重否定；research 渲染影响与 research 线协调；另复核 MemorySlots.categoryOf 残留词表对候选门控及冲突读回的影响，不能未复现就删除规则
+来源：旧第 7 节第 8 条、第 8.1 节、d10 问题 3
+
+OTH-02 [P0] 点赞点踩模型判断移出事务
+任务性质：代码改造
+当前状态：recordAnswerFeedback 的事务及锁后调用已核对
+代码范围：backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java
+完成标准：模型判断在事务外，写入短事务内重新校验版本和幂等；保留已实现的跟进反馈 RETRYABLE 行为
+来源：旧第 7 节第 16 条、第 8.2 节
+
+OTH-03 [P1] 反馈及约束输入解析边界与模型异常日志
+任务性质：两个相关安全子项的工作包
+当前状态：反馈裸拼接及 TopicBoundaryJudge 输出异常消息已核对
+代码范围：backend/src/main/java/com/noteweave/memory/MemoryFeedbackAspectJudge.java；backend/src/main/java/com/noteweave/memory/MemoryPromptFence.java；backend/src/main/java/com/noteweave/conversation/TopicBoundaryJudge.java；backend/src/main/java/com/noteweave/conversation/constraint/ConstraintOpSchema.java
+完成标准：用户文本作为数据输入，保留反馈分类语义；异常日志仅保留受限原因码与异常类型，不输出请求片段；复核约束解析的方括号截取和提示词边界，防止错误片段被当作结构化操作
+来源：旧第 7 节第 17 和 18 条、d10 剩余项
+
+OTH-04 [P1] 约束规则版本和空基线重置的原子性
+任务性质：代码复核及改造
+当前状态：旧交接列为未修，需在整合代码复现
+代码范围：backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectionV2Service.java；backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectorV2.java
+完成标准：模型抽取失败时不能留下新版本配旧 ACTIVE 约束的混合状态，推进水位和提交状态一致
+来源：旧第 7 节第 8 条中项
+
+OTH-05 [P1] 增量约束并发折叠及冻结快照一致性
+任务性质：多项相关一致性问题复核
+当前状态：旧 R1/R2/R3 及删除进度问题待整合版复核
+代码范围：backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectionV2Service.java；backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectorV2.java；backend/src/main/java/com/noteweave/conversation/ConversationMessageDeletionService.java；backend/src/main/java/com/noteweave/conversation/ContextV2ShadowSnapshotService.java
+完成标准：覆盖 applied=false 仍落 READY、版本变化仅折叠本轮、refold 丢弃判定及删消息清除整段进度；使用真实并发验证，不把相关子项重复统计
+来源：旧第 7 节第 8 和 9 条，R1/R2/R3 去重
+
+OTH-06 [P1] 跟进反馈写入事务传播与冲突粒度
+任务性质：代码复核及针对性改造
+当前状态：RETRYABLE 已修；默认事务传播和过粗冲突仍需复核
+代码范围：backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java；backend/src/main/java/com/noteweave/memory/MemoryConversationExtractionService.java
+完成标准：核对真实调用边界后确定事务传播；无关 usage 更新不导致整批反馈放弃，有关冲突仍可重试；不能重做已修复的 R5
+来源：旧第 7 节第 9 条 R4/R6，R5 已排除
+
+OTH-07 [P1] 反馈来源数据库幂等唯一性
+任务性质：数据库及幂等改造待复核
+当前状态：旧交接指出 sourceExists 无唯一约束，需核对 DDL 与历史重复
+代码范围：backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java；backend/src/main/resources/db/migration
+完成标准：并发相同来源只产生一次有效反馈，迁移前核对并处理历史重复；不得直接删除不明来源的业务记录
+来源：旧第 7 节第 8 和 9 条 R7 去重
+
+OTH-08 [P1] 向量批次续租心跳与有效租约
+任务性质：代码改造待复核
+当前状态：旧交接确认 7200 秒租约未改，续租实施需复核
+代码范围：backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java；backend/src/main/java/com/noteweave/retrieval/projection/SourceRetrievalProjectionCoordinator.java
+完成标准：运行期安全续租，旧持有者不可提交；同时核对 SourcePipelineProcessingBudget 的租约下限，不能仅修改环境数字
+来源：旧第 7 节第 2 条 E-2
+
+OTH-09 [P1] 向量请求预算真正扣减与拒绝
+任务性质：代码及数据库改造待复核
+当前状态：预算字段写入及读取已核对，未发现本批扣减逻辑，需沿调用链确认
+代码范围：backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java；backend/src/main/java/com/noteweave/retrieval/projection/SourceRetrievalProjectionCoordinator.java
+完成标准：重试与批次并发时请求预算仍受限，超额明确拒绝并可审计，不能重复扣减同一有效请求
+来源：旧第 7 节第 3 条 M3-M06 预算子项
+
+OTH-10 [P1] 长期 READY 向量批次恢复
+任务性质：代码改造
+当前状态：恢复扫描只匹配过期 RUNNING 已核对
+代码范围：backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java
+完成标准：符合条件的长期 READY 可重新投递，必须核对当前任务、快照和批次版本，不能重复执行已完成批次
+来源：旧第 7 节第 3 条 M3-M06 READY 子项
+
+OTH-11 [P1] 任务 Outbox 在途防重
+任务性质：数据库和入队路径改造待复核
+当前状态：旧交接记录 14 处写入，实际位置数量需重新统计
+代码范围：backend/src/main/java/com/noteweave/infra/TaskOutboxDispatcherService.java；backend/src/main/resources/db/migration
+完成标准：统一在途幂等键且保留合法重试，迁移前分析重复记录；不能简单限制所有历史行或删除正常重驱记录
+来源：旧第 7 节第 4 条
+
+OTH-12 [P2] Elasticsearch 不可用时的检索降级
+任务性质：代码改造待复核
+当前状态：旧交接列为未修，当前 Instabox 有 Elasticsearch，故障场景未验收
+代码范围：backend/src/main/java/com/noteweave/chat；backend/src/main/java/com/noteweave/retrieval
+完成标准：QA 与 Note 在检索服务不可用时按已定义能力返回可用部分和降级原因，不能把空结果包装为完整召回
+来源：旧第 7 节第 6 条 M2-H14
+
+OTH-13 [P2] 前端干净环境依赖和构建复现
+任务性质：构建配置及验证
+当前状态：当前构建已通过；pnpm 固定版本和显式 @types/node 依赖仍需复核
+代码范围：frontend/package.json；frontend/pnpm-lock.yaml；frontend/Dockerfile；.github
+完成标准：在干净环境使用锁定依赖完成类型检查和构建，不依赖原工作区现存 node_modules 或全局安装
+来源：旧第 7 节第 12 条，经第 12 节验证更新状态
+
+OTH-14 [P1] 无表格改分点的约束作用域口径
+任务性质：产品语义确认及必要实现
+当前状态：live eval scope 期望仍待确认
+代码范围：backend/src/main/java/com/noteweave/conversation/constraint；backend/src/test/java/com/noteweave/conversation
+完成标准：明确无标记反馈适用当前话题还是全会话，再同步实现与断言；不得为了通过而放宽作用域要求
+来源：旧第 7 节第 10 条 no-table-use-bullets
+
+OTH-15 [P2] 非 research 的 Instabox 完整用户流程
+任务性质：集成验收
+当前状态：登录与工作区 API 已过，完整浏览器流程未验收
+代码范围：frontend/e2e；frontend/src/features/answers；frontend/src/features/memory；frontend/src/features/artifacts；frontend/src/features/knowledge
+完成标准：资料、QA、Note、Wiki、记忆反馈及 artifact 实际流程与降级符合约定；research 场景只归 RES-07，避免重复计数
+来源：旧第 7 节第 13 条，经部署验证更新范围
+
+OTH-16 [P1] 两项 d10 修复的独立复审及剩余问题核对
+任务性质：独立复审
+当前状态：历史交接无第二人复审结论
+代码范围：backend/src/main/java/com/noteweave/memory；backend/src/main/java/com/noteweave/conversation/constraint；HANDOFF.md
+完成标准：复核 baf8bcc 与 7cc6696，检查行为和真实并发；剩余问题复用 OTH-01/02/03 等现有任务编号，禁止再次算作新缺陷
+来源：旧第 7 节第 19 条、第 9 节
+
+六、缺少明细的原始审计编号
+下列编号只能登记为待补资料，尚不能按名称猜实现；可能与上述工作包重复。
+G2-2：M4-H04、M4-H05、M4-M06、M4-H06、M4-H12、M4-M04
+G2-3：M2-H02、M2-H06、M2-C01、M2-H04
+G2-4：M2-H12、M4-H07、M4-H11
+G2-5：M4-M02、M4-M03、M4-H09、M4-M10、M4-M15、M4-M14
+先取回原审计的问题描述、触发条件、文件位置和验收要求，再映射到 OTH 编号，不能把 19 个编号直接加到工作包总数。
+
+七、单列架构提案 ARC-01
+artifact 与 research 改用数据库队列是待评估提案，没有列入这批直接实施任务。
+先解决已确认的幂等、恢复、预算和续租问题，再用实际故障证据评估队列迁移收益。
+不得看到旧交接便删除 Kafka、Outbox 或 callback fencing；涉及研究链路时须共同确定契约。
+
+八、交付要求
+按 OTH 编号交接代码、提交、配置、迁移和最小有效验证，已修、未修、待复核分开记录。
+旧编号对应的问题若已在整合代码解决，应附证据关闭，不能为完成清单重复实现。
+本批文档整理没有授权新部署、创建其他 AI 任务或真实模型运行，后续按用户认领范围推进。
+
+九、主 agent 与子 agent 执行提示词
+先核实再分步骤并发执行的完整指令位于 /data/workspace/noteweave/docs/升级改造/协作/AI执行提示词-其他改造线路-2026-10-22.txt。该文件提供核实表、依赖分组、详细执行单要求及独立复审边界，不因文档存在而自动启动任务。
