@@ -23,6 +23,7 @@ from app.registry import list_custom_mcp_servers
 from app.config import load_settings
 from app.error_sanitizer import sanitize_error_message
 from app.io_limits import validate_json_payload_size
+from app.execution_heartbeat import ArtifactExecutionSuperseded, checkpoint_artifact_execution
 
 
 _executor_threads_lock = threading.Lock()
@@ -124,10 +125,17 @@ def _call_custom_mcp_tool(server: object, operation: dict[str, object]) -> dict[
             result = _run_blocking(
                 lambda: _call_tool_over_stdio(parameters, tool_name, arguments, timeout_seconds, stderr_log)
             )
+        except ArtifactExecutionSuperseded:
+            raise
         except Exception as exc:
+            try:
+                checkpoint_artifact_execution()
+            except ArtifactExecutionSuperseded:
+                raise
             stderr_log.seek(0)
             stderr_tail = stderr_log.read()[-2000:].strip()
             raise ValueError(stderr_tail or str(exc) or "custom MCP process failed") from exc
+        checkpoint_artifact_execution()
     if result.isError:
         message = next((item.text for item in result.content if getattr(item, "type", "") == "text"), "")
         raise ValueError(message.strip() or "custom MCP tool call returned isError=true")

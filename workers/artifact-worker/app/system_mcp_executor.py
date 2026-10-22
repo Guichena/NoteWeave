@@ -28,6 +28,8 @@ _executor_threads_lock = threading.Lock()
 _executor_threads: dict[str, threading.Thread] = {}
 _callback_threads_lock = threading.Lock()
 _callback_threads: dict[str, threading.Thread] = {}
+_PERSISTED_OUTCOME_MAX_ATTEMPTS = 20
+_PERSISTED_OUTCOME_MAX_ELAPSED_SECONDS = 600.0
 
 
 def submit_system_mcp_acquisition_operation(
@@ -196,8 +198,14 @@ def _retry_persisted_outcome_delivery(
     request_id: str, java_base_url: str
 ) -> None:
     delay_seconds = 1.0
+    started = time.monotonic()
+    attempts = 0
     try:
-        while True:
+        while attempts < _PERSISTED_OUTCOME_MAX_ATTEMPTS:
+            elapsed = time.monotonic() - started
+            if elapsed >= _PERSISTED_OUTCOME_MAX_ELAPSED_SECONDS:
+                break
+            attempts += 1
             operation = peek_acquisition_operation(request_id)
             if operation is None or str(operation.get("callback_status", "")) != "PROVIDER_OUTCOME_READY":
                 return
@@ -212,8 +220,17 @@ def _retry_persisted_outcome_delivery(
                     "Persisted System MCP outcome delivery failed; retrying: request_id=%s",
                     request_id,
                 )
-                time.sleep(delay_seconds)
+                if attempts >= _PERSISTED_OUTCOME_MAX_ATTEMPTS:
+                    break
+                remaining = _PERSISTED_OUTCOME_MAX_ELAPSED_SECONDS - (time.monotonic() - started)
+                if remaining <= 0:
+                    break
+                time.sleep(min(30.0, delay_seconds, remaining))
                 delay_seconds = min(30.0, delay_seconds * 2)
+        logger.error(
+            "Persisted System MCP outcome delivery exceeded retry limit: request_id=%s",
+            request_id,
+        )
     finally:
         with _callback_threads_lock:
             _callback_threads.pop(request_id, None)

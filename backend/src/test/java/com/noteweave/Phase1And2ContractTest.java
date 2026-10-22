@@ -772,16 +772,8 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workspace_id").isNotEmpty())
                 .andReturn();
-        String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
+        return objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("workspace_id").asText();
-        // This historical contract exercises the current v2 QA behavior explicitly; the
-        // dedicated rollout contract covers the production-safe default-off path.
-        jdbcTemplate.update("""
-                update workspace
-                set retrieval_strategy_v2_enabled = true
-                where id = ?
-                """, workspaceId);
-        return workspaceId;
     }
 
     private String createUpload(String workspaceId) throws Exception {

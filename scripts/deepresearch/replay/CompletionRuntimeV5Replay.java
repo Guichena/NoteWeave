@@ -26,8 +26,8 @@ public class CompletionRuntimeV5Replay {
         String context = mapper.writeValueAsString(Map.of("query_policy",Map.of("synthesis_input",Map.of("report_upload_version",1,"report_recovery_version",1,
                 "narrative_llm_budget",6,"ledger_digest",snapshot,"audit_digest",snapshot))));
         db.update("insert into research_agent_task values (?,'SYNTHESIS',?)",task,context);
-        for (String migration : List.of("V173__research_synthesis_upload_parts.sql","V175__research_synthesis_generation.sql",
-                "V176__research_report_feedback.sql","V177__research_runtime_metrics.sql","V178__research_requirement_revision_lineage.sql","V179__research_synthesis_call_permit.sql"))
+        for (String migration : List.of("V185__research_synthesis_upload_parts.sql","V187__research_synthesis_generation.sql",
+                "V188__research_report_feedback.sql","V189__research_runtime_metrics.sql","V190__research_requirement_revision_lineage.sql","V191__research_synthesis_call_permit.sql"))
             for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT"),"backend/src/main/resources/db/migration",migration)).split(";")) if (!sql.isBlank()) db.execute(sql);
         int[] active = {1};
         var tasks = new ResearchAgentTaskService(db,mapper,null,null,null) {

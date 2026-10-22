@@ -23,13 +23,13 @@ public class RequirementCoverageReplay {
         db.execute("create table research_evidence_validation(evidence_id varchar(36), final_status varchar(32))");
         db.execute("create table research_agent_synthesis_candidate(research_run_id varchar(36), status varchar(32))");
         db.execute("create table research_semantic_check(id varchar(36), research_run_id varchar(36), cell_key varchar(160), left_cluster_key varchar(64), right_cluster_key varchar(64), verdict varchar(32), equivalence_verdict varchar(32), semantic_revision int, checked_at timestamp)");
-        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V169__research_requirement_coverage.sql")).split(";"))
+        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V181__research_requirement_coverage.sql")).split(";"))
             if (!sql.isBlank()) db.execute(sql);
-        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V170__research_requirement_predicates.sql")).split(";"))
+        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V182__research_requirement_predicates.sql")).split(";"))
             if (!sql.isBlank()) db.execute(sql);
-        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V171__research_fact_quorum_support.sql")).split(";"))
+        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V183__research_fact_quorum_support.sql")).split(";"))
             if (!sql.isBlank()) db.execute(sql);
-        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V172__research_fact_source_scope.sql")).split(";"))
+        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V184__research_fact_source_scope.sql")).split(";"))
             if (!sql.isBlank()) db.execute(sql);
         db.update("insert into research_run values ('run-1', ?, timestamp '2026-10-20 12:00:00')", "{\"requirement_coverage_v1\":true,\"requirement_state_version\":3}");
         db.update("insert into research_cell values ('run-1', ?, 0, 0, false)", CELL);
@@ -125,7 +125,7 @@ public class RequirementCoverageReplay {
         Files.writeString(Path.of(System.getenv("NOTEWEAVE_REPLAY_OUT") + "/requirement-contract-v4.json"),M.writeValueAsString(v4));
         System.out.println("{\"new_run_dispatch_contract_frozen\":true,\"worker_capability_required\":true}");
         db.execute("create table research_report_feedback(requirement_id varchar(64),feedback_status varchar(32))");
-        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT"),"backend/src/main/resources/db/migration/V178__research_requirement_revision_lineage.sql")).split(";")) if (!sql.isBlank()) db.execute(sql);
+        for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT"),"backend/src/main/resources/db/migration/V190__research_requirement_revision_lineage.sql")).split(";")) if (!sql.isBlank()) db.execute(sql);
         db.update("update research_run set agent_feature_flags_json=? where id='run-1'","{\"requirement_coverage_v1\":true,\"requirement_state_version\":5}");
         var v5Policy=policy(coverage);
         JsonNode v5=M.valueToTree(v5Policy.get("requirement_contract"));

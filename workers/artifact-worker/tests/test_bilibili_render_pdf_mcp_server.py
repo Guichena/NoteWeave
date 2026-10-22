@@ -99,11 +99,14 @@ def test_tools_list_should_expose_expected_skill_surface() -> None:
     assert "transcribe_local_audio" in names
     assert "render_latex_pdf" in names
     assert "capture_bilibili_frames" in names
+    assert "ocr_frame" in names
+    assert "ocr_frames" in names
     assert "analyze_frame" in names
     assert "analyze_frames" in names
 
 
-def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("tool_name", ["ocr_frame", "analyze_frame"])
+def test_frame_text_ocr_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypatch, tool_name) -> None:
     server = _sandboxed_server(tmp_path)
     observed = {}
 
@@ -114,7 +117,7 @@ def test_analyze_frame_mcp_passes_only_frozen_frame_identity(tmp_path, monkeypat
     monkeypatch.setattr(mcp_module, "observe_staged_frame", fake_observe)
     response = _dispatch(server, {
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-        "params": {"name": "analyze_frame", "arguments": {
+        "params": {"name": tool_name, "arguments": {
             "task_id": "task-1", "file_id": "frame-1", "checksum_sha256": "a" * 64,
         }},
     })

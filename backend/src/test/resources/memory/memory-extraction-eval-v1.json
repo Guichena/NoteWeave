@@ -1,0 +1,258 @@
+{
+  "schema_version": "memory-extraction-eval-v1",
+  "annotation_note": "记忆/反馈抽取的模型侧评测集：偏好、explicit 与 feedback 只由模型输出决定，没有关键词正则兜底。每个 case 的输入是「上一条助手回答（previous_answer，可为 null）+ 这条用户消息（message）」，也就是抽取任务的真实输入形状；ideal_output 是「理想模型输出」，CI 用 stub 客户端原样回放，live 测试让真实模型自己回答。expected.preference_count 是 CI 回放理想输出时的精确条数；preference_count_max 是 live 允许的上限（缺省等于 preference_count，只用于「记不记这条都行、但不能记成负面反馈」的用例）；all_explicit 表示抽到的每条偏好 explicit 都等于该值（0 条时恒成立）；any_feedback 表示是否存在 feedback=true 的偏好；dissatisfied 只是人工记录该消息是否在抱怨上一轮回答：写不写跟进反馈改由 MemoryFeedbackAspectJudge 的独立模型判定（正/负/中性），CI 不再断言该字段。ideal_judgment 是这条消息的「理想反馈判断输出」（feedback/polarity/aspect），CI 用 stub 原样回放后按 expected.judgment 断言；expected.judgment 里的 feedback 与 polarity 必须给出，aspect 给出时精确断言，aspect_not 表示「不得判成这个方面」。",
+  "cases": [
+    {
+      "id": "remember-short-answers-is-a-preference-not-feedback",
+      "note": "「记住：以后回答不要太长」是长期偏好，不是对上一轮回答的负面反馈。",
+      "message": "记住：以后回答不要太长",
+      "previous_answer": "缓存一致性有强一致和最终一致两种取舍，下面分四个层面展开说明……（一段很长的回答）",
+      "ideal_output": [
+        {
+          "statement": "以后回答不要太长",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.length",
+          "value": "不要太长",
+          "polarity": "FORBID",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.length",
+        "polarity": "FORBID"
+      }
+    },
+    {
+      "id": "explicit-memory-question-is-not-a-memory",
+      "note": "「我希望你解释一下缓存一致性」是任务请求，不是显式记忆，理想输出空数组。",
+      "message": "我希望你解释一下缓存一致性",
+      "previous_answer": null,
+      "ideal_output": [],
+      "expected": {
+        "preference_count": 0,
+        "any_feedback": false,
+        "dissatisfied": false
+      }
+    },
+    {
+      "id": "variable-name-too-long-is-not-user-feedback",
+      "note": "「变量名太长」评价的是代码里的变量名，不是对助手回答的不满，理想输出空数组；反馈判断同样不是对上一条回答的反馈。",
+      "message": "变量名太长",
+      "previous_answer": "可以这样重写：int userCount = users.size();",
+      "ideal_output": [],
+      "ideal_judgment": {
+        "feedback": false,
+        "polarity": "NEUTRAL",
+        "aspect": "UNKNOWN"
+      },
+      "expected": {
+        "preference_count": 0,
+        "preference_count_max": 1,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "judgment": {
+          "feedback": false,
+          "polarity": "NEUTRAL"
+        }
+      }
+    },
+    {
+      "id": "code-bug-is-not-answer-format-feedback",
+      "note": "「这段代码有 bug」说的是代码本身的问题，不是对上一条回答格式（结构、表格、排版）的反馈，理想输出空数组。",
+      "message": "这段代码有 bug",
+      "previous_answer": "可以这样写：\n```java\nList<String> names = users.stream().map(User::name).toList();\n```\n先按列表说明，再给结论。",
+      "ideal_output": [],
+      "ideal_judgment": {
+        "feedback": false,
+        "polarity": "NEUTRAL",
+        "aspect": "UNKNOWN"
+      },
+      "expected": {
+        "preference_count": 0,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "judgment": {
+          "feedback": false,
+          "polarity": "NEUTRAL",
+          "aspect_not": "FORMAT"
+        }
+      }
+    },
+    {
+      "id": "not-too-verbose-is-the-length-slot",
+      "note": "「别太啰嗦」是长度偏好：与「回答要简短」落在同一个槽位 answer.length，极性相反。",
+      "message": "别太啰嗦",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "回答别太啰嗦",
+          "category": "style",
+          "explicit": false,
+          "slot": "answer.length",
+          "value": "别太啰嗦",
+          "polarity": "FORBID",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": false,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.length",
+        "polarity": "FORBID"
+      }
+    },
+    {
+      "id": "short-answers-is-the-length-slot",
+      "note": "「回答要简短」是长度要求：与「别太啰嗦」同槽 answer.length。",
+      "message": "回答要简短",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "回答要简短",
+          "category": "style",
+          "explicit": false,
+          "slot": "answer.length",
+          "value": "简短",
+          "polarity": "REQUIRE",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": false,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.length",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "thanks-thats-all-is-positive-feedback",
+      "note": "「谢谢，就这样」是明确的正面反馈，但不含任何长期偏好，理想输出空数组；反馈判断为 POSITIVE。",
+      "message": "谢谢，就这样",
+      "previous_answer": "缓存一致性有两种取舍：强一致延迟高，最终一致可用性好。结论：读多写少优先最终一致。",
+      "ideal_output": [],
+      "ideal_judgment": {
+        "feedback": true,
+        "polarity": "POSITIVE",
+        "aspect": "UNKNOWN"
+      },
+      "expected": {
+        "preference_count": 0,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "judgment": {
+          "feedback": true,
+          "polarity": "POSITIVE"
+        }
+      }
+    },
+    {
+      "id": "too-long-with-a-request-is-negative-feedback",
+      "note": "典型真负面反馈：既表达对上一轮的不满，又提出以后简短的要求。",
+      "message": "太长了，以后回答简短点",
+      "previous_answer": "……（一段很长的回答）",
+      "ideal_output": [
+        {
+          "statement": "以后回答简短一点",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.length",
+          "value": "简短",
+          "polarity": "REQUIRE",
+          "feedback": true
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": true,
+        "dissatisfied": true,
+        "slot": "answer.length",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "implicit-preference-is-not-explicit",
+      "note": "典型隐式偏好：喜欢用表格，但没有「以后/每次/记住」这类长期措辞，explicit=false。",
+      "message": "我比较喜欢用表格对比",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "用表格对比",
+          "category": "structure",
+          "explicit": false,
+          "slot": "format.table",
+          "value": "表格",
+          "polarity": "REQUIRE",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": false,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "format.table",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "durable-language-preference",
+      "note": "典型长期语言偏好：显式记忆，不涉及反馈。",
+      "message": "以后回答都用中文",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "以后回答都用中文",
+          "category": "style",
+          "explicit": true,
+          "slot": "answer.language",
+          "value": "中文",
+          "polarity": "REQUIRE",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.language",
+        "polarity": "REQUIRE"
+      }
+    },
+    {
+      "id": "forbidden-wording-preference",
+      "note": "典型禁止类偏好：polarity=FORBID，不是对上一轮回答的不满。",
+      "message": "以后不要用表情符号",
+      "previous_answer": null,
+      "ideal_output": [
+        {
+          "statement": "不要使用表情符号",
+          "category": "forbidden",
+          "explicit": true,
+          "slot": "answer.constraint",
+          "value": "表情符号",
+          "polarity": "FORBID",
+          "feedback": false
+        }
+      ],
+      "expected": {
+        "preference_count": 1,
+        "all_explicit": true,
+        "any_feedback": false,
+        "dissatisfied": false,
+        "slot": "answer.constraint",
+        "polarity": "FORBID"
+      }
+    }
+  ]
+}

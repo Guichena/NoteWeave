@@ -3,6 +3,7 @@ package com.noteweave.infra;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -203,10 +204,14 @@ public class KafkaConfig {
         factory.setConsumerFactory(consumerFactory);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.RECORD);
         factory.setContainerCustomizer(container -> {
+            String memberId = staticMemberIdOrNull(container.getListenerId());
+            if (memberId == null) {
+                // 实例 ID 未配置时保持默认的动态成员协议，不写入 group.instance.id。
+                return;
+            }
             Properties consumerProperties = new Properties();
             consumerProperties.putAll(container.getContainerProperties().getKafkaConsumerProperties());
-            consumerProperties.setProperty(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG,
-                    staticMemberId(container.getListenerId()));
+            consumerProperties.setProperty(ConsumerConfig.GROUP_INSTANCE_ID_CONFIG, memberId);
             container.getContainerProperties().setKafkaConsumerProperties(consumerProperties);
         });
         DeadLetterPublishingRecoverer publishingRecoverer = new DeadLetterPublishingRecoverer(
@@ -244,6 +249,17 @@ public class KafkaConfig {
         return com.noteweave.source.SourcePipelineProcessingBudget.maxPollIntervalMs(
                 pipelineProperties, maxPollIntervalMs);
     }
+    /**
+     * 静态成员 ID；实例 ID 为空/空白时返回 {@code null}，表示不启用静态成员
+     * （不写入 {@code group.instance.id}），避免同一消费组内实例互相替换。
+     */
+    String staticMemberIdOrNull(String listenerId) {
+        if (instanceId == null || instanceId.isBlank()) {
+            return null;
+        }
+        return staticMemberId(listenerId);
+    }
+
     /** 每个稳定部署实例的 listener 独占成员 ID，避免同一消费组内相互替换。 */
     String staticMemberId(String listenerId) {
         if (instanceId == null || !instanceId.matches("[A-Za-z0-9._-]{1,160}")
@@ -253,19 +269,54 @@ public class KafkaConfig {
         return instanceId + "-" + listenerId;
     }
 
-    private BackOff exponentialJitterBackOff() {
+    /** 消费重试次数：来自 {@code noteweave.kafka.retry-max-attempts}，缺省 5，限制 1..10。 */
+    int retryMaxAttempts() {
+        NoteWeaveProperties.Kafka kafka = kafkaProperties();
+        return kafka == null ? NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_ATTEMPTS : kafka.retryMaxAttempts();
+    }
+
+    /** 单次退避上限：来自 {@code noteweave.kafka.retry-max-backoff-ms}，缺省 30000ms。 */
+    long retryMaxBackoffMs() {
+        NoteWeaveProperties.Kafka kafka = kafkaProperties();
+        return kafka == null ? NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_BACKOFF_MS : kafka.retryMaxBackoffMs();
+    }
+
+    private NoteWeaveProperties.Kafka kafkaProperties() {
+        NoteWeaveProperties properties = pipelineProperties;
+        return properties == null ? null : properties.kafka();
+    }
+
+    /**
+     * 指数退避叠加抖动：第 {@code retry} 次的基准值为 {@code min(1000 << retry, cap)}，
+     * 实际延迟落在 {@code [base, base + max(1, base/5)]} 内。
+     * 抖动允许相邻延迟非严格递增（例如 cap 之后的两次基准相同），因此只保证基准值单调不减。
+     */
+    BackOff exponentialJitterBackOff() {
+        return exponentialJitterBackOff(ThreadLocalRandom.current());
+    }
+
+    /** 可注入随机源的重载：生产路径使用 {@link ThreadLocalRandom}，测试可传入固定种子以获得确定性。 */
+    BackOff exponentialJitterBackOff(Random random) {
+        int maxAttempts = retryMaxAttempts();
+        long maxBackoffMillis = retryMaxBackoffMs();
         return () -> new BackOffExecution() {
             private int retry;
 
             @Override
             public long nextBackOff() {
-                if (retry >= 2) {
+                if (retry >= maxAttempts) {
                     return STOP;
                 }
-                long baseMillis = 1_000L << retry++;
+                long baseMillis = Math.min(1_000L << retry++, maxBackoffMillis);
                 long maxJitterMillis = Math.max(1L, baseMillis / 5L);
-                return baseMillis + ThreadLocalRandom.current().nextLong(maxJitterMillis + 1L);
+                return baseMillis + nextJitterMillis(random, maxJitterMillis);
             }
         };
+    }
+
+    /** 抖动取值区间为闭区间 {@code [0, maxJitterMillis]}，与原有 ThreadLocalRandom#nextLong(bound) 语义一致。 */
+    private static long nextJitterMillis(Random random, long maxJitterMillis) {
+        long bound = maxJitterMillis + 1L;
+        return random.nextLong(bound);
     }
 }

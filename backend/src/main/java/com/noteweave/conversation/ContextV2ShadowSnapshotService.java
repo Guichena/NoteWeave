@@ -10,16 +10,23 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** Freezes Answer shadow Context and prepares Research Context at its input cutoff. */
 @Service
 public class ContextV2ShadowSnapshotService {
+    private static final Logger log = LoggerFactory.getLogger(ContextV2ShadowSnapshotService.class);
     /** 会话上下文（原文窗口、话题摘要、约束和记忆）的 token 预算，不含检索到的资料证据。 */
     private static final int CONTEXT_BUDGET_TOKENS = 12_000;
 
@@ -29,11 +36,13 @@ public class ContextV2ShadowSnapshotService {
     private final ConversationContextCompilerV2Service compiler;
     private final ContextV2RolloutService rollout;
     private final boolean researchActiveEnabled;
+    private final TransactionTemplate transactionTemplate;
 
     public ContextV2ShadowSnapshotService(JdbcTemplate jdbc, ObjectMapper mapper,
                                           ConversationTopicProjectionV2Service topics,
                                           ConversationContextCompilerV2Service compiler,
                                           ContextV2RolloutService rollout,
+                                          PlatformTransactionManager transactionManager,
                                           @Value("${noteweave.context.v2.research-active-enabled:false}")
                                           boolean researchActiveEnabled) {
         this.jdbc = jdbc;
@@ -42,9 +51,16 @@ public class ContextV2ShadowSnapshotService {
         this.compiler = compiler;
         this.rollout = rollout;
         this.researchActiveEnabled = researchActiveEnabled;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        // 编译与快照落库必须独立提交：默认的 REQUIRED 会让带事务的调用方把这段（和其中的编译读）
+        // 并进自己的事务，重新退化成「长事务持会话行锁」。
+        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    @Transactional
+    /**
+     * 不整体标注 {@code @Transactional}：话题切分与约束抽取在各自的事务里完成，
+     * 模型调用必须发生在事务与会话行锁之外。编译与快照落库另起一个短事务。
+     */
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose) {
@@ -58,6 +74,37 @@ public class ContextV2ShadowSnapshotService {
                 queryMessageId, workspaceId, conversationId);
         if (cutoff == null) throw new IllegalArgumentException("Answer Run query identity is invalid");
         topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
+        independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose));
+    }
+
+    /**
+     * 快照写必须独立提交（{@code REQUIRES_NEW}）。例外：调用方已经在事务里且握着会话行锁时，
+     * 另起事务会在第二条连接上等同一把 {@code for update} 行锁直到超时，因此这种情况加入外层事务
+     * 并打 WARN。今天 {@link #freezeAnswer} 的调用方都在事务外，所以走的是 REQUIRES_NEW。
+     */
+    private void independentTransaction(String conversationId, Runnable body) {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            log.warn("Context v2 快照落库退化为加入调用方事务（未走 REQUIRES_NEW，避免等外层会话行锁）: "
+                    + "conversationId={}", conversationId);
+            body.run();
+            return;
+        }
+        transactionTemplate.executeWithoutResult(status -> body.run());
+    }
+
+    private void persistSnapshot(String workspaceId, String actorId, String conversationId,
+                                 String queryMessageId, String answerRunId, int cutoff,
+                                 String currentInput, String taskPurpose) {
+        if (exists(answerRunId)) return;
+        // 与消息删除同一把锁：删除的 redaction 扫描必须能看到这份快照，插入也不能落在删除之后。
+        List<String> locked = jdbc.query("""
+                select id from conversation where id = ? and workspace_id = ? for update
+                """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
+        if (locked.isEmpty()) {
+            throw new BusinessException("CONVERSATION_NOT_FOUND", "Conversation does not belong to Workspace",
+                    HttpStatus.NOT_FOUND);
+        }
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
                 cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
         requireCurrentMemories(workspaceId, projection);

@@ -1,13 +1,30 @@
 package com.noteweave.memory;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
  * 把偏好整理成槽位、取值和极性。
+ * <p>
+ * 槽位只由模型输出决定（抽取 schema 里的 slot 字段）：这里只做规范化和校验，
+ * 不再按关键词从语句里推断槽位。模型没给槽位、或给的槽位不合规范时，
+ * 退回到模型同时给出的 category 对应的默认槽位，仍然不看语句文本。
  * 槽位用受控前缀加自由后缀，例如 answer.language、terminology.术语。
  */
 public final class MemorySlots {
+    /**
+     * 抽取模型允许输出的槽位枚举。提示词里的说明直接引用这份定义，避免 schema 与代码各写一份。
+     */
+    public static final List<String> ALLOWED_SLOTS = List.of(
+            "answer.language",
+            "answer.length",
+            "answer.style",
+            "answer.constraint",
+            "format.structure",
+            "format.table",
+            "terminology.term",
+            "interaction.style");
     private static final Pattern SLOT = Pattern.compile(
             "^[a-z][a-z0-9]*(?:\\.[a-z0-9_\\-\\p{IsHan}]{1,64})+$");
     private static final Pattern STRUCTURE = Pattern.compile(
@@ -55,7 +72,7 @@ public final class MemorySlots {
     ) {
         String resolvedSlot = normalizeSlot(slot);
         if (resolvedSlot == null) {
-            resolvedSlot = inferSlot(category, statement);
+            resolvedSlot = slotForCategory(category);
         }
         String resolvedValue = clean(value);
         if (resolvedValue.isBlank()) {
@@ -78,17 +95,11 @@ public final class MemorySlots {
         return "REQUIRE";
     }
 
-    private static String inferSlot(String category, String statement) {
-        String text = statement == null ? "" : statement.toLowerCase(Locale.ROOT);
-        if (containsAny(text, "语言", "英文", "中文", "language")) {
-            return "answer.language";
-        }
-        if (containsAny(text, "简短", "简洁", "太长", "短句", "长段落", "长度")) {
-            return "answer.length";
-        }
-        if (containsAny(text, "表格", "table")) {
-            return "format.table";
-        }
+    /**
+     * 模型没给出合法槽位时的兜底：只按模型给出的 category 映射到默认槽位。
+     * 这里刻意不读语句文本——「中文」「表格」「简短」这些词不再决定槽位。
+     */
+    static String slotForCategory(String category) {
         return switch (category == null ? "" : category) {
             case "forbidden" -> "answer.constraint";
             case "terminology" -> "terminology.term";
@@ -96,15 +107,6 @@ public final class MemorySlots {
             case "interaction" -> "interaction.style";
             default -> "answer.style";
         };
-    }
-
-    private static boolean containsAny(String text, String... needles) {
-        for (String needle : needles) {
-            if (text.contains(needle)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public static String normalizeSlot(String slot) {

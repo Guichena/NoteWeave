@@ -220,6 +220,37 @@ class WikiEvidenceRetrieverTest {
                 .containsEntry("graph_characters_used", 4L);
     }
 
+    @Test
+    void longPageWithoutSummaryIsTruncatedAndStillReturned() {
+        WikiRetrievalQueryPort queryPort = mock(WikiRetrievalQueryPort.class);
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        String content = "字".repeat(20_000);
+        WikiPageContext page = new WikiPageContext(
+                new KnowledgePageHit("item-long", "version-long", 1, "Long", content, "", 4),
+                List.of(), List.of(), List.of());
+        when(queryPort.findRelevantWikiPageContexts("workspace", "query")).thenReturn(List.of(page));
+        when(queryPort.citationIdsForWikiPages("workspace", List.of(page.page()))).thenReturn(List.of());
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(WikiEvidenceRetriever.CHANNEL, 5, 1, Map.of());
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(5, 20_000, 0, 0));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()),
+                plan,
+                step);
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::knowledgeItemId)
+                .containsExactly("item-long");
+        EvidenceBundle.Evidence evidence = result.evidence().get(0);
+        assertThat(evidence.excerpt()).hasSizeLessThanOrEqualTo(4001);
+        assertThat(evidence.excerpt()).hasSize(4001).endsWith("…").startsWith("字");
+        assertThat(evidence.characterCost()).isEqualTo(evidence.excerpt().length());
+    }
+
     private WikiPageContext page(String itemId, String versionId, String title) {
         return scoredPage(itemId, versionId, title, 1);
     }

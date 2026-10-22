@@ -50,10 +50,10 @@ spring:
 
 noteweave:
   context:
-    v2:
-      shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:false}
-      active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:false}
-      default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:OFF}
+    v2:  # 话题感知上下文窗口默认开启；与 docker-compose.yml / .env.example 保持一致
+      shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:true}
+      active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:true}
+      default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:ACTIVE}
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
@@ -104,7 +104,7 @@ noteweave:
         refill-per-minute: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE:24}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
   video-learning:
-    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
+    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:true}
     workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
     query-rewrite:
@@ -226,6 +226,9 @@ noteweave:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     instance-id: ${NOTEWEAVE_KAFKA_INSTANCE_ID:${HOSTNAME:noteweave-backend-local}}
     max-poll-interval-ms: ${NOTEWEAVE_KAFKA_MAX_POLL_INTERVAL_MS:1800000}
+    # 消费失败重试次数（1..10）与单次退避上限（毫秒）；超过次数后进入 DLT
+    retry-max-attempts: ${NOTEWEAVE_KAFKA_RETRY_MAX_ATTEMPTS:5}
+    retry-max-backoff-ms: ${NOTEWEAVE_KAFKA_RETRY_MAX_BACKOFF_MS:30000}
     topics:
       source-parse: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_PARSE:noteweave.source.parse}
       source-chunk: ${NOTEWEAVE_KAFKA_TOPIC_SOURCE_CHUNK:noteweave.source.chunk}
@@ -283,8 +286,8 @@ noteweave:
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
     batch-size: ${NOTEWEAVE_RERANK_BATCH_SIZE:80}
     max-document-characters: ${NOTEWEAVE_RERANK_MAX_DOCUMENT_CHARACTERS:1800}
-    timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:20}
-    max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:3}
+    timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:5}
+    max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}
     # 重排服务关闭或调用失败时改用对话模型给候选打相关度分
     llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:true}
   llm:

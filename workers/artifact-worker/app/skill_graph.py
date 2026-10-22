@@ -12,6 +12,7 @@ from app.verification_runtime import blocking_failures, verify_draft
 from app.retrieval_runtime import execute_retrieve_node
 from app.registry import resolve_skill_definition
 from app.runtime_node_registry import ensure_runtime_node_contract_registered
+from app.execution_heartbeat import checkpoint_artifact_execution
 from app.sectioned_runtime import (
     plan_outline, write_sections, cite_sections, check_document_consistency, document_content_digest,
 )
@@ -134,6 +135,7 @@ def execute_skill_graph(task_input, plan, *, llm_client=None, canonical_content_
         "node.document_consistency.v1": lambda inputs, _node: check_document_consistency(inputs, llm_client),
     })
     def run_node(node):
+        checkpoint_artifact_execution()
         prior_rounds = len(repair_history)
         ensure_runtime_node_contract_registered(node, resolve_skill_definition(node.skill_key),
             error_prefix="执行节点声明无效")

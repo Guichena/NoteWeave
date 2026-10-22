@@ -153,29 +153,7 @@ class BilibiliRenderPdfServer:
                     "max_frames": {"type": "integer", "minimum": 1, "maximum": 32, "default": 32},
                 }, required=["video_url"]),
             },
-            {
-                "name": "analyze_frame",
-                "description": "OCR one digest-verified staged video frame; report visible text and uncertainty without claiming visual semantics.",
-                "inputSchema": _object_schema({
-                    "task_id": _string_schema("Host-controlled Artifact task ID."),
-                    "file_id": _string_schema("Frozen video frame file ID."),
-                    "checksum_sha256": _string_schema("SHA-256 from the frozen frame manifest."),
-                }, required=["task_id", "file_id", "checksum_sha256"]),
-            },
-            {
-                "name": "analyze_frames",
-                "description": "OCR the digest-verified frames from one task's completed capture receipt.",
-                "inputSchema": _object_schema({
-                    "task_id": _string_schema("Host-controlled Artifact task ID."),
-                    "files": {"type": "array", "maxItems": 32, "items": {
-                        "type": "object", "properties": {
-                            "file_id": {"type": "string"},
-                            "checksum_sha256": {"type": "string"},
-                        }, "required": ["file_id", "checksum_sha256"],
-                        "additionalProperties": False,
-                    }},
-                }, required=["task_id", "files"]),
-            },
+            *_frame_text_ocr_tools(),
             {
                 "name": "render_latex_pdf",
                 "description": "Render a controlled LaTeX note package from structured course-note content.",
@@ -228,9 +206,9 @@ class BilibiliRenderPdfServer:
             return self._transcribe_local_audio(arguments)
         if tool_name == "capture_bilibili_frames":
             return self._capture_bilibili_frames(arguments)
-        if tool_name == "analyze_frame":
+        if tool_name in {"ocr_frame", "analyze_frame"}:
             return self._analyze_frame(arguments)
-        if tool_name == "analyze_frames":
+        if tool_name in {"ocr_frames", "analyze_frames"}:
             return self._analyze_frames(arguments)
         if tool_name == "render_latex_pdf":
             return self._render_latex_pdf(arguments)
@@ -1223,6 +1201,43 @@ def _required_string(arguments: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} is required")
     return value.strip()
+
+
+def _frame_text_ocr_tools() -> list[dict[str, Any]]:
+    """Register OCR tools and keep the old analyze_* names as call aliases."""
+    single_schema = _object_schema({
+        "task_id": _string_schema("Host-controlled Artifact task ID."),
+        "file_id": _string_schema("Frozen video frame file ID."),
+        "checksum_sha256": _string_schema("SHA-256 from the frozen frame manifest."),
+    }, required=["task_id", "file_id", "checksum_sha256"])
+    batch_schema = _object_schema({
+        "task_id": _string_schema("Host-controlled Artifact task ID."),
+        "files": {"type": "array", "maxItems": 32, "items": {
+            "type": "object", "properties": {
+                "file_id": {"type": "string"},
+                "checksum_sha256": {"type": "string"},
+            }, "required": ["file_id", "checksum_sha256"],
+            "additionalProperties": False,
+        }},
+    }, required=["task_id", "files"])
+    single = {
+        "name": "ocr_frame",
+        "description": "Recognize visible text in one digest-verified staged video frame. OCR only; visual semantics stay unverified.",
+        "inputSchema": single_schema,
+    }
+    batch = {
+        "name": "ocr_frames",
+        "description": "Recognize visible text in the digest-verified frames from one task's completed capture receipt. OCR only; visual semantics stay unverified.",
+        "inputSchema": batch_schema,
+    }
+    return [
+        single,
+        batch,
+        {**single, "name": "analyze_frame",
+         "description": single["description"] + " Compatibility alias of ocr_frame."},
+        {**batch, "name": "analyze_frames",
+         "description": batch["description"] + " Compatibility alias of ocr_frames."},
+    ]
 
 
 def _object_schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:

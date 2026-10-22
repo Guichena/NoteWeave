@@ -148,6 +148,31 @@ class QaAnswerModeStrategyTest {
                 .isEqualTo(QaAnswerModeStrategy.V2_PLAN_VERSION);
     }
 
+    @Test
+    void shouldLabelConversationWindowAsContextWithSummaryAndConstraints() {
+        QaAnswerModeStrategy strategy = new QaAnswerModeStrategy();
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query",
+                Set.of(),
+                Map.of(
+                        QaAnswerModeStrategy.ATTRIBUTE_CONTEXT_APPLIED, "true",
+                        ConversationWindow.ATTRIBUTE,
+                        "当前问题：那它的 K 取多少？\n"
+                                + "已冻结的相关主题摘要：\nRRF 用 K 平滑排名差异\n"
+                                + "当前有效的用户约束：\n- 请用中文"
+                ),
+                Instant.now());
+
+        var prompt = strategy.compose(context, new EvidenceBundle(
+                "bundle", QaAnswerModeStrategy.PLAN_VERSION,
+                List.of(evidence("passage:one")), false, List.of(), Instant.now()));
+
+        assertThat(prompt.userPrompt())
+                .contains("最近对话上下文（含主题摘要与用户约束，不要向用户复述）：")
+                .contains("- 请用中文")
+                .doesNotContain("最近对话原文");
+    }
+
     private EvidenceBundle.Evidence evidence(String id) {
         return new EvidenceBundle.Evidence(
                 id, "PASSAGE", "source", "snapshot", id, "", "", "title",

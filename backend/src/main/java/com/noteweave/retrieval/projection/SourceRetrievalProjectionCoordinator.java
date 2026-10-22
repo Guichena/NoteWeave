@@ -33,7 +33,8 @@ public class SourceRetrievalProjectionCoordinator {
             RetrievalProjectionWriter projectionWriter,
             RetrievalIndexManager indexManager
     ) {
-        this(projectionService, finalizer, projectionWriter, indexManager, null, null, null, null);
+        this(projectionService, finalizer, projectionWriter, indexManager, null, null, null, null,
+                (com.noteweave.source.SourceTopicNames) null);
     }
 
     public SourceRetrievalProjectionCoordinator(
@@ -44,11 +45,12 @@ public class SourceRetrievalProjectionCoordinator {
             JdbcTemplate jdbcTemplate,
             PlatformTransactionManager transactionManager,
             TaskCommandPort taskCommandPort,
-            SnapshotEmbeddingStore embeddingStore
+            SnapshotEmbeddingStore embeddingStore,
+            com.noteweave.source.SourceTopicNames topicNames
     ) {
         this(projectionService, finalizer, projectionWriter, indexManager, jdbcTemplate, transactionManager,
                 taskCommandPort, embeddingStore, jdbcTemplate == null || transactionManager == null ? null
-                        : new SourceEmbeddingBatchRepository(jdbcTemplate, transactionManager));
+                        : new SourceEmbeddingBatchRepository(jdbcTemplate, transactionManager, topicNames));
     }
 
     @Autowired

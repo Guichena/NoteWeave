@@ -27,7 +27,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   EXTRACT_TRANSCRIPT: "提取字幕",
   TRANSCRIBE_AUDIO: "语音转写",
   CAPTURE_VIDEO_FRAMES: "视频截帧",
-  ANALYZE_FRAME: "画面理解"
+  OCR_FRAME: "画面文字识别",
+  ANALYZE_FRAME: "画面文字识别"
 };
 
 export type ArtifactOutputState = "queued" | "running" | "waiting" | "failed" | "cancelled" | "ready";

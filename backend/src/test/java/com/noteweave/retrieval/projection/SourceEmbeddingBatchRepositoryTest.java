@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.noteweave.common.Ids;
+import com.noteweave.source.SourceTopicNamesFixture;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -154,8 +155,37 @@ class SourceEmbeddingBatchRepositoryTest {
         } finally { executor.shutdownNow(); }
     }
 
+    /** 部署侧覆盖资料流水线主题名时，批次投递必须跟随配置，否则调度器不认领、流水线停在向量化阶段。 */
+    @Test
+    void customTopicNamesAreUsedForBatchAndIndexOutbox() {
+        Fixture fixture = fixture(65);
+        SourceEmbeddingBatchRepository custom = new SourceEmbeddingBatchRepository(jdbc, transactions,
+                SourceTopicNamesFixture.custom("acme.parse", "acme.chunk", "acme.embed", "acme.index",
+                        "acme.projection"));
+        List<SourceEmbeddingBatchRepository.Batch> rows = initialize(custom, fixture);
+        assertThat(rows).hasSize(2);
+        assertThat(outbox(fixture, "acme.embed")).isEqualTo(2);
+        assertThat(outbox(fixture, "noteweave.source.embed")).isZero();
+        var expired = custom.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, rows.get(0).batchVersion());
+        jdbc.update("update source_embedding_batch set lease_until = timestamp '2020-01-01 00:00:00' where id = ?", expired.id());
+        custom.recoverExpiredLeases();
+        assertThat(outbox(fixture, "acme.embed")).isEqualTo(3);
+        assertThat(outbox(fixture, "noteweave.source.embed")).isZero();
+        assertThatThrownBy(() -> custom.complete(expired, "late.bin", "a".repeat(64), ignored -> "manifest.json"))
+                .hasMessageContaining("LEASE_LOST");
+        for (int i = rows.size() - 1; i >= 0; i--) {
+            var claimed = custom.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), i, rows.get(0).batchVersion());
+            assertThat(custom.complete(claimed, "batch-" + i, "a".repeat(64), ignored -> "manifest.json")).isEqualTo(i == 0);
+        }
+        assertThat(outbox(fixture, "acme.index")).isEqualTo(1);
+        assertThat(outbox(fixture, "noteweave.source.index")).isZero();
+    }
+
     private List<SourceEmbeddingBatchRepository.Batch> initialize(Fixture fixture) {
-        return repository.initialize(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(),
+        return initialize(repository, fixture);
+    }
+    private List<SourceEmbeddingBatchRepository.Batch> initialize(SourceEmbeddingBatchRepository target, Fixture fixture) {
+        return target.initialize(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(),
                 "model:3", "chunk-v1", "context-v1", (count, note) -> (count + 7) / 8 + (note ? 1 : 0));
     }
     private int outbox(Fixture fixture, String topic) {

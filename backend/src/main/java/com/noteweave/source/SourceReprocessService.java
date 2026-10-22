@@ -37,12 +37,13 @@ public class SourceReprocessService {
     private final ObjectStorage storage;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SourceTopicNames topicNames;
 
     public SourceReprocessService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                   WorkspaceAccessGuard workspaceAccessGuard, TaskCommandPort taskCommandPort,
                                   SourceMessagingMode messagingMode, SourceParsePort sourceParsePort,
                                   ObjectStorage storage, SourceCatalogVersionService sourceCatalogVersionService,
-                                  ApplicationEventPublisher eventPublisher) {
+                                  ApplicationEventPublisher eventPublisher, SourceTopicNames topicNames) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -52,6 +53,7 @@ public class SourceReprocessService {
         this.storage = storage;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.eventPublisher = eventPublisher;
+        this.topicNames = topicNames;
     }
 
     @Transactional
@@ -132,7 +134,7 @@ public class SourceReprocessService {
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')
-                """, outboxId, taskId, async ? SourcePipelineStages.TOPIC_EMBED : "noteweave.retrieval.projection",
+                """, outboxId, taskId, async ? topicNames.embed() : topicNames.retrievalProjection(),
                 snapshotId, Json.write(objectMapper, payload));
         if (!async) {
             eventPublisher.publishEvent(new SourceParseService.SynchronousRetrievalProjectionRequested(
@@ -174,7 +176,7 @@ public class SourceReprocessService {
             jdbcTemplate.update("""
                     insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                     values (?, ?, ?, ?, ?, 'READY')
-                    """, Ids.newId(), taskId, SourcePipelineStages.TOPIC_PARSE, sourceId,
+                    """, Ids.newId(), taskId, topicNames.parse(), sourceId,
                     Json.write(objectMapper, payload));
         } else {
             taskCommandPort.startTask(taskId);

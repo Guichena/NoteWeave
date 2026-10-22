@@ -105,6 +105,7 @@ class OpenAICompatibleLlmClient:
         timeout_seconds: int = 60,
         max_total_calls: int = 64,
         session_id: str = "",
+        max_retries: int = 2,
     ) -> None:
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
@@ -116,10 +117,12 @@ class OpenAICompatibleLlmClient:
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.session_id = session_id
+        # SDK 内部重试沿用原配置，逻辑调用继续单独计数。
+        self.max_retries = max(0, max_retries)
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
-            max_retries=0,
+            max_retries=self.max_retries,
             timeout=timeout_seconds,
             http_client=httpx.Client(
                 transport=_CredentialSafeTransport(timeout_seconds),
@@ -248,4 +251,5 @@ def build_default_llm_client() -> LlmClient | None:
         base_url=settings.llm_base_url,
         timeout_seconds=max(1, settings.llm_timeout_seconds),
         max_total_calls=settings.llm_max_total_calls,
+        max_retries=max(0, settings.llm_max_retries),
     )

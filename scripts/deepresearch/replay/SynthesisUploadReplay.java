@@ -16,7 +16,7 @@ public class SynthesisUploadReplay {
     String context = "{\"query_policy\":{\"synthesis_input\":{\"report_upload_version\":1}}}";
     String taskId = "00000000-0000-0000-0000-000000000001";
     db.update("insert into research_agent_task values (?,'SYNTHESIS',?)", taskId, context);
-    for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V173__research_synthesis_upload_parts.sql")).split(";")) if (!sql.isBlank()) db.execute(sql);
+    for (String sql : Files.readString(Path.of(System.getenv("NOTEWEAVE_REPLAY_ROOT") + "/backend/src/main/resources/db/migration/V185__research_synthesis_upload_parts.sql")).split(";")) if (!sql.isBlank()) db.execute(sql);
     // 上传入口复用的租约校验在本回放中预设通过，只验证持久化、不可变性和重组边界。
     var tasks = new ResearchAgentTaskService(db, mapper, null, null, null) {
       @Override public ClaimedTask heartbeat(LeaseCommand command) {

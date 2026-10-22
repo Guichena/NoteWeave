@@ -21,7 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(properties = "noteweave.video-learning.enabled=false")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class VideoLearningRequestRepositoryContractTest {

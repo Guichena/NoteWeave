@@ -193,7 +193,6 @@ MySQL Source Version / ACL Version / Tombstone commit
 | GET | `/api/v2/auth/session` | 当前会话 |
 | POST/GET | `/api/v2/workspaces` | 创建与查询 Workspace |
 | GET/PUT | `/api/v2/workspaces/{workspaceId}/wiki-settings` | Wiki 设置 |
-| GET/PUT | `/api/v2/workspaces/{workspaceId}/retrieval-settings` | 检索设置 |
 | GET/PUT/DELETE | `/api/v2/workspaces/{workspaceId}/members...` | 成员与角色 |
 
 ### Source、Knowledge 与 Wiki

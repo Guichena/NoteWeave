@@ -48,6 +48,7 @@ public class SourceParseService implements SourceParsePort {
     private final AuditActorProvider auditActorProvider;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SourceTopicNames topicNames;
     private SourceTranscriptionPort transcriptionPort;
     private SourceTranscriptionSubmissionService transcriptionSubmissions;
 
@@ -70,6 +71,7 @@ public class SourceParseService implements SourceParsePort {
         this.auditActorProvider = auditActorProvider;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.eventPublisher = eventPublisher;
+        this.topicNames = new SourceTopicNames(properties);
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -232,7 +234,7 @@ public class SourceParseService implements SourceParsePort {
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')
                 """, projectionOutboxId, sourceParseTaskId,
-                asyncStages ? SourcePipelineStages.TOPIC_EMBED : "noteweave.retrieval.projection",
+                asyncStages ? topicNames.embed() : topicNames.retrievalProjection(),
                 snapshotId, writeJson(projectionPayload));
         if (!messagingMode.isAsyncEnabled()) {
             eventPublisher.publishEvent(new SynchronousRetrievalProjectionRequested(
@@ -412,7 +414,7 @@ public class SourceParseService implements SourceParsePort {
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')
-                """, Ids.newId(), taskId, SourcePipelineStages.TOPIC_CHUNK, snapshotId, writeJson(payload));
+                """, Ids.newId(), taskId, topicNames.chunk(), snapshotId, writeJson(payload));
         sourceCatalogVersionService.bump(workspaceId);
         return true;
     }

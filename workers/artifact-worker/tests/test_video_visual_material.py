@@ -9,6 +9,7 @@ from PIL import Image
 
 from app.models import ArtifactTaskInput
 from app.custom_mcp_executor import _build_tool_arguments
+from app.registry import operation_capability_name, resolve_capability_binding
 from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID, resolve_system_mcp_server
 from app.video_material_bundle import frozen_video_input_digest
 from app.video_subtitle_material import subtitle_only_bundle
@@ -71,6 +72,14 @@ def test_system_provider_maps_frame_operation_to_bounded_mcp_call():
     server = resolve_system_mcp_server(SYSTEM_BILIBILI_SERVER_ID)
     assert any(tool.capability_name == "CAPTURE_VIDEO_FRAMES"
                and tool.tool_name == "capture_bilibili_frames" for tool in server.tools)
+    assert any(tool.capability_name == "OCR_FRAME"
+               and tool.tool_name == "ocr_frames" for tool in server.tools)
+    alias = resolve_capability_binding("ANALYZE_FRAME")
+    assert alias.capability_name == "OCR_FRAME"
+    assert alias.tool_name == "ocr_frames"
+    assert resolve_capability_binding("OCR_FRAME").tool_name == "ocr_frames"
+    assert operation_capability_name("ANALYZE_FRAMES") == "OCR_FRAME"
+    assert operation_capability_name("OCR_FRAMES") == "OCR_FRAME"
     assert _build_tool_arguments({
         "tool_name": "capture_bilibili_frames",
         "input_locator": "https://www.bilibili.com/video/BV1234567890?p=2",

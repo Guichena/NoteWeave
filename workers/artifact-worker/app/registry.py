@@ -27,6 +27,59 @@ from app.runtime_node_registry import ensure_runtime_node_contract_registered, e
 
 logger = logging.getLogger(__name__)
 
+# 画面步骤只做 Tesseract OCR。OCR_FRAME 是登记名；ANALYZE_FRAME 是已存计划和回调的兼容别名。
+FRAME_TEXT_OCR_CAPABILITY = "OCR_FRAME"
+FRAME_TEXT_OCR_CAPABILITY_ALIAS = "ANALYZE_FRAME"
+FRAME_TEXT_OCR_OPERATION = "OCR_FRAMES"
+FRAME_TEXT_OCR_OPERATION_ALIAS = "ANALYZE_FRAMES"
+FRAME_TEXT_OCR_TOOL = "ocr_frames"
+FRAME_TEXT_OCR_TOOL_SINGLE = "ocr_frame"
+
+_CAPABILITY_ALIASES = {
+    FRAME_TEXT_OCR_CAPABILITY_ALIAS: FRAME_TEXT_OCR_CAPABILITY,
+}
+_TOOL_ALIASES = {
+    "analyze_frames": FRAME_TEXT_OCR_TOOL,
+    "analyze_frame": FRAME_TEXT_OCR_TOOL_SINGLE,
+}
+_OPERATION_CAPABILITIES = {
+    "READ_EXTERNAL_CONTENT": "READ_WEB_PAGE",
+    "EXTRACT_TRANSCRIPT": "EXTRACT_TRANSCRIPT",
+    "CAPTURE_FRAMES": "CAPTURE_VIDEO_FRAMES",
+    FRAME_TEXT_OCR_OPERATION: FRAME_TEXT_OCR_CAPABILITY,
+    FRAME_TEXT_OCR_OPERATION_ALIAS: FRAME_TEXT_OCR_CAPABILITY,
+    "TRANSCRIBE_AUDIO": "TRANSCRIBE_AUDIO",
+}
+
+
+def canonical_capability_name(capability_name: str) -> str:
+    normalized = (capability_name or "").strip().upper()
+    return _CAPABILITY_ALIASES.get(normalized, normalized)
+
+
+def capability_names_match(left: str, right: str) -> bool:
+    return canonical_capability_name(left) == canonical_capability_name(right)
+
+
+def is_frame_text_ocr_capability(capability_name: object) -> bool:
+    return canonical_capability_name(str(capability_name or "")) == FRAME_TEXT_OCR_CAPABILITY
+
+
+def is_frame_text_ocr_operation(operation_key: object) -> bool:
+    return str(operation_key or "").strip() in {
+        FRAME_TEXT_OCR_OPERATION,
+        FRAME_TEXT_OCR_OPERATION_ALIAS,
+    }
+
+
+def canonical_tool_name(tool_name: str | None) -> str:
+    normalized = (tool_name or "").strip()
+    return _TOOL_ALIASES.get(normalized, normalized)
+
+
+def operation_capability_name(operation_key: str) -> str:
+    return _OPERATION_CAPABILITIES.get(operation_key, "")
+
 
 _custom_action_lock = Lock()
 _custom_prompt_recipe_lock = Lock()
@@ -390,7 +443,7 @@ PRODUCTION_ACTIONS = {
             "EXTRACT_TRANSCRIPT",
             "TRANSCRIBE_AUDIO",
             "CAPTURE_VIDEO_FRAMES",
-            "ANALYZE_FRAME",
+            "OCR_FRAME",
         ],
         output_sections=[
             "\u8bfe\u7a0b\u6982\u8981",
@@ -961,10 +1014,10 @@ CAPABILITY_BINDINGS = {
         risk_level="MEDIUM",
         allowed_actions=["COURSE_NOTES"],
     ),
-    "ANALYZE_FRAME": CapabilityBinding(
-        capability_name="ANALYZE_FRAME",
+    "OCR_FRAME": CapabilityBinding(
+        capability_name="OCR_FRAME",
         server_id="builtin-bilibili-mcp",
-        tool_name="analyze_frames",
+        tool_name="ocr_frames",
         scope_type="MEDIA_PROCESSING",
         approval_mode="REQUIRED",
         risk_level="MEDIUM",
@@ -1113,11 +1166,12 @@ def resolve_skill_graph(graph_key: str) -> SkillGraphTemplate:
 
 
 def resolve_capability_binding(capability_name: str) -> CapabilityBinding:
-    custom_binding = _resolve_custom_capability_binding(capability_name)
+    canonical_name = canonical_capability_name(capability_name)
+    custom_binding = _resolve_custom_capability_binding(canonical_name)
     if custom_binding is not None:
         return custom_binding
     try:
-        return CAPABILITY_BINDINGS[capability_name]
+        return CAPABILITY_BINDINGS[canonical_name]
     except KeyError as exc:
         raise ValueError(f"unknown capability binding: {capability_name}") from exc
 
@@ -1741,7 +1795,7 @@ def _load_custom_artifact_config_store() -> None:
 
 
 def _resolve_custom_capability_binding(capability_name: str) -> CapabilityBinding | None:
-    normalized_capability_name = capability_name.strip().upper()
+    normalized_capability_name = canonical_capability_name(capability_name)
     if normalized_capability_name in CAPABILITY_BINDINGS:
         return None
     for binding in _list_custom_capability_bindings():
@@ -1754,7 +1808,7 @@ def _list_custom_capability_bindings() -> list[CapabilityBinding]:
     bindings: dict[str, CapabilityBinding] = {}
     for server in list_custom_mcp_servers():
         for tool in server.tools:
-            if tool.capability_name in CAPABILITY_BINDINGS:
+            if canonical_capability_name(tool.capability_name) in CAPABILITY_BINDINGS:
                 continue
             bindings.setdefault(
                 tool.capability_name,
@@ -1774,7 +1828,7 @@ def _list_custom_capability_bindings() -> list[CapabilityBinding]:
 def _normalize_custom_mcp_tool_registration(
     tool: CustomMcpToolRegistration,
 ) -> CustomMcpToolRegistration:
-    normalized_capability_name = tool.capability_name.strip().upper()
+    normalized_capability_name = canonical_capability_name(tool.capability_name)
     normalized_tool_name = tool.tool_name.strip()
     if not normalized_capability_name:
         raise ValueError("custom mcp tool requires a non-empty capability_name")
@@ -1846,7 +1900,7 @@ def _validate_custom_mcp_tool_compatibility(
 ) -> None:
     custom_only_bindings: dict[str, tuple[str, str, str, tuple[str, ...]]] = {}
     for tool in tools:
-        if tool.capability_name in CAPABILITY_BINDINGS:
+        if canonical_capability_name(tool.capability_name) in CAPABILITY_BINDINGS:
             continue
         signature = (
             tool.scope_type,

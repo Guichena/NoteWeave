@@ -11,8 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Workspace opt-in; production consumption also requires a separate global gate.
- * 没有单独配置过的工作区使用 default-mode；部署环境默认 ACTIVE，即回答时使用话题感知窗口，
+ * 工作区可在 OFF/SHADOW/ACTIVE 之间切换；全局开关默认开启，与 application.yml、
+ * docker-compose.yml 和 .env.example 中的默认值保持一致。
+ * 没有单独配置过的工作区使用 default-mode；默认 ACTIVE，即回答时使用话题感知窗口，
  * 冻结失败时自动退回 V1 前缀摘要窗口。
  */
 @Service
@@ -24,11 +25,11 @@ public class ContextV2RolloutService {
     private final String defaultMode;
 
     public ContextV2RolloutService(JdbcTemplate jdbc, WorkspaceAccessGuard access,
-                                   @Value("${noteweave.context.v2.shadow-enabled:false}")
+                                   @Value("${noteweave.context.v2.shadow-enabled:true}")
                                    boolean globalShadowEnabled,
-                                   @Value("${noteweave.context.v2.active-enabled:false}")
+                                   @Value("${noteweave.context.v2.active-enabled:true}")
                                    boolean globalActiveEnabled,
-                                   @Value("${noteweave.context.v2.default-mode:OFF}")
+                                   @Value("${noteweave.context.v2.default-mode:ACTIVE}")
                                    String defaultMode) {
         this.jdbc = jdbc;
         this.access = access;

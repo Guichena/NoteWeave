@@ -50,6 +50,60 @@ def test_llm_client_should_fallback_on_oversized_http_response(monkeypatch) -> N
     assert client.complete_json("artifact.generate", {}) == ""
 
 
+def test_llm_client_default_max_retries_is_two() -> None:
+    client = OpenAICompatibleLlmClient("api-key", "artifact-model")
+
+    assert client.max_retries == 2
+    assert client.client.max_retries == 2
+
+
+def test_llm_client_clamps_negative_max_retries_to_zero() -> None:
+    client = OpenAICompatibleLlmClient("api-key", "artifact-model", max_retries=-3)
+
+    assert client.max_retries == 0
+    assert client.client.max_retries == 0
+
+
+def test_build_default_llm_client_uses_configured_max_retries(monkeypatch) -> None:
+    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_LLM_API_KEY", "artifact-key")
+    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_LLM_MODEL", "artifact-model")
+    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES", "4")
+
+    client = llm_client.build_default_llm_client()
+
+    assert client is not None
+    assert client.max_retries == 4
+    assert client.client.max_retries == 4
+
+
+def test_llm_client_retries_transient_http_error_as_one_logical_call(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    class OkResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def read(self, size: int) -> bytes:
+            return b'{"choices":[{"message":{"content":"{\\"ok\\":true}"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}'
+
+    def flaky_urlopen(req, timeout):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise llm_client.urllib.error.HTTPError(req.full_url, 500, "unavailable", {}, None)
+        return OkResponse()
+
+    monkeypatch.setattr(llm_client, "credential_safe_urlopen", flaky_urlopen)
+    client = OpenAICompatibleLlmClient("api-key", "artifact-model", max_retries=2)
+
+    assert client.complete_json("artifact.generate", {}) == '{"ok":true}'
+    assert calls["count"] == 2
+    assert len(client.call_records) == 1
+    assert client.call_records[0]["status"] == "COMPLETED"
+
+
 def test_llm_client_should_send_sdk_request_through_credential_safe_urlopen(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

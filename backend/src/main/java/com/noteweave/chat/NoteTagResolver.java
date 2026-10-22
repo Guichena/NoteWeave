@@ -41,7 +41,11 @@ public class NoteTagResolver {
         List<String> resolved = new ArrayList<>();
         List<String> unresolved = new ArrayList<>();
         for (String term : safeTerms) {
-            String tag = vocabulary.get(normalize(term));
+            String normalized = normalize(term);
+            String tag = vocabulary.get(normalized);
+            if (tag == null) {
+                tag = containedChineseTag(vocabulary, normalized);
+            }
             if (tag == null) unresolved.add(term);
             else if (!resolved.contains(tag)) resolved.add(tag);
         }
@@ -56,6 +60,24 @@ public class NoteTagResolver {
             if (score > 0) scores.put(entry.getKey(), score);
         }
         return new Resolution(List.copyOf(resolved), List.copyOf(unresolved), Map.copyOf(scores));
+    }
+
+    /** First vocabulary entry, in insertion order, whose normalized form contains the term. */
+    private String containedChineseTag(Map<String, String> vocabulary, String normalizedTerm) {
+        if (normalizedTerm.codePointCount(0, normalizedTerm.length()) < 2 || !containsHan(normalizedTerm)) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : vocabulary.entrySet()) {
+            if (entry.getKey().contains(normalizedTerm)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private boolean containsHan(String value) {
+        return value.codePoints().anyMatch(codePoint ->
+                Character.UnicodeScript.of(codePoint) == Character.UnicodeScript.HAN);
     }
 
     private int facetWeight(String tag) {

@@ -31,6 +31,8 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
     public static final String ATTRIBUTE_HAS_CHAT_CONTROLS = "has_chat_controls";
     public static final String ATTRIBUTE_CHAT_CONTROL_SECTION = "chat_control_section";
     public static final String ATTRIBUTE_TEMPLATE_LABEL = "template_label";
+    /** 关系与来源回链去重后最多保留的条数。 */
+    private static final int NETWORK_DEDUP_LIMIT = 6;
 
     private final WikiRetrievalSnapshotCodec snapshotCodec;
 
@@ -183,7 +185,7 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
 
     private String buildWikiSynthesis(List<WikiPageContext> contexts) {
         List<String> facts = new ArrayList<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
+        for (WikiPageContext context : contexts) {
             KnowledgePageHit page = context.page();
             String snippet = trim(page.summary().isBlank() ? page.content() : page.summary(), 150);
             facts.add("《" + page.title() + "》指出：" + snippet);
@@ -196,13 +198,13 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
 
     private List<WikiLinkResponse> collectNetworkLinks(List<WikiPageContext> contexts, boolean outgoing) {
         Map<String, WikiLinkResponse> dedup = new LinkedHashMap<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
+        for (WikiPageContext context : contexts) {
             List<WikiLinkResponse> links = outgoing ? context.outgoingLinks() : context.backlinks();
             for (WikiLinkResponse link : links) {
                 String key = (link.targetItemId() == null ? "" : link.targetItemId())
                         + "|" + link.targetTitle() + "|" + link.relationStatus();
                 dedup.putIfAbsent(key, link);
-                if (dedup.size() >= 6) {
+                if (dedup.size() >= NETWORK_DEDUP_LIMIT) {
                     return new ArrayList<>(dedup.values());
                 }
             }
@@ -212,11 +214,11 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
 
     private List<KnowledgeCitationResponse> collectNetworkCitations(List<WikiPageContext> contexts) {
         Map<String, KnowledgeCitationResponse> dedup = new LinkedHashMap<>();
-        for (WikiPageContext context : contexts.stream().limit(3).toList()) {
+        for (WikiPageContext context : contexts) {
             for (KnowledgeCitationResponse citation : context.citations()) {
                 String key = citation.sourceId() + "|" + citation.title() + "|" + citation.locationInfo();
                 dedup.putIfAbsent(key, citation);
-                if (dedup.size() >= 6) {
+                if (dedup.size() >= NETWORK_DEDUP_LIMIT) {
                     return new ArrayList<>(dedup.values());
                 }
             }

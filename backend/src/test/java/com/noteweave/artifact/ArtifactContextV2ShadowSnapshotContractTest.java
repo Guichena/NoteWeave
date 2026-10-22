@@ -24,7 +24,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest(properties = "noteweave.context.v2.shadow-enabled=true")
+// 只验证 SHADOW 灰度：显式关闭 ACTIVE，让新工作区落在 OFF，再通过接口开启 SHADOW。
+@SpringBootTest(properties = {
+        "noteweave.context.v2.shadow-enabled=true",
+        "noteweave.context.v2.active-enabled=false",
+        "noteweave.context.v2.default-mode=OFF"
+})
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ArtifactContextV2ShadowSnapshotContractTest {

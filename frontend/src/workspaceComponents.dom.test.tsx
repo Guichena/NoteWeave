@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ArtifactRail } from "./features/artifacts/ArtifactRail";
 import { ResearchDetailWorkbench } from "./features/research/ResearchDetailWorkbench";
 import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPanel";
@@ -24,11 +24,7 @@ import { MemoryReviewWorkbench } from "./features/memory/MemoryReviewWorkbench";
 afterEach(cleanup);
 
 describe("workspace component wiring", () => {
-  it("updates retrieval settings and adds a workspace member", async () => {
-    const updateRetrievalSettings = vi.fn(async (_workspaceId: string, enabled: boolean) => ({
-      workspace_id: "workspace",
-      retrieval_strategy_v2_enabled: enabled
-    }));
+  it("adds a workspace member without a retrieval strategy switch", async () => {
     const putMember = vi.fn(async (_workspaceId: string, userId: string, input: { role: string; status: string }) => ({
       user_id: userId,
       display_name: "New Member",
@@ -41,11 +37,6 @@ describe("workspace component wiring", () => {
       onClose={vi.fn()}
       showMembers
       api={{
-        getRetrievalSettings: vi.fn(async () => ({
-          workspace_id: "workspace",
-          retrieval_strategy_v2_enabled: false
-        })),
-        updateRetrievalSettings,
         listMembers: vi.fn(async () => [{
           user_id: "owner",
           display_name: "Owner",
@@ -58,11 +49,9 @@ describe("workspace component wiring", () => {
       } as any}
     />);
 
-    const retrievalToggle = await screen.findByRole("checkbox", { name: "已停用" });
-    expect(document.querySelector(".workspace-toggle-track")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "成员" })).toBeTruthy();
+    expect(screen.queryByText("检索策略 V2")).toBeNull();
     expect(document.querySelector(".workspace-select-control")).toBeTruthy();
-    fireEvent.click(retrievalToggle);
-    await waitFor(() => expect(updateRetrievalSettings).toHaveBeenCalledWith("workspace", true));
 
     fireEvent.change(screen.getByLabelText("用户 ID"), { target: { value: "member-1" } });
     fireEvent.change(screen.getByLabelText("角色"), { target: { value: "EDITOR" } });

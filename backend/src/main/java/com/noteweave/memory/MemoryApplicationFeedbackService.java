@@ -11,12 +11,16 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 把回答反馈、重新生成、下一轮追问和产物编辑写到实际注入的记忆上。
@@ -36,10 +40,25 @@ public class MemoryApplicationFeedbackService {
     static final String SIGNAL_FOLLOW_UP = "FOLLOW_UP";
     static final String TARGET_MESSAGE = "CONVERSATION_MESSAGE";
 
+    /**
+     * 跟进反馈的处理结果：写接受、写负面，或这一轮不写。
+     * {@link #RETRYABLE} 表示本轮没写成但值得重跑：模型没给出可用结论，或判定期间数据被别的写入改过、
+     * 乐观检查失败。调用方据此把任务标成可重试，而不是直接收尾。
+     */
+    public enum FollowUpResult {
+        ACCEPTED,
+        NEGATIVE,
+        SKIPPED,
+        RETRYABLE
+    }
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryApplicationFeedbackService.class);
+
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final MemoryOutcomePolicy outcomePolicy;
     private final MemoryFeedbackAspectJudge aspectJudge;
+    private final TransactionTemplate transactionTemplate;
     private final boolean enabled;
 
     public MemoryApplicationFeedbackService(
@@ -47,12 +66,14 @@ public class MemoryApplicationFeedbackService {
             WorkspaceAccessGuard workspaceAccessGuard,
             MemoryOutcomePolicy outcomePolicy,
             MemoryFeedbackAspectJudge aspectJudge,
+            PlatformTransactionManager transactionManager,
             @Value("${noteweave.memory.outcome-feedback-enabled:true}") boolean enabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.outcomePolicy = outcomePolicy;
         this.aspectJudge = aspectJudge;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.enabled = enabled;
     }
 
@@ -145,43 +166,140 @@ public class MemoryApplicationFeedbackService {
                 null, 1.0, null, null, null, sourceRef, false);
     }
 
-    @Transactional
-    public void recordFollowUp(String workspaceId, String userMessageId, String userContent, boolean dissatisfied) {
+    /**
+     * 下一轮消息算不算跟进反馈、正/负/中性、针对哪个方面，全部由模型给出（见
+     * {@link MemoryFeedbackAspectJudge}），这里只按模型结论写接受、写负面，或这一轮不写。
+     * 模型没给出可用结论时本轮跳过，由调用方把任务标成可重试。
+     * <p>
+     * 调用方要在事务外调用（记忆抽取已经把这一步提到持久化事务之前）。判断模型在事务外调用，
+     * 也不持有任何行锁；只有把结论写到实际注入的记忆上时才开一个短事务，加锁重读 usage 行并做
+     * 乐观检查：判定期间 usage 行或已生效的反馈发生变化就放弃这次写入，返回
+     * {@link FollowUpResult#RETRYABLE} 并记一条只含原因码与消息 id 的 warn：调用方据此把任务标成
+     * 可重试、由既有重驱入口重跑。不能返回 {@link FollowUpResult#SKIPPED}——调用方会把它当成
+     * 「本轮不需要写」直接收尾任务，这条跟进反馈就永久丢了。
+     */
+    public FollowUpResult recordFollowUp(String workspaceId, String userMessageId, String userContent) {
+        FollowUpPlan plan = planFollowUp(workspaceId, userMessageId, userContent);
+        if (!plan.actionable()) {
+            return plan.result();
+        }
+        FollowUpResult applied = transactionTemplate.execute(status -> applyFollowUp(plan));
+        if (applied == null) {
+            // 事务没给出结论（理论上不会发生）：按可重试处理，不静默丢掉这条反馈
+            return retryableConflict("NO_APPLY_RESULT", plan);
+        }
+        return applied;
+    }
+
+    /** 事务外的只读快照 + 模型判断：不加锁，模型慢也不会挡住同一行上的其它写入。 */
+    private FollowUpPlan planFollowUp(String workspaceId, String userMessageId, String userContent) {
         if (!enabled || userMessageId == null || userMessageId.isBlank()) {
-            return;
+            return FollowUpPlan.skipped();
         }
         String sourceRef = "follow-up:" + userMessageId;
         if (sourceExists(workspaceId, sourceRef)) {
-            return;
+            return FollowUpPlan.skipped();
         }
         String assistantMessageId = previousAssistantId(workspaceId, userMessageId);
         if (assistantMessageId == null) {
-            return;
+            return FollowUpPlan.skipped();
         }
-        List<UsageRow> usages = loadUsages(workspaceId, TARGET_MESSAGE, assistantMessageId);
+        List<UsageRow> usages = readUsages(workspaceId, TARGET_MESSAGE, assistantMessageId);
         if (usages.isEmpty()) {
-            return;
+            return FollowUpPlan.skipped();
         }
-        if (!dissatisfied) {
-            List<UsageRow> eligible = usages.stream().filter(row -> !alreadySignaled(row)).toList();
-            if (eligible.isEmpty()) {
-                return;
-            }
-            apply(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, eligible, "ACCEPTED",
-                    null, 0.5, null, null, null, sourceRef, false);
-            return;
+        // 模型没配置时判断永远做不了，属于常态：跳过这一轮，不标可重试
+        if (!aspectJudge.available()) {
+            return FollowUpPlan.skipped();
         }
         MemoryFeedbackAspectJudge.Judgment judgment = aspectJudge.judge(userContent);
+        FollowUpResult result = followUpResult(judgment);
+        if (result == FollowUpResult.SKIPPED || result == FollowUpResult.RETRYABLE) {
+            return FollowUpPlan.notWritten(result);
+        }
+        if (result == FollowUpResult.ACCEPTED) {
+            List<UsageRow> eligible = usages.stream().filter(row -> !alreadySignaled(row)).toList();
+            if (eligible.isEmpty()) {
+                return FollowUpPlan.skipped();
+            }
+            return new FollowUpPlan(result, workspaceId, userMessageId, assistantMessageId, sourceRef,
+                    judgment, usages, eligible, null, userContent);
+        }
         List<UsageRow> selected = select(usages, "NEGATIVE", judgment.aspect());
         String degradation = degradation(usages, selected, "NEGATIVE", judgment);
-        if (selected.isEmpty()) {
-            insertAnswerLevel(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, "NEGATIVE",
-                    judgment.aspect(), trimNote(userContent), degradation, sourceRef);
-            return;
+        return new FollowUpPlan(result, workspaceId, userMessageId, assistantMessageId, sourceRef,
+                judgment, usages, selected, degradation, userContent);
+    }
+
+    /**
+     * 短事务里的写入：先重新加锁读 usage 行，与事务外的快照逐行比较（行集、记忆/版本、反馈状态），
+     * 再重算这次要写的行。任一不一致都说明判定期间已经有别的反馈、重试或数据变更写过这些行，
+     * 本次放弃写入，不去覆盖别人的结果；同时返回 {@link FollowUpResult#RETRYABLE}，让调用方重跑这一轮。
+     */
+    private FollowUpResult applyFollowUp(FollowUpPlan plan) {
+        if (sourceExists(plan.workspaceId(), plan.sourceRef())) {
+            // 同一轮反馈已经被并发的重复投递写过：不重复写，但也不算丢失
+            return FollowUpResult.SKIPPED;
         }
-        apply(workspaceId, TARGET_MESSAGE, assistantMessageId, SIGNAL_FOLLOW_UP, selected, "NEGATIVE",
-                null, updateWeight("NEGATIVE", judgment.aspect()), judgment.aspect(), trimNote(userContent),
-                degradation, sourceRef, betaFor("NEGATIVE", judgment.aspect()));
+        if (!plan.assistantMessageId().equals(
+                previousAssistantId(plan.workspaceId(), plan.userMessageId()))) {
+            return retryableConflict("PREVIOUS_ANSWER_CHANGED", plan);
+        }
+        List<UsageRow> locked = loadUsages(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId());
+        if (!locked.equals(plan.usages())) {
+            return retryableConflict("USAGE_SNAPSHOT_CHANGED", plan);
+        }
+        List<UsageRow> targets = plan.result() == FollowUpResult.ACCEPTED
+                ? locked.stream().filter(row -> !alreadySignaled(row)).toList()
+                : select(locked, "NEGATIVE", plan.judgment().aspect());
+        if (!sameUsageIds(targets, plan.targets())) {
+            return retryableConflict("TARGET_SET_CHANGED", plan);
+        }
+        if (plan.result() == FollowUpResult.ACCEPTED) {
+            apply(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId(), SIGNAL_FOLLOW_UP, targets,
+                    "ACCEPTED", null, 0.5, null, null, null, plan.sourceRef(), false);
+            return FollowUpResult.ACCEPTED;
+        }
+        if (targets.isEmpty()) {
+            insertAnswerLevel(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId(), SIGNAL_FOLLOW_UP,
+                    "NEGATIVE", plan.judgment().aspect(), trimNote(plan.note()), plan.degradation(),
+                    plan.sourceRef());
+            return FollowUpResult.NEGATIVE;
+        }
+        apply(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId(), SIGNAL_FOLLOW_UP, targets,
+                "NEGATIVE", null, updateWeight("NEGATIVE", plan.judgment().aspect()),
+                plan.judgment().aspect(), trimNote(plan.note()), plan.degradation(), plan.sourceRef(),
+                betaFor("NEGATIVE", plan.judgment().aspect()));
+        return FollowUpResult.NEGATIVE;
+    }
+
+    /**
+     * 乐观检查冲突：判定期间这条回答的 usage 行、上一轮回答或已生效的反馈被别的写入改过，本次不覆盖
+     * 别人的结果。返回 {@link FollowUpResult#RETRYABLE} 让调用方把任务标成可重试；日志只带稳定原因码、
+     * workspace 与消息 id，不带用户正文。
+     */
+    private FollowUpResult retryableConflict(String reason, FollowUpPlan plan) {
+        log.warn("Follow-up feedback not applied: reason={}, workspaceId={}, userMessageId={}",
+                reason, plan.workspaceId(), plan.userMessageId());
+        return FollowUpResult.RETRYABLE;
+    }
+
+    /**
+     * 代码只按模型结论分支：模型没给出结论→本轮跳过并标可重试；
+     * 不是对上一条回答的反馈或中性→不写；认可→写接受，不满→写负面。
+     */
+    static FollowUpResult followUpResult(MemoryFeedbackAspectJudge.Judgment judgment) {
+        if (judgment.notJudged()) {
+            return FollowUpResult.RETRYABLE;
+        }
+        if (!judgment.feedback()) {
+            return FollowUpResult.SKIPPED;
+        }
+        return switch (judgment.polarity()) {
+            case MemoryFeedbackAspectJudge.POLARITY_POSITIVE -> FollowUpResult.ACCEPTED;
+            case MemoryFeedbackAspectJudge.POLARITY_NEGATIVE -> FollowUpResult.NEGATIVE;
+            default -> FollowUpResult.SKIPPED;
+        };
     }
 
     /**
@@ -515,22 +633,34 @@ public class MemoryApplicationFeedbackService {
                 """, rs -> rs.next() ? rs.getString(1) : null, userMessageId, workspaceId);
     }
 
+    /** 注入记录的快照查询：{@code outcome_type} 一起读出来，写入前据此判断这些行有没有被别的处理改过。 */
+    private static final String USAGE_SELECT = """
+            select u.id, u.memory_item_id, u.memory_revision_id, u.target_type, u.target_id,
+                   u.outcome_type, i.semantic_slot_key
+            from memory_usage_log u
+            join memory_item i on i.id = u.memory_item_id
+            where u.workspace_id = ? and u.target_type = ? and u.target_id = ?
+              and u.memory_item_id is not null
+            order by u.id
+            """;
+
     private List<UsageRow> loadUsages(String workspaceId, String targetType, String targetId) {
-        return jdbcTemplate.query("""
-                select u.id, u.memory_item_id, u.memory_revision_id, u.target_type, u.target_id,
-                       i.semantic_slot_key
-                from memory_usage_log u
-                join memory_item i on i.id = u.memory_item_id
-                where u.workspace_id = ? and u.target_type = ? and u.target_id = ?
-                  and u.memory_item_id is not null
-                order by u.id
-                for update
-                """, (rs, rowNum) -> new UsageRow(
+        return queryUsages(workspaceId, targetType, targetId, true);
+    }
+
+    /** 事务外的只读快照：不加 {@code for update}，判定模型运行期间不持行锁。 */
+    private List<UsageRow> readUsages(String workspaceId, String targetType, String targetId) {
+        return queryUsages(workspaceId, targetType, targetId, false);
+    }
+
+    private List<UsageRow> queryUsages(String workspaceId, String targetType, String targetId, boolean lock) {
+        return jdbcTemplate.query(USAGE_SELECT + (lock ? "for update" : ""), (rs, rowNum) -> new UsageRow(
                 rs.getString("id"),
                 rs.getString("memory_item_id"),
                 rs.getString("memory_revision_id"),
                 rs.getString("target_type"),
                 rs.getString("target_id"),
+                rs.getString("outcome_type"),
                 rs.getString("semantic_slot_key")
         ), workspaceId, targetType, targetId);
     }
@@ -838,6 +968,19 @@ public class MemoryApplicationFeedbackService {
         return ids;
     }
 
+    /** 两次选出的行是否是同一批（按 usage 行 id），用于事务提交前的乐观检查。 */
+    private boolean sameUsageIds(List<UsageRow> left, List<UsageRow> right) {
+        if (left.size() != right.size()) {
+            return false;
+        }
+        for (int i = 0; i < left.size(); i++) {
+            if (!left.get(i).usageId().equals(right.get(i).usageId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private String signature(String outcomeType, String note, String aspect) {
         return outcomeType + "\n" + (note == null ? "" : note) + "\n" + (aspect == null ? "" : aspect);
     }
@@ -850,12 +993,43 @@ public class MemoryApplicationFeedbackService {
         return Math.round(value * 10_000.0) / 10_000.0;
     }
 
+    /**
+     * 跟进反馈的执行计划：事务外读到的行快照、模型结论，以及这一轮打算写的行。
+     * 写入前用它和加锁重读的结果做乐观检查。
+     */
+    private record FollowUpPlan(
+            FollowUpResult result,
+            String workspaceId,
+            String userMessageId,
+            String assistantMessageId,
+            String sourceRef,
+            MemoryFeedbackAspectJudge.Judgment judgment,
+            List<UsageRow> usages,
+            List<UsageRow> targets,
+            String degradation,
+            String note
+    ) {
+        /** 不写库的结论：跳过或可重试。 */
+        private static FollowUpPlan notWritten(FollowUpResult result) {
+            return new FollowUpPlan(result, null, null, null, null, null, List.of(), List.of(), null, null);
+        }
+
+        private static FollowUpPlan skipped() {
+            return notWritten(FollowUpResult.SKIPPED);
+        }
+
+        private boolean actionable() {
+            return result == FollowUpResult.ACCEPTED || result == FollowUpResult.NEGATIVE;
+        }
+    }
+
     private record UsageRow(
             String usageId,
             String memoryItemId,
             String memoryRevisionId,
             String targetType,
             String targetId,
+            String outcomeType,
             String slotKey
     ) {
     }

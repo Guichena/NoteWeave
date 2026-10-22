@@ -53,19 +53,6 @@ public class WorkspaceController {
         return ApiResponse.success(updateWikiSettingsUseCase.execute(workspaceId, request));
     }
 
-    @GetMapping("/{workspaceId}/retrieval-settings")
-    ApiResponse<WorkspaceRetrievalSettingsResponse> getRetrievalSettings(@PathVariable String workspaceId) {
-        return ApiResponse.success(workspaceService.getRetrievalSettings(workspaceId));
-    }
-
-    @PutMapping("/{workspaceId}/retrieval-settings")
-    ApiResponse<WorkspaceRetrievalSettingsResponse> updateRetrievalSettings(
-            @PathVariable String workspaceId,
-            @Valid @RequestBody UpdateWorkspaceRetrievalSettingsRequest request
-    ) {
-        return ApiResponse.success(workspaceService.updateRetrievalSettings(workspaceId, request));
-    }
-
     @GetMapping("/{workspaceId}/members")
     ApiResponse<List<WorkspaceMemberResponse>> listMembers(@PathVariable String workspaceId) {
         return ApiResponse.success(membershipService.listMembers(workspaceId));

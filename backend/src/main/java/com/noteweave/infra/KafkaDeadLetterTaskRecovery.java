@@ -3,14 +3,15 @@ package com.noteweave.infra;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import com.noteweave.retrieval.projection.RetrievalProjectionDeadLetterFinalizer;
 import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.source.SourceParseFailureFinalizer;
+import com.noteweave.source.SourceTopicNames;
 import java.util.Map;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,79 +23,45 @@ public class KafkaDeadLetterTaskRecovery {
     private static final Logger log = LoggerFactory.getLogger(KafkaDeadLetterTaskRecovery.class);
 
     private final ObjectMapper objectMapper;
-    private final SourceRetrievalProjectionFinalizer projectionFinalizer;
+    private final RetrievalProjectionDeadLetterFinalizer retrievalProjectionFinalizer;
     private final SourceParseFailureFinalizer sourceParseFailureFinalizer;
-    private final String retrievalProjectionTopic;
-    private final String sourceParseTopic;
-    private com.noteweave.retrieval.projection.SourceEmbeddingBatchRepository embeddingBatches;
+    private final SourceTopicNames topicNames;
 
     public KafkaDeadLetterTaskRecovery(
             ObjectMapper objectMapper,
             SourceRetrievalProjectionFinalizer projectionFinalizer,
             SourceParseFailureFinalizer sourceParseFailureFinalizer,
-            @Value("${noteweave.kafka.topics.retrieval-projection}") String retrievalProjectionTopic,
-            @Value("${noteweave.kafka.topics.source-parse}") String sourceParseTopic
+            SourceTopicNames topicNames
     ) {
         this.objectMapper = objectMapper;
-        this.projectionFinalizer = projectionFinalizer;
+        // 检索投影的死信收尾与 outbox 投递耗尽共用同一套逻辑
+        this.retrievalProjectionFinalizer = new RetrievalProjectionDeadLetterFinalizer(
+                objectMapper, projectionFinalizer, topicNames);
         this.sourceParseFailureFinalizer = sourceParseFailureFinalizer;
-        this.retrievalProjectionTopic = retrievalProjectionTopic;
-        this.sourceParseTopic = sourceParseTopic;
+        this.topicNames = topicNames;
     }
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setEmbeddingBatches(com.noteweave.retrieval.projection.SourceEmbeddingBatchRepository embeddingBatches) {
-        this.embeddingBatches = embeddingBatches;
+        retrievalProjectionFinalizer.withEmbeddingBatches(embeddingBatches);
     }
 
     public void recover(ConsumerRecord<?, ?> record, Exception exception) {
         // 解析和切片阶段失败时资料停在解析中；向量化和索引阶段失败时资料停在索引中
-        if (sourceParseTopic.equals(record.topic())
-                || com.noteweave.source.SourcePipelineStages.TOPIC_CHUNK.equals(record.topic())) {
-            recoverSourceParse(record, exception);
+        // 主题名取自配置：硬编码字面量或常量一旦与配置不一致，死信收尾就会漏掉这条记录
+        boolean chunkStage = topicNames.chunk().equals(record.topic());
+        if (topicNames.isParseStage(record.topic())) {
+            recoverSourceParse(record, exception, chunkStage);
             return;
         }
-        if (!retrievalProjectionTopic.equals(record.topic())
-                && !com.noteweave.source.SourcePipelineStages.TOPIC_EMBED.equals(record.topic())
-                && !com.noteweave.source.SourcePipelineStages.TOPIC_INDEX.equals(record.topic())) {
+        if (!retrievalProjectionFinalizer.handles(record.topic())) {
             return;
         }
-        Map<String, Object> payload = readPayload(record, "Retrieval projection");
-        if (payload == null) {
-            return;
-        }
-        String workspaceId = text(payload.get("workspaceId"));
-        String sourceId = text(payload.get("sourceId"));
-        String snapshotId = text(payload.get("sourceSnapshotId"));
-        String taskId = text(payload.get("taskId"));
-        if (isBlank(workspaceId) || isBlank(sourceId) || isBlank(snapshotId)) {
-            log.warn("Retrieval projection DLT payload is missing identity: topic={}, partition={}, offset={}",
-                    record.topic(), record.partition(), record.offset());
-            return;
-        }
-        if (embeddingBatches != null && com.noteweave.source.SourcePipelineStages.TOPIC_EMBED.equals(record.topic())) {
-            Object batch = payload.get("batchNo"); String version = text(payload.get("batchVersion"));
-            if (batch != null) {
-                if (!(batch instanceof Integer batchNo) || batchNo < 0 || version == null || !version.matches("[a-f0-9]{64}")
-                        || !embeddingBatches.acceptsFailure(workspaceId, sourceId, snapshotId, taskId, batchNo, version)) return;
-            } else if (!embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "EMBEDDING")) return;
-        }
-        if (embeddingBatches != null && com.noteweave.source.SourcePipelineStages.TOPIC_INDEX.equals(record.topic())
-                && !embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "INDEXING")) return;
-        try {
-            projectionFinalizer.finalizeFailed(
-                workspaceId,
-                sourceId,
-                snapshotId,
-                taskId,
-                errorCode(exception)
-            );
-        } catch (RuntimeException finalizeFailure) {
-            log.warn("检索索引死信收尾失败: taskId={}, sourceId={}", taskId, sourceId, finalizeFailure);
-        }
+        retrievalProjectionFinalizer.finalizeFailure(
+                record.topic(), String.valueOf(record.value()), errorCode(exception));
     }
 
-    private void recoverSourceParse(ConsumerRecord<?, ?> record, Exception exception) {
+    private void recoverSourceParse(ConsumerRecord<?, ?> record, Exception exception, boolean chunkStage) {
         Map<String, Object> payload = readPayload(record, "Source parse");
         if (payload == null) {
             return;
@@ -110,9 +77,12 @@ public class KafkaDeadLetterTaskRecovery {
         }
         // 文档本身无法解析（类型不支持、PDF 无文本等）属于业务错误，重试没有意义；
         // 其余异常（例如读取对象存储失败）可能是暂时性的，标记为可重试。
+        // 切片阶段有独立的错误码和文案，避免把切片失败展示成解析失败。
         BusinessException businessFailure = findCause(exception, BusinessException.class);
-        String errorCode = businessFailure != null ? businessFailure.code() : "SOURCE_PARSE_FAILED";
-        String errorMessage = businessFailure != null ? businessFailure.getMessage() : "资料解析过程中出错";
+        String defaultErrorCode = chunkStage ? "SOURCE_CHUNK_FAILED" : "SOURCE_PARSE_FAILED";
+        String defaultErrorMessage = chunkStage ? "资料切片过程中出错" : "资料解析过程中出错";
+        String errorCode = businessFailure != null ? businessFailure.code() : defaultErrorCode;
+        String errorMessage = businessFailure != null ? businessFailure.getMessage() : defaultErrorMessage;
         try {
             sourceParseFailureFinalizer.finalizeProcessingFailed(
                     taskId, workspaceId, sourceId, snapshotId, errorCode, errorMessage, businessFailure == null);
