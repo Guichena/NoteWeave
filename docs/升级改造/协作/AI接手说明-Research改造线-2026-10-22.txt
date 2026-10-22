@@ -1,0 +1,108 @@
+NoteWeave AI 接手说明
+统计日期：2026-10-22
+
+当前材料用于统计与分工。收到用户明确的实施指令后，再开展代码改造；阅读本文件不代表可以自动部署、开启开关或调用付费模型。
+
+一、共同基线
+统一基线分支：codex/instabox-integration-20261022。
+已部署产品代码：083b299ffd15984d1e15afc68dd1e684c742de89；后续已有文档提交。
+修复分支 merge/integration 已合入，不能重新整批应用相同修复。
+本机整合工作区：C:/Users/20412/.codex/worktrees/instabox-integration/NoteWeave。
+原工作区 D:/java-projects/NoteWeave 保留旧分支和未提交内容，不能误当作部署版源码。
+其他机器先取得整合分支，不照搬 Windows 路径。
+目标 SSH Host：insta1。
+远端实际项目：/data/workspace/noteweave。
+部署源码：/data/workspace/noteweave/.deploy/20261022-integration/source。
+运行入口：/data/workspace/noteweave/.deploy/run-current.sh。
+不要误用另一份 /data/home/NoteWeave。
+数据库已迁移至 V192，后续从 V193 统一登记；两条线不能各自抢用同一个编号，不修改已应用迁移。
+
+二、分工规则
+你不是唯一开发者，不撤销其他人的改动。两个 AI 各自从整合分支建立 codex/ 开发分支，按编号认领工作包。
+research AI 负责 research Java、research Worker、研究界面和质量评测。
+其他线路 AI 负责聊天、记忆、检索流水线、artifact 与构建配置。
+共享文件包括 ConversationTurnModule、ContextV2ShadowSnapshotService、ChatService、公共模型客户端、公共类型、配置、Compose 和迁移目录。修改前约定单一文件负责人，不能两边直接覆盖。
+RES-05 由 research AI 负责；OTH-01 由其他线路 AI 负责，并与 research AI 核对研究渲染。
+先实施认领范围，做最小有效验证，再交接提交和结果。代码完成、集成通过、真实质量通过必须分别记录。
+完整运行原文和 .codex-tmp 诊断不会自动随 Git 提供；需要原文时向持有者取得脱敏归档，不能臆造。
+不得公开 .env、密钥、会话令牌或远端含有效环境值的 Compose 文件。
+
+三、统计口径
+research 7 个工作包，其他线路 16 个工作包，共 23 个。
+工作包包含诊断、代码、产品语义和验收，不等于 23 个已经确认的代码缺陷。
+另有 19 个缺少明细的 G2 编号和 1 个数据库队列架构提案，单列，不能直接相加。
+完整记录以 docs/升级改造/协作/任务总账-2026-10-22.json 为准；HANDOFF.md 第 13 节为入口，旧第 7 节仅作历史来源。
+
+四、你的职责：research 改造线
+主要目标是必答问题获得合格事实并被报告直接回答。不能用减少需求、放宽资格或增加简单单元格提高完成率。
+Java 继续控制状态、预算、租约与提交。保留事实、来源、时间、数量及引用保护。
+优先认领 RES-01 和 RES-02；RES-03、RES-04 先复用已有机制定位真实缺项，避免重做已经实现的功能。
+RES-05 涉及共享会话入口，动手前与其他线路协调文件负责人。
+
+已经实现的功能，不能再次登记为待开发：审计补查类型识别和结算、逐项需求契约、规划逐条件复核、必答证据选择、定向读取、补查按修订分组、失效快照恢复。
+这些机制的真实质量仍未通过，不能直接关闭相关验收任务。
+
+五、真实运行依据
+最后 Run：b07b84cf-01e7-4da8-973b-86c97a41a5d9，题目 fact-python-free-threading。
+用时 614.2 秒，最终 INSUFFICIENT_EVIDENCE，必答事实 0/2，显式定义未完成。
+规划为 FALLBACK；已实际执行两次 COUNTERFACTUAL 补查，均 NO_SUPPORTED_CANDIDATE。
+规划复核一次、来源范围核验两次记录 Connection error，传输根因尚未确认，不能据此判定 key 失效。
+报告为确定性证据不足交付，没有已采用的报告覆盖回执。
+评分沿用用户选定的聊天模型 deepseek-v4.1-flash，三次同模型自评均未通过，不要再次询问评分模型。
+历史完整基线 6/20 保留。没有新完整开发集或独立留出集通过记录。
+运行清单完整、可比较，采集期间产品源码无变化；该 Run 对应整合前候选代码，不能冒充 Instabox 合并版整轮复跑。
+
+六、你的工作包
+RES-01 [P0] 研究关键模型调用的传输失败定位与有界恢复
+任务性质：诊断及按根因修复
+当前状态：真实连接错误已确认，根因未确认
+代码范围：workers/research-worker/app/llm_client.py；workers/research-worker/app/deep_cell_executor.py；workers/research-worker/app/planning_completeness.py；workers/research-worker/app/source_scope.py
+完成标准：区分连接、超时、服务端和格式错误，失败原因可追溯，恢复计入原预算；不能凭 Connection error 推断 key 失效
+来源：计划第 25 节、最后真实 Run
+
+RES-02 [P0] 规划回退后的逐项要求与范围保留
+任务性质：复现及规划回退设计
+当前状态：最后运行回退且显式定义未完成，丢失范围的具体路径需复现
+代码范围：workers/research-worker/app/planning_executor.py；workers/research-worker/app/planning_completeness.py；backend/src/main/java/com/noteweave/research/ResearchPlanningService.java；backend/src/main/java/com/noteweave/research/ResearchPlanningCompleteness.java
+完成标准：回退保留原始必答项、来源约束和已确认时间范围；未核验部分仍标未完成；保存逐条件失败诊断，不采用已判扩充的规划
+来源：计划第 25 节、最后真实 Run
+
+RES-03 [P1] 当前状态和稳定标识缺项的合格证据补齐
+任务性质：质量缺口定位及针对性完善
+当前状态：缺项已确认，既有选择与定向检索机制已实现，真实效果待验证
+代码范围：workers/research-worker/app/cell_query_planner.py；workers/research-worker/app/repair_queries.py；workers/research-worker/app/fact_selection.py；workers/research-worker/app/fact_selection_review.py；backend/src/main/java/com/noteweave/research/ResearchRequirementActionPlanner.java
+完成标准：当前状态取得适用正式版本及生效依据，编号标题使用本项稳定范围；必须实际新增合格支持，不能只增加补查次数
+来源：计划第 24 至 25 节
+
+RES-04 [P1] 报告逐项覆盖与核验失败恢复
+任务性质：既有功能的真实验收及按失败定位
+当前状态：历史报告核验连接失败已确认，最后运行无已采用覆盖回执，合并版完整路径未通过
+代码范围：workers/research-worker/app/answer_policy.py；workers/research-worker/app/report_coverage.py；workers/research-worker/app/synthesis_executor.py；backend/src/main/java/com/noteweave/research/ResearchReportCoverageService.java；backend/src/main/java/com/noteweave/research/ResearchSynthesisRecoveryService.java
+完成标准：已合格事实形成直接答案并取得覆盖回执，区分 NOT_CHECKED 与内容不合格；无事实时继续保留证据不足，恢复不得自动授予资格
+来源：计划第 23 至 25 节
+
+RES-05 [P1] 研究上下文编译移出外层事务
+任务性质：代码改造
+当前状态：事务内调用路径已核对，research-active-enabled 默认关闭
+代码范围：backend/src/main/java/com/noteweave/conversation/ConversationTurnModule.java；backend/src/main/java/com/noteweave/conversation/ContextV2ShadowSnapshotService.java；backend/src/main/java/com/noteweave/conversation/ConversationContextCompilerV2Service.java
+完成标准：模型调用不占用业务行锁，写入时重读版本并保持冻结上下文和幂等；不得顺带开启研究上下文开关
+来源：旧 HANDOFF 第 7 节第 5 和 14 条，合并为一个任务，归 research 线
+
+RES-06 [P2] 四类研究任务与留出集质量验收
+任务性质：质量验收
+当前状态：新完整开发集和独立留出集未验收
+代码范围：scripts/deepresearch；experiments/deep-research/quality-eval
+完成标准：先冻结样本和版本，事实、比较、综述、争议分别统计必答事实及报告覆盖；同模型三次自评保留标记，不能覆盖历史基线或用于证明独立评审通过
+来源：研究计划及第 26 节
+
+RES-07 [P2] Instabox 研究用户流程与发布开关验收
+任务性质：完整流程验收
+当前状态：部署健康和登录已通过，研究浏览器完整流程未通过验收
+代码范围：frontend/src/features/research；frontend/e2e；backend/src/main/java/com/noteweave/research/ResearchAgentFeatureFlagService.java
+完成标准：确认规划、执行、缺项展示、补查、报告和终态在目标开关下相符；提前核对有效开关，未授权不得开启新路径或重跑付费研究
+来源：HANDOFF 第 12 节、研究计划第 26 节
+
+七、交付要求
+按 RES 编号说明改了什么、为何修改、提交号、协议与开关变化、迁移号、针对性验证和残留缺项。
+不要修改另一条线的队列、记忆和通用约束实现来绕过研究缺项。
+本批文档整理没有授权新部署或真实模型运行，具体实施范围由后续用户指令确定。

@@ -1,0 +1,447 @@
+{
+  "schema_version": "noteweave-workstream-inventory.v1",
+  "recorded_date": "2026-10-22",
+  "scope": "统计、分工与 AI 交接，本轮不实施产品修改或部署",
+  "counting_rule": "按交付边界统计待办工作包，包含诊断、实现、产品口径和验收，不代表同数量的已确认代码缺陷；原始编号待办可能与工作包重叠，禁止直接相加",
+  "baseline": {
+    "branch": "codex/instabox-integration-20261022",
+    "deployed_code_commit": "083b299ffd15984d1e15afc68dd1e684c742de89",
+    "inventory_source_commit": "90badcb54dd8abe04fc35477cff9204e8ff6bcf9",
+    "merged_fix_head": "e92a3bd3432821a969c54a52b4a6e387a79f1c4d",
+    "local_workspace": "C:/Users/20412/.codex/worktrees/instabox-integration/NoteWeave",
+    "original_workspace": "D:/java-projects/NoteWeave",
+    "original_workspace_rule": "原工作区保留旧分支和未提交内容，不能将其误当成已部署的整合源码",
+    "ssh_host": "insta1",
+    "remote_project_root": "/data/workspace/noteweave",
+    "remote_deployed_source": "/data/workspace/noteweave/.deploy/20261022-integration/source",
+    "remote_run_entry": "/data/workspace/noteweave/.deploy/run-current.sh",
+    "latest_applied_migration": 192,
+    "next_migration_start": 193,
+    "migration_rule": "两条线共用编号登记，后续从 V193 分配；已部署迁移不可重命名或修改"
+  },
+  "research_evidence": {
+    "run_id": "b07b84cf-01e7-4da8-973b-86c97a41a5d9",
+    "case_key": "fact-python-free-threading",
+    "wall_seconds": 614.2,
+    "terminal_state": "INSUFFICIENT_EVIDENCE",
+    "required_count": 2,
+    "satisfied_count": 0,
+    "explicit_definitions_complete": false,
+    "planner": "DETERMINISTIC",
+    "planning_result": "FALLBACK",
+    "counterfactual_tasks": 2,
+    "counterfactual_results": [
+      "NO_SUPPORTED_CANDIDATE",
+      "NO_SUPPORTED_CANDIDATE"
+    ],
+    "provider_warnings": [
+      "research.planning.requirements: Connection error",
+      "research.source.scope: Connection error",
+      "research.source.scope: Connection error"
+    ],
+    "report_coverage": "确定性证据不足报告，没有已采用的报告覆盖回执",
+    "judge_model": "deepseek-v4.1-flash",
+    "judge_same_as_research": true,
+    "judge_pass_votes": 0,
+    "judge_samples": 3,
+    "manifest_complete": true,
+    "runtime_comparable": true,
+    "product_source_changes_during_capture": 0,
+    "historical_baseline": "6/20，未更新，不等于独立评审结论",
+    "evidence_availability": "本节为可随 Git 分享的受限摘要；完整归档保留在原工作区，克隆整合分支不会自动获得未提交的运行原文和临时诊断"
+  },
+  "research_tasks": [
+    {
+      "id": "RES-01",
+      "priority": "P0",
+      "title": "研究关键模型调用的传输失败定位与有界恢复",
+      "type": "诊断及按根因修复",
+      "status": "真实连接错误已确认，根因未确认",
+      "scope": [
+        "workers/research-worker/app/llm_client.py",
+        "workers/research-worker/app/deep_cell_executor.py",
+        "workers/research-worker/app/planning_completeness.py",
+        "workers/research-worker/app/source_scope.py"
+      ],
+      "acceptance": "区分连接、超时、服务端和格式错误，失败原因可追溯，恢复计入原预算；不能凭 Connection error 推断 key 失效",
+      "source": "计划第 25 节、最后真实 Run"
+    },
+    {
+      "id": "RES-02",
+      "priority": "P0",
+      "title": "规划回退后的逐项要求与范围保留",
+      "type": "复现及规划回退设计",
+      "status": "最后运行回退且显式定义未完成，丢失范围的具体路径需复现",
+      "scope": [
+        "workers/research-worker/app/planning_executor.py",
+        "workers/research-worker/app/planning_completeness.py",
+        "backend/src/main/java/com/noteweave/research/ResearchPlanningService.java",
+        "backend/src/main/java/com/noteweave/research/ResearchPlanningCompleteness.java"
+      ],
+      "acceptance": "回退保留原始必答项、来源约束和已确认时间范围；未核验部分仍标未完成；保存逐条件失败诊断，不采用已判扩充的规划",
+      "source": "计划第 25 节、最后真实 Run"
+    },
+    {
+      "id": "RES-03",
+      "priority": "P1",
+      "title": "当前状态和稳定标识缺项的合格证据补齐",
+      "type": "质量缺口定位及针对性完善",
+      "status": "缺项已确认，既有选择与定向检索机制已实现，真实效果待验证",
+      "scope": [
+        "workers/research-worker/app/cell_query_planner.py",
+        "workers/research-worker/app/repair_queries.py",
+        "workers/research-worker/app/fact_selection.py",
+        "workers/research-worker/app/fact_selection_review.py",
+        "backend/src/main/java/com/noteweave/research/ResearchRequirementActionPlanner.java"
+      ],
+      "acceptance": "当前状态取得适用正式版本及生效依据，编号标题使用本项稳定范围；必须实际新增合格支持，不能只增加补查次数",
+      "source": "计划第 24 至 25 节"
+    },
+    {
+      "id": "RES-04",
+      "priority": "P1",
+      "title": "报告逐项覆盖与核验失败恢复",
+      "type": "既有功能的真实验收及按失败定位",
+      "status": "历史报告核验连接失败已确认，最后运行无已采用覆盖回执，合并版完整路径未通过",
+      "scope": [
+        "workers/research-worker/app/answer_policy.py",
+        "workers/research-worker/app/report_coverage.py",
+        "workers/research-worker/app/synthesis_executor.py",
+        "backend/src/main/java/com/noteweave/research/ResearchReportCoverageService.java",
+        "backend/src/main/java/com/noteweave/research/ResearchSynthesisRecoveryService.java"
+      ],
+      "acceptance": "已合格事实形成直接答案并取得覆盖回执，区分 NOT_CHECKED 与内容不合格；无事实时继续保留证据不足，恢复不得自动授予资格",
+      "source": "计划第 23 至 25 节"
+    },
+    {
+      "id": "RES-05",
+      "priority": "P1",
+      "title": "研究上下文编译移出外层事务",
+      "type": "代码改造",
+      "status": "事务内调用路径已核对，research-active-enabled 默认关闭",
+      "scope": [
+        "backend/src/main/java/com/noteweave/conversation/ConversationTurnModule.java",
+        "backend/src/main/java/com/noteweave/conversation/ContextV2ShadowSnapshotService.java",
+        "backend/src/main/java/com/noteweave/conversation/ConversationContextCompilerV2Service.java"
+      ],
+      "acceptance": "模型调用不占用业务行锁，写入时重读版本并保持冻结上下文和幂等；不得顺带开启研究上下文开关",
+      "source": "旧 HANDOFF 第 7 节第 5 和 14 条，合并为一个任务，归 research 线"
+    },
+    {
+      "id": "RES-06",
+      "priority": "P2",
+      "title": "四类研究任务与留出集质量验收",
+      "type": "质量验收",
+      "status": "新完整开发集和独立留出集未验收",
+      "scope": [
+        "scripts/deepresearch",
+        "experiments/deep-research/quality-eval"
+      ],
+      "acceptance": "先冻结样本和版本，事实、比较、综述、争议分别统计必答事实及报告覆盖；同模型三次自评保留标记，不能覆盖历史基线或用于证明独立评审通过",
+      "source": "研究计划及第 26 节"
+    },
+    {
+      "id": "RES-07",
+      "priority": "P2",
+      "title": "Instabox 研究用户流程与发布开关验收",
+      "type": "完整流程验收",
+      "status": "部署健康和登录已通过，研究浏览器完整流程未通过验收",
+      "scope": [
+        "frontend/src/features/research",
+        "frontend/e2e",
+        "backend/src/main/java/com/noteweave/research/ResearchAgentFeatureFlagService.java"
+      ],
+      "acceptance": "确认规划、执行、缺项展示、补查、报告和终态在目标开关下相符；提前核对有效开关，未授权不得开启新路径或重跑付费研究",
+      "source": "HANDOFF 第 12 节、研究计划第 26 节"
+    }
+  ],
+  "other_tasks": [
+    {
+      "id": "OTH-01",
+      "priority": "P0",
+      "title": "约束原意与 FORBID 渲染一致性",
+      "type": "代码改造",
+      "status": "固定文案丢失 value 已核对",
+      "scope": [
+        "backend/src/main/java/com/noteweave/conversation/constraint/ConstraintSlot.java",
+        "backend/src/main/java/com/noteweave/conversation/constraint/ConstraintOpMerger.java",
+        "backend/src/main/java/com/noteweave/chat/ChatService.java",
+        "backend/src/main/java/com/noteweave/memory/MemorySlots.java"
+      ],
+      "acceptance": "存储与最终提示不反转用户原意，不引入双重否定；research 渲染影响与 research 线协调；另复核 MemorySlots.categoryOf 残留词表对候选门控及冲突读回的影响，不能未复现就删除规则",
+      "source": "旧第 7 节第 8 条、第 8.1 节、d10 问题 3"
+    },
+    {
+      "id": "OTH-02",
+      "priority": "P0",
+      "title": "点赞点踩模型判断移出事务",
+      "type": "代码改造",
+      "status": "recordAnswerFeedback 的事务及锁后调用已核对",
+      "scope": [
+        "backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java"
+      ],
+      "acceptance": "模型判断在事务外，写入短事务内重新校验版本和幂等；保留已实现的跟进反馈 RETRYABLE 行为",
+      "source": "旧第 7 节第 16 条、第 8.2 节"
+    },
+    {
+      "id": "OTH-03",
+      "priority": "P1",
+      "title": "反馈及约束输入解析边界与模型异常日志",
+      "type": "两个相关安全子项的工作包",
+      "status": "反馈裸拼接及 TopicBoundaryJudge 输出异常消息已核对",
+      "scope": [
+        "backend/src/main/java/com/noteweave/memory/MemoryFeedbackAspectJudge.java",
+        "backend/src/main/java/com/noteweave/memory/MemoryPromptFence.java",
+        "backend/src/main/java/com/noteweave/conversation/TopicBoundaryJudge.java",
+        "backend/src/main/java/com/noteweave/conversation/constraint/ConstraintOpSchema.java"
+      ],
+      "acceptance": "用户文本作为数据输入，保留反馈分类语义；异常日志仅保留受限原因码与异常类型，不输出请求片段；复核约束解析的方括号截取和提示词边界，防止错误片段被当作结构化操作",
+      "source": "旧第 7 节第 17 和 18 条、d10 剩余项"
+    },
+    {
+      "id": "OTH-04",
+      "priority": "P1",
+      "title": "约束规则版本和空基线重置的原子性",
+      "type": "代码复核及改造",
+      "status": "旧交接列为未修，需在整合代码复现",
+      "scope": [
+        "backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectionV2Service.java",
+        "backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectorV2.java"
+      ],
+      "acceptance": "模型抽取失败时不能留下新版本配旧 ACTIVE 约束的混合状态，推进水位和提交状态一致",
+      "source": "旧第 7 节第 8 条中项"
+    },
+    {
+      "id": "OTH-05",
+      "priority": "P1",
+      "title": "增量约束并发折叠及冻结快照一致性",
+      "type": "多项相关一致性问题复核",
+      "status": "旧 R1/R2/R3 及删除进度问题待整合版复核",
+      "scope": [
+        "backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectionV2Service.java",
+        "backend/src/main/java/com/noteweave/conversation/ConversationConstraintProjectorV2.java",
+        "backend/src/main/java/com/noteweave/conversation/ConversationMessageDeletionService.java",
+        "backend/src/main/java/com/noteweave/conversation/ContextV2ShadowSnapshotService.java"
+      ],
+      "acceptance": "覆盖 applied=false 仍落 READY、版本变化仅折叠本轮、refold 丢弃判定及删消息清除整段进度；使用真实并发验证，不把相关子项重复统计",
+      "source": "旧第 7 节第 8 和 9 条，R1/R2/R3 去重"
+    },
+    {
+      "id": "OTH-06",
+      "priority": "P1",
+      "title": "跟进反馈写入事务传播与冲突粒度",
+      "type": "代码复核及针对性改造",
+      "status": "RETRYABLE 已修；默认事务传播和过粗冲突仍需复核",
+      "scope": [
+        "backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java",
+        "backend/src/main/java/com/noteweave/memory/MemoryConversationExtractionService.java"
+      ],
+      "acceptance": "核对真实调用边界后确定事务传播；无关 usage 更新不导致整批反馈放弃，有关冲突仍可重试；不能重做已修复的 R5",
+      "source": "旧第 7 节第 9 条 R4/R6，R5 已排除"
+    },
+    {
+      "id": "OTH-07",
+      "priority": "P1",
+      "title": "反馈来源数据库幂等唯一性",
+      "type": "数据库及幂等改造待复核",
+      "status": "旧交接指出 sourceExists 无唯一约束，需核对 DDL 与历史重复",
+      "scope": [
+        "backend/src/main/java/com/noteweave/memory/MemoryApplicationFeedbackService.java",
+        "backend/src/main/resources/db/migration"
+      ],
+      "acceptance": "并发相同来源只产生一次有效反馈，迁移前核对并处理历史重复；不得直接删除不明来源的业务记录",
+      "source": "旧第 7 节第 8 和 9 条 R7 去重"
+    },
+    {
+      "id": "OTH-08",
+      "priority": "P1",
+      "title": "向量批次续租心跳与有效租约",
+      "type": "代码改造待复核",
+      "status": "旧交接确认 7200 秒租约未改，续租实施需复核",
+      "scope": [
+        "backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java",
+        "backend/src/main/java/com/noteweave/retrieval/projection/SourceRetrievalProjectionCoordinator.java"
+      ],
+      "acceptance": "运行期安全续租，旧持有者不可提交；同时核对 SourcePipelineProcessingBudget 的租约下限，不能仅修改环境数字",
+      "source": "旧第 7 节第 2 条 E-2"
+    },
+    {
+      "id": "OTH-09",
+      "priority": "P1",
+      "title": "向量请求预算真正扣减与拒绝",
+      "type": "代码及数据库改造待复核",
+      "status": "预算字段写入及读取已核对，未发现本批扣减逻辑，需沿调用链确认",
+      "scope": [
+        "backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java",
+        "backend/src/main/java/com/noteweave/retrieval/projection/SourceRetrievalProjectionCoordinator.java"
+      ],
+      "acceptance": "重试与批次并发时请求预算仍受限，超额明确拒绝并可审计，不能重复扣减同一有效请求",
+      "source": "旧第 7 节第 3 条 M3-M06 预算子项"
+    },
+    {
+      "id": "OTH-10",
+      "priority": "P1",
+      "title": "长期 READY 向量批次恢复",
+      "type": "代码改造",
+      "status": "恢复扫描只匹配过期 RUNNING 已核对",
+      "scope": [
+        "backend/src/main/java/com/noteweave/retrieval/projection/SourceEmbeddingBatchRepository.java"
+      ],
+      "acceptance": "符合条件的长期 READY 可重新投递，必须核对当前任务、快照和批次版本，不能重复执行已完成批次",
+      "source": "旧第 7 节第 3 条 M3-M06 READY 子项"
+    },
+    {
+      "id": "OTH-11",
+      "priority": "P1",
+      "title": "任务 Outbox 在途防重",
+      "type": "数据库和入队路径改造待复核",
+      "status": "旧交接记录 14 处写入，实际位置数量需重新统计",
+      "scope": [
+        "backend/src/main/java/com/noteweave/infra/TaskOutboxDispatcherService.java",
+        "backend/src/main/resources/db/migration"
+      ],
+      "acceptance": "统一在途幂等键且保留合法重试，迁移前分析重复记录；不能简单限制所有历史行或删除正常重驱记录",
+      "source": "旧第 7 节第 4 条"
+    },
+    {
+      "id": "OTH-12",
+      "priority": "P2",
+      "title": "Elasticsearch 不可用时的检索降级",
+      "type": "代码改造待复核",
+      "status": "旧交接列为未修，当前 Instabox 有 Elasticsearch，故障场景未验收",
+      "scope": [
+        "backend/src/main/java/com/noteweave/chat",
+        "backend/src/main/java/com/noteweave/retrieval"
+      ],
+      "acceptance": "QA 与 Note 在检索服务不可用时按已定义能力返回可用部分和降级原因，不能把空结果包装为完整召回",
+      "source": "旧第 7 节第 6 条 M2-H14"
+    },
+    {
+      "id": "OTH-13",
+      "priority": "P2",
+      "title": "前端干净环境依赖和构建复现",
+      "type": "构建配置及验证",
+      "status": "当前构建已通过；pnpm 固定版本和显式 @types/node 依赖仍需复核",
+      "scope": [
+        "frontend/package.json",
+        "frontend/pnpm-lock.yaml",
+        "frontend/Dockerfile",
+        ".github"
+      ],
+      "acceptance": "在干净环境使用锁定依赖完成类型检查和构建，不依赖原工作区现存 node_modules 或全局安装",
+      "source": "旧第 7 节第 12 条，经第 12 节验证更新状态"
+    },
+    {
+      "id": "OTH-14",
+      "priority": "P1",
+      "title": "无表格改分点的约束作用域口径",
+      "type": "产品语义确认及必要实现",
+      "status": "live eval scope 期望仍待确认",
+      "scope": [
+        "backend/src/main/java/com/noteweave/conversation/constraint",
+        "backend/src/test/java/com/noteweave/conversation"
+      ],
+      "acceptance": "明确无标记反馈适用当前话题还是全会话，再同步实现与断言；不得为了通过而放宽作用域要求",
+      "source": "旧第 7 节第 10 条 no-table-use-bullets"
+    },
+    {
+      "id": "OTH-15",
+      "priority": "P2",
+      "title": "非 research 的 Instabox 完整用户流程",
+      "type": "集成验收",
+      "status": "登录与工作区 API 已过，完整浏览器流程未验收",
+      "scope": [
+        "frontend/e2e",
+        "frontend/src/features/answers",
+        "frontend/src/features/memory",
+        "frontend/src/features/artifacts",
+        "frontend/src/features/knowledge"
+      ],
+      "acceptance": "资料、QA、Note、Wiki、记忆反馈及 artifact 实际流程与降级符合约定；research 场景只归 RES-07，避免重复计数",
+      "source": "旧第 7 节第 13 条，经部署验证更新范围"
+    },
+    {
+      "id": "OTH-16",
+      "priority": "P1",
+      "title": "两项 d10 修复的独立复审及剩余问题核对",
+      "type": "独立复审",
+      "status": "历史交接无第二人复审结论",
+      "scope": [
+        "backend/src/main/java/com/noteweave/memory",
+        "backend/src/main/java/com/noteweave/conversation/constraint",
+        "HANDOFF.md"
+      ],
+      "acceptance": "复核 baf8bcc 与 7cc6696，检查行为和真实并发；剩余问题复用 OTH-01/02/03 等现有任务编号，禁止再次算作新缺陷",
+      "source": "旧第 7 节第 19 条、第 9 节"
+    }
+  ],
+  "architecture_proposals": [
+    {
+      "id": "ARC-01",
+      "title": "artifact 与 research 迁移到数据库队列",
+      "status": "架构提案，未列入本轮直接实施",
+      "source": "旧第 7 节第 1 条",
+      "rule": "先评估现有故障、收益和迁移成本；不得因读到旧交接就直接删除 Kafka、Outbox 或 callback fencing；涉及 research 必须两条线共同约定契约"
+    }
+  ],
+  "unexpanded_audit_ids": {
+    "status": "当前整合仓库只查到编号列表，没有对应完整问题描述；可能与上述工作包重叠",
+    "groups": {
+      "G2-2": [
+        "M4-H04",
+        "M4-H05",
+        "M4-M06",
+        "M4-H06",
+        "M4-H12",
+        "M4-M04"
+      ],
+      "G2-3": [
+        "M2-H02",
+        "M2-H06",
+        "M2-C01",
+        "M2-H04"
+      ],
+      "G2-4": [
+        "M2-H12",
+        "M4-H07",
+        "M4-H11"
+      ],
+      "G2-5": [
+        "M4-M02",
+        "M4-M03",
+        "M4-H09",
+        "M4-M10",
+        "M4-M15",
+        "M4-M14"
+      ]
+    },
+    "rule": "取回原审计的问题描述、触发条件和受影响文件后再映射；19 个编号不能直接加到 23 个工作包上，也不能凭编号猜测实现"
+  },
+  "already_done_or_updated": [
+    "审计补查决策识别、投影和有限结算已实现，真实运行实际触发两次补查",
+    "新需求结构、第二版答案契约、逐条件规划复核、直接证据选择及定向读取已实现，真实质量仍待通过",
+    "补查按对象、规划修订和对象集合版本分组，以及失效快照恢复已实现",
+    "跟进反馈冲突返回 RETRYABLE 已由 7cc6696 修复，不能将 R5 继续列为未开发",
+    "修复分支和 research 本地改造已整合、推送并部署到 Instabox",
+    "迁移冲突已处理并应用到 V192，旧文档 V181 起步约定已失效",
+    "research Worker 1039 项、artifact Worker 687 项、后端专项 90 项通过，是上批记录，本轮未重新运行",
+    "前端类型及生产构建已通过；完整浏览器测试、干净环境复现不能据此标为通过",
+    "旧 CJK 字体失败与 pytest 未执行不能继续作为当前部署的既定阻塞；当前 artifact 回归通过，额外字体场景若有证据则另行登记"
+  ],
+  "coordination_rules": [
+    "两条线从整合基线创建各自 codex/ 开发分支，不在旧分支继续堆叠重复实现",
+    "research 线负责 research Java、research Worker、研究界面及质量评测；其他线负责聊天、记忆、检索流水线、artifact 和构建配置",
+    "ConversationTurnModule、ContextV2ShadowSnapshotService、ChatService、共享模型客户端、公共类型、配置、部署文件和迁移编号是协调区；实施前指定单一文件负责人，不并行覆盖",
+    "RES-05 由 research 线负责；共享约束语义 OTH-01 由其他线负责并与 research 线核对渲染结果",
+    "诊断日志、历史评测原文和密钥不自动随 Git 提供；只共享脱敏证据，不将 .env 或有效 Compose 环境覆盖上传",
+    "本轮统计文档不构成实施、创建代理、付费调用、部署或开启功能开关的指令；后续按用户明确授权的任务包推进",
+    "每项交接记录具体改动、提交、配置、迁移、最小有效验证和真实质量状态；代码完成与质量通过分开登记"
+  ],
+  "counts": {
+    "research_work_packages": 7,
+    "other_work_packages": 16,
+    "total_work_packages": 23,
+    "unexpanded_audit_ids_not_additive": 19,
+    "architecture_proposals_not_in_implementation_count": 1
+  }
+}
