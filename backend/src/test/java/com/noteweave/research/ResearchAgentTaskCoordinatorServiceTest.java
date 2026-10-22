@@ -797,6 +797,43 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void shouldSeparateCounterfactualRepairsWithDifferentPlanRevisions() {
+        assertSeparateRepairScopes(3, 1);
+    }
+
+    @Test
+    void shouldSeparateCounterfactualRepairsWithDifferentEntitySetVersions() {
+        assertSeparateRepairScopes(1, 2);
+    }
+
+    private void assertSeparateRepairScopes(int planRevision, int entitySetVersion) {
+        jdbcTemplate.update("""
+                update research_cell set plan_revision = ?, entity_set_version = ?
+                where research_run_id = ? and cell_key = 'entity-1:method'
+                """, planRevision, entitySetVersion, runId);
+        var command = new ResearchAgentTaskCoordinatorService.CounterfactualRepairCommand(
+                runId, 0, 2, List.of(
+                        new ResearchAgentTaskCoordinatorService.CounterfactualTarget("entity-1:method", "sha256:method-scope", List.of()),
+                        new ResearchAgentTaskCoordinatorService.CounterfactualTarget("entity-1:evidence", "sha256:evidence-scope", List.of())));
+
+        var first = coordinator.planCounterfactualRepairs(command);
+        var replay = coordinator.planCounterfactualRepairs(command);
+
+        assertThat(first.createdTaskCount()).isEqualTo(2);
+        assertThat(first.enqueuedCommandCount()).isEqualTo(2);
+        assertThat(replay.createdTaskCount()).isZero();
+        assertThat(replay.idempotentReplayCount()).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from research_cell cell
+                join research_agent_task task on task.id = cell.active_task_id
+                where cell.research_run_id = ? and
+                    (cell.plan_revision <> task.plan_revision or cell.entity_set_version <> task.entity_set_version)
+                """, Integer.class, runId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isEqualTo(2);
+    }
+
+    @Test
     void shouldRejectMissingSeedScopeInsteadOfDowngradingWebPlusSeedsToWebOnly() {
         jdbcTemplate.update("update research_run set source_scope_json = '[]' where id = ?", runId);
 
@@ -917,6 +954,47 @@ class ResearchAgentTaskCoordinatorServiceTest {
                 .extracting(error -> ((BusinessException) error).code())
                 .isEqualTo("RESEARCH_AGENT_REPAIR_TARGET_INVALID");
         assertAgentStateIsEmpty();
+    }
+
+    @Test
+    void auditMissingEvidenceMustDispatchRepairBeforePartialSynthesis() {
+        coordinator.planAndEnqueueForWave(runId,1);
+        jdbcTemplate.update("update research_agent_task set status='SUBMITTED' where research_run_id=?",runId);
+        jdbcTemplate.update("update research_cell set semantic_audit_status='BLOCKED',active_task_id=null where research_run_id=?",runId);
+        for (String cell : List.of("entity-1:method","entity-1:evidence")) jdbcTemplate.update("""
+                insert into research_verifier_decision(id,research_run_id,decision_scope,decision_type,reason_code,target_id,evidence_ids_json,action_text,decision_status)
+                values (?,?,'CELL','EVIDENCE_AUDIT_REPAIR_REQUIRED','AUDIT_EVIDENCE_MISSING',?,'[]','COUNTERFACTUAL_REPAIR','OPEN')
+                """,Ids.newId(),runId,cell);
+        assertThat(coordinatorSnapshot.snapshot(runId).verifierRepairRequiredCount()).isEqualTo(2);
+        assertThat(gapProjection.projectRepairableGaps(runId,1)).hasSize(2);
+        var receipt=coordinatorTick.tick(runId,"audit-gap-regression");
+        assertThat(receipt.outcome()).isEqualTo("VERIFIER_REPAIR_TASKIZED");
+        assertThat(receipt.taskization().createdTaskCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select sum(repair_count) from research_cell where research_run_id=?",Integer.class,runId)).isEqualTo(2);
+        String context=jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where research_run_id=? and role='COUNTERFACTUAL'",String.class,runId);
+        assertThat(context).doesNotContain("\"counter_required\":true");
+        assertThat(coordinatorTick.tick(runId,"audit-gap-regression").taskization()).isNull();
+    }
+
+    @Test
+    void auditRepairSettlementWaitsForReauditAndRecordsBoundedExhaustion() {
+        String cell="entity-1:method";
+        String originalStatus=jdbcTemplate.queryForObject("select cell_status from research_cell where research_run_id=? and cell_key=?",String.class,runId,cell);
+        jdbcTemplate.update("update research_cell set repair_count=2,semantic_audit_status='PENDING' where research_run_id=? and cell_key=?",runId,cell);
+        jdbcTemplate.update("""
+                insert into research_verifier_decision(id,research_run_id,decision_scope,decision_type,reason_code,target_id,evidence_ids_json,action_text,decision_status)
+                values (?,?,'CELL','EVIDENCE_AUDIT_REPAIR_REQUIRED','AUDIT_EVIDENCE_MISSING',?,'[]','COUNTERFACTUAL_REPAIR','OPEN')
+                """,Ids.newId(),runId,cell);
+        ResearchAuditRepairDecisions.settle(jdbcTemplate,runId,2);
+        assertThat(jdbcTemplate.queryForObject("select decision_status from research_verifier_decision where research_run_id=?",String.class,runId)).isEqualTo("OPEN");
+        jdbcTemplate.update("update research_cell set semantic_audit_status='BLOCKED' where research_run_id=? and cell_key=?",runId,cell);
+        ResearchAuditRepairDecisions.settle(jdbcTemplate,runId,2);
+        assertThat(jdbcTemplate.queryForObject("select decision_status from research_verifier_decision where research_run_id=?",String.class,runId)).isEqualTo("EXHAUSTED");
+        jdbcTemplate.update("update research_cell set semantic_audit_status='PASS' where research_run_id=? and cell_key=?",runId,cell);
+        jdbcTemplate.update("update research_verifier_decision set decision_status='OPEN' where research_run_id=?",runId);
+        ResearchAuditRepairDecisions.settle(jdbcTemplate,runId,2);
+        assertThat(jdbcTemplate.queryForObject("select decision_status from research_verifier_decision where research_run_id=?",String.class,runId)).isEqualTo("RESOLVED");
+        assertThat(jdbcTemplate.queryForObject("select cell_status from research_cell where research_run_id=? and cell_key=?",String.class,runId,cell)).isEqualTo(originalStatus);
     }
 
     @Test

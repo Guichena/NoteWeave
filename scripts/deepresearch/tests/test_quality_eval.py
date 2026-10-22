@@ -2,7 +2,10 @@ import importlib.util
 import json
 import sys
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -73,6 +76,27 @@ class QualityEvalTest(unittest.TestCase):
         self.assertTrue(all(case["question_type"] in self.dataset["question_types"] for case in cases))
         self.assertTrue(all(len(case["must_cover"]) >= 3 for case in cases))
 
+    def test_answer_policy_metrics_keep_mandatory_and_optional_counts_separate(self):
+        run = record([])
+        run["resources"]["requirements"] = {"available": True, "data": {"enabled": True,
+            "requirement_answer_policy_version": 1, "required_count": 3, "satisfied_count": 2,
+            "optional_count": 4, "optional_satisfied_count": 1}}
+        metrics = self.score.structural_metrics(self.case, run)["requirement_coverage"]
+        self.assertEqual(3, metrics["required_count"])
+        self.assertEqual(4, metrics["optional_count"])
+        self.assertEqual(1, metrics["requirement_answer_policy_version"])
+
+    def test_chat_judge_selection_preserves_credentials_in_process_and_normalizes_endpoint(self):
+        env = {"NOTEWEAVE_LLM_ENDPOINT":"https://chat.example/v1/chat/completions",
+               "NOTEWEAVE_LLM_API_KEY":"fixture-key", "NOTEWEAVE_LLM_MODEL":"fixture-model"}
+        self.score.configure_judge_from_chat(env)
+        self.assertEqual("https://chat.example/v1",env["NOTEWEAVE_EVAL_JUDGE_BASE_URL"])
+        self.assertEqual("fixture-key",env["NOTEWEAVE_EVAL_JUDGE_API_KEY"])
+        self.assertEqual("fixture-model",env["NOTEWEAVE_EVAL_JUDGE_MODEL"])
+        self.assertEqual("CHAT_MODEL",env["NOTEWEAVE_EVAL_JUDGE_CONFIG_SOURCE"])
+        with self.assertRaises(ValueError):
+            self.score.configure_judge_from_chat({"NOTEWEAVE_LLM_MODEL":"fixture-model"})
+
     def test_effective_cells_require_verified_claims_and_two_sources_on_high_risk_columns(self):
         cells = [cell("VERIFIED"), cell("VERIFIED", claims=0), cell("GAP"),
                  cell("VERIFIED", column="风险", sources=1), cell("VERIFIED", column="风险2", sources=2)]
@@ -142,6 +166,28 @@ class QualityEvalTest(unittest.TestCase):
         fresh = self.score.score_case(self.case, changed, lambda _m: judge_json(), samples=3, cache=cache)
         self.assertTrue(fresh["passed"])
 
+    def test_incomplete_judge_samples_never_pass_and_cached_samples_can_be_resumed(self):
+        replies = iter([judge_json(), "invalid", "invalid"])
+        cache = {}
+        partial = self.score.score_case(self.case, record([cell("VERIFIED")]), lambda _m: next(replies),
+                                       samples=3, cache=cache)
+        self.assertEqual("NOT_RUN", partial["judge"]["status"])
+        self.assertEqual("JUDGE_SAMPLES_INCOMPLETE", partial["judge"]["reason"])
+        self.assertEqual((1, 3), (partial["judge"]["samples"], partial["judge"]["required_samples"]))
+        self.assertIsNone(partial["passed"])
+        self.assertEqual(0, self.score.aggregate([partial], self.dataset)["judge_scored"])
+        calls = []
+
+        def resume(messages):
+            calls.append(messages)
+            return judge_json()
+
+        complete = self.score.score_case(self.case, record([cell("VERIFIED")]), resume, samples=3, cache=cache)
+        self.assertEqual(2, len(calls))
+        self.assertEqual("SCORED", complete["judge"]["status"])
+        self.assertEqual(3, complete["judge"]["samples"])
+        self.assertTrue(complete["passed"])
+
     def test_aggregate_uses_micro_average_for_effective_cell_rate(self):
         results = [
             self.score.score_case(self.case, record([cell("VERIFIED")]), lambda _m: judge_json()),
@@ -160,6 +206,41 @@ class QualityEvalTest(unittest.TestCase):
         self.assertEqual(20, len(self.runner.selected_cases(self.dataset, set())))
         with self.assertRaises(self.runner.EvalRunError):
             self.runner.selected_cases(self.dataset, {"no-such-case"})
+
+    def test_runner_writes_to_the_selected_directory_without_overwriting_records(self):
+        with TemporaryDirectory() as folder:
+            runs_dir = Path(folder)
+            with patch.object(self.runner, "wait_for_terminal", return_value={"status": "COMPLETED"}), \
+                    patch.object(self.runner, "capture_optional_endpoint", return_value={"available": False}):
+                args = (None, "workspace", self.case, "1.1.0", "run", datetime.now(timezone.utc), 5, 1, runs_dir)
+                output = self.runner.capture_run(*args)
+                saved = output.read_text(encoding="utf-8")
+                self.assertEqual(runs_dir / "c.json", output)
+                self.assertEqual("1.1.0", json.loads(saved)["dataset_version"])
+                with self.assertRaises(FileExistsError):
+                    self.runner.capture_run(*args)
+                self.assertEqual(saved, output.read_text(encoding="utf-8"))
+
+    def test_runner_rejects_an_existing_case_before_authentication_or_provider_calls(self):
+        with TemporaryDirectory() as folder:
+            case = self.dataset["cases"][0]
+            (Path(folder) / f"{case['case_key']}.json").write_text("{}", encoding="utf-8")
+            with patch.object(self.runner, "authenticate") as authenticate:
+                with self.assertRaises(self.runner.EvalRunError):
+                    self.runner.main(["--execute", "--runs-dir", folder, "--case", case["case_key"]])
+                authenticate.assert_not_called()
+
+    def test_scorer_rejects_mixed_dataset_versions_or_wrong_case_identifiers(self):
+        dataset = {"dataset_version": "1.1.0", "cases": [self.case]}
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "c.json"
+            for value in ({"dataset_version": "1.0.0", "case_key": "c"},
+                          {"dataset_version": "1.1.0", "case_key": "wrong"}):
+                path.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "版本不一致"):
+                    self.score.load_run_records(dataset, Path(folder))
+            path.write_text(json.dumps({"dataset_version": "1.1.0", "case_key": "c"}), encoding="utf-8")
+            self.assertEqual(1, len(self.score.load_run_records(dataset, Path(folder))))
 
 
 if __name__ == "__main__":

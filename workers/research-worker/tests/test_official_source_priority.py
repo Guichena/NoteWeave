@@ -31,10 +31,10 @@ def _context(**overrides: object) -> CellQueryContext:
     return CellQueryContext(**values)  # type: ignore[arg-type]
 
 
-def test_missing_site_query_goes_second_and_drops_the_last_query_without_growing_the_plan() -> None:
-    """检索命中数达到预算就停止，官方来源查询放在最后常常执行不到，所以紧跟第一条宽泛查询。"""
+def test_missing_site_query_goes_second_without_dropping_the_last_column_query() -> None:
+    """额度已满时给第二条查询增加官方域名，保留最后一条具体查询。"""
     llm = _Llm({"queries": [
-        {"query": "MySQL 8.4 JSON index", "intent": "direct"},
+        {"query": "MySQL 8.4 JSON index", "intent": "direct", "column_keys": ["index_type"]},
         {"query": "MySQL multi-valued index JSON", "intent": "direct"},
         {"query": "MySQL generated column index JSON", "intent": "direct"},
     ]})
@@ -42,13 +42,13 @@ def test_missing_site_query_goes_second_and_drops_the_last_query_without_growing
     plan = plan_cell_queries(_context(), llm)
 
     assert [spec.query for spec in plan.specs] == [
-        "MySQL 8.4 JSON index", "MySQL 8.4 JSON 索引类型 site:dev.mysql.com", "MySQL multi-valued index JSON"]
+        "MySQL 8.4 JSON index", "MySQL multi-valued index JSON site:dev.mysql.com", "MySQL generated column index JSON"]
     assert plan.specs[1].family == "verified_evidence"
 
 
 def test_site_query_is_inserted_second_when_the_plan_has_room() -> None:
     llm = _Llm({"queries": [
-        {"query": "MySQL 8.4 JSON index", "intent": "direct"},
+        {"query": "MySQL 8.4 JSON index", "intent": "direct", "column_keys": ["index_type"]},
         {"query": "MySQL multi-valued index JSON", "intent": "direct"},
     ]})
 
@@ -60,7 +60,7 @@ def test_site_query_is_inserted_second_when_the_plan_has_room() -> None:
 
 def test_model_site_query_is_kept_as_is() -> None:
     llm = _Llm({"queries": [
-        {"query": "MySQL 8.4 JSON index", "intent": "direct"},
+        {"query": "MySQL 8.4 JSON index", "intent": "direct", "column_keys": ["index_type"]},
         {"query": "multi-valued index site:dev.mysql.com", "intent": "verify"},
     ]})
 
@@ -176,7 +176,7 @@ def test_cell_keeps_only_primary_source_evidence_when_both_kinds_exist() -> None
     assert [card.window_id for card in _prefer_primary_cards(snapshot, cards[:1], windows)] == ["w-blog"]
 
 
-def test_secondary_only_cell_waits_for_repair_when_the_question_asks_for_official_sources() -> None:
+def test_secondary_only_cell_stays_unverified_even_after_repair_when_official_sources_are_required() -> None:
     from app.deep_cell_executor import _prefer_primary_cards
 
     blog = SimpleNamespace(window_id="w-blog", adapter="external_url", source_domain="jamsql.com",
@@ -189,7 +189,7 @@ def test_secondary_only_cell_waits_for_repair_when_the_question_asks_for_officia
 
     repair = SimpleNamespace(query_policy={"authoritative_domains": ["dev.mysql.com"], "research_brief": brief,
                                            "repair_target": {"cell_key": "e:c"}})
-    assert _prefer_primary_cards(repair, cards, [blog]) == cards
+    assert _prefer_primary_cards(repair, cards, [blog]) == []
 
     no_request = SimpleNamespace(query_policy={"research_brief": {"current_question": "微服务是否提高交付速度？"}})
     assert _prefer_primary_cards(no_request, cards, [blog]) == cards

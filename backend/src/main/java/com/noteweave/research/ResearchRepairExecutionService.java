@@ -70,6 +70,19 @@ public class ResearchRepairExecutionService {
         return rejectedCandidates(task.executionContextJson(), envelope);
     }
 
+    /** 只给实际执行反证且未被反驳的事实资格，不将代表值的核验结果扩展到互补事实。 */
+    List<String> factRejectionReasons(String executionContextJson, ResearchAgentCompletionEnvelope envelope, String cell, String claim) {
+        if (!read(executionContextJson).path("query_policy").path("counter_required").asBoolean()) return List.of();
+        List<JsonNode> checks = new ArrayList<>();
+        report(envelope).path("counter_checks").forEach(check -> {
+            if (cell.equals(check.path("cell_key").asText()) && claim.equals(check.path("original_claim").asText())) checks.add(check);
+        });
+        if (checks.isEmpty() || checks.stream().anyMatch(check -> "NOT_RUN".equals(check.path("verdict").asText())))
+            return List.of("FACT_COUNTER_CHECK_INCOMPLETE");
+        return checks.stream().anyMatch(check -> "REFUTED".equals(check.path("verdict").asText()))
+                ? List.of("FACT_COUNTER_CHECK_REFUTED") : List.of();
+    }
+
     Set<String> rejectedCandidates(String executionContextJson, ResearchAgentCompletionEnvelope envelope) {
         JsonNode policy = read(executionContextJson).path("query_policy");
         if (!policy.path("counter_required").asBoolean()) return Set.of();
@@ -108,6 +121,11 @@ public class ResearchRepairExecutionService {
             if (!cells.contains(check.path("cell_key").asText())) throw invalid();
             boolean knownClaim = envelope.candidates().stream().anyMatch(c -> c.cellKey().equals(check.path("cell_key").asText())
                     && c.candidateValue().equals(check.path("original_claim").asText()));
+            if (policy.has("requirement_contract") && envelope.extractionDiagnostics().get("claim_clusters") != null) {
+                for (JsonNode cluster : mapper.valueToTree(envelope.extractionDiagnostics().get("claim_clusters")))
+                    if (cluster.path("cell_key").asText().equals(check.path("cell_key").asText())
+                            && cluster.path("claim_text").asText().equals(check.path("original_claim").asText())) knownClaim = true;
+            }
             for (JsonNode claim : policy.path("repair_target").path("claims")) {
                 if (claim.path("claim_text").asText().equals(check.path("original_claim").asText())
                         && policy.path("repair_target").path("cell_key").asText().equals(check.path("cell_key").asText())) knownClaim = true;

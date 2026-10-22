@@ -113,13 +113,17 @@ class HttpJsonSearchTransport:
         self.max_retries = max(1, max_retries)
         self.last_attempt_count = 0
         self.last_fatal_failure = ""
+        # 每次尝试都在网络层失败（域名解析、连接、超时）时为真，与没有搜到结果区分开
+        self.last_network_failure = False
 
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
         self.last_fatal_failure = ""
+        self.last_network_failure = False
         if not self.api_key.strip() or limit <= 0:
             return []
         payload = json.dumps(self._payload(query, limit, page)).encode("utf-8")
         last_error: Exception | None = None
+        network_errors = 0
         self.last_attempt_count = 0
         for attempt in range(1, self.max_retries + 1):
             self.last_attempt_count = attempt
@@ -142,9 +146,11 @@ class HttpJsonSearchTransport:
                     time.sleep(min(2 ** (attempt - 1), 4))
             except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as error:
                 last_error = error
+                network_errors += _is_network_error(error)
                 if attempt < self.max_retries:
                     time.sleep(min(2 ** (attempt - 1), 4))
         del last_error
+        self.last_network_failure = network_errors == self.last_attempt_count > 0
         return []
 
     def _headers(self) -> dict[str, str]:
@@ -186,9 +192,11 @@ class McpSearchTransport:
         self.max_retries = max(1, max_retries)
         self.last_attempt_count = 0
         self.last_fatal_failure = ""
+        self.last_network_failure = False
 
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
         self.last_fatal_failure = ""
+        self.last_network_failure = False
         if limit <= 0:
             return []
         if self.provider_name == "tavily_mcp":
@@ -198,6 +206,7 @@ class McpSearchTransport:
         else:
             arguments = {"q": query, "num": limit, "page": max(1, page), "autocorrect": False}
         self.last_attempt_count = 0
+        network_errors = 0
         for attempt in range(1, self.max_retries + 1):
             self.last_attempt_count = attempt
             try:
@@ -211,10 +220,11 @@ class McpSearchTransport:
                 self.last_fatal_failure = _fatal_provider_failure(error.code, _http_error_text(error))
                 if self.last_fatal_failure or not _is_retryable_search_http_status(error.code):
                     break
-            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
-                pass
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as error:
+                network_errors += _is_network_error(error)
             if attempt < self.max_retries:
                 time.sleep(min(2 ** (attempt - 1), 4))
+        self.last_network_failure = network_errors == self.last_attempt_count > 0
         return []
 
 
@@ -236,6 +246,13 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
     def search(self, query: str, limit: int, page: int = 1) -> list[dict[str, object]]:
         if page > 1:
             return []
+        if len(query) > DEEPSEEK_MAX_QUERY_CHARS:
+            scopes = re.findall(r"(?<!\S)site:\S+", query, re.I)
+            suffix = " ".join(scopes)
+            if suffix and len(suffix) < DEEPSEEK_MAX_QUERY_CHARS:
+                # 域名限制通常在末尾，直接截断会把官方来源限制删掉。
+                body = re.sub(r"(?<!\S)site:\S+", "", query, flags=re.I).strip()
+                query = body[:DEEPSEEK_MAX_QUERY_CHARS - len(suffix) - 1].rstrip() + " " + suffix
         results = super().search(query[:DEEPSEEK_MAX_QUERY_CHARS], limit, page)
         mapped: list[dict[str, object]] = []
         seen: set[str] = set()
@@ -273,6 +290,8 @@ _LOCALE_SEGMENT = re.compile(r"^([a-z]{2})[_-][a-z]{2}$", re.IGNORECASE)
 def _foreign_locale(url: str) -> bool:
     """路径中出现 fr_fr、ko-kr 这类语言代码且语言既不是中文也不是英文时返回 True。"""
     for segment in urllib.parse.urlsplit(url).path.split("/"):
+        if segment.casefold() in {"fr", "de", "ja", "ko", "es", "ru", "pt", "it"}:
+            return True
         match = _LOCALE_SEGMENT.match(segment)
         if match and match.group(1).lower() not in {"en", "zh"}:
             return True
@@ -437,6 +456,9 @@ class ExternalSearchAdapter:
         self.last_fatal_failure = ""
         # 最近一条检索词遇到的额度或鉴权失败
         self.query_fatal_failure = ""
+        # 本次检索中网络层失败的检索词数和正常得到响应（含空结果）的检索词数
+        self.network_failed_queries = 0
+        self.responded_queries = 0
 
     def search(
         self,
@@ -454,10 +476,13 @@ class ExternalSearchAdapter:
 
         hits: list[ResearchSearchHit] = []
         self.last_attempt_count = 0
-        for query_item in build_search_query_plan(plan, remaining_budget):
+        queries = build_search_query_plan(plan, remaining_budget)
+        for index, query_item in enumerate(queries):
             if len(hits) >= budget:
                 break
-            query_hits = self.search_query(plan, query_item.query, budget - len(hits), rank_offset=len(hits))
+            remaining = budget - len(hits)
+            query_limit = max(1, (remaining + len(queries) - index - 1) // (len(queries) - index))
+            query_hits = self.search_query(plan, query_item.query, query_limit, rank_offset=len(hits))
             if self.query_fatal_failure:
                 # 额度和鉴权问题与查询内容无关，继续发后续查询只会重复失败
                 if not hits:
@@ -492,6 +517,11 @@ class ExternalSearchAdapter:
             if fatal_failure and not raw_results:
                 self.query_fatal_failure = fatal_failure
                 break
+            if page == 1:
+                if not raw_results and getattr(self.transport, "last_network_failure", False) is True:
+                    self.network_failed_queries += 1
+                    break
+                self.responded_queries += 1
             for raw_result in raw_results:
                 if len(hits) >= query_limit:
                     break
@@ -584,6 +614,9 @@ class CompositeSearchAdapter:
     ) -> list[ResearchSearchHit]:
         global_limit = _resolve_budget(plan, remaining_budget)
         external_adapters = [adapter for adapter in self.adapters if isinstance(adapter, ExternalSearchAdapter)]
+        for adapter in external_adapters:
+            adapter.network_failed_queries = 0
+            adapter.responded_queries = 0
         if self.mode == "fallback":
             merged = self._search_with_fallback(task_input, plan, global_limit, remaining_budget)
         else:
@@ -593,6 +626,12 @@ class CompositeSearchAdapter:
             # 所有外部搜索渠道都因额度用尽或鉴权失败不可用，继续研究只会得到空结论。
             # 抛出后 Worker 上报投递失败，后端按该原因码让整次研究立即失败。
             raise RuntimeError("RESEARCH_WEB_PROVIDER_UNAVAILABLE")
+        if (not merged and external_adapters
+                and sum(adapter.responded_queries for adapter in external_adapters) == 0
+                and sum(adapter.network_failed_queries for adapter in external_adapters) > 0):
+            # 所有外部渠道的所有检索词都在网络层失败（例如容器内域名解析失效），这不代表没有资料。
+            # 继续研究只会得到空报告；抛出后本次任务按投递失败处理，租约到期后重新执行。
+            raise RuntimeError("RESEARCH_WEB_PROVIDER_UNREACHABLE")
         return _finalize_ranking(merged[:global_limit])
 
     def _search_with_fallback(
@@ -617,14 +656,18 @@ class CompositeSearchAdapter:
                 adapter.last_fatal_failure = "AUTH_FAILED"
         retained = {adapter.provider_name: False for adapter in external_adapters}
         unavailable: set[str] = set()
-        for query_item in build_search_query_plan(plan, remaining_budget):
+        queries = build_search_query_plan(plan, remaining_budget)
+        for index, query_item in enumerate(queries):
             if len(merged) >= global_limit:
                 break
+            # 为尚未执行的检索词保留命中额度，避免宽泛的第一条查询占满预算，后面的列从未被检索。
+            remaining = global_limit - len(merged)
+            query_limit = max(1, (remaining + len(queries) - index - 1) // (len(queries) - index))
             attempted: list[str] = []
             for adapter in external_adapters:
                 if adapter.last_fatal_failure or adapter.provider_name in unavailable:
                     continue
-                query_hits = adapter.search_query(plan, query_item.query, global_limit - len(merged),
+                query_hits = adapter.search_query(plan, query_item.query, query_limit,
                                                   rank_offset=len(merged))
                 attempted.append(adapter.provider_name)
                 if adapter.query_fatal_failure:
@@ -1283,6 +1326,13 @@ def _pages_for_query_limit(query_limit: int) -> int:
     if query_limit <= 20:
         return 2
     return 3
+
+
+def _is_network_error(error: BaseException) -> bool:
+    """域名解析、连接和超时这类网络层错误；HTTP 状态错误和响应解析错误不算。"""
+    if isinstance(error, urllib.error.HTTPError):
+        return False
+    return isinstance(error, (urllib.error.URLError, TimeoutError, OSError))
 
 
 def _transport_search_page(

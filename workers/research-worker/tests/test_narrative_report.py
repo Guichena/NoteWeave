@@ -258,7 +258,7 @@ def test_supporting_quotes_and_labels_are_trusted_and_reach_the_model() -> None:
     }
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "PostgreSQL 17 的 JSON 索引",
-        "executive_summary": "已核验 PostgreSQL 17 的部分索引事实，MySQL 8.4 的对应项仍缺证据。",
+        "executive_summary": "部分索引事实已核验，其余对应项仍缺证据。",
         "sections": [{
             "heading": "PostgreSQL 17 · 索引类型",
             "paragraphs": [{
@@ -379,17 +379,16 @@ def test_inline_citations_stay_next_to_their_sentences() -> None:
     assert result.narrative["comparison_table"]["rows"][0]["evidence_keys"] == ["evidence:aa01", "evidence:bb01"]
 
 
-def test_inline_citation_outside_bound_cells_is_removed_instead_of_failing_the_article() -> None:
+def test_inline_citation_outside_bound_cells_requires_rewriting_instead_of_removing_the_marker() -> None:
     client = FakeLlmClient({"research.synthesis": _inline_article(
         "Kafka 在单个分区内保证顺序 [evidence:aa01] [evidence:zz99]。Pulsar 按 key 保证顺序 [evidence:bb01]。",
         ["顺序范围", "单个分区 [evidence:zz99]", "按 key [evidence:bb01]"])})
 
     result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
 
-    assert result.mode == "LLM"
+    assert result.mode == "FALLBACK"
     assert "evidence:zz99" not in result.markdown
-    assert "Kafka 在单个分区内保证顺序 [evidence:aa01]。" in result.markdown
-    assert "| 顺序范围 | 单个分区 | 按 key [evidence:bb01] |" in result.markdown
+    assert result.reason == "NARRATIVE_UNSUPPORTED_TYPED_FACT"
 
 
 def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None:
@@ -397,20 +396,20 @@ def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None
         "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
         ["顺序范围 [evidence:aa01]", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
     article["executive_summary"] = ("Kafka 按分区保证顺序，Pulsar 按 key 保证顺序 "
-                                    "[evidence:aa01][evidence:aa02][evidence:bb01][evidence:zz99]。")
+                                    "[evidence:aa01][evidence:bb01]。")
     client = FakeLlmClient({"research.synthesis": json.dumps(article)})
 
     result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
 
     assert result.mode == "LLM"
-    assert "Pulsar 按 key 保证顺序 [evidence:aa01][evidence:aa02]。" in result.markdown
+    assert "Pulsar 按 key 保证顺序 [evidence:aa01][evidence:bb01]。" in result.markdown
     assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
 
 
 def test_one_bad_paragraph_does_not_discard_the_rest_of_the_article() -> None:
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "Latency findings",
-        "executive_summary": "Version 2.1 has a measured baseline.",
+        "executive_summary": "The measured baseline was verified.",
         "sections": [{"heading": "Findings", "paragraphs": [
             {"text": "Version 2.1 records a measured latency of 50 ms.", "cell_keys": ["latency"],
              "evidence_keys": ["evidence-a"]},
@@ -442,14 +441,14 @@ def test_fallback_groups_findings_by_aspect_with_a_comparison_table() -> None:
     assert "## 顺序范围" in result.markdown
     assert "Kafka：分区内有序。其余细节略。 [evidence:k1]" in result.markdown
     assert "| 顺序范围 | 分区内有序。 [evidence:k1] | Key_Shared 按 key 有序 [evidence:p1] |" in result.markdown
-    assert "本次研究核验了 2 项结论，涉及Kafka、Pulsar" in result.markdown
+    assert "下文按问题的各个方面列出已核验的结论及其来源" in result.markdown
     assert "## 局限" in result.markdown
 
 
 def test_truncated_model_output_keeps_the_completed_paragraphs() -> None:
     full = json.dumps({
         "title": "Latency findings",
-        "executive_summary": "Version 2.1 has a measured baseline.",
+        "executive_summary": "The measured baseline was verified.",
         "sections": [{"heading": "Findings", "paragraphs": [
             {"text": "Version 2.1 records a measured latency of 50 ms.", "cell_keys": ["latency"],
              "evidence_keys": ["evidence-a"]},

@@ -26,6 +26,15 @@ class ResearchAgentCompletionMergePlanner {
             List<ResearchAgentCompletionCommitter.CellRow> cells,
             Set<String> qualificationRejectedCandidates
     ) {
+        return planSingle(envelope, cells, qualificationRejectedCandidates, Set.of());
+    }
+
+    ResearchAgentCompletionCommitter.MergeOutcome planSingle(
+            ResearchAgentCompletionEnvelope envelope,
+            List<ResearchAgentCompletionCommitter.CellRow> cells,
+            Set<String> qualificationRejectedCandidates,
+            Set<String> coverageBlockedCandidates
+    ) {
         Map<String, ResearchAgentCompletionEnvelope.Evidence> evidenceByKey = new HashMap<>();
         envelope.evidence().forEach(item -> evidenceByKey.put(item.evidenceKey(), item));
         Set<String> lockedCells = new HashSet<>();
@@ -44,13 +53,15 @@ class ResearchAgentCompletionMergePlanner {
                     evidence != null && "SUPPORTS".equals(evidence.relationType())
                             && ResearchEquivalentClaims.supports(candidate, evidence.evidenceKey(), evidence.claimText()));
             boolean qualificationRejected = qualificationRejectedCandidates.contains(candidate.candidateKey());
-            boolean supported = literalSupport && !qualificationRejected;
+            boolean incomplete = coverageBlockedCandidates.contains(candidate.candidateKey());
+            boolean supported = literalSupport && !qualificationRejected && !incomplete;
             ResearchAgentCompletionReceipt.MergeReceipt receipt =
                     new ResearchAgentCompletionReceipt.MergeReceipt(
                             candidate.cellKey(), candidate.baseCellVersion(),
                             supported ? candidate.baseCellVersion() + 1 : candidate.baseCellVersion(),
                             supported ? "ACCEPTED" : "REJECTED",
                             supported ? "VERIFIED_AND_VERSION_MATCHED"
+                                    : incomplete ? ResearchRequirementCoverageService.INCOMPLETE
                                     : literalSupport ? "EVIDENCE_QUALIFICATION_REJECTED" : "NOT_ENOUGH_INFO");
             if (supported) {
                 accepted.add(receipt);
@@ -137,6 +148,19 @@ class ResearchAgentCompletionMergePlanner {
         return reason == null
                 ? new ResearchAgentCompletionCommitter.MergeOutcome(List.of(receipt), List.of())
                 : new ResearchAgentCompletionCommitter.MergeOutcome(List.of(), List.of(receipt));
+    }
+
+    /** 双路事实可以分批累计，整格仍须满足全部需求才更新为 VERIFIED。 */
+    ResearchAgentCompletionCommitter.MergeOutcome requireCoverage(
+            ResearchAgentCompletionCommitter.MergeOutcome outcome, Set<String> incompleteCells) {
+        List<ResearchAgentCompletionReceipt.MergeReceipt> accepted = new ArrayList<>();
+        List<ResearchAgentCompletionReceipt.MergeReceipt> rejected = new ArrayList<>(outcome.rejected());
+        for (var receipt : outcome.accepted()) {
+            if (incompleteCells.contains(receipt.cellKey())) rejected.add(new ResearchAgentCompletionReceipt.MergeReceipt(
+                    receipt.cellKey(), receipt.fromVersion(), receipt.fromVersion(), "REJECTED", ResearchRequirementCoverageService.INCOMPLETE));
+            else accepted.add(receipt);
+        }
+        return new ResearchAgentCompletionCommitter.MergeOutcome(List.copyOf(accepted), List.copyOf(rejected));
     }
 
     private boolean hasStrongSourceIdentity(List<String> identities) {

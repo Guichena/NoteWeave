@@ -47,7 +47,7 @@ public class ResearchAgentTaskInternalController {
             @Valid @RequestBody ClaimRequest request
     ) {
         return ApiResponse.success(taskService.claimTask(new ResearchAgentTaskService.ClaimCommand(
-                taskId, request.workerInstanceId(), request.leaseSeconds()
+                taskId, request.workerInstanceId(), request.leaseSeconds(), request.supportedFeatures()
         )));
     }
 
@@ -91,6 +91,9 @@ public class ResearchAgentTaskInternalController {
     public record TargetBindingRequest(@NotBlank String cellId, int expectedVersion) { }
     public record TaskExecutionContextRequest(@NotBlank String providerKey, Map<String, Object> sourcePolicy,
                                               Map<String, Object> queryPolicy) { }
-    public record ClaimRequest(@NotBlank String workerInstanceId, int leaseSeconds) { }
+    public record ClaimRequest(@NotBlank String workerInstanceId, int leaseSeconds,
+                               @jakarta.validation.constraints.Size(max = 16) List<@NotBlank String> supportedFeatures) {
+        public ClaimRequest(String workerInstanceId, int leaseSeconds) { this(workerInstanceId, leaseSeconds, List.of()); }
+    }
     public record LeaseRequest(@NotBlank String workerInstanceId, int leaseEpoch, long fencingToken, int leaseSeconds) { }
 }

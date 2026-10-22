@@ -56,10 +56,23 @@ class ResearchAgentRoleResultService {
         capabilities.requireRegistered(task.role());
         Map<String, Object> result = envelope.roleResult();
         if (result == null || result.isEmpty()) throw invalid("Role completion has no result payload");
+        if ("SYNTHESIS".equals(task.role())) result = new ResearchSynthesisUploadService(jdbcTemplate, objectMapper, null).resolve(task, result);
         if ("EVIDENCE_AUDIT".equals(task.role())) {
             validateAudit(task, result);
         } else if ("SYNTHESIS".equals(task.role())) {
+            new ResearchSynthesisRecoveryService(jdbcTemplate, objectMapper, null)
+                    .requireRegistered(task, result, envelope.budgetUsage().getOrDefault("llm_calls", 0L));
             validateSynthesis(task, result);
+            Map<String, Object> input = mapValue(queryPolicy(task).get("synthesis_input"));
+            if (objectMapper.valueToTree(input).path("statement_support_version").asInt() == 1)
+                new ResearchStatementSupportValidation().validate(objectMapper, input, result, envelope.budgetUsage().getOrDefault("llm_calls", 0L));
+            if (objectMapper.valueToTree(input).path("report_coverage_version").asInt() == 1)
+                new ResearchReportCoverageService(jdbcTemplate, objectMapper).validate(input, result, envelope.budgetUsage().getOrDefault("llm_calls", 0L));
+        }
+        if (ResearchAgentRoles.PLANNING.equals(task.role()) && "PLANNED".equals(result.get("status"))) {
+            Map<String,Object> planning = mapValue(queryPolicy(task).get("planning_input"));
+            if (objectMapper.valueToTree(planning).path("completion_runtime_version").asInt() == 1)
+                ResearchPlanningCompleteness.validate(objectMapper,planning,result,envelope.budgetUsage().getOrDefault("llm_calls",0L));
         }
         String resultDigest = canonicalizer.domainSeparatedDigest(DIGEST_DOMAIN, result);
         String inputDigest = text(result.get("input_digest"));
@@ -88,6 +101,7 @@ class ResearchAgentRoleResultService {
                     text(result.get("ledger_digest")), text(result.get("audit_digest")),
                     text(result.get("markdown")), Json.write(objectMapper, result.get("claims")),
                     Json.write(objectMapper, result.get("limitations")));
+            new ResearchReportFeedbackService(jdbcTemplate, objectMapper).record(task, result);
         } else if (ResearchAgentRoles.PLANNING.equals(task.role())) {
             planningService.applyResult(task, result);
         } else {
@@ -125,6 +139,12 @@ class ResearchAgentRoleResultService {
                 || !text(input.get("audit_digest")).equals(text(result.get("audit_digest")))) {
             throw stale("Synthesis ledger or audit digest is stale");
         }
+        if (input.containsKey("requirement_coverage")) {
+            Map<String, Object> current = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).readModel(task.runId());
+            if (!canonicalizer.domainSeparatedDigest("research-synthesis-coverage.v1", current).equals(text(input.get("coverage_digest"))))
+                throw stale("成文期间需求或事实发生变化，需要重新生成报告");
+            validateAccumulatedFacts(input, result);
+        }
         Set<String> targetCells = targetCells(task);
         List<Map<String, Object>> claims = listOfMaps(result.get("claims"));
         synthesisValidationService.validate(
@@ -138,6 +158,29 @@ class ResearchAgentRoleResultService {
                         listOfMaps(input.get("cells")).stream(), listOfMaps(input.get("leads")).stream()).toList()),
                 "research-synthesis-candidate.v2".equals(schema),
                 listOfMaps(input.get("leads")));
+    }
+
+    /** 累计事实必须出现在绑定原单元格和完整联合引用的正文中，缺项说明也必须保留。 */
+    private void validateAccumulatedFacts(Map<String, Object> input, Map<String, Object> result) {
+        Map<String, Object> narrative = mapValue(result.get("narrative"));
+        List<Map<String, Object>> paragraphs = listOfMaps(narrative.get("sections")).stream()
+                .flatMap(section -> listOfMaps(section.get("paragraphs")).stream()).toList();
+        for (Map<String, Object> cell : listOfMaps(input.get("cells"))) {
+            List<Map<String, Object>> facts = listOfMaps(cell.get("facts"));
+            if (facts.isEmpty()) facts = List.of(Map.of("claim_text", cell.get("candidate_value"), "evidence_keys", cell.get("evidence_keys")));
+            for (Map<String, Object> fact : facts) {
+                boolean present = paragraphs.stream().anyMatch(paragraph ->
+                        stringList(paragraph.get("cell_keys")).contains(text(cell.get("cell_key")))
+                        && text(paragraph.get("text")).contains(text(fact.get("claim_text")))
+                        && stringList(paragraph.get("evidence_keys")).containsAll(stringList(fact.get("evidence_keys"))));
+                if (!present) throw invalid("报告遗漏了已核验事实或其联合引用");
+            }
+        }
+        Set<String> limitations = new HashSet<>(stringList(narrative.get("limitations")));
+        for (String limitation : stringList(input.get("limitations"))) {
+            if (!limitation.matches("[A-Z0-9_]+") && !limitations.contains(limitation))
+                throw invalid("报告遗漏了尚未完成的研究要求");
+        }
     }
 
     private static final List<String> COMPARISON_MARKERS =

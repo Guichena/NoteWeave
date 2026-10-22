@@ -181,6 +181,7 @@ class UrlFetchAdapter:
         published_at = ""
         updated_at = ""
         reported_transport_attempt_count = 0
+        navigation_links = []
 
         if self.transport is not None:
             fetch_method = "TRANSPORT"
@@ -205,6 +206,8 @@ class UrlFetchAdapter:
             updated_at = str(snapshot.get("updated_at") or "").strip()
             reported_transport_attempt_count = int(snapshot.get("transport_attempt_count") or 0)
             fetched_text = str(snapshot.get("text") or "").strip()
+            from app.document_navigation import document_links
+            navigation_links = (snapshot.get("navigation_links") or document_links(fetched_text, hit.url))[:200]
             snapshot_status = str(snapshot.get("snapshot_status") or snapshot_status).strip() or snapshot_status
             snapshot_key = str(snapshot.get("snapshot_key") or snapshot_key).strip()
             fetch_status = str(snapshot.get("fetch_status") or fetch_status).strip() or fetch_status
@@ -280,6 +283,7 @@ class UrlFetchAdapter:
             hit_id=hit.hit_id,
             source_id=hit.source_id,
             source_title=hit.source_title,
+            navigation_links=navigation_links,
             query=hit.query,
             rank=hit.rank,
             url=hit.url,
@@ -432,7 +436,17 @@ class HttpUrlSnapshotTransport:
                 "transport_fallback_code": failure_code,
             }
         text = _decode_response(raw, content_type)
-        cleaned_text = _select_query_relevant_text(_strip_html(text), query, token_budget)
+        anchor = urllib.parse.unquote(urllib.parse.urlsplit(url).fragment)
+        anchor_text = ""
+        if anchor:
+            match = re.search(r'(?:id|name)\s*=\s*[\'"]' + re.escape(anchor) + r'[\'"]', text, re.I)
+            if match:
+                # 保留标题前的限定语和后续章节，避免只截命中词所在的一句话。
+                start = max(0, text.rfind("<h", 0, match.start()))
+                end = re.search(r"<h[12](?:\s|>)", text[match.end():], re.I)
+                stop = match.end() + end.start() if end else min(len(text),match.end() + 40000)
+                anchor_text = _strip_html(text[start:stop])
+        cleaned_text = _select_query_relevant_text(anchor_text or _strip_html(text), query, token_budget)
         if not cleaned_text:
             return {
                 "snapshot_status": "FETCH_FAILED",
@@ -446,8 +460,10 @@ class HttpUrlSnapshotTransport:
                 "transport_fallback_code": "EMPTY_FETCH_TEXT",
             }
         injection_signals = detect_prompt_injection(cleaned_text)
+        from app.document_navigation import document_links
         return {
             "text": cleaned_text,
+            "navigation_links": document_links(text, url),
             "snapshot_key": _snapshot_key(url, cleaned_text),
             "snapshot_status": "HTTP_FETCHED",
             "fetch_status": "FETCHED",

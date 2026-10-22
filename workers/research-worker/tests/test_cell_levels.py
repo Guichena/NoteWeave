@@ -113,7 +113,7 @@ def _synthesis_input() -> dict[str, object]:
 def test_writer_receives_leads_and_unmarked_lead_sentences_get_an_unverified_note() -> None:
     client = FakeLlmClient({"research.synthesis": json.dumps({
         "title": "Kafka 与 Pulsar 的消息顺序",
-        "executive_summary": "Pulsar 在 Exclusive 订阅下按顺序消费 [evidence:p1] [evidence:k1]。",
+        "executive_summary": "Pulsar 在 Exclusive 订阅下按顺序消费 [evidence:p1]。",
         "sections": [{"heading": "直接回答", "paragraphs": [
             {"text": "Pulsar 在 Exclusive 订阅下按顺序消费 [evidence:p1]。", "cell_keys": ["pulsar:order"],
              "evidence_keys": ["evidence:p1"]},
@@ -128,7 +128,7 @@ def test_writer_receives_leads_and_unmarked_lead_sentences_get_an_unverified_not
 
     assert client.payloads[0]["tentative_cells"][0]["cell_key"] == "kafka:order"
     assert result.mode == "LLM"
-    # 摘要只保留已核验的引用
+    # 摘要只能引用已核验的资料
     assert "[evidence:k1]" not in result.narrative["executive_summary"]
     paragraph = result.narrative["sections"][0]["paragraphs"][1]
     assert paragraph["text"].startswith("Kafka 只保证分区内有序（未经核实） [evidence:k1]")

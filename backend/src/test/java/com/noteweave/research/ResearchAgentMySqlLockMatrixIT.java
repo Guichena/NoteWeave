@@ -482,6 +482,12 @@ class ResearchAgentMySqlLockMatrixIT {
         } catch (Throwable failure) {
             caseEvidence.put("status", "FAILED");
             caseEvidence.put("failure", failure.toString());
+            // 若业务操作已提前失败，保留实际原因，避免只看到没有出现锁等待的超时。
+            if (leaderFuture != null && leaderFuture.isDone() && !leaderFuture.isCancelled()) {
+                Outcome leader = leaderFuture.get();
+                caseEvidence.put("leader_outcome",outcomeEvidence(leader));
+                if (leader.error() != null) failure.addSuppressed(leader.error());
+            }
             caseEvidence.put("state_after_failure", fullStateSafely(runId));
             writeCaseEvidence(caseId);
             if (failure instanceof Exception exception) throw exception;
@@ -779,6 +785,11 @@ class ResearchAgentMySqlLockMatrixIT {
                         status, agent_execution_mode
                     ) values (?, ?, ?, 'lock matrix question', 'DEFAULT', ?, 'RUNNING', 'INCREMENTAL_V1')
                     """, runId, workspaceId, parentTaskId, objectMapper.writeValueAsString(sourceScope));
+            // 协调器要求冻结的意图与控制包，锁场景也使用完整的运行输入。
+            jdbcTemplate.update("update research_run set research_intent_json=?,control_pack_json=? where id=?",
+                    objectMapper.writeValueAsString(Map.of("research_goal","核对事务与锁顺序")),
+                    objectMapper.writeValueAsString(Map.of("pack_type","RESEARCH")),runId);
+            if (trustedDatabaseSource) jdbcTemplate.update("update research_run set retrieval_mode='SOURCES_ONLY' where id=?",runId);
             jdbcTemplate.update("""
                     insert into research_row(id, research_run_id, row_key, row_status)
                     values (?, ?, 'entity-1', 'CANDIDATE_READY')

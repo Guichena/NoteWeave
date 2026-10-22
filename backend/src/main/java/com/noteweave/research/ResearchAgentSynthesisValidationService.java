@@ -4,6 +4,7 @@ import com.noteweave.common.BusinessException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -14,8 +15,12 @@ import org.springframework.stereotype.Service;
 @Service
 class ResearchAgentSynthesisValidationService {
     private static final Pattern TYPED_TOKEN = Pattern.compile(
-            "(?<![\\w])(?:\\d+(?:[.,]\\d+)*(?:\\s?(?:%|ms|s|MB|GB|TB|USD|EUR|CNY))?|v?\\d+\\.\\d+(?:\\.\\d+)?)(?![\\w])",
+            "(?<![\\w.])\\d+(?:[.,]\\d+)*(?:\\s?(?:%|ms|s|MB|GB|TB|USD|EUR|CNY))?(?!\\w|\\.\\d)"
+                    + "|(?<![\\d.])v?\\d+\\.\\d+(?:\\.\\d+)*(?!\\d|\\.\\d)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern INLINE_CITATION = Pattern.compile("\\[(evidence:[^\\[\\]\\s]+)\\]");
+    private static final Pattern STATEMENT = Pattern.compile(
+            ".+?(?:[。！？!?]|\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
 
     void validate(
             Set<String> targetCells,
@@ -58,7 +63,8 @@ class ResearchAgentSynthesisValidationService {
             String context = String.join(" ", text(cell.get("entity_label")), text(cell.get("column_label")),
                     String.join(" ", strings(cell.get("supporting_quotes"))));
             if (key.isBlank() || value.isBlank() || evidence.isEmpty() || byKey.put(
-                    key, new FrozenCell(value, evidence, guarded, context)) != null) {
+                    key, new FrozenCell(value, evidence, guarded, context, text(cell.get("entity_label")),
+                            evidenceQuotes(cell.get("evidence_quotes"), evidence))) != null) {
                 throw invalid("Frozen synthesis ledger contains an invalid or duplicate cell");
             }
         }
@@ -98,10 +104,18 @@ class ResearchAgentSynthesisValidationService {
             if (key.isBlank() || value.isBlank() || evidence.isEmpty() || narrativeCells.containsKey(key)) continue;
             String context = String.join(" ", text(lead.get("entity_label")), text(lead.get("column_label")),
                     String.join(" ", strings(lead.get("supporting_quotes"))));
-            narrativeCells.put(key, new FrozenCell(value, evidence, false, context));
+            narrativeCells.put(key, new FrozenCell(value, evidence, false, context, text(lead.get("entity_label")),
+                    evidenceQuotes(lead.get("evidence_quotes"), evidence)));
         }
-        if (narrativeRequired) validateNarrative(
-                narrative, narrativeCells, markdown, trustedContext, comparisonTableRequired);
+        if (narrativeRequired) {
+            String summary = text(narrative.get("executive_summary"));
+            Set<String> summaryRefs = inlineCitations(summary);
+            if (summaryRefs.size() > 2 || (!typedTokens(summary).isEmpty() && summaryRefs.isEmpty())) {
+                throw invalid("摘要中的事实缺少有效引用");
+            }
+            validateCitedText(summary, byKey, List.copyOf(summaryRefs), byKey, "", "");
+            validateNarrative(narrative, narrativeCells, markdown, trustedContext, comparisonTableRequired, targetCells);
+        }
     }
 
     private void validateNarrative(
@@ -109,7 +123,8 @@ class ResearchAgentSynthesisValidationService {
             Map<String, FrozenCell> byKey,
             String markdown,
             String trustedContext,
-            boolean comparisonTableRequired
+            boolean comparisonTableRequired,
+            Set<String> targetCells
     ) {
         if (!"research-reader-report.v1".equals(text(narrative.get("schema_version")))
                 || text(narrative.get("title")).isBlank()
@@ -118,6 +133,7 @@ class ResearchAgentSynthesisValidationService {
         }
         List<Map<String, Object>> sections = maps(narrative.get("sections"));
         if (sections.isEmpty()) throw invalid("Reader report has no sections");
+        Set<String> covered = new HashSet<>();
         for (Map<String, Object> section : sections) {
             if (text(section.get("heading")).isBlank()) throw invalid("Reader report section heading is empty");
             List<Map<String, Object>> paragraphs = maps(section.get("paragraphs"));
@@ -130,18 +146,19 @@ class ResearchAgentSynthesisValidationService {
                     throw invalid("Reader report paragraph is not evidence-bound");
                 }
                 Set<String> allowedEvidence = new HashSet<>();
-                StringBuilder sourceText = new StringBuilder(trustedContext);
                 for (String cellKey : cellKeys) {
                     FrozenCell cell = byKey.get(cellKey);
                     if (cell == null) throw stale("Reader report paragraph targets an unknown cell");
                     allowedEvidence.addAll(cell.evidenceKeys());
-                    sourceText.append(' ').append(cell.value()).append(' ').append(cell.context());
                 }
                 if (!allowedEvidence.containsAll(evidenceKeys)) {
                     throw invalid("Reader report paragraph cites evidence outside its bound cells");
                 }
-                if (!typedTokens(sourceText.toString()).containsAll(typedTokens(prose))) {
-                    throw invalid("Reader report paragraph adds an unsupported typed fact");
+                Map<String, FrozenCell> bound = new HashMap<>();
+                for (String key : cellKeys) bound.put(key, byKey.get(key));
+                validateCitedText(prose, bound, evidenceKeys, byKey, trustedContext, "");
+                for (String key : cellKeys) {
+                    if (evidenceKeys.stream().anyMatch(byKey.get(key).evidenceKeys()::contains)) covered.add(key);
                 }
                 if (!markdown.contains(prose)
                         || evidenceKeys.stream().anyMatch(key -> !markdown.contains("[" + key + "]"))) {
@@ -149,6 +166,7 @@ class ResearchAgentSynthesisValidationService {
                 }
             }
         }
+        if (!covered.containsAll(targetCells)) throw invalid("正文遗漏了已核验的目标单元格");
         Map<String, Object> comparisonTable = map(narrative.get("comparison_table"));
         if (comparisonTableRequired && comparisonTable.isEmpty()) {
             throw invalid("Reader report comparison table is required");
@@ -176,18 +194,23 @@ class ResearchAgentSynthesisValidationService {
                 throw invalid("Reader report comparison row is invalid");
             }
             Set<String> allowedEvidence = new HashSet<>();
-            StringBuilder sourceText = new StringBuilder(trustedContext);
             for (String cellKey : cellKeys) {
                 FrozenCell cell = byKey.get(cellKey);
                 if (cell == null) throw stale("Reader report comparison row targets an unknown cell");
                 allowedEvidence.addAll(cell.evidenceKeys());
-                sourceText.append(' ').append(cell.value()).append(' ').append(cell.context());
             }
             if (!allowedEvidence.containsAll(evidenceKeys)) {
                 throw invalid("Reader report comparison row cites evidence outside its bound cells");
             }
-            if (!typedTokens(sourceText.toString()).containsAll(typedTokens(String.join(" ", cells)))) {
-                throw invalid("Reader report comparison row adds an unsupported typed fact");
+            Map<String, FrozenCell> bound = new HashMap<>();
+            for (String key : cellKeys) bound.put(key, byKey.get(key));
+            for (int index = 1; index < cells.size(); index++) {
+                String cellText = cells.get(index);
+                // 缺失位置没有事实陈述，不要求为列头提供本行证据。
+                if ("-".equals(cellText)) continue;
+                Set<String> inline = inlineCitations(cellText);
+                validateCitedText(cellText, bound, inline.isEmpty() ? evidenceKeys : List.copyOf(inline),
+                        byKey, trustedContext, cells.get(0) + " " + columns.get(index));
             }
             if (cells.stream().anyMatch(cell -> !markdown.contains(escapeTableCell(cell)))
                     || evidenceKeys.stream().anyMatch(key -> !markdown.contains("[" + key + "]"))) {
@@ -196,10 +219,74 @@ class ResearchAgentSynthesisValidationService {
         }
     }
 
+    private void validateCitedText(String prose, Map<String, FrozenCell> bound, List<String> declared,
+                                   Map<String, FrozenCell> allCells, String trustedContext, String subject) {
+        Set<String> allowed = new HashSet<>();
+        bound.values().forEach(cell -> allowed.addAll(cell.evidenceKeys()));
+        Set<String> inline = inlineCitations(prose);
+        if (!allowed.containsAll(declared) || !allowed.containsAll(inline)) {
+            throw invalid("句子引用了未绑定的证据");
+        }
+        if (!inline.isEmpty() && !inline.equals(new HashSet<>(declared))) {
+            throw invalid("正文列出的证据与句中实际引用不一致");
+        }
+        Matcher statements = STATEMENT.matcher(prose);
+        while (statements.find()) {
+            String statement = statements.group();
+            if (statement.isBlank()) continue;
+            Set<String> refs = inline.isEmpty() ? new HashSet<>(declared) : inlineCitations(statement);
+            List<FrozenCell> cited = bound.values().stream()
+                    .filter(cell -> cell.evidenceKeys().stream().anyMatch(refs::contains)).toList();
+            StringBuilder sources = new StringBuilder();
+            for (FrozenCell cell : cited) {
+                if (cell.quotes().isEmpty()) {
+                    sources.append(' ').append(trustedContext).append(' ').append(cell.value()).append(' ').append(cell.context());
+                } else {
+                    cell.quotes().forEach((key, quote) -> { if (refs.contains(key)) sources.append(' ').append(quote); });
+                    sources.append(' ').append(cell.entity());
+                }
+            }
+            if (!typedTokens(sources.toString()).containsAll(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")))) {
+                throw invalid("句子的数字或版本没有所引原文支持");
+            }
+            String mentionedText = (subject + " " + statement).toLowerCase(Locale.ROOT);
+            for (FrozenCell cell : allCells.values()) {
+                String stem = entityStem(cell.entity());
+                if (stem.length() >= 3 && Pattern.compile("(?<![A-Za-z0-9])" + Pattern.quote(stem) + "(?![A-Za-z0-9])")
+                        .matcher(mentionedText).find()
+                        && cited.stream().noneMatch(source -> entityStem(source.entity()).equals(stem))) {
+                    throw invalid("句子中的研究对象与所引证据不一致");
+                }
+            }
+        }
+    }
+
+    private String entityStem(String label) {
+        return label.strip().replaceFirst("(?i)\\s+v?\\d[\\w. -]*$", "").toLowerCase(Locale.ROOT);
+    }
+
+    private Set<String> inlineCitations(String value) {
+        Set<String> keys = new HashSet<>();
+        Matcher matcher = INLINE_CITATION.matcher(value);
+        while (matcher.find()) keys.add(matcher.group(1));
+        return keys;
+    }
+
+    private Map<String, String> evidenceQuotes(Object value, Set<String> allowed) {
+        Map<String, String> quotes = new HashMap<>();
+        for (Map<String, Object> item : maps(value)) {
+            String key = text(item.get("evidence_key"));
+            String quote = text(item.get("quote"));
+            if (allowed.contains(key) && !quote.isBlank()) quotes.put(key, quote);
+        }
+        return quotes;
+    }
+
     private Set<String> typedTokens(String value) {
         Set<String> tokens = new HashSet<>();
         Matcher matcher = TYPED_TOKEN.matcher(value);
-        while (matcher.find()) tokens.add(matcher.group().replaceAll("\\s+", "").replace(",", "").toLowerCase());
+        while (matcher.find()) tokens.add(matcher.group().replaceAll("\\s+", "").replace(",", "")
+                .toLowerCase(Locale.ROOT).replaceFirst("^v(?=\\d)", ""));
         return tokens;
     }
 
@@ -241,5 +328,6 @@ class ResearchAgentSynthesisValidationService {
         return new BusinessException("RESEARCH_AGENT_SYNTHESIS_STALE", message);
     }
 
-    private record FrozenCell(String value, Set<String> evidenceKeys, boolean guarded, String context) { }
+    private record FrozenCell(String value, Set<String> evidenceKeys, boolean guarded, String context,
+                              String entity, Map<String, String> quotes) { }
 }

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass, replace
 
 from app.json_repair import parse_json_payload
 from app.llm_client import LlmClient
+from app.execution_control import require_execution_active
 
 
 _INLINE_CITATION = re.compile(r"\[(evidence:[^\[\]\s]+)\]")
 _TYPED_TOKEN = re.compile(
-    r"(?<![\w])(?:\d+(?:[.,]\d+)*(?:\s?(?:%|ms|s|MB|GB|TB|USD|EUR|CNY))?|v?\d+\.\d+(?:\.\d+)?)(?![\w])",
-    re.IGNORECASE,
+    r"(?<![\w.])\d+(?:[.,]\d+)*(?:\s?(?:%|ms|s|MB|GB|TB|USD|EUR|CNY))?(?!\w|\.\d)"
+    r"|(?<![\d.])v?\d+\.\d+(?:\.\d+)*(?!\d|\.\d)",
+    re.IGNORECASE | re.ASCII,
 )
 
 
@@ -33,13 +36,116 @@ class NarrativeReportPolisher:
         self.llm_client = llm_client
 
     def polish(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
+        from app.answer_policy import active, polish_answers
+        if active(synthesis_input):
+            return polish_answers(synthesis_input, self.llm_client)
+        if "requirement_coverage" not in synthesis_input:
+            return self._polish_batch(synthesis_input)
+        cells = _validated_cells(synthesis_input)
+        chunks = _synthesis_chunks(cells)
+        # 调用次数来自服务端冻结的预算，不通过分批扩大预算。
+        remaining = max(0, int(synthesis_input.get("narrative_llm_budget", 2)))
+        coverage_budget = max(1, remaining // 4) if remaining and synthesis_input.get("report_coverage_version") == 1 else 0
+        remaining -= coverage_budget
+        # 为独立的逐句核验预留预算，成文调用不能提前用完。
+        statement_budget = remaining // 3 if synthesis_input.get("statement_support_version") == 1 else 0
+        remaining -= statement_budget
+        results = []
+        for index, chunk in enumerate(chunks):
+            require_execution_active()
+            chunk_keys = {str(cell["cell_key"]) for cell in chunk}
+            batch = {**synthesis_input, "cells": chunk,
+                     "required_points": _requirements_for_chunk(synthesis_input, chunk_keys),
+                     "leads": synthesis_input.get("leads", []) if index == 0 else []}
+            batch["requirement_coverage"] = {"requirements": [item for item in synthesis_input["requirement_coverage"].get("requirements", [])
+                if item.get("cell_key") in chunk_keys or item.get("scope_type") == "RUN"]}
+            polisher = NarrativeReportPolisher(self.llm_client if remaining >= 2 else None)
+            result = polisher._polish_batch(batch)
+            remaining -= result.llm_calls
+            results.append(result)
+        narrative = dict(results[0].narrative)
+        narrative["sections"] = [section for result in results for section in result.narrative["sections"]]
+        narrative["limitations"] = list(dict.fromkeys(
+            item for result in results for item in result.narrative["limitations"]))
+        question = str(synthesis_input.get("question") or "")
+        if _comparison_table_required(question, cells):
+            # 对比表由完整账本生成，不能只呈现第一批研究对象。
+            narrative["comparison_table"] = _cells_table(cells, question_chinese=_writes_chinese(question))
+        _preserve_facts(narrative, cells, question)
+        if synthesis_input.get("report_metadata_version") == 1:
+            chinese = _writes_chinese(question)
+            narrative["title"] = "研究报告" if chinese else "Research report"
+            for section in narrative["sections"]:
+                section["heading"] = "研究发现" if chinese else "Findings"
+            if narrative.get("comparison_table"):
+                narrative["comparison_table"] = _cells_table(cells, question_chinese=chinese)
+        calls = sum(result.llm_calls for result in results)
+        fallback = any(result.mode == "FALLBACK" for result in results)
+        statement_repaired = False
+        if synthesis_input.get("statement_support_version") == 1:
+            from app.statement_support import verify_report, bind_preserved_facts
+            checks, check_calls, repaired = verify_report(narrative, cells, self.llm_client, statement_budget + remaining)
+            _preserve_facts(narrative, cells, question)
+            bind_preserved_facts(narrative, cells, checks)
+            narrative["statement_support"] = {"schema_version": "research-statement-support.v1",
+                                                "checks": checks, "model_calls": check_calls}
+            calls += check_calls
+            fallback |= repaired
+            statement_repaired = repaired
+            if synthesis_input.get("report_coverage_version") == 1:
+                from app.report_coverage import audit_report_coverage
+                report_coverage, coverage_calls = audit_report_coverage(narrative, synthesis_input, self.llm_client,
+                                                                       coverage_budget + statement_budget + remaining - check_calls)
+                narrative["report_coverage"] = report_coverage
+                calls += coverage_calls
+                if not report_coverage["complete"] and self.llm_client is not None and int(synthesis_input.get("narrative_llm_budget", 0)) - calls >= 3:
+                    from app.report_coverage import repair_answers
+                    from app.statement_support import _NEUTRAL, _NEUTRAL_EN
+                    paragraphs, repaired_ids, repair_calls = repair_answers(narrative, synthesis_input, self.llm_client)
+                    calls += repair_calls
+                    if paragraphs:
+                        chinese = _writes_chinese(question)
+                        section_index = len(narrative["sections"])
+                        addition = {"title": narrative["title"], "executive_summary": _NEUTRAL if chinese else _NEUTRAL_EN,
+                                    "sections": [{"heading": "补充回答" if chinese else "Additional answers", "paragraphs": paragraphs}], "comparison_table": {}}
+                        extra_checks, extra_calls, extra_fallback = verify_report(addition, cells, self.llm_client, 1)
+                        calls += extra_calls
+                        narrative["sections"].extend(addition["sections"])
+                        for check in extra_checks:
+                            if check["location"] == "summary":
+                                continue
+                            location = check["location"].replace("sections/0/", f"sections/{section_index}/", 1)
+                            check = {**check, "location": location, "statement_id": location + "/" + check["statement_id"].rsplit("/", 1)[1]}
+                            narrative["statement_support"]["checks"].append(check)
+                        narrative["statement_support"]["model_calls"] += extra_calls
+                        # 只复核改写涉及的需求，其他已通过的答案和引用保持原判定。
+                        for req in synthesis_input["requirement_coverage"]["requirements"]:
+                            note = "报告尚未完整回答：" + str(req.get("entity_label") or "") + " / " + req["text"]
+                            if req["requirement_id"] in repaired_ids and note not in synthesis_input.get("limitations", []):
+                                narrative["limitations"] = [item for item in narrative["limitations"] if item != note]
+                        updated, updated_calls = audit_report_coverage(narrative, synthesis_input, self.llm_client, 1,
+                                                                      previous=report_coverage, target_ids=repaired_ids)
+                        narrative["report_coverage"] = updated
+                        calls += updated_calls
+                        fallback |= extra_fallback
+        if synthesis_input.get("report_metadata_version") == 1:
+            for section in narrative["sections"]:
+                section["heading"] = "研究发现" if _writes_chinese(question) else "Findings"
+        mode = "FALLBACK" if not calls else "PARTIAL_FALLBACK" if fallback else "LLM"
+        reasons = list(dict.fromkeys(result.reason for result in results if result.reason))
+        if statement_repaired:
+            reasons.append("STATEMENT_SUPPORT_LOCAL_FALLBACK")
+        return NarrativeReportResult(narrative, _render_markdown(narrative), mode,
+                                     ";".join(reasons) or None, llm_calls=calls)
+
+    def _polish_batch(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
         cells = _validated_cells(synthesis_input)
         leads = _validated_leads(synthesis_input, {str(cell["cell_key"]) for cell in cells})
         # 后端偶尔把整次研究的原因码（如 UNRESOLVED_CELLS_REMAIN）放进局限列表，读者看不懂，成文时略去
         limitations = [item for item in _clean_strings(synthesis_input.get("limitations"))
                        if not re.fullmatch(r"[A-Z0-9_]+", item)]
         question = str(synthesis_input.get("question") or "").strip()
-        required_points = _clean_strings(synthesis_input.get("required_points"))[:6]
+        required_points = _clean_strings(synthesis_input.get("required_points"))
         comparison_required = _comparison_table_required(question, [*cells, *leads])
         if self.llm_client is None:
             return _fallback(cells, limitations, "LLM_UNAVAILABLE", question)
@@ -64,9 +170,13 @@ class NarrativeReportPolisher:
                     }],
                 },
                 "limitations": ["known limitations only"],
+                "unanswered_points": ["exact required_points text with no evidence-backed answer"],
             },
             "rules": [
                 "Use only facts present in frozen_cells.",
+                "Preserve each fact's source_scopes: a versioned document establishes that version's behavior, "
+                "not an unversioned current status. freshness_status UNKNOWN does not establish publication, update "
+                "or release dates. Do not infer a stable release from a development branch or turn a captured date into an update date.",
                 "Every paragraph must cite at least one cell_key and evidence_key.",
                 "Do not add sources, numbers, dates, versions, names, or conclusions.",
                 "Write a cohesive professional research article, not an audit log.",
@@ -87,6 +197,8 @@ class NarrativeReportPolisher:
                 "executive_summary is the bottom line: one or two sentences that answer research_question with the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
                 "instead of answering.",
+                "Every factual summary sentence must cite its own frozen evidence inline. Unknown citations "
+                "or unsupported numbers invalidate the summary; do not use tentative evidence there.",
                 "The first section must be headed '直接回答' (or 'Direct answer' for an English question) and give "
                 "one short paragraph per part of the question, each bound to the cells that answer it. These "
                 "paragraphs add what the summary leaves out (versions, numbers, conditions, exceptions) and must not "
@@ -113,11 +225,13 @@ class NarrativeReportPolisher:
                 "When known_limitations is not empty, say briefly in the summary which parts of the question remain "
                 "unanswered, and copy the relevant items into limitations.",
                 "tentative_cells have a real source quote but did not pass automatic verification. evidence_level "
-                "SOURCED means the quote answers the aspect but the source is third-party or a number or version "
-                "did not match exactly; RELATED means the quote is related background that does not directly "
+                "SOURCED means there is an answering quote, but the full cell is not verified: it may be a "
+                "partial answer from an official source, a secondary source, or an unresolved version match. "
+                "Do not call a source third-party just because its cell is tentative. RELATED means the quote is related background that does not directly "
                 "answer. When no frozen cell answers a part of the question, you may write a SOURCED tentative "
                 "cell's finding in the body or the comparison table, citing it like other cells, and the same "
-                "sentence must say it is unverified, for example '据第三方资料（未经核实），……'. Use RELATED cells "
+                "sentence must say it is unverified, for example '已找到的资料显示（该项尚未完成核验），……'. "
+                "Only describe a source as third-party when the source information establishes that. Use RELATED cells "
                 "only as background. Never use tentative cells in executive_summary and never let them contradict "
                 "or replace a frozen cell.",
                 "required_points are what an expert reviewer checks in a complete answer. In the direct-answer "
@@ -126,10 +240,14 @@ class NarrativeReportPolisher:
                 "does; for a comparison point state the contrast between the subjects in one sentence. Do not number "
                 "or quote the points. A point that no frozen or SOURCED tentative cell answers goes to limitations "
                 "and must not be guessed.",
+                "For every required point not answered by the report, copy its exact text into unanswered_points. "
+                "Required points are research questions, not verified facts; never use them as evidence. "
+                "Preserve all known limitations even when other parts of the same column are answered.",
             ],
             "frozen_cells": _prompt_cells(cells),
             "tentative_cells": _prompt_cells(leads),
             "required_points": required_points,
+            "requirement_coverage": synthesis_input.get("requirement_coverage", {}),
             "research_question": question,
             "known_limitations": limitations,
         }
@@ -137,9 +255,16 @@ class NarrativeReportPolisher:
         failure = ""
         for attempt in range(1, 3):
             payload = request_payload if not failure else {**request_payload, "previous_attempt_error": failure}
-            parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload), allow_truncated=True)
+            require_execution_active()
             try:
-                narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required, leads)
+                parsed = parse_json_payload(self.llm_client.complete_json("research.synthesis", payload), allow_truncated=True)
+            except Exception:
+                require_execution_active()
+                failure = "NARRATIVE_PROVIDER_UNAVAILABLE"
+                continue
+            try:
+                narrative = _normalize_narrative(parsed, cells, limitations, question, comparison_required, leads,
+                                                 required_points)
             except ValueError as exc:
                 failure = str(exc)
                 continue
@@ -166,10 +291,92 @@ def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, objec
             "column_label": str(raw.get("column_label") or "").strip(),
             "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
             "evidence_quotes": _evidence_quotes(raw.get("evidence_quotes"), evidence_keys),
+            "facts": _validated_facts(raw.get("facts"), evidence_keys),
         })
     if not cells:
         raise ValueError("SYNTHESIS input has no frozen cells")
     return sorted(cells, key=lambda item: str(item["cell_key"]))
+
+
+def _validated_facts(raw, evidence_keys):
+    if not isinstance(raw, list):
+        return []
+    result, seen = [], set()
+    for fact in raw:
+        if not isinstance(fact, dict):
+            raise ValueError("累计事实格式不符合约定")
+        identity = str(fact.get("fact_id") or "").strip()
+        claim = str(fact.get("claim_text") or "").strip()
+        keys = _clean_strings(fact.get("evidence_keys"))
+        if not identity or identity in seen or not claim or not keys or not set(keys) <= set(evidence_keys):
+            raise ValueError("累计事实缺少正文、引用或唯一身份")
+        seen.add(identity)
+        result.append({"fact_id": identity, "claim_text": claim, "evidence_keys": keys,
+                       "equivalent_fact_ids": fact.get("equivalent_fact_ids", [identity]),
+                       "source_scopes": fact.get("source_scopes", [])})
+    return result
+
+
+def _requirements_for_chunk(data, cell_keys):
+    coverage = data.get("requirement_coverage")
+    if not isinstance(coverage, dict):
+        return _clean_strings(data.get("required_points"))
+    return list(dict.fromkeys(str(item["text"]) for item in coverage.get("requirements", [])
+                             if isinstance(item, dict) and item.get("cell_key") in cell_keys and item.get("text")))
+
+
+def _synthesis_chunks(cells):
+    """按事实和原文大小分批，同一单元格可以分批，但每条事实的联合证据保持完整。"""
+    units = []
+    for cell in cells:
+        facts = cell.get("facts", [])
+        if not facts:
+            units.append(cell)
+            continue
+        for fact in facts:
+            keys = set(fact["evidence_keys"])
+            quotes = [quote for quote in cell["evidence_quotes"] if quote["evidence_key"] in keys]
+            units.append({**cell, "candidate_value": fact["claim_text"], "facts": [fact],
+                          "evidence_keys": fact["evidence_keys"], "evidence_quotes": quotes,
+                          "supporting_quotes": [quote["quote"] for quote in quotes]})
+    chunks, current, size, keys = [], [], 0, set()
+    for unit in units:
+        weight = len(json.dumps(_prompt_cells([unit]), ensure_ascii=False))
+        if current and (size + weight > 18000 or len(current) >= 6 and unit["cell_key"] not in keys):
+            chunks.append(current)
+            current, size, keys = [], 0, set()
+        if unit["cell_key"] in keys:
+            # 同格的事实在预算内合并，避免每条事实都消耗一次成文调用。
+            previous = next(item for item in current if item["cell_key"] == unit["cell_key"])
+            for field in ("facts", "evidence_keys", "evidence_quotes", "supporting_quotes"):
+                previous[field] = [*previous[field], *(value for value in unit[field] if value not in previous[field])]
+        else:
+            current.append(dict(unit))
+        size += weight
+        keys.add(unit["cell_key"])
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _preserve_facts(narrative, cells, question):
+    """逐条保留已核验的事实与联合引用，模型没有完整表达的事实使用原结论补充。"""
+    paragraphs = [p for section in narrative["sections"] for p in section["paragraphs"]]
+    missing = []
+    chinese = _writes_chinese(question)
+    for cell in cells:
+        for fact in cell.get("facts", []) or [{"claim_text": cell["candidate_value"], "evidence_keys": cell["evidence_keys"]}]:
+            present = any(fact["claim_text"] in str(p.get("text", ""))
+                          and cell["cell_key"] in p.get("cell_keys", [])
+                          and set(fact["evidence_keys"]) <= set(p.get("evidence_keys", [])) for p in paragraphs)
+            if present:
+                continue
+            entity = str(cell.get("entity_label") or "")
+            text = (entity + ("：" if chinese else ": ") if entity else "") + fact["claim_text"]
+            missing.append({"text": text, "cell_keys": [cell["cell_key"]], "evidence_keys": fact["evidence_keys"]})
+    if missing:
+        narrative["sections"].append({"heading": "补充核验结果" if chinese else "Additional verified findings",
+                                      "paragraphs": missing})
 
 
 def _evidence_quotes(raw: object, evidence_keys: list[str]) -> list[dict[str, str]]:
@@ -246,6 +453,7 @@ def _normalize_narrative(
     trusted_context: str = "",
     comparison_required: bool = False,
     leads: list[dict[str, object]] | None = None,
+    required_points: list[str] | None = None,
 ) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise ValueError("NARRATIVE_INVALID_JSON")
@@ -259,8 +467,9 @@ def _normalize_narrative(
     lead_evidence = {key for lead in leads for key in lead["evidence_keys"]}  # type: ignore[union-attr]
     # 正文和对比表可以引用线索，摘要只用已核验的单元格
     cells_by_key = {str(cell["cell_key"]): cell for cell in [*cells, *leads]}
-    # 摘要只是一两句结论，最多保留前两个引用；不属于任何已核验单元格的引用删掉
-    summary = _limit_citations(summary, {key for cell in cells for key in cell["evidence_keys"]}, 2)  # type: ignore[union-attr]
+    summary_refs = _INLINE_CITATION.findall(summary)
+    summary_supported = (len(set(summary_refs)) <= 2 and _cited_text_supported(summary, cells, summary_refs, cells)
+                         and not (_TYPED_TOKEN.search(summary) and not summary_refs))
     sections: list[dict[str, object]] = []
     for raw_section in payload.get("sections", []):
         # 格式不对的小节、段落只去掉这一处，其余内容照常保留，避免一处小错让整篇退回模板
@@ -282,19 +491,21 @@ def _normalize_narrative(
             allowed_evidence = {
                 key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
             }
+            # 未知引用不能只删除标记后继续保留原句。
+            if set(_INLINE_CITATION.findall(text)) - allowed_evidence:
+                dropped_unsupported += 1
+                continue
             text, inline_keys = _bind_inline_citations(text, allowed_evidence)
             # 不属于本段单元格的引用去掉；一个可用引用都不剩时去掉这一段
             evidence_keys = inline_keys or [key for key in evidence_keys if key in allowed_evidence]
             if not evidence_keys:
                 continue
-            source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
-            source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
-            paragraph_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(text)}
-            if not paragraph_tokens.issubset(source_tokens):
+            if not _cited_text_supported(text, bound_cells, evidence_keys, list(cells_by_key.values()), trusted_context):
                 # 只去掉写了来源里没有的数字或版本号的那一段，其余段落照常保留；全部去掉时才退回模板
                 dropped_unsupported += 1
                 continue
             text = _mark_unverified(text, lead_evidence, chinese)
+            cell_keys = [key for key in cell_keys if set(cells_by_key[key]["evidence_keys"]) & set(evidence_keys)]
             paragraphs.append({
                 "text": text,
                 "cell_keys": cell_keys,
@@ -305,6 +516,18 @@ def _normalize_narrative(
         sections.append({"heading": heading, "paragraphs": paragraphs})
     if not sections:
         raise ValueError("NARRATIVE_UNSUPPORTED_TYPED_FACT" if dropped_unsupported else "NARRATIVE_SECTIONS_MISSING")
+    # 不能用自动生成的 claims 清单代替正文覆盖；遗漏的已核验结论补成有据段落。
+    covered_cells = {key for section in sections for paragraph in section["paragraphs"] for key in paragraph["cell_keys"]}
+    omitted = [cell for cell in cells if cell["cell_key"] not in covered_cells]
+    if omitted:
+        sections.append({"heading": "补充核验结果" if chinese else "Additional verified findings", "paragraphs": [
+            {"text": (f"{cell['entity_label']}：" if cell.get("entity_label") else "") + str(cell["candidate_value"])
+                     + ("（证据仍有分歧）" if chinese and cell["guarded"] else
+                        " (evidence still disputed)" if cell["guarded"] else ""),
+             "cell_keys": [cell["cell_key"]], "evidence_keys": list(cell["evidence_keys"])} for cell in omitted]})
+    if not summary_supported:
+        # 摘要有误时只替换摘要，已经逐句校验的正文继续保留。
+        summary = _verified_summary(sections, cells, chinese)
     comparison_table = _normalize_comparison_table(
         payload.get("comparison_table"), cells_by_key, trusted_context
     )
@@ -316,8 +539,14 @@ def _normalize_narrative(
         # 模型给的对比表整张不可用时，用已核验的单元格和有出处的线索直接排出对比表，不让整篇退回模板
         comparison_table = _cells_table(cells, question_chinese=chinese,
                                         leads=[lead for lead in leads if lead["evidence_level"] == "SOURCED"])
-    requested_limitations = _clean_strings(payload.get("limitations"))
-    limitations = [item for item in requested_limitations if item in known_limitations]
+    # 已知缺口始终保留；模型只能补充规划里原样存在的未回答要点，不能自行编造局限。
+    limitations = list(dict.fromkeys(known_limitations))
+    allowed_points = set(required_points or [])
+    for point in _clean_strings(payload.get("unanswered_points")):
+        if point in allowed_points:
+            limitation = f"尚未找到足够证据回答：{point}" if chinese else f"Insufficient evidence to answer: {point}"
+            if limitation not in limitations:
+                limitations.append(limitation)
     return {
         "schema_version": "research-reader-report.v1",
         "title": title,
@@ -326,6 +555,68 @@ def _normalize_narrative(
         "comparison_table": comparison_table,
         "limitations": limitations,
     }
+
+
+def _verified_summary(sections: list[dict[str, object]], cells: list[dict[str, object]], chinese: bool) -> str:
+    for section in sections:
+        for paragraph in section["paragraphs"]:
+            text = str(paragraph["text"])
+            statements = re.findall(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", text, re.S)
+            for statement in statements:
+                statement = statement.strip()
+                refs = _INLINE_CITATION.findall(statement)
+                if (_INLINE_CITATION.sub("", statement).strip(" .。！？!?") and refs and len(set(refs)) <= 2
+                        and _cited_text_supported(statement, cells, refs, cells)):
+                    return statement
+    return "具体核验结论、来源和尚未解决的问题列于下文。" if chinese else "Verified findings, sources and remaining gaps follow."
+
+
+def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evidence_keys: list[str],
+                          all_cells: list[dict[str, object]], trusted_context: str = "", subject: str = "") -> bool:
+    """按句检查引用对应的原文、数字和研究对象，禁止借用其他引用中的数字。"""
+    allowed = {key for cell in bound_cells for key in cell["evidence_keys"]}
+    if set(_INLINE_CITATION.findall(text)) - allowed or set(evidence_keys) - allowed:
+        return False
+    # 句末之后的引用归于前一句；小数点不作为句号。
+    statements = re.findall(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", text, re.S)
+    has_inline = bool(_INLINE_CITATION.search(text))
+    for statement in statements:
+        if not statement.strip():
+            continue
+        refs = set(_INLINE_CITATION.findall(statement)) if has_inline else set(evidence_keys)
+        cited = [cell for cell in bound_cells if set(cell["evidence_keys"]) & refs]
+        sources: list[str] = []
+        for cell in cited:
+            quotes = cell.get("evidence_quotes") or []
+            if quotes:
+                sources.extend(str(item["quote"]) for item in quotes if item["evidence_key"] in refs)
+                sources.append(str(cell.get("entity_label") or ""))
+            else:
+                sources.extend([trusted_context, _cell_source_text(cell)])
+        source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(" ".join(sources))}
+        fact_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(_INLINE_CITATION.sub("", statement))}
+        if not fact_tokens.issubset(source_tokens):
+            return False
+        mentioned = [cell for cell in all_cells if _mentions_entity(subject + " " + statement,
+                                                                   str(cell.get("entity_label") or ""))]
+        cited_entities = {str(cell.get("entity_label") or "").casefold() for cell in cited}
+        # 同名实体的不同版本共享名称时，由数字检查进一步区分版本。
+        for cell in mentioned:
+            label = str(cell.get("entity_label") or "")
+            stem = _entity_stem(label)
+            if not any(_entity_stem(entity) == stem for entity in cited_entities):
+                return False
+    return True
+
+
+def _entity_stem(label: str) -> str:
+    return re.sub(r"\s+v?\d[\w. -]*$", "", label.strip(), flags=re.I).casefold()
+
+
+def _mentions_entity(text: str, label: str) -> bool:
+    stem = _entity_stem(label)
+    return len(stem) >= 3 and bool(re.search(r"(?<![A-Za-z0-9])" + re.escape(stem) + r"(?![A-Za-z0-9])",
+                                           text.casefold()))
 
 
 def _fallback(
@@ -349,13 +640,12 @@ def _fallback(
             paragraphs.append({"text": text, "cell_keys": [str(cell["cell_key"])],
                                "evidence_keys": list(cell["evidence_keys"])[:2]})
         sections.append({"heading": column or _cell_heading(column_cells[0]), "paragraphs": paragraphs})
-    covered = "、".join(name for name in entities if name) if chinese else ", ".join(name for name in entities if name)
     if chinese:
-        summary = f"本次研究核验了 {len(cells)} 项结论" + (f"，涉及{covered}" if covered else "") + "，下文按问题的各个方面列出。"
+        summary = "下文按问题的各个方面列出已核验的结论及其来源。"
         if limitations:
             summary += "部分问题尚未找到可核验的来源，见文末局限。"
     else:
-        summary = f"This report lists {len(cells)} verified findings" + (f" on {covered}" if covered else "") + " by aspect."
+        summary = "This report lists verified findings and their sources by aspect."
         if limitations:
             summary += " Some parts remain unanswered; see Limitations."
     narrative: dict[str, object] = {
@@ -373,7 +663,18 @@ def _cells_table(cells: list[dict[str, object]], *, question_chinese: bool = Tru
                  leads: list[dict[str, object]] | None = None) -> dict[str, object]:
     """用已核验的单元格直接排出对比表：每行一个方面，每列一个研究对象，格子里是结论和第一条引用。
     已核验的单元格空着的位置用有出处的线索填上，并标明待核实。"""
-    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in [*cells, *(leads or [])]))[:5]
+    entities = list(dict.fromkeys(str(cell.get("entity_label") or "") for cell in [*cells, *(leads or [])]))
+    if len(entities) > 5:
+        # 对象过多时改用纵向表，遵守列数限制并保留每个对象。
+        rows = []
+        for cell in [*cells, *(leads or [])]:
+            keys = list(cell["evidence_keys"])
+            pending = ("（待核实）" if question_chinese else " (unverified)") if cell in (leads or []) else ""
+            rows.append({"cells": [str(cell.get("entity_label") or "-"),
+                         str(cell.get("column_label") or "") + ": " + _first_sentence(str(cell["candidate_value"]))
+                         + pending + " " + " ".join(f"[{key}]" for key in keys)],
+                         "cell_keys": [cell["cell_key"]], "evidence_keys": keys})
+        return {"columns": ["研究对象", "方面与结论"] if question_chinese else ["Subject", "Aspect and finding"], "rows": rows}
     if not entities:
         return {}
     by_position = {(str(cell.get("entity_label") or ""), str(cell.get("column_label") or "")): cell for cell in cells}
@@ -515,6 +816,8 @@ def _normalize_comparison_table(
             key for cell in bound_cells for key in cell["evidence_keys"]  # type: ignore[union-attr]
         }
         inline_keys: list[str] = []
+        if any(set(_INLINE_CITATION.findall(cell)) - allowed_evidence for cell in row_cells):
+            continue
         for index, cell_text in enumerate(row_cells):
             row_cells[index], keys = _bind_inline_citations(cell_text, allowed_evidence)
             inline_keys.extend(key for key in keys if key not in inline_keys)
@@ -525,13 +828,11 @@ def _normalize_comparison_table(
         evidence_keys = inline_keys or [key for key in evidence_keys if key in allowed_evidence]
         if not evidence_keys:
             continue
-        source_text = " ".join([trusted_context, *(_cell_source_text(cell) for cell in bound_cells)])
-        source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(source_text)}
-        row_tokens = {
-            _canonical_token(token)
-            for token in _TYPED_TOKEN.findall(" ".join(row_cells))
-        }
-        if not row_tokens.issubset(source_tokens):
+        if any(not _cited_text_supported(cell_text, bound_cells,
+                                        _INLINE_CITATION.findall(cell_text) or evidence_keys,
+                                        list(cells_by_key.values()), trusted_context,
+                                        row_cells[0] + " " + columns[index])
+               for index, cell_text in enumerate(row_cells[1:], start=1) if cell_text != "-"):
             continue
         rows.append({
             "cells": row_cells,
@@ -565,7 +866,8 @@ def _string_items(value: object) -> list[str]:
 
 
 def _canonical_token(value: str) -> str:
-    return re.sub(r"\s+", "", value).lower().replace(",", "")
+    normalized = re.sub(r"\s+", "", value).lower().replace(",", "")
+    return re.sub(r"^v(?=\d)", "", normalized)
 
 
 def _cell_source_text(cell: dict[str, object]) -> str:

@@ -38,7 +38,7 @@ class ResearchDiscoveryLoopService {
         }
         if (rounds.size() >= 2 && rounds.get(0).novel() == 0 && rounds.get(1).novel() == 0) return stop(runId, "DISCOVERY_SATURATED");
         if (rounds.size() >= 3) return stop(runId, "DISCOVERY_ROUND_LIMIT");
-        if (!new ResearchDiscoveryBudget(jdbc, mapper).allows(runId, Map.of("llm_calls", 4L, "search_calls", 9L), 1))
+        if (!new ResearchDiscoveryBudget(jdbc, mapper).allows(runId, Map.of("llm_calls", 4L, "search_calls", 9L), 1, "DISCOVERY"))
             return stop(runId, "LOOP_BUDGET_EXHAUSTED");
         jdbc.update("update research_discovery_loop set phase = 'EXPAND_ROWS', updated_at = current_timestamp where research_run_id = ?", runId);
         return new Receipt("EXPAND_ROWS", coordinator.planDiscoveryTask(runId, waveNo + 1, rounds.size() + 1));

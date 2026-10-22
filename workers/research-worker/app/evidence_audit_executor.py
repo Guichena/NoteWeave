@@ -24,6 +24,8 @@ class EvidenceAuditExecutor:
 
     def __call__(self, command: ResearchAgentCommand, claim: AgentTaskClaim):
         snapshot = require_trusted_claim_snapshot(claim)
+        import time
+        metric_started = time.monotonic()
         if snapshot.role != "EVIDENCE_AUDIT" or command.research_run_id != snapshot.research_run_id:
             raise ValueError("EvidenceAuditExecutor requires an authoritative EVIDENCE_AUDIT snapshot")
         audit_input = snapshot.query_policy.get("audit_input")
@@ -34,7 +36,7 @@ class EvidenceAuditExecutor:
         if not input_digest or not cells:
             raise ValueError("EVIDENCE_AUDIT input is incomplete")
         has_semantics = audit_input.get("schema_version") == "research-evidence-audit-input.v2"
-        pairs = sum(len(cell.get("clusters", [])) * (len(cell.get("clusters", [])) - 1) // 2 for cell in cells)
+        pairs = sum(len(cell["pairs"]) if "pairs" in cell else len(cell.get("clusters", [])) * (len(cell.get("clusters", [])) - 1) // 2 for cell in cells)
         llm = self.llm_client
         if pairs and llm is None and self.enable_llm:
             profile = RoleProfileCatalog().resolve("EVIDENCE_AUDIT")
@@ -55,8 +57,14 @@ class EvidenceAuditExecutor:
             if any(str(item.get("typed_status") or "") == "CONTRADICTED" for item in evidence):
                 reasons.append("AUDIT_TYPED_CLAIM_CONTRADICTED")
             for left, right in combinations(cell.get("clusters", []), 2):
+                if "pairs" in cell and not any({left["cluster_key"], right["cluster_key"]} ==
+                        {pair["left_cluster_key"], pair["right_cluster_key"]} for pair in cell["pairs"]):
+                    continue
                 require_execution_active()
-                equality = equivalent(left["claim_text"], right["claim_text"], llm, force_model=True)
+                context = {"left_evidence": left.get("evidence_quotes", []), "right_evidence": right.get("evidence_quotes", []),
+                           "left_scope": left.get("source_scopes", []), "right_scope": right.get("source_scopes", [])}
+                equality = equivalent(left["claim_text"], right["claim_text"], llm, force_model=True,
+                                      **({"context": context} if "pairs" in cell else {}))
                 def validate(raw):
                     if not isinstance(raw, dict) or set(raw) != {"verdict"} or raw["verdict"] not in {"CONTRADICTORY", "NOT_CONTRADICTORY"}:
                         raise ValueError("语义判定只能包含合法的 verdict")
@@ -66,6 +74,7 @@ class EvidenceAuditExecutor:
                               "do not constitute contradiction. Do not infer facts absent from the claims.",
                     "cell_key": cell["cell_key"], "column_description": cell.get("column_description", ""),
                     "left_claim": left["claim_text"], "right_claim": right["claim_text"],
+                    **({"frozen_evidence_context": context} if "pairs" in cell else {}),
                     "output_schema": {"verdict": "CONTRADICTORY|NOT_CONTRADICTORY"}}, validate)
                 verdict = result["verdict"] if result and equality is not None else "NOT_RUN"
                 if verdict == "CONTRADICTORY" and equality is True:
@@ -92,6 +101,9 @@ class EvidenceAuditExecutor:
         }
         if has_semantics:
             role_result["semantic_checks"] = checks
+        if snapshot.query_policy.get("completion_runtime_version") == 1:
+            from app.runtime_metrics import runtime_metrics
+            role_result["runtime_metrics"] = runtime_metrics(llm, [], metric_started)
         require_execution_active()
         return _role_completion(claim, snapshot.snapshot_digest, self.worker_instance_id, role_result, llm_calls=_llm_provider_call_count(llm))
 

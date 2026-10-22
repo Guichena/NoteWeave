@@ -57,6 +57,13 @@ noteweave:
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
+    requirement-coverage-v1: ${NOTEWEAVE_RESEARCH_REQUIREMENT_COVERAGE_V1:false}
+    requirement-shadow-mode: ${NOTEWEAVE_RESEARCH_REQUIREMENT_SHADOW_MODE:false}
+    requirement-fact-accumulation: ${NOTEWEAVE_RESEARCH_REQUIREMENT_FACT_ACCUMULATION:true}
+    requirement-driven-scheduling: ${NOTEWEAVE_RESEARCH_REQUIREMENT_DRIVEN_SCHEDULING:true}
+    synthesis-retention:
+      enabled: ${NOTEWEAVE_RESEARCH_SYNTHESIS_RETENTION_ENABLED:false}
+      days: ${NOTEWEAVE_RESEARCH_SYNTHESIS_RETENTION_DAYS:7}
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
     intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:true}
     # 由 PLANNING 角色调用模型规划研究表格；关闭后直接使用规则生成的表格

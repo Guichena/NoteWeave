@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -44,15 +45,16 @@ class ResearchCellLevels {
     /** 每个单元格最好的一条线索，有出处优先于相关材料，同级取最近的一次；没有线索的单元格不出现在结果里。 */
     Map<String, Lead> leads(String runId) {
         List<String[]> rows = jdbcTemplate.query("""
-                select a.cell_key, a.candidate_value, a.evidence_ids_json, m.reason_code
+                select a.cell_key, a.candidate_value, a.evidence_ids_json, m.reason_code, task.execution_context_json
                 from research_agent_candidate a
                 join research_cell_merge m on m.candidate_id = a.id
+                left join research_agent_task task on task.id = a.task_id
                 left join research_cell c on c.research_run_id = a.research_run_id and c.cell_key = a.cell_key
                 where a.research_run_id = ? and m.decision = 'REJECTED'
                   and (c.cell_status is null or c.cell_status <> 'VERIFIED')
-                  and m.reason_code in ('EVIDENCE_QUALIFICATION_REJECTED', 'NOT_ENOUGH_INFO')
+                  and m.reason_code in ('EVIDENCE_QUALIFICATION_REJECTED', 'NOT_ENOUGH_INFO', 'REQUIREMENT_COVERAGE_INCOMPLETE')
                 order by m.merged_at desc, m.id desc
-                """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)},
+                """, (rs, rowNum) -> new String[] {rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)},
                 runId);
         Map<String, Lead> best = new LinkedHashMap<>();
         for (String[] row : rows) {
@@ -60,6 +62,9 @@ class ResearchCellLevels {
             Lead current = best.get(row[0]);
             if (current != null && SOURCED.equals(current.level())) continue;
             List<EvidenceRow> evidence = evidence(runId, keys(row[2]));
+            var scope = ResearchSourceScopePolicy.scope(ResearchSourceScopePolicy.contract(row[4], objectMapper), row[0]);
+            if (evidence.stream().anyMatch(item -> ResearchSourceScopePolicy.reasons(scope, item.url(), item.title(), item.quote()).stream()
+                    .anyMatch(reason -> Set.of("SOURCE_VERSION_MISMATCH", "SOURCE_DEVELOPMENT_BRANCH_MISMATCH").contains(reason)))) continue;
             List<Quote> quotes = evidence.stream()
                     .filter(item -> item.quote() != null && !item.quote().isBlank())
                     .limit(MAX_QUOTES)
@@ -75,7 +80,8 @@ class ResearchCellLevels {
 
     /** 候选被拒的原因与证据关系对应的级别；无法判断时返回 null。 */
     static String level(String reasonCode, List<EvidenceRow> evidence) {
-        if ("EVIDENCE_QUALIFICATION_REJECTED".equals(reasonCode)) return SOURCED;
+        if ("EVIDENCE_QUALIFICATION_REJECTED".equals(reasonCode)
+                || ResearchRequirementCoverageService.INCOMPLETE.equals(reasonCode)) return SOURCED;
         if (!"NOT_ENOUGH_INFO".equals(reasonCode) || evidence.isEmpty()
                 || !evidence.stream().allMatch(item -> "WEAK_SUPPORT".equals(item.relation()))) {
             return null;

@@ -10,7 +10,7 @@ from copy import copy
 from typing import Callable, Protocol
 
 import httpx
-from openai import APIStatusError, OpenAI, OpenAIError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, OpenAIError
 
 from app.config import load_settings
 from app.http_security import credential_safe_urlopen
@@ -210,8 +210,14 @@ class OpenAICompatibleLlmClient:
             "response_format": {"type": "json_object"},
         }
         extra_body: dict[str, object] = {}
-        if model.lower().startswith("glm-5"):
-            extra_body["thinking"] = {"type": "disabled"}
+        thinking = purpose_config.get("thinking")
+        if thinking not in ("enabled", "disabled"):
+            # 规划、原文抽取和成文均有输出上限；思考模式可能先耗尽预算，正文仍为空。
+            direct_json = purpose in {"research.plan.matrix", "research.extract", "research.synthesis", "research.fact_selection"} and (
+                model.lower().startswith("deepseek-v4") or model.lower() == "deepseek-flash")
+            thinking = "disabled" if model.lower().startswith("glm-5") or direct_json else None
+        if thinking:
+            extra_body["thinking"] = {"type": thinking}
         if "temperature" in purpose_config:
             request_payload["temperature"] = float(purpose_config["temperature"])
         if "seed" in purpose_config:
@@ -219,8 +225,12 @@ class OpenAICompatibleLlmClient:
         if "max_tokens" in purpose_config:
             request_payload["max_tokens"] = max(1, int(purpose_config["max_tokens"]))
         purpose_timeout_seconds = max(1, int(purpose_config.get("timeout_seconds") or self.timeout_seconds))
-        purpose_max_attempts = max(1, int(purpose_config.get("max_attempts") or self.max_attempts))
+        # 规划由调用方保留一次修复机会，首个请求不应耗尽整个角色的两次预算。
+        default_attempts = 1 if purpose == "research.plan.matrix" else self.max_attempts
+        purpose_max_attempts = max(1, int(purpose_config.get("max_attempts") or default_attempts))
         started = time.perf_counter()
+        if self.max_total_calls:
+            purpose_max_attempts = min(purpose_max_attempts, max(0, self.max_total_calls - self._provider_call_count()))
         if self.max_total_calls and self._provider_call_count() >= self.max_total_calls:
             self._record_call(
                 purpose,
@@ -268,6 +278,9 @@ class OpenAICompatibleLlmClient:
                 if attempt < purpose_max_attempts:
                     time.sleep(min(2 ** (attempt - 1), 4))
             except (OpenAIError, ValueError) as exc:
+                termination_reason = ("PROVIDER_TIMEOUT" if isinstance(exc, APITimeoutError) else
+                    "PROVIDER_CONNECTION_ERROR" if isinstance(exc, APIConnectionError) else
+                    "INVALID_MODEL_OUTPUT" if isinstance(exc, ValueError) else "PROVIDER_ERROR")
                 logger.warning("LLM JSON completion attempt %s failed for %s: %s", attempt, purpose, exc)
                 if attempt < purpose_max_attempts:
                     time.sleep(min(2 ** (attempt - 1), 4))
@@ -333,19 +346,26 @@ class OpenAICompatibleLlmClient:
                 "attempt_count": attempts,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
+                "tokens_reported": attempts == 1 and "prompt_tokens" in usage and "completion_tokens" in usage,
                 "latency_ms": round((time.perf_counter() - started) * 1000, 3),
                 "estimated_cost": round(estimated_cost, 8),
                 "termination_reason": termination_reason,
+                "finish_reason": _first_choice(response_payload).get("finish_reason", ""),
+                "reasoning_tokens": int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens") or 0),
                 "http_statuses": list(http_statuses or []),
             }
         )
 
     def _provider_call_count(self) -> int:
-        return sum(1 for item in self.call_records if int(item.get("attempt_count") or 0) > 0)
+        return sum(int(item.get("attempt_count") or 0) for item in self.call_records)
 
     def usage_summary(self) -> dict[str, object]:
         return {
             "call_count": len(self.call_records),
+            "reported_input_tokens": (sum(int(item["input_tokens"]) for item in self.call_records)
+                if self.call_records and all(item.get("tokens_reported") for item in self.call_records) else None),
+            "reported_output_tokens": (sum(int(item["output_tokens"]) for item in self.call_records)
+                if self.call_records and all(item.get("tokens_reported") for item in self.call_records) else None),
             "provider_call_count": self._provider_call_count(),
             "blocked_call_count": sum(
                 1 for item in self.call_records if item.get("termination_reason") == "CALL_BUDGET_EXHAUSTED"
