@@ -812,3 +812,15 @@ flowchart TD
 最终候选已按最终代码重新打包和构建，完成 `fact-python-free-threading`，Run 为 `b07b84cf-01e7-4da8-973b-86c97a41a5d9`，目录为 `runs-20261022-085744-completion-gap-policy-v1-fact-python-free-threading`。用时 614.2 秒，清单完整且 `runtime_comparable=true`，采集期间源码变化为零。规划复核发生连接错误，有限修正后仍未通过，采用保守规划，显式定义未完成；事实覆盖为 0/2。实际审计触发两次 `COUNTERFACTUAL` 补查，均以 `NO_SUPPORTED_CANDIDATE` 结束。来源范围核验另有两次连接错误，报告为确定性证据不足交付，不能记作已核验报告覆盖。聊天模型三次自评均未通过；本轮证明调度已发生，未证明整体完成率提高，历史 6/20 基线不变。
 
 用户已要求本批收尾后停止继续扩展改造，再合并 GitHub 修复分支并部署到 Instabox。候选服务仅用于本批隔离验证，收尾后停止；不再增加本机业务部署。
+
+## 26. 本批停止扩展与 Instabox 部署完成
+
+日期：2026-10-22。第 25 节完成路径改造已收尾，四个本机候选服务在活动任务为零时停止。随后按用户要求合并 `origin/merge/integration`，保留本地未提交改造并完成部署，不继续扩大 research 改造或评测范围。
+
+- 隔离整合工作区为 `C:/Users/20412/.codex/worktrees/instabox-integration/NoteWeave`，分支 `codex/instabox-integration-20261022` 已推送 GitHub。原工作区未重置或覆盖；真实运行和失败原始证据继续保留。
+- 修复分支 `e92a3bd3` 相对交接基线 `c713463c` 的 192 文件增量完整整合，双亲提交为 `7ad3ec7c`，最终产品代码为 `083b299f`。消除研究迁移与修复分支的 `V168`、`V169`、`V170` 编号冲突：研究需求迁移改为 `V181` 至 `V191`，研究字段扩容改为 `V192`，SQL 内容保持一致。
+- 合并版后端专项 90 项、research Worker 1039 项、artifact Worker 687 项分别通过，774 个 Java 主代码文件及前端 TypeScript/生产构建通过。原有 11 项笔记/Wiki 失败不因此宣称已全部修复。
+- `ssh insta1` 的实际运行目录为 `/data/workspace/noteweave`，发布源码为 `.deploy/20261022-integration/source`，五个应用服务使用部署提交 `083b299ffd15984d1e15afc68dd1e684c742de89`。16 条新增迁移全部成功，登录、认证工作区 API、前端和公开注册限制核对通过。原环境文件和数据卷保留，核心数据计数不变。
+- 入口为 `https://3000-agquvfe44ktpodg5ejpjikyf2q.instabox.tech`，本机外部访问为 200。运行脚本为远端 `.deploy/run-current.sh`，备份和发布记录位于 `.deploy/20261022-integration/`。回滚旧代码需要结合迁移前数据库备份，不能仅更换旧镜像。
+
+最终部署细节见整合工作区 `HANDOFF.md` 第 12 节。本机没有部署新版本，本批至此停止；真实 research 的质量缺项及历史 6/20 基线仍保留，部署成功不代表质量验收通过。
