@@ -221,6 +221,49 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
         verify(taskService).completeTask(anyString(), anyString(), anyString(), anyString());
     }
 
+    @Test
+    void concurrentAnswerLevelFeedbackHasOneReceiptAndOneEvent() throws Exception {
+        var barrier = new java.util.concurrent.CyclicBarrier(2);
+        ChatLlmClient blocking = new ChatLlmClient() {
+            public boolean isEnabled() { return true; }
+            public String streamChat(String system, String user, int budget, Consumer<String> token) {
+                try { barrier.await(5, java.util.concurrent.TimeUnit.SECONDS); }
+                catch (Exception ex) { throw new IllegalStateException(ex); }
+                return "{\"feedback\":true,\"polarity\":\"NEGATIVE\",\"aspect\":\"CONTENT\"}";
+            }
+        };
+        var service = new MemoryApplicationFeedbackService(jdbc, mock(WorkspaceAccessGuard.class),
+                new MemoryOutcomePolicy(), new MemoryFeedbackAspectJudge(blocking, new ObjectMapper()),
+                new DataSourceTransactionManager(jdbc.getDataSource()), true);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> service.recordFollowUp(WORKSPACE, USER_MESSAGE, "内容不准确"));
+            var second = executor.submit(() -> service.recordFollowUp(WORKSPACE, USER_MESSAGE, "内容不准确"));
+            assertThat(List.of(first.get(10, java.util.concurrent.TimeUnit.SECONDS),
+                    second.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(FollowUpResult.NEGATIVE, FollowUpResult.SKIPPED);
+            assertThat(jdbc.queryForObject("select count(*) from memory_feedback_receipt", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("select count(*) from memory_application_outcome", Integer.class)).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void eventFailureRollsBackReceiptAndAllowsRetry() {
+        jdbc.execute("alter table memory_application_outcome add constraint reject_feedback check (signal_kind <> 'FOLLOW_UP')");
+        var service = feedback(jdbc.getDataSource());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                service.recordFollowUp(WORKSPACE, USER_MESSAGE, "谢谢"))
+                .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+        assertThat(jdbc.queryForObject("select count(*) from memory_feedback_receipt", Integer.class)).isZero();
+        assertThat(count(LENGTH_ITEM, "application_count")).isZero();
+        jdbc.execute("alter table memory_application_outcome drop constraint reject_feedback");
+        assertThat(service.recordFollowUp(WORKSPACE, USER_MESSAGE, "谢谢")).isEqualTo(FollowUpResult.ACCEPTED);
+        assertThat(followUpItems()).hasSize(2);
+        assertThat(jdbc.queryForObject("select count(*) from memory_feedback_receipt", Integer.class)).isEqualTo(1);
+    }
+
     private MemoryApplicationFeedbackService feedback(DataSource dataSource) {
         return feedback(new DataSourceTransactionManager(dataSource));
     }
@@ -301,6 +344,13 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
     }
 
     private void createSchema() {
+        jdbc.execute("""
+                create table memory_feedback_receipt (
+                    workspace_id varchar(36) not null, signal_kind varchar(32) not null,
+                    source_ref varchar(160) not null, created_at timestamp default current_timestamp,
+                    primary key(workspace_id, signal_kind, source_ref)
+                )
+                """);
         jdbc.execute("""
                 create table conversation_message (
                     id varchar(36) primary key,

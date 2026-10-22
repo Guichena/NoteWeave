@@ -15,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -162,6 +164,7 @@ public class MemoryApplicationFeedbackService {
         if (usages.isEmpty()) {
             return;
         }
+        if (!claimSource(workspaceId, SIGNAL_RETRY, sourceRef)) return;
         apply(workspaceId, TARGET_MESSAGE, answerMessageId, SIGNAL_RETRY, usages, "RETRIED",
                 null, 1.0, null, null, null, sourceRef, false);
     }
@@ -254,6 +257,9 @@ public class MemoryApplicationFeedbackService {
                 : select(locked, "NEGATIVE", plan.judgment().aspect());
         if (!sameUsageIds(targets, plan.targets())) {
             return retryableConflict("TARGET_SET_CHANGED", plan);
+        }
+        if (!claimSource(plan.workspaceId(), SIGNAL_FOLLOW_UP, plan.sourceRef())) {
+            return FollowUpResult.SKIPPED;
         }
         if (plan.result() == FollowUpResult.ACCEPTED) {
             apply(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId(), SIGNAL_FOLLOW_UP, targets,
@@ -904,6 +910,22 @@ public class MemoryApplicationFeedbackService {
                 where workspace_id = ? and source_ref = ?
                 """, Integer.class, workspaceId, sourceRef);
         return count != null && count > 0;
+    }
+
+    /** 唯一来源收据与整组事件在同一事务提交；只捕获此主键插入的重复键。 */
+    private boolean claimSource(String workspaceId, String signalKind, String sourceRef) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("MEMORY_FEEDBACK_WRITE_REQUIRES_TRANSACTION");
+        }
+        try {
+            jdbcTemplate.update("""
+                    insert into memory_feedback_receipt(workspace_id, signal_kind, source_ref)
+                    values (?, ?, ?)
+                    """, workspaceId, signalKind, sourceRef);
+            return true;
+        } catch (DuplicateKeyException duplicate) {
+            return false;
+        }
     }
 
     private long nextRowNo(String memoryItemId) {
