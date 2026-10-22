@@ -222,6 +222,73 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
     }
 
     @Test
+    void proxiedRatingDoesNotHoldTheRunLockWhileTheModelWaits() throws Exception {
+        jdbc.execute("create table answer_run(id varchar(36) primary key, workspace_id varchar(36), answer_message_id varchar(36))");
+        jdbc.update("insert into answer_run values ('run-1', ?, ?)", WORKSPACE, ASSISTANT_MESSAGE);
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        client.output = NEGATIVE_LENGTH;
+        client.onCall = () -> {
+            entered.countDown();
+            try { if (!release.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new IllegalStateException("timeout"); }
+            catch (InterruptedException ex) { Thread.currentThread().interrupt(); throw new IllegalStateException(ex); }
+        };
+        var manager = new DataSourceTransactionManager(jdbc.getDataSource());
+        var proxyFactory = new org.springframework.aop.framework.ProxyFactory(feedback(manager));
+        proxyFactory.setProxyTargetClass(true);
+        proxyFactory.addAdvice(new org.springframework.transaction.interceptor.TransactionInterceptor(manager,
+                new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()));
+        var service = (MemoryApplicationFeedbackService) proxyFactory.getProxy();
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var rating = executor.submit(() -> service.recordAnswerFeedback(WORKSPACE, "run-1", "NEGATIVE", "太长了"));
+            assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            var writer = executor.submit(() -> new org.springframework.transaction.support.TransactionTemplate(manager)
+                    .execute(status -> jdbc.update("update answer_run set answer_message_id=answer_message_id where id='run-1'")));
+            assertThat(writer.get(2, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(1);
+            release.countDown();
+            assertThat(rating.get(5, java.util.concurrent.TimeUnit.SECONDS)).isNotNull();
+            assertThat(client.transactionActive).containsExactly(false);
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void unrelatedUsageChangeDoesNotDiscardLengthFeedback() {
+        client.output = NEGATIVE_LENGTH;
+        client.onCall = () -> jdbc.update("update memory_usage_log set outcome_type='ACCEPTED' where id='usage-2'");
+        assertThat(feedback(jdbc.getDataSource()).recordFollowUp(WORKSPACE, USER_MESSAGE, "太长了"))
+                .isEqualTo(FollowUpResult.NEGATIVE);
+        assertThat(followUpItems()).containsExactly(LENGTH_ITEM);
+    }
+
+    @Test
+    void relatedActiveEventChangeIsRetryableEvenWhenUsageOutcomeStaysTheSame() {
+        client.output = NEGATIVE_LENGTH;
+        client.onCall = () -> jdbc.update("""
+                insert into memory_application_outcome(id,workspace_id,memory_item_id,target_type,target_id,
+                    signal_kind,outcome_type,outcome_score,weight,row_no)
+                values ('other','ws-1','item-1','CONVERSATION_MESSAGE','msg-a','RATING','NEGATIVE',0,1,1)
+                """);
+        assertThat(feedback(jdbc.getDataSource()).recordFollowUp(WORKSPACE, USER_MESSAGE, "太长了"))
+                .isEqualTo(FollowUpResult.RETRYABLE);
+        assertThat(followUpItems()).isEmpty();
+    }
+
+    @Test
+    void modelEntryRejectsAnOuterTransactionBeforeCallingTheModel() {
+        var transaction = new org.springframework.transaction.support.TransactionTemplate(
+                new DataSourceTransactionManager(jdbc.getDataSource()));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> transaction.execute(status ->
+                feedback(jdbc.getDataSource()).recordFollowUp(WORKSPACE, USER_MESSAGE, "谢谢")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("MEMORY_FEEDBACK_MODEL_REQUIRES_NO_TRANSACTION");
+        assertThat(client.calls).isZero();
+    }
+
+    @Test
     void concurrentAnswerLevelFeedbackHasOneReceiptAndOneEvent() throws Exception {
         var barrier = new java.util.concurrent.CyclicBarrier(2);
         ChatLlmClient blocking = new ChatLlmClient() {
@@ -358,6 +425,7 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
                     workspace_id varchar(36) not null,
                     message_seq int not null,
                     role varchar(32) not null,
+                    context_status varchar(32) not null default 'CURRENT',
                     content longtext
                 )
                 """);

@@ -79,13 +79,14 @@ public class MemoryApplicationFeedbackService {
         this.enabled = enabled;
     }
 
-    @Transactional
+    /** 模型入口禁止参与外层事务；真正写入使用下方短 TransactionTemplate。 */
     public AnswerFeedbackResponse recordAnswerFeedback(
             String workspaceId,
             String runId,
             String rating,
             String reason
     ) {
+        requireOutsideTransaction();
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
         String outcomeType = normalizeRating(rating);
         String answerMessageId = requireAnswerMessageId(workspaceId, runId);
@@ -95,7 +96,22 @@ public class MemoryApplicationFeedbackService {
         if (answerMessageId == null) {
             return new AnswerFeedbackResponse(runId, outcomeType, null, NO_APPLICATION, 0);
         }
+        List<UsageRow> snapshot = readUsages(workspaceId, TARGET_MESSAGE, answerMessageId);
+        List<EventRow> previousRating = queryActive(workspaceId, TARGET_MESSAGE, answerMessageId, SIGNAL_RATING, false);
+        List<FeedbackStamp> feedback = feedbackStamps(workspaceId, answerMessageId, false);
         MemoryFeedbackAspectJudge.Judgment judgment = aspectJudge.judge(reason);
+        return transactionTemplate.execute(status -> applyAnswerFeedback(
+                workspaceId, runId, outcomeType, reason, answerMessageId, snapshot, previousRating, feedback, judgment));
+    }
+
+    private AnswerFeedbackResponse applyAnswerFeedback(String workspaceId, String runId, String outcomeType,
+            String reason, String answerMessageId, List<UsageRow> snapshot, List<EventRow> previousRating,
+            List<FeedbackStamp> feedback, MemoryFeedbackAspectJudge.Judgment judgment) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        if (!answerMessageId.equals(optionalAnswerMessageId(workspaceId, runId))
+                || !lockLiveMessage(workspaceId, answerMessageId)) {
+            throw feedbackChanged();
+        }
         List<UsageRow> usages = loadUsages(workspaceId, TARGET_MESSAGE, answerMessageId);
         List<UsageRow> selected = select(usages, outcomeType, judgment.aspect());
         String degradation = degradation(usages, selected, outcomeType, judgment);
@@ -108,6 +124,12 @@ public class MemoryApplicationFeedbackService {
                     firstDegradation(active),
                     countItems(active)
             );
+        }
+        if (!select(snapshot, outcomeType, judgment.aspect()).equals(selected)
+                || !previousRating.equals(active)
+                || !relevantFeedback(feedback, selected).equals(relevantFeedback(
+                        feedbackStamps(workspaceId, answerMessageId, true), selected))) {
+            throw feedbackChanged();
         }
         boolean approximate = reverse(active);
         if (approximate && degradation == null) {
@@ -182,6 +204,7 @@ public class MemoryApplicationFeedbackService {
      * 「本轮不需要写」直接收尾任务，这条跟进反馈就永久丢了。
      */
     public FollowUpResult recordFollowUp(String workspaceId, String userMessageId, String userContent) {
+        requireOutsideTransaction();
         FollowUpPlan plan = planFollowUp(workspaceId, userMessageId, userContent);
         if (!plan.actionable()) {
             return plan.result();
@@ -215,31 +238,38 @@ public class MemoryApplicationFeedbackService {
         if (!aspectJudge.available()) {
             return FollowUpPlan.skipped();
         }
+        List<FeedbackStamp> feedbackSnapshot = feedbackStamps(workspaceId, assistantMessageId, false);
         MemoryFeedbackAspectJudge.Judgment judgment = aspectJudge.judge(userContent);
         FollowUpResult result = followUpResult(judgment);
         if (result == FollowUpResult.SKIPPED || result == FollowUpResult.RETRYABLE) {
             return FollowUpPlan.notWritten(result);
         }
         if (result == FollowUpResult.ACCEPTED) {
-            List<UsageRow> eligible = usages.stream().filter(row -> !alreadySignaled(row)).toList();
+            List<UsageRow> eligible = usages.stream().filter(row -> feedbackSnapshot.stream().noneMatch(
+                    event -> row.memoryItemId().equals(event.memoryItemId())
+                            && Set.of(SIGNAL_RATING, SIGNAL_RETRY, SIGNAL_FOLLOW_UP).contains(event.kind()))).toList();
             if (eligible.isEmpty()) {
                 return FollowUpPlan.skipped();
             }
             return new FollowUpPlan(result, workspaceId, userMessageId, assistantMessageId, sourceRef,
-                    judgment, usages, eligible, null, userContent);
+                    judgment, usages, eligible, relevantFeedback(feedbackSnapshot, eligible), null, userContent);
         }
         List<UsageRow> selected = select(usages, "NEGATIVE", judgment.aspect());
         String degradation = degradation(usages, selected, "NEGATIVE", judgment);
         return new FollowUpPlan(result, workspaceId, userMessageId, assistantMessageId, sourceRef,
-                judgment, usages, selected, degradation, userContent);
+                judgment, usages, selected, relevantFeedback(feedbackSnapshot, selected), degradation, userContent);
     }
 
     /**
-     * 短事务里的写入：先重新加锁读 usage 行，与事务外的快照逐行比较（行集、记忆/版本、反馈状态），
-     * 再重算这次要写的行。任一不一致都说明判定期间已经有别的反馈、重试或数据变更写过这些行，
+     * 短事务里的写入：锁定消息并重读 usage，只比较本次相关目标的身份、注入版本和活跃反馈。
+     * 非目标反馈变化不放弃本轮；相关目标新增、消失或变化则说明旧判断快照已经过期，
      * 本次放弃写入，不去覆盖别人的结果；同时返回 {@link FollowUpResult#RETRYABLE}，让调用方重跑这一轮。
      */
     private FollowUpResult applyFollowUp(FollowUpPlan plan) {
+        if (!lockLiveMessage(plan.workspaceId(), plan.assistantMessageId())
+                || !lockLiveMessage(plan.workspaceId(), plan.userMessageId())) {
+            return retryableConflict("MESSAGE_CHANGED", plan);
+        }
         if (sourceExists(plan.workspaceId(), plan.sourceRef())) {
             // 同一轮反馈已经被并发的重复投递写过：不重复写，但也不算丢失
             return FollowUpResult.SKIPPED;
@@ -249,14 +279,15 @@ public class MemoryApplicationFeedbackService {
             return retryableConflict("PREVIOUS_ANSWER_CHANGED", plan);
         }
         List<UsageRow> locked = loadUsages(plan.workspaceId(), TARGET_MESSAGE, plan.assistantMessageId());
-        if (!locked.equals(plan.usages())) {
-            return retryableConflict("USAGE_SNAPSHOT_CHANGED", plan);
-        }
         List<UsageRow> targets = plan.result() == FollowUpResult.ACCEPTED
                 ? locked.stream().filter(row -> !alreadySignaled(row)).toList()
                 : select(locked, "NEGATIVE", plan.judgment().aspect());
         if (!sameUsageIds(targets, plan.targets())) {
             return retryableConflict("TARGET_SET_CHANGED", plan);
+        }
+        if (!targets.equals(plan.targets()) || !plan.feedback().equals(relevantFeedback(
+                feedbackStamps(plan.workspaceId(), plan.assistantMessageId(), true), targets))) {
+            return retryableConflict("USAGE_SNAPSHOT_CHANGED", plan);
         }
         if (!claimSource(plan.workspaceId(), SIGNAL_FOLLOW_UP, plan.sourceRef())) {
             return FollowUpResult.SKIPPED;
@@ -562,6 +593,24 @@ public class MemoryApplicationFeedbackService {
         return round4(weight);
     }
 
+    private List<FeedbackStamp> feedbackStamps(String workspaceId, String targetId, boolean lock) {
+        return jdbcTemplate.query("""
+                select id, memory_item_id, signal_kind from memory_application_outcome
+                where workspace_id = ? and target_type = 'CONVERSATION_MESSAGE' and target_id = ?
+                  and superseded_at is null
+                order by id
+                """ + (lock ? " for update" : ""), (rs, row) -> new FeedbackStamp(
+                rs.getString(1), rs.getString(2), rs.getString(3)), workspaceId, targetId);
+    }
+
+    private List<FeedbackStamp> relevantFeedback(List<FeedbackStamp> events, List<UsageRow> targets) {
+        Set<String> items = itemIdsOf(targets);
+        return events.stream().filter(event -> event.memoryItemId() != null
+                && items.contains(event.memoryItemId())).toList();
+    }
+
+    private record FeedbackStamp(String id, String memoryItemId, String kind) { }
+
     private boolean alreadySignaled(UsageRow usage) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*) from memory_application_outcome
@@ -607,21 +656,42 @@ public class MemoryApplicationFeedbackService {
         if (found == null || found == 0) {
             throw new BusinessException("ANSWER_RUN_NOT_FOUND", "回答运行不存在", HttpStatus.NOT_FOUND);
         }
-        return optionalAnswerMessageId(workspaceId, runId);
+        return queryAnswerMessageId(workspaceId, runId, false);
     }
 
     private String optionalAnswerMessageId(String workspaceId, String runId) {
+        return queryAnswerMessageId(workspaceId, runId, true);
+    }
+
+    private String queryAnswerMessageId(String workspaceId, String runId, boolean lock) {
         return jdbcTemplate.query("""
                 select answer_message_id from answer_run
                 where workspace_id = ? and id = ?
-                for update
-                """, rs -> {
+                """ + (lock ? " for update" : ""), rs -> {
             if (!rs.next()) {
                 return null;
             }
             String messageId = rs.getString(1);
             return messageId == null || messageId.isBlank() ? null : messageId;
         }, workspaceId, runId);
+    }
+
+    private static void requireOutsideTransaction() {
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("MEMORY_FEEDBACK_MODEL_REQUIRES_NO_TRANSACTION");
+        }
+    }
+
+    private BusinessException feedbackChanged() {
+        return new BusinessException("MEMORY_FEEDBACK_CONFLICT", "反馈目标已变化，请重试", HttpStatus.CONFLICT);
+    }
+
+    private boolean lockLiveMessage(String workspaceId, String messageId) {
+        return jdbcTemplate.query("""
+                select id from conversation_message
+                where workspace_id = ? and id = ? and context_status <> 'DELETED'
+                for update
+                """, rs -> rs.next(), workspaceId, messageId);
     }
 
     private String previousAssistantId(String workspaceId, String userMessageId) {
@@ -632,6 +702,8 @@ public class MemoryApplicationFeedbackService {
                   on earlier.conversation_id = current_message.conversation_id
                  and earlier.workspace_id = current_message.workspace_id
                 where current_message.id = ? and current_message.workspace_id = ?
+                  and current_message.context_status <> 'DELETED'
+                  and earlier.context_status <> 'DELETED'
                   and earlier.role = 'ASSISTANT'
                   and earlier.message_seq < current_message.message_seq
                 order by earlier.message_seq desc
@@ -644,7 +716,7 @@ public class MemoryApplicationFeedbackService {
             select u.id, u.memory_item_id, u.memory_revision_id, u.target_type, u.target_id,
                    u.outcome_type, i.semantic_slot_key
             from memory_usage_log u
-            join memory_item i on i.id = u.memory_item_id
+            join memory_item i on i.id = u.memory_item_id and i.workspace_id = u.workspace_id
             where u.workspace_id = ? and u.target_type = ? and u.target_id = ?
               and u.memory_item_id is not null
             order by u.id
@@ -672,6 +744,11 @@ public class MemoryApplicationFeedbackService {
     }
 
     private List<EventRow> loadActive(String workspaceId, String targetType, String targetId, String signalKind) {
+        return queryActive(workspaceId, targetType, targetId, signalKind, true);
+    }
+
+    private List<EventRow> queryActive(String workspaceId, String targetType, String targetId,
+                                     String signalKind, boolean lock) {
         return jdbcTemplate.query("""
                 select id, workspace_id, usage_log_id, memory_item_id, outcome_type, aspect,
                        feedback_note, beta_weight, edit_magnitude, utility_before, utility_delta,
@@ -682,9 +759,8 @@ public class MemoryApplicationFeedbackService {
                 from memory_application_outcome
                 where workspace_id = ? and target_type = ? and target_id = ?
                   and signal_kind = ? and superseded_at is null
-                order by row_no
-                for update
-                """, (rs, rowNum) -> new EventRow(
+                order by row_no, id
+                """ + (lock ? " for update" : ""), (rs, rowNum) -> new EventRow(
                 rs.getString("id"),
                 rs.getString("workspace_id"),
                 rs.getString("usage_log_id"),
@@ -1028,12 +1104,13 @@ public class MemoryApplicationFeedbackService {
             MemoryFeedbackAspectJudge.Judgment judgment,
             List<UsageRow> usages,
             List<UsageRow> targets,
+            List<FeedbackStamp> feedback,
             String degradation,
             String note
     ) {
         /** 不写库的结论：跳过或可重试。 */
         private static FollowUpPlan notWritten(FollowUpResult result) {
-            return new FollowUpPlan(result, null, null, null, null, null, List.of(), List.of(), null, null);
+            return new FollowUpPlan(result, null, null, null, null, null, List.of(), List.of(), List.of(), null, null);
         }
 
         private static FollowUpPlan skipped() {
