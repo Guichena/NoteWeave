@@ -582,3 +582,15 @@ research 最后真实 Run `b07b84cf-01e7-4da8-973b-86c97a41a5d9` 为证据不足
 整合专项检查又发现两个问题并已处理：本地 research 的 `V168__widen_research_evidence_manifest_ids.sql` 与修复分支 Wiki 默认值迁移同号，前者调整为 `V192`，现有数据库两者均未应用；Wiki 提示改为自然回答后还需显式提供第四个页面的反向链接，现已逐页加入反向链接标题，保留原有回答风格。新增检查验证第四页的实际链接资料，不要求向模型提供无关内部计数。
 
 artifact Worker 首次完整回归因只读源码挂载阻止 MCP 创建运行目录而失败 20 项，保留原记录；为运行目录提供独立可写挂载后，同次完整回归 687 项通过。没有放宽回调确认或心跳检查。远端备份前核对活动 research、artifact、agent 任务均为零，数据库备份和五个应用的旧镜像标签已保存于 `/data/workspace/noteweave/.deploy/20261022-integration/`，没有读取或改写业务密钥内容到交接文档。
+
+### 12.1 最终提交与部署验证
+
+- 整合分支为 `codex/instabox-integration-20261022`，已推送 GitHub。双亲合并提交为 `7ad3ec7c`，包含本地改造快照与修复分支 `e92a3bd3`；最终产品代码提交为 `083b299f`，之后的本节补记仅修改文档。
+- 最终后端专项同次 90 项通过，包含 Wiki 第四页反向链接、记忆抽取和反馈、Outbox、research 调度与迁移集成；774 个主代码文件打包成功。research Worker 同次 1039 项、artifact Worker 同次 687 项通过，前端 TypeScript 与生产构建成功。没有据此宣称全项目全部检查通过。
+- 部署机器为 `insta1`，hostname 为 `instabox-agent-browser-j03r`。应用根目录为 `/data/workspace/noteweave`，发布源码位于 `.deploy/20261022-integration/source`，部署提交 `083b299ffd15984d1e15afc68dd1e684c742de89`。五个应用镜像均带该提交标签，基础设施沿用原容器和数据卷。
+- 发布 Jar 摘要为 `1d171d612bed4c5f749e2b2e75aab18d83b8bdb4368bb1c43035ab22413009c0`。由于传输速度有限，传输新代码及归档布局并复用远端逐项核对摘要的相同依赖字节，完整重建文件再次核对 SHA-256，与本地最终通过检查的 Jar 完全一致；未使用旧版本应用代码代替新构建。
+- 新增迁移 `V168`、`V169`、`V170`、`V180` 至 `V192` 共 16 条全部成功。五个应用及五个基础设施服务健康；用户 3、工作区 1、资料 0 的核心计数保持一致。登录和认证后的工作区 API 通过，公开注册仍为 403。现有 `.env` 文件摘要不变，既有环境值继续保留。
+- 访问入口为 `https://3000-agquvfe44ktpodg5ejpjikyf2q.instabox.tech`，从本机访问返回 200，已确认页面引用本次前端构建。部署记录为远端 `.deploy/current.json` 和 `.deploy/20261022-integration/public-deployment-summary.json`，运行入口为 `.deploy/run-current.sh`。
+- 回滚资料保留迁移前数据库压缩备份、五个旧镜像标签和 `compose.rollback.json`。旧版本依赖被 `V180` 删除的字段，单独切回旧镜像不能完成回滚；需要在停止写入、核对新增业务数据后结合数据库备份恢复，不能覆盖后续新增数据。含有效环境配置的 Compose 覆盖文件只保留在远端，权限为 600，不上传 Git。
+
+本批完成后停止继续扩展 research 改造和真实评测。新版本仅部署在 Instabox，本机四个隔离候选服务已停止，原工作区与历史原始失败证据保留；原有本机业务容器没有重建。新路径默认开关保持原配置，质量验收和历史基线状态保持不变。
