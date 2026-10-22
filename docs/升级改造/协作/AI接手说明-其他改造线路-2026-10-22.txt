@@ -13,6 +13,8 @@ NoteWeave AI 接手说明
 目标 SSH Host：insta1。
 远端实际项目：/data/workspace/noteweave。
 部署源码：/data/workspace/noteweave/.deploy/20261022-integration/source。
+服务器主仓库已完整检出 Git 整合分支；部署源码目录是固定在 083b299f 的独立 Git worktree。
+开发从主仓库整合基线另建分支，不能在部署 worktree 中直接改代码；主仓库文档更新不代表产品重新部署。
 运行入口：/data/workspace/noteweave/.deploy/run-current.sh。
 不要误用另一份 /data/home/NoteWeave。
 数据库已迁移至 V192，后续从 V193 统一登记；两条线不能各自抢用同一个编号，不修改已应用迁移。

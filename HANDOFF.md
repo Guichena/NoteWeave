@@ -620,3 +620,26 @@ research 线优先 RES-01 传输失败定位、RES-02 规划回退；其他线�
 原清单第 5 和 14 条合并为 RES-05，归 research 线；R5 可重试冲突已修复，排除出未开发项；前端构建、artifact pytest 的旧未通过状态已有新验证记录。迁移当前至 V192，后续统一从 V193 分配。
 
 两个 AI 不能同时覆盖共享会话入口、ChatService、模型客户端、配置、公共协议或迁移。先认领工作包和单一文件负责人，再各自在整合基线上建立开发分支。原工作区保留旧分支与未提交内容，接手时不要误用；含有效环境值的远端 Compose 不随 Git 分享。
+
+## 14. 服务器 Git 管理与 GitHub 同步
+
+日期：2026-10-22。按用户要求，服务器主仓库和实际发布目录均已纳入 Git 管理，运行中的应用镜像及数据未变更，服务没有重启。
+
+- 服务器主仓库为 `/data/workspace/noteweave`，已从旧 `main` 切换到 `codex/instabox-integration-20261022`，跟踪 GitHub 同名分支，完整检出代码和交接材料。同步后主仓库须保持 `git status --porcelain` 为空；后续开发从该整合基线另建工作分支。
+- 实际发布目录 `/data/workspace/noteweave/.deploy/20261022-integration/source` 已转换成同仓库的独立 Git worktree，固定在 `083b299ffd15984d1e15afc68dd1e684c742de89`，对应当前镜像内的产品代码。主仓库后续文档提交不等于已重新部署产品代码，不能直接修改或切换发布 worktree 用于开发。
+- 转换前核对了发布快照的 1934 个文件；其中 1781 个文件仅存在 CRLF 与 LF 换行差异，其余文件字节一致，没有接受其他内容差异。原快照保留为发布目录旁的 `source-archive-before-git`。
+- 服务器原有 `docker-compose.yml`、`backend/maven-settings.xml` 两处本地修改已完整备份到 `.deploy/git-conversion-20261022/`，主仓库对应文件采用 Git 版本。原 `.env` 和主机专用 `compose.instabox.json`、`deploy/` 保留，后者及 `.deploy/` 已加入服务器本地 `.git/info/exclude`，不提交到 GitHub。
+- 原有执行入口 `.deploy/run-current.sh` 保持不变，继续组合发布 worktree 中的 Compose、主机覆盖文件和受限环境覆盖；后续维护先查看 `.deploy/current.json`，不要仅凭主仓库 HEAD 判断正在运行的代码。
+- Git 转换记录位于服务器 `.deploy/git-conversion-20261022/state.json`，发布记录新增主仓库分支及发布 worktree 提交。转换期间十个容器的身份、镜像和健康状态相同，环境文件摘要相同。
+
+核对命令：
+
+```bash
+git -C /data/workspace/noteweave status --short --branch
+git -C /data/workspace/noteweave log -1 --oneline
+git -C /data/workspace/noteweave worktree list
+git -C /data/workspace/noteweave/.deploy/20261022-integration/source rev-parse HEAD
+/data/workspace/noteweave/.deploy/run-current.sh ps
+```
+
+GitHub 使用 `codex/instabox-integration-20261022` 保存整合代码和最新交接，不覆盖 `main` 或旧工作分支的历史。本节及两份 AI 接手说明更新后推送该分支，再让服务器主仓库快进同步；发布 worktree 继续固定在已部署版本。

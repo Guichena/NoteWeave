@@ -17,7 +17,15 @@
     "remote_run_entry": "/data/workspace/noteweave/.deploy/run-current.sh",
     "latest_applied_migration": 192,
     "next_migration_start": 193,
-    "migration_rule": "两条线共用编号登记，后续从 V193 分配；已部署迁移不可重命名或修改"
+    "migration_rule": "两条线共用编号登记，后续从 V193 分配；已部署迁移不可重命名或修改",
+    "server_git_management": {
+      "repository_root": "/data/workspace/noteweave",
+      "root_branch": "codex/instabox-integration-20261022",
+      "root_tracking": "origin/codex/instabox-integration-20261022",
+      "deployed_worktree": "/data/workspace/noteweave/.deploy/20261022-integration/source",
+      "deployed_worktree_commit": "083b299ffd15984d1e15afc68dd1e684c742de89",
+      "rule": "主仓库同步最新整合代码和文档；发布 worktree 固定部署提交，不用于直接开发。Git 同步不等于重新部署。"
+    }
   },
   "research_evidence": {
     "run_id": "b07b84cf-01e7-4da8-973b-86c97a41a5d9",
