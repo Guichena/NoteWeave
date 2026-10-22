@@ -137,7 +137,7 @@ public class SourceRetrievalProjectionService {
         return "document-chunker-legacy-unknown";
     }
 
-    /** SDK 内部请求和重试不可观测，这里只记录有明确上界的请求预算。 */
+    /** 冻结批次的总请求上限；异步路径在每次 provider HTTP 尝试前原子扣减。 */
     public int currentEmbeddingRequestBudget(int chunkCount, boolean includeNote) {
         if (chunkCount < 0 || chunkCount > EMBEDDING_BATCH_SIZE) {
             throw new IllegalArgumentException("片段批次最多为 64 条");
@@ -150,6 +150,12 @@ public class SourceRetrievalProjectionService {
     /** 只加载本批片段，完成上下文检查点后再计算向量；回调仅记录真实上下文模型调用。 */
     public BatchEmbeddings computeEmbeddingBatch(String workspaceId, String sourceId, String snapshotId,
                                                    int batchNo, IntConsumer beforeModelCall) {
+        return computeEmbeddingBatch(workspaceId, sourceId, snapshotId, batchNo, beforeModelCall, null);
+    }
+
+    /** 持久化异步批次另传每次 HTTP 的预算检查；同步和重建保持原调用语义。 */
+    public BatchEmbeddings computeEmbeddingBatch(String workspaceId, String sourceId, String snapshotId,
+            int batchNo, IntConsumer beforeModelCall, Runnable beforeEmbeddingRequest) {
         if (!embeddingClient.isEnabled()) {
             throw new RetrievalProviderException("EMBEDDING_PROVIDER_DISABLED", "资料向量服务未启用");
         }
@@ -212,8 +218,8 @@ public class SourceRetrievalProjectionService {
         }
         if (!misses.isEmpty()) {
             List<EmbeddingInput> inputs = List.copyOf(misses.keySet());
-            EmbeddingClient.EmbeddingResult result = embeddingClient.embedDocuments(
-                    inputs.stream().map(EmbeddingInput::text).toList());
+            EmbeddingClient.EmbeddingResult result = embedBatchDocuments(
+                    inputs.stream().map(EmbeddingInput::text).toList(), beforeEmbeddingRequest);
             verifyBatchEmbeddingContract(result, inputs.size(), dimensions, model);
             for (int i = 0; i < inputs.size(); i++) {
                 EmbeddingInput input = inputs.get(i);
@@ -231,7 +237,7 @@ public class SourceRetrievalProjectionService {
         boolean lastBatch = (long) (batchNo + 1) * EMBEDDING_BATCH_SIZE >= total;
         if (lastBatch) {
             String noteText = limitEmbeddingInput(noteEmbeddingText(source, loadHeadings(workspaceId, sourceId, snapshotId)));
-            EmbeddingClient.EmbeddingResult note = embeddingClient.embedDocuments(List.of(noteText));
+            EmbeddingClient.EmbeddingResult note = embedBatchDocuments(List.of(noteText), beforeEmbeddingRequest);
             verifyBatchEmbeddingContract(note, 1, dimensions, model);
             noteHash = sha256(noteText);
             noteVector = note.singleVector();
@@ -239,6 +245,11 @@ public class SourceRetrievalProjectionService {
         return new BatchEmbeddings(batchNo, version, chunkerVersion, contextVersion, model, dimensions,
                 chunks.stream().map(ChunkRow::chunkId).toList(), hashes, fullHashes, vectors, contexts, reasons,
                 calls, noteHash, noteVector);
+    }
+
+    private EmbeddingClient.EmbeddingResult embedBatchDocuments(List<String> texts, Runnable beforeRequest) {
+        return beforeRequest == null ? embeddingClient.embedDocuments(texts)
+                : embeddingClient.embedDocumentsWithBudget(texts, beforeRequest);
     }
 
     private void verifyBatchEmbeddingContract(EmbeddingClient.EmbeddingResult result, int count,

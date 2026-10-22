@@ -32,6 +32,8 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
 
     private final boolean enabled;
     private final OpenAIClient client;
+    private final OpenAIClient budgetClient;
+    private final int maxAttempts;
     private final String model;
     private final int dimensions;
     private final int documentBatchSize;
@@ -62,6 +64,12 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
                         batchTimeout,
                         Math.max(1, config.maxAttempts()) - 1)
                 : null;
+        this.maxAttempts = Math.max(1, config.maxAttempts());
+        this.budgetClient = enabled
+                ? OpenAiSdkClients.create(
+                        ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint()).toString(),
+                        EMBEDDINGS_PATH, text(config.apiKey()), batchTimeout, 0)
+                : null;
     }
 
     @Override
@@ -91,6 +99,54 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
             totalTokens += result.totalTokens();
         }
         return new EmbeddingResult(vectors, model, dimensions, totalTokens);
+    }
+
+    @Override
+    public EmbeddingResult embedDocumentsWithBudget(List<String> texts, Runnable beforeRequest) {
+        ensureEnabled();
+        java.util.Objects.requireNonNull(beforeRequest, "beforeRequest");
+        if (texts == null || texts.isEmpty()) return new EmbeddingResult(List.of(), model, dimensions, 0L);
+        List<List<Float>> vectors = new ArrayList<>(texts.size());
+        long tokens = 0L;
+        for (int start = 0; start < texts.size(); start += documentBatchSize) {
+            List<String> batch = texts.subList(start, Math.min(texts.size(), start + documentBatchSize))
+                    .stream().map(this::limit).toList();
+            EmbeddingResult result = budgetRequest(batch, beforeRequest);
+            vectors.addAll(result.vectors());
+            tokens += result.totalTokens();
+        }
+        return new EmbeddingResult(vectors, model, dimensions, tokens);
+    }
+
+    private EmbeddingResult budgetRequest(List<String> inputs, Runnable beforeRequest) {
+        EmbeddingCreateParams params = EmbeddingCreateParams.builder().model(model)
+                .inputOfArrayOfStrings(inputs).dimensions(dimensions)
+                .encodingFormat(EmbeddingCreateParams.EncodingFormat.FLOAT).build();
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
+            if (Thread.currentThread().isInterrupted())
+                throw new RetrievalProviderException(ERROR_REQUEST, "向量请求已中断");
+            // 提交计数后才发送；提交后进程退出可能保守占用额度，不自动退还不确定请求。
+            beforeRequest.run();
+            try {
+                return parse(budgetClient.embeddings().create(params,
+                        RequestOptions.builder().timeout(batchTimeout).build()), inputs.size());
+            } catch (OpenAIServiceException failure) {
+                int status = failure.statusCode();
+                if (attempt + 1 >= maxAttempts || !(status == 408 || status == 409 || status == 429 || status >= 500))
+                    throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider returned HTTP " + status, failure);
+            } catch (OpenAIException failure) {
+                if (attempt + 1 >= maxAttempts)
+                    throw new RetrievalProviderException(ERROR_REQUEST, "Embedding provider call failed", failure);
+            }
+            // 不超过 ProcessingBudget 预留的每次 5 秒退避；不改普通 SDK 调用语义。
+            try {
+                Thread.sleep(Math.min(4000L, 250L << Math.min(attempt, 4)));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new RetrievalProviderException(ERROR_REQUEST, "向量请求退避已中断", interrupted);
+            }
+        }
+        throw new IllegalStateException("向量请求重试上限无效");
     }
 
     private EmbeddingResult request(List<String> inputs, Duration timeout) {

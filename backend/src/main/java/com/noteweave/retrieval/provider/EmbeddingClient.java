@@ -9,6 +9,11 @@ public interface EmbeddingClient {
 
     EmbeddingResult embedDocuments(List<String> texts);
 
+    /** 仅持久化资料批次使用：每次真实 HTTP 尝试前调用，拒绝时不得发送。 */
+    default EmbeddingResult embedDocumentsWithBudget(List<String> texts, Runnable beforeRequest) {
+        throw new RetrievalProviderException("EMBEDDING_REQUEST_BUDGET_UNSUPPORTED", "向量客户端不支持请求预算");
+    }
+
     record EmbeddingResult(
             List<List<Float>> vectors,
             String model,

@@ -127,7 +127,9 @@ public class SourceRetrievalProjectionFinalizer {
     /** 检索索引失败后自动重试的最大次数。 */
     public static final int MAX_AUTO_RETRIES = 3;
     private static final java.util.Set<String> NON_RETRYABLE_ERRORS = java.util.Set.of(
-            "EMBEDDING_PROVIDER_DISABLED", "EMBEDDING_DIMENSION_MISMATCH");
+            "EMBEDDING_PROVIDER_DISABLED", "EMBEDDING_DIMENSION_MISMATCH",
+            "SOURCE_EMBEDDING_REQUEST_BUDGET_EXHAUSTED", "SOURCE_EMBEDDING_BUDGET_LEGACY_UNKNOWN",
+            "EMBEDDING_REQUEST_BUDGET_UNSUPPORTED");
 
     @Transactional
     public void finalizeFailed(

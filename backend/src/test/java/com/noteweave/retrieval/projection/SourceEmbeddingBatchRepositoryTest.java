@@ -60,6 +60,7 @@ class SourceEmbeddingBatchRepositoryTest {
         Fixture fixture = fixture(1);
         var row = initialize(fixture).get(0);
         var first = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        jdbc.update("update task_outbox set status = 'SENT' where task_id = ?", fixture.task());
         jdbc.update("update source_embedding_batch set lease_until = timestamp '2020-01-01 00:00:00' where id = ?", row.id());
         repository.recoverExpiredLeases();
         assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
@@ -167,6 +168,7 @@ class SourceEmbeddingBatchRepositoryTest {
         assertThat(outbox(fixture, "acme.embed")).isEqualTo(2);
         assertThat(outbox(fixture, "noteweave.source.embed")).isZero();
         var expired = custom.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, rows.get(0).batchVersion());
+        jdbc.update("update task_outbox set status = 'SENT' where task_id = ?", fixture.task());
         jdbc.update("update source_embedding_batch set lease_until = timestamp '2020-01-01 00:00:00' where id = ?", expired.id());
         custom.recoverExpiredLeases();
         assertThat(outbox(fixture, "acme.embed")).isEqualTo(3);
@@ -179,6 +181,132 @@ class SourceEmbeddingBatchRepositoryTest {
         }
         assertThat(outbox(fixture, "acme.index")).isEqualTo(1);
         assertThat(outbox(fixture, "noteweave.source.index")).isZero();
+    }
+
+    @Test
+    void renewalUsesDatabaseClockAndExpiredOrReplacedTokenCannotRenewReleaseOrSpend() {
+        Fixture fixture = fixture(1);
+        var row = initialize(fixture).get(0);
+        var first = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        jdbc.update("update source_embedding_batch set lease_until = timestampadd(second, 30, current_timestamp) where id = ?", row.id());
+        repository.renew(first);
+        assertThat(repository.list(fixture.workspace(), fixture.source(), fixture.snapshot(), row.batchVersion()).get(0).leaseUntil())
+                .isAfter(first.leaseUntil().minusSeconds(2));
+        jdbc.update("update source_embedding_batch set lease_until = timestamp '2020-01-01 00:00:00' where id = ?", row.id());
+        assertThatThrownBy(() -> repository.renew(first)).hasMessageContaining("LEASE_LOST");
+        repository.release(first);
+        assertThat(repository.list(fixture.workspace(), fixture.source(), fixture.snapshot(), row.batchVersion()).get(0).status()).isEqualTo("RUNNING");
+        var second = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        assertThatThrownBy(() -> repository.renew(first)).hasMessageContaining("LEASE_LOST");
+        assertThatThrownBy(() -> repository.beforeEmbeddingRequest(first)).hasMessageContaining("LEASE_LOST");
+        repository.release(first);
+        assertThat(repository.list(fixture.workspace(), fixture.source(), fixture.snapshot(), row.batchVersion()).get(0).leaseToken()).isEqualTo(second.leaseToken());
+    }
+
+    @Test
+    void embeddingBudgetIsAtomicAndSurvivesClaimsAndNewTask() throws Exception {
+        Fixture fixture = fixture(1);
+        var row = initialize(fixture).get(0);
+        var claim = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        jdbc.update("update source_embedding_batch set embedding_request_budget = 1 where id = ?", row.id());
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.Callable<Boolean> spend = () -> {
+            start.await();
+            try { repository.beforeEmbeddingRequest(claim); return true; }
+            catch (com.noteweave.retrieval.provider.RetrievalProviderException exhausted) { return false; }
+        };
+        try {
+            var a = executor.submit(spend); var b = executor.submit(spend); start.countDown();
+            assertThat(List.of(a.get(), b.get())).containsExactlyInAnyOrder(true, false);
+        } finally { executor.shutdownNow(); }
+        repository.release(claim);
+        var retry = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        assertThatThrownBy(() -> repository.beforeEmbeddingRequest(retry)).hasMessageContaining("预算已耗尽");
+        String newTask = task(fixture.workspace(), fixture.source());
+        jdbc.update("update task set task_status='FAILED' where id=?", fixture.task());
+        jdbc.update("update source_snapshot set embedding_task_id=? where id=?", newTask, fixture.snapshot());
+        initialize(new Fixture(fixture.workspace(), fixture.source(), fixture.snapshot(), newTask));
+        assertThat(jdbc.queryForObject("select embedding_requests_used from source_embedding_batch where id=?", Integer.class, row.id())).isEqualTo(1);
+    }
+
+    @Test
+    void historicalUnknownBudgetNeverPretendsZeroOrSendsAgain() {
+        Fixture fixture = fixture(1);
+        var row = initialize(fixture).get(0);
+        jdbc.update("update source_embedding_batch set embedding_requests_used=null where id=?", row.id());
+        var claim = repository.claim(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(), 0, row.batchVersion());
+        assertThatThrownBy(() -> repository.beforeEmbeddingRequest(claim))
+                .isInstanceOf(com.noteweave.retrieval.provider.RetrievalProviderException.class)
+                .extracting(ex -> ((com.noteweave.retrieval.provider.RetrievalProviderException) ex).errorCode())
+                .isEqualTo("SOURCE_EMBEDDING_BUDGET_LEGACY_UNKNOWN");
+        assertThat(jdbc.queryForObject("select embedding_requests_used from source_embedding_batch where id=?", Integer.class, row.id())).isNull();
+    }
+
+    @Test
+    void readyRecoverySuppressesInflightButSentDoesNotPreventRedeliveryAndConcurrentScansDeduplicate() throws Exception {
+        Fixture fixture = fixture(1);
+        var row = initialize(fixture).get(0);
+        makeDue(row.id());
+        repository.recoverExpiredLeases();
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(1);
+        jdbc.update("update task_outbox set status='SENT' where task_id=?", fixture.task());
+        makeDue(row.id());
+        var executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            var a = executor.submit(repository::recoverExpiredLeases);
+            var b = executor.submit(repository::recoverExpiredLeases);
+            a.get(); b.get();
+        } finally { executor.shutdownNow(); }
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+        repository.recoverExpiredLeases();
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+    }
+
+    @Test
+    void oldVersionCannotRecoverOrBlockNewVersionInflight() {
+        Fixture fixture = fixture(1);
+        var old = initialize(fixture).get(0);
+        var changed = repository.initialize(fixture.workspace(), fixture.source(), fixture.snapshot(), fixture.task(),
+                "new-model:3", "chunk-v1", "context-v1", (count, note) -> 1).get(0);
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+        makeDue(old.id());
+        repository.recoverExpiredLeases();
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+        assertThat(changed.batchVersion()).isNotEqualTo(old.batchVersion());
+    }
+
+    @Test
+    void invalidOldVersionsDoNotStarveCurrentReadyAndRecoveryRollsBackWithOutbox() {
+        Fixture fixture = fixture(1);
+        var row = initialize(fixture).get(0);
+        for (int i = 0; i < 101; i++) {
+            jdbc.update("""
+                    insert into source_embedding_batch(id, workspace_id, source_id, source_snapshot_id, task_id,
+                        batch_version, embedding_version, chunker_version, context_prompt_version, batch_no,
+                        chunk_offset, chunk_count, total_chunks, total_batches, chunk_digest, source_metadata_digest,
+                        embedding_request_budget, status, lease_token, lease_until, updated_at)
+                    select ?, workspace_id, source_id, source_snapshot_id, task_id, ?, embedding_version,
+                        chunker_version, context_prompt_version, batch_no, chunk_offset, chunk_count, total_chunks,
+                        total_batches, chunk_digest, source_metadata_digest, embedding_request_budget,
+                        'RUNNING', 'obsolete', timestamp '2020-01-01 00:00:00', timestamp '2020-01-01 00:00:00'
+                    from source_embedding_batch where id=?
+                    """, Ids.newId(), String.format("%064x", i), row.id());
+        }
+        jdbc.update("update task_outbox set status='SENT' where task_id=?", fixture.task());
+        makeDue(row.id());
+        new org.springframework.transaction.support.TransactionTemplate(transactions).executeWithoutResult(status -> {
+            repository.recoverExpiredLeases();
+            assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+            status.setRollbackOnly();
+        });
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(1);
+        repository.recoverExpiredLeases();
+        assertThat(outbox(fixture, "noteweave.source.embed")).isEqualTo(2);
+    }
+
+    private void makeDue(String batchId) {
+        jdbc.update("update source_embedding_batch set next_recovery_at=timestamp '2020-01-01 00:00:00' where id=?", batchId);
     }
 
     private List<SourceEmbeddingBatchRepository.Batch> initialize(Fixture fixture) {

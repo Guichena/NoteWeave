@@ -172,6 +172,16 @@ class SourceEmbeddingBatchProjectionTest {
     }
 
     @Test
+    void budgetPathChargesMissesAndNoteButNotCachedQa() {
+        seedChunks(2);
+        var permits = new java.util.concurrent.atomic.AtomicInteger();
+        service.computeEmbeddingBatch("workspace", "source", "snapshot", 0, ignored -> {}, permits::incrementAndGet);
+        assertThat(permits.get()).isEqualTo(2);
+        service.computeEmbeddingBatch("workspace", "source", "snapshot", 0, ignored -> {}, permits::incrementAndGet);
+        assertThat(permits.get()).isEqualTo(3);
+    }
+
+    @Test
     void identicalBatchReusesQaVectorsButDifferentDocumentContextCannotReuseThem() {
         seedChunks(2);
         BatchEmbeddings first = compute(0);
@@ -360,6 +370,10 @@ class SourceEmbeddingBatchProjectionTest {
         String model = "model";
         public boolean isEnabled() { return true; }
         public EmbeddingResult embedQuery(String text) { return embedDocuments(List.of(text)); }
+        public EmbeddingResult embedDocumentsWithBudget(List<String> inputs, Runnable beforeRequest) {
+            beforeRequest.run();
+            return embedDocuments(inputs);
+        }
         public EmbeddingResult embedDocuments(List<String> inputs) {
             requests.add(List.copyOf(inputs));
             return new EmbeddingResult(inputs.stream().map(ignored -> vector).toList(), model, 2, inputs.size());

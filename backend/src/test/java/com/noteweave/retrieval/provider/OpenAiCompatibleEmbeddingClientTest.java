@@ -191,6 +191,75 @@ class OpenAiCompatibleEmbeddingClientTest {
         }
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {503, 429})
+    void budgetPathCountsEveryHttpRetryAndSubBatch(int firstStatus) throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger permits = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            int count = requests.incrementAndGet();
+            assertThat(permits.get()).isEqualTo(count);
+            if (count == 1) {
+                exchange.sendResponseHeaders(firstStatus, -1);
+            } else {
+                byte[] body = "{\"model\":\"embedding-v1\",\"data\":[{\"index\":0,\"embedding\":[0.1,0.2,0.3]}]}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+            }
+            exchange.close();
+        });
+        server.start();
+        try {
+            var client = new OpenAiCompatibleEmbeddingClient(new ObjectMapper(), properties(server, 3, 1, 100, 2));
+            assertThat(client.embedDocumentsWithBudget(List.of("first", "second"), permits::incrementAndGet).vectors()).hasSize(2);
+            assertThat(requests.get()).isEqualTo(3);
+            assertThat(permits.get()).isEqualTo(3);
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    void budgetRejectionPrecedesHttpAnd401ConsumesOnlyOneAttempt() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        AtomicInteger permits = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            exchange.getRequestBody().readAllBytes(); requests.incrementAndGet();
+            exchange.sendResponseHeaders(401, -1); exchange.close();
+        });
+        server.start();
+        try {
+            var client = new OpenAiCompatibleEmbeddingClient(new ObjectMapper(), properties(server, 3, 1, 100, 3));
+            assertThatThrownBy(() -> client.embedDocumentsWithBudget(List.of("text"), () -> {
+                throw new IllegalStateException("budget-denied");
+            })).hasMessage("budget-denied");
+            assertThat(requests.get()).isZero();
+            assertThatThrownBy(() -> client.embedDocumentsWithBudget(List.of("text"), permits::incrementAndGet))
+                    .hasMessageContaining("HTTP 401");
+            assertThat(requests.get()).isEqualTo(1);
+            assertThat(permits.get()).isEqualTo(1);
+            client.embedDocumentsWithBudget(List.of(), permits::incrementAndGet);
+            assertThat(permits.get()).isEqualTo(1);
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    void interruptedBudgetPathDoesNotSpendOrSend() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.start();
+        try {
+            var client = new OpenAiCompatibleEmbeddingClient(new ObjectMapper(), properties(server, 3, 1, 100, 2));
+            AtomicInteger permits = new AtomicInteger();
+            Thread.currentThread().interrupt();
+            try {
+                assertThatThrownBy(() -> client.embedDocumentsWithBudget(List.of("text"), permits::incrementAndGet))
+                        .hasMessageContaining("中断");
+                assertThat(permits.get()).isZero();
+            } finally { Thread.interrupted(); }
+        } finally { server.stop(0); }
+    }
+
     private NoteWeaveProperties properties(
             HttpServer server,
             int dimensions,

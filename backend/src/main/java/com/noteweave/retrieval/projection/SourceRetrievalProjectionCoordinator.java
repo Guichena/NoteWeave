@@ -23,6 +23,12 @@ public class SourceRetrievalProjectionCoordinator {
     private final TaskCommandPort taskCommandPort;
     private final SnapshotEmbeddingStore embeddingStore;
     private final SourceEmbeddingBatchRepository batchRepository;
+    private final SourceEmbeddingHeartbeat heartbeat = new SourceEmbeddingHeartbeat();
+
+    @jakarta.annotation.PreDestroy
+    void closeHeartbeat() {
+        heartbeat.close();
+    }
     private com.noteweave.source.SourceCatalogVersionService catalogVersionService;
 
     private static final Logger log = LoggerFactory.getLogger(SourceRetrievalProjectionCoordinator.class);
@@ -92,14 +98,17 @@ public class SourceRetrievalProjectionCoordinator {
             throw new IllegalArgumentException("无效的向量批次消息");
         var claimed = batchRepository.claim(workspaceId, sourceId, snapshotId, taskId, batchNo, batchVersion);
         if (claimed == null) return false;
-        try {
+        try (var lease = heartbeat.start(() -> batchRepository.renew(claimed), batchRepository.heartbeatIntervalMillis())) {
             if (!claimed.embeddingVersion().equals(projectionService.currentBatchEmbeddingVersion())
                     || !claimed.chunkerVersion().equals(projectionService.currentChunkerVersion(workspaceId, sourceId, snapshotId))
                     || !claimed.contextPromptVersion().equals(projectionService.currentContextPromptVersion()))
                 throw new IllegalStateException("冻结批次配置已变化");
             var embeddings = projectionService.computeEmbeddingBatch(workspaceId, sourceId, snapshotId, batchNo,
-                    increment -> batchRepository.beforeModelCall(claimed, increment));
+                    increment -> { lease.check(); batchRepository.beforeModelCall(claimed, increment); },
+                    () -> { lease.check(); batchRepository.beforeEmbeddingRequest(claimed); });
+            lease.check();
             var stored = embeddingStore.saveBatch(claimed, embeddings);
+            lease.check();
             boolean queued = batchRepository.complete(claimed, stored.objectKey(), stored.sha256(), embeddingStore::saveManifest);
             if (queued) recordIndexing(taskId, workspaceId, claimed.totalChunks());
             return true;
