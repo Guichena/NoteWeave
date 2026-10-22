@@ -161,6 +161,11 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
             if (!related.isEmpty()) {
                 builder.append("链接到的页面：").append(String.join("、", related)).append("\n");
             }
+            List<String> referring = pageContext.backlinks().stream().map(WikiLinkResponse::targetTitle)
+                    .filter(title -> title != null && !title.isBlank()).distinct().limit(8).toList();
+            if (!referring.isEmpty()) {
+                builder.append("被这些页面引用：").append(String.join("、", referring)).append("\n");
+            }
             List<String> path = paths.get(page.versionId());
             if (path != null && path.size() > 1) {
                 builder.append("与问题相关页面的关联路径：").append(String.join(" → ", path)).append("\n");

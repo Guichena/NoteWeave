@@ -162,10 +162,8 @@ class WikiAnswerModeStrategyTest {
         var prompt = strategy.compose(context, bundle);
 
         assertThat(prompt.userPrompt())
-                .contains("## 反向引用关系")
-                .contains("OnlyOnFourth：RESOLVED，2 次提及")
-                .contains("出链采样")
-                .contains("（每类最多 5 条）");
+                .contains("[[Page 4]]")
+                .contains("被这些页面引用：OnlyOnFourth");
     }
 
     private WikiPageContext pageContext() {
