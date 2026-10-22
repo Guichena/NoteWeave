@@ -198,6 +198,31 @@ class MemoryExtractionPromptSecurityTest {
                 assertThat(preference.assignment().slot()).isEqualTo("answer.language"));
     }
 
+    @Test
+    void extractionRejectsFragmentsMultipleRootsAndInvalidFourthElement() {
+        String item = "{\"statement\":\"以后用中文\",\"slot\":\"answer.language\"}";
+        for (String invalid : List.of("前文[" + item + "]", "[" + item + "]后文",
+                "{\"items\":[" + item + "]}", "[] []",
+                "[{\"statement\":\"a\",\"statement\":\"b\"}]",
+                "[" + item + "," + item + "," + item + ",{\"statement\":\"\"}]")) {
+            CapturingClient client = new CapturingClient("yes", invalid, invalid);
+            var result = service(client).extractPreferences("以后用中文", null);
+            assertThat(result.retryable()).as(invalid).isTrue();
+            assertThat(result.preferences()).isEmpty();
+            assertThat(client.extractionPrompts).hasSize(2);
+        }
+    }
+
+    @Test
+    void completeFenceAndLegacyFieldsRemainCompatibleWithBoundedOutput() {
+        String item = "{\"statement\":\"以后用中文\",\"category\":\"style\"}";
+        CapturingClient client = new CapturingClient("yes",
+                "```json\n[" + item + "," + item + "," + item + "," + item + "]\n```");
+        var result = service(client).extractPreferences("以后用中文", null);
+        assertThat(result.retryable()).isFalse();
+        assertThat(result.preferences()).hasSize(3);
+    }
+
     private static MemoryConversationExtractionService service(ChatLlmClient client) {
         return new MemoryConversationExtractionService(
                 mock(JdbcTemplate.class), MAPPER, mock(TaskService.class),

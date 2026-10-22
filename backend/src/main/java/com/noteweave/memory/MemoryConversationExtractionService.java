@@ -393,24 +393,15 @@ public class MemoryConversationExtractionService {
      * 是否只是数据由提示词围栏和模型判断，词表会误杀用户真实的偏好复述。
      */
     private List<Preference> parse(String output) {
-        if (output == null) return null;
-        int start = output.indexOf('[');
-        int end = output.lastIndexOf(']');
-        if (start < 0 || end < start) return null;
-        JsonNode root;
-        try {
-            root = objectMapper.readTree(output.substring(start, end + 1));
-        } catch (Exception ex) {
-            return null;
-        }
+        JsonNode root = MemoryModelJson.read(objectMapper, output);
         if (root == null || !root.isArray()) return null;
         List<Preference> preferences = new ArrayList<>();
         for (JsonNode node : root) {
             Preference preference = preference(node);
             // 任一元素非法整批作废：不做「跳过坏项、留下好项」的部分采纳
             if (preference == null) return null;
-            preferences.add(preference);
-            if (preferences.size() == MAX_STATEMENTS) break;
+            // 先检查整个数组，第四项以后也不能藏非法内容；只限制最终输出条数。
+            if (preferences.size() < MAX_STATEMENTS) preferences.add(preference);
         }
         return preferences;
     }
