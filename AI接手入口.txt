@@ -1,0 +1,38 @@
+NoteWeave 服务器 AI 接手入口
+更新日期：2026-10-22
+
+连接：ssh insta1
+主仓库：/data/workspace/noteweave
+整合分支：codex/instabox-integration-20261022
+GitHub：https://github.com/Guichena/NoteWeave/tree/codex/instabox-integration-20261022
+
+请先读取以下材料，再按用户指令认领任务：
+1. 总体交接与运行说明：/data/workspace/noteweave/HANDOFF.md，第 13 至 15 节。
+2. research 改造线：/data/workspace/noteweave/docs/升级改造/协作/AI接手说明-Research改造线-2026-10-22.txt
+3. 其他改造线路：/data/workspace/noteweave/docs/升级改造/协作/AI接手说明-其他改造线路-2026-10-22.txt
+4. 完整任务总账：/data/workspace/noteweave/docs/升级改造/协作/任务总账-2026-10-22.json
+
+非 research 主 agent 执行提示词：/data/workspace/noteweave/docs/升级改造/协作/AI执行提示词-其他改造线路-2026-10-22.txt
+原 research 改造计划：/data/workspace/noteweave/.omx/plans/research-completion-redesign-2026-10-20.md
+
+任务统计：research 7 个工作包，其他线路 16 个，共 23 个。工作包包含诊断、实现和验收，不等于 23 个已确认缺陷。另有 19 个缺明细的旧编号和 1 个待评估架构提案，不能重复相加。
+两个开发者先约定共享文件负责人，再各自建立 codex/ 开发分支。不得撤销其他人的修改，不重复合并已经整合的修复分支。
+
+运行信息：
+已部署产品代码：083b299ffd15984d1e15afc68dd1e684c742de89
+发布源码：/data/workspace/noteweave/.deploy/20261022-integration/source
+运行入口：/data/workspace/noteweave/.deploy/run-current.sh
+发布记录：/data/workspace/noteweave/.deploy/current.json
+发布源码是固定提交的 Git worktree，禁止直接在其中开发。主仓库的新文档提交不等于产品已重新部署。
+数据库已迁移至 V192，后续从 V193 统一分配，不修改已应用迁移。
+不要误用另一份 /data/home/NoteWeave。
+
+当前应用配置以本机业务容器和本机 .env 为来源，包含模型、DeepSeek 搜索与读取、research 开关和并发、服务间认证及连接池设置。
+数据库、Redis、Elasticsearch、MinIO、Kafka 的实际凭据、服务器运行身份、已有登录账号、容器地址、持久化路径按服务器环境适配。
+Wiki 使用与当前 embedding 维度一致的新物理索引，原空索引保留。
+密钥只在服务器受限配置中保存，不写入交接材料或 Git。
+运行入口同时读取 .env 和发布目录 compose.release.json；后者优先级更高，后续修改配置须核对最终解析结果与运行容器，不能只改 .env。
+配置迁移的备份和脱敏收据路径见 HANDOFF.md 第 15 节及 .deploy/current.json。
+
+历史质量验收仍未通过，本轮配置迁移不代表 research 完成率已通过验收。历史评分保持原记录，后续评分沿用届时当前聊天模型。
+便捷副本：/data/workspace/noteweave/.deploy/handoff-current/。权威材料仍以主仓库 Git 文件为准。

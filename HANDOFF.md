@@ -1,6 +1,6 @@
 # NoteWeave 合并交接文档（`merge/integration`）
 
-> 最新任务统计与两条 AI 分工见第 13 节和协作目录任务总账；第 1 至 11 节保留修复分支的历史状态，不直接作为当前待办。
+> 服务器接手先读根目录 `AI接手入口.txt`；最新任务统计与两条 AI 分工见第 13 节，配置迁移和材料位置见第 15 节；第 1 至 11 节保留修复分支的历史状态，不直接作为当前待办。
 
 > **仓库**：`/workspace/NoteWeave-merge`（git worktree）
 > **分支**：`merge/integration`｜**起点**：`c713463`｜**合并 HEAD**：`91986ee`｜**代码 HEAD**：`7cc6696`（两项 d10 修复，其后只有文档提交）｜**本文提交**：见 `git log --oneline -1 -- HANDOFF.md`
@@ -643,3 +643,22 @@ git -C /data/workspace/noteweave/.deploy/20261022-integration/source rev-parse H
 ```
 
 GitHub 使用 `codex/instabox-integration-20261022` 保存整合代码和最新交接，不覆盖 `main` 或旧工作分支的历史。本节及两份 AI 接手说明更新后推送该分支，再让服务器主仓库快进同步；发布 worktree 继续固定在已部署版本。
+
+
+## 15. 本机应用配置迁移与服务器交接材料
+
+日期：2026-10-22。按用户要求，以本机业务容器及本机 `.env` 为来源同步 Instabox 应用配置。本轮未修改产品代码、未更换代码镜像、未运行新的付费 research 或质量评测。
+
+- 第一轮同步 61 项模型、embedding、rerank、DeepSeek 搜索与网页读取等服务配置；第二轮全面核对并同步 188 项应用配置，包含前述设置，不能将两轮数量直接相加。最终按角色核对 backend 97 项、research Worker 55 项、artifact Worker 25 项、parse Worker 7 项有效配置，服务间重复键按各自消费者分别验证。
+- 全面同步覆盖本机 research 开关和并发、视频学习开关、连接池及服务间认证。四个应用均重建后核对实际 Docker 环境值，包含 DeepSeek 的当前 key；只记录一致性，不把密钥或完整环境输出到日志、文档或 Git。
+- 服务器基础设施的真实数据库、Redis、Elasticsearch、MinIO、Kafka 凭据及既有账号不改写；运行环境与 Spring profile、Kafka 实例身份、容器地址和持久化路径按服务器适配。本机评测账号未覆盖服务器既有账号，不迁移 Windows 的 Compose 入口。该范围与应用模型 key 的同步区分记录。
+- 本机旧业务容器没有显式声明的 10 项服务器环境值，均核对为整合版默认值，包括 requirement 开关、保留策略、Kafka 重试及 artifact 心跳和重试。保留这些默认项，不把缺少显式环境变量误当作需要删除的差异。
+- embedding 维度已按本机设置为 2560。迁移时原 `noteweave-wiki` 为 1024 维且文档数为 0；已创建 2560 维索引 `noteweave-wiki-e85ed52f1faf2` 并更新 backend 的 `NOTEWEAVE_WIKI_INDEX_NAME`，原索引保留，未删除索引或业务数据。
+- 实际部署入口同时读取 `/data/workspace/noteweave/.env` 与 `.deploy/20261022-integration/compose.release.json`，后者中的显式环境值优先级更高。本轮两处均已更新，后续不能只改 `.env` 就宣称配置已生效。密钥配置及备份权限为 600，不上传 Git。
+- 模型与搜索迁移备份和脱敏收据位于 `.deploy/provider-config-migration-20261022-175144/`；完整应用迁移位于 `.deploy/application-config-migration-20261022-180141/`。索引适配的配置备份及记录在前一目录；`.deploy/current.json` 同时指向两次迁移收据。回退时按先完整应用、再索引适配、再模型配置的逆序核对，不删除新数据或向量索引。
+- 本次不以服务健康代替真实模型可用性或 research 完成率验收。模型选择按用户要求，后续评分沿用届时当前聊天配置；历史 Run 使用的模型与历史分数保持原记录。
+- 配置迁移后的十个容器健康，登录、认证后的工作区 API 与 `/healthz` 通过，公开注册保持禁止；应用及配置备份权限核对为 600。当前用户 3、工作区 2、资料 1，已与发布时的 3、1、0 分开记录；不能为匹配历史计数删除后续数据。验收记录为 `.deploy/20261022-integration/configuration-verification-20261022.json`。
+
+服务器材料入口为 `/data/workspace/noteweave/AI接手入口.txt`。两份接手说明及任务总账均在主仓库 `docs/升级改造/协作/`，原改造计划位于 `.omx/plans/research-completion-redesign-2026-10-20.md`。这些文件均由整合分支 Git 管理，并在 `.deploy/handoff-current/` 保留便捷副本，复制后核对 SHA-256。
+
+新增非 research 执行提示词：`docs/升级改造/协作/AI执行提示词-其他改造线路-2026-10-22.txt`。要求主 agent 先逐项核实 16 个工作包，给出证据、依赖和文件所有权，再向子 agent 分配详细步骤和验收要求。共享文件串行处理，独立模块并发推进；本次只交付提示词，没有启动其他 AI 任务。

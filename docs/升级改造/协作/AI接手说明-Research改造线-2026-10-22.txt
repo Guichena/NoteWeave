@@ -16,6 +16,11 @@ NoteWeave AI 接手说明
 服务器主仓库已完整检出 Git 整合分支；部署源码目录是固定在 083b299f 的独立 Git worktree。
 开发从主仓库整合基线另建分支，不能在部署 worktree 中直接改代码；主仓库文档更新不代表产品重新部署。
 运行入口：/data/workspace/noteweave/.deploy/run-current.sh。
+服务器根目录入口：/data/workspace/noteweave/AI接手入口.txt。
+原 research 改造计划：/data/workspace/noteweave/.omx/plans/research-completion-redesign-2026-10-20.md；文件已随整合分支保存在服务器。
+本机来源的应用配置已同步，共 188 项，包含模型、DeepSeek 搜索与读取、业务开关、并发、服务间认证和连接池。基础设施实际凭据、服务器运行身份、已有登录账号、容器地址、持久化路径和 Wiki 物理索引按服务器环境适配。
+环境文件与发布 Compose 覆盖均已同步并核对实际容器；只修改 .env 可能被更高优先级覆盖。详情见 HANDOFF.md 第 15 节。
+配置迁移没有运行新的 research 质量评测，历史未通过结论保持。
 不要误用另一份 /data/home/NoteWeave。
 数据库已迁移至 V192，后续从 V193 统一登记；两条线不能各自抢用同一个编号，不修改已应用迁移。
 
@@ -50,7 +55,7 @@ RES-05 涉及共享会话入口，动手前与其他线路协调文件负责人�
 规划为 FALLBACK；已实际执行两次 COUNTERFACTUAL 补查，均 NO_SUPPORTED_CANDIDATE。
 规划复核一次、来源范围核验两次记录 Connection error，传输根因尚未确认，不能据此判定 key 失效。
 报告为确定性证据不足交付，没有已采用的报告覆盖回执。
-评分沿用用户选定的聊天模型 deepseek-v4.1-flash，三次同模型自评均未通过，不要再次询问评分模型。
+该历史 Run 使用当时的聊天模型 deepseek-v4.1-flash 评分，三次同模型自评均未通过。后续评分按用户要求沿用届时当前聊天模型，不固定历史名称，不改写历史分数，不重复询问模型选择。
 历史完整基线 6/20 保留。没有新完整开发集或独立留出集通过记录。
 运行清单完整、可比较，采集期间产品源码无变化；该 Run 对应整合前候选代码，不能冒充 Instabox 合并版整轮复跑。
 

@@ -16,6 +16,11 @@ NoteWeave AI 接手说明
 服务器主仓库已完整检出 Git 整合分支；部署源码目录是固定在 083b299f 的独立 Git worktree。
 开发从主仓库整合基线另建分支，不能在部署 worktree 中直接改代码；主仓库文档更新不代表产品重新部署。
 运行入口：/data/workspace/noteweave/.deploy/run-current.sh。
+服务器根目录入口：/data/workspace/noteweave/AI接手入口.txt。
+原 research 改造计划：/data/workspace/noteweave/.omx/plans/research-completion-redesign-2026-10-20.md；文件已随整合分支保存在服务器。
+本机来源的应用配置已同步，共 188 项，包含模型、DeepSeek 搜索与读取、业务开关、并发、服务间认证和连接池。基础设施实际凭据、服务器运行身份、已有登录账号、容器地址、持久化路径和 Wiki 物理索引按服务器环境适配。
+环境文件与发布 Compose 覆盖均已同步并核对实际容器；只修改 .env 可能被更高优先级覆盖。详情见 HANDOFF.md 第 15 节。
+配置迁移没有运行新的 research 质量评测，历史未通过结论保持。
 不要误用另一份 /data/home/NoteWeave。
 数据库已迁移至 V192，后续从 V193 统一登记；两条线不能各自抢用同一个编号，不修改已应用迁移。
 
@@ -174,3 +179,6 @@ artifact 与 research 改用数据库队列是待评估提案，没有列入这�
 按 OTH 编号交接代码、提交、配置、迁移和最小有效验证，已修、未修、待复核分开记录。
 旧编号对应的问题若已在整合代码解决，应附证据关闭，不能为完成清单重复实现。
 本批文档整理没有授权新部署、创建其他 AI 任务或真实模型运行，后续按用户认领范围推进。
+
+九、主 agent 与子 agent 执行提示词
+先核实再分步骤并发执行的完整指令位于 /data/workspace/noteweave/docs/升级改造/协作/AI执行提示词-其他改造线路-2026-10-22.txt。该文件提供核实表、依赖分组、详细执行单要求及独立复审边界，不因文档存在而自动启动任务。

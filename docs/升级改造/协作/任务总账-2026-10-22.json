@@ -25,7 +25,9 @@
       "deployed_worktree": "/data/workspace/noteweave/.deploy/20261022-integration/source",
       "deployed_worktree_commit": "083b299ffd15984d1e15afc68dd1e684c742de89",
       "rule": "主仓库同步最新整合代码和文档；发布 worktree 固定部署提交，不用于直接开发。Git 同步不等于重新部署。"
-    }
+    },
+    "remote_handoff_entry": "/data/workspace/noteweave/AI接手入口.txt",
+    "remote_research_plan": "/data/workspace/noteweave/.omx/plans/research-completion-redesign-2026-10-20.md"
   },
   "research_evidence": {
     "run_id": "b07b84cf-01e7-4da8-973b-86c97a41a5d9",
@@ -451,5 +453,22 @@
     "total_work_packages": 23,
     "unexpanded_audit_ids_not_additive": 19,
     "architecture_proposals_not_in_implementation_count": 1
-  }
+  },
+  "configuration_migration": {
+    "date": "2026-10-22",
+    "state": "COMPLETE",
+    "application_settings": 188,
+    "runtime_setting_counts": {
+      "backend": 97,
+      "research-worker-consumer": 55,
+      "artifact-worker-api": 25,
+      "parse-worker": 7
+    },
+    "source": "本机 .env 与本机业务容器，不使用隔离候选容器",
+    "server_adaptations": "基础设施凭据、既有账号、运行环境、实例身份、容器地址、持久化路径和 Wiki 物理索引",
+    "receipt": "/data/workspace/noteweave/.deploy/application-config-migration-20261022-180141/result.json",
+    "new_quality_evaluation": false,
+    "future_judge_rule": "沿用届时当前聊天模型，不改写历史评分"
+  },
+  "non_research_execution_prompt": "/data/workspace/noteweave/docs/升级改造/协作/AI执行提示词-其他改造线路-2026-10-22.txt"
 }
