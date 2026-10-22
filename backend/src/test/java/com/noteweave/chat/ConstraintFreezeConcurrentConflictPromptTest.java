@@ -92,8 +92,13 @@ class ConstraintFreezeConcurrentConflictPromptTest {
                 new DataSourceTransactionManager(dataSource));
         ConversationContextCompilerV2Service compiler = new ConversationContextCompilerV2Service(jdbc,
                 mock(WorkspaceAccessGuard.class), users, memory, summaries);
-        snapshots = new ContextV2ShadowSnapshotService(jdbc, mapper, topics, compiler, rollout,
-                new DataSourceTransactionManager(dataSource), false);
+        var transactionManager = new DataSourceTransactionManager(dataSource);
+        var proxy = new org.springframework.aop.framework.ProxyFactory(new ContextV2ShadowSnapshotService(
+                jdbc, mapper, topics, compiler, rollout, transactionManager, false));
+        proxy.setProxyTargetClass(true);
+        proxy.addAdvice(new org.springframework.transaction.interceptor.TransactionInterceptor(
+                transactionManager, new org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()));
+        snapshots = (ContextV2ShadowSnapshotService) proxy.getProxy();
 
         jdbc.update("insert into conversation(id, workspace_id) values (?, ?)", CONVERSATION, WORKSPACE);
     }
@@ -138,6 +143,29 @@ class ConstraintFreezeConcurrentConflictPromptTest {
                 .contains("## 当前有效的用户约束（冻结会话）")
                 .contains("- format.table")
                 .contains("- 中文");
+    }
+
+    @Test
+    void incompleteConstraintsCannotFreezeAndFailedReceiptCanRetry() {
+        userMessage(QUERY_MESSAGE, 1, "以后用中文。");
+        pendingAssistant("m2", 2, QUERY_MESSAGE);
+        jdbc.update("insert into answer_run(id, workspace_id, conversation_id, query_message_id) values (?, ?, ?, ?)",
+                ANSWER_RUN, WORKSPACE, CONVERSATION, QUERY_MESSAGE);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> snapshots.freezeAnswer(
+                WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("约束");
+        assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isZero();
+        snapshots.recordFailure(WORKSPACE, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "CONTEXT_CONSTRAINTS_INCOMPLETE");
+        extractor.ops.put(QUERY_MESSAGE, language("中文"));
+        snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA");
+        assertThat(frozenProjection().constraints()).extracting(ContextProjectionV2.UserConstraint::text)
+                .containsExactly("中文");
+        String original = jdbc.queryForObject("select projection_sha256 from context_v2_shadow_snapshot", String.class);
+        snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA");
+        assertThat(jdbc.queryForObject("select projection_sha256 from context_v2_shadow_snapshot", String.class))
+                .isEqualTo(original);
+        assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isEqualTo(1);
     }
 
     /** 冻结快照：断言状态是 READY，再按 answer_run 读库里的 projection_json。 */
@@ -320,7 +348,9 @@ class ConstraintFreezeConcurrentConflictPromptTest {
                     cutoff_seq int not null,
                     status varchar(24) not null,
                     projection_json longtext,
-                    projection_sha256 char(64)
+                    projection_sha256 char(64),
+                    failure_code varchar(80),
+                    unique(answer_run_id)
                 )
                 """);
         jdbc.execute("""

@@ -232,10 +232,12 @@ class ConversationConstraintPersistenceFidelityTest {
 
         refresh();
 
-        assertThat(processedSeq()).isEqualTo(1);
+        // 缺失旧基线是重建：部分模型成功不能发布新旧混合状态。
+        assertThat(processedSeq()).isZero();
         assertThat(row("legacy-m3").status()).isEqualTo("ACTIVE");
         assertThat(row("legacy-m3").text()).isEqualTo("format.table");
-        assertDatabaseMatchesMergerUpTo(1);
+        assertThat(rowCount()).isEqualTo(1);
+        extractor.steps.clear();
 
         extractor.unusable.remove("m3");
         respond("m3", add(ConstraintSlot.TABLE, "format.table", ConstraintScope.CURRENT_TOPIC));

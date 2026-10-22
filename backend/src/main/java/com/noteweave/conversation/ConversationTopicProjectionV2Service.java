@@ -83,11 +83,75 @@ public class ConversationTopicProjectionV2Service {
      */
     private TopicSegmenterV2.Projection refreshAtCutoff(String workspaceId,
                                                         String conversationId, Integer cutoffSeq) {
-        Segmentation segmentation = Objects.requireNonNull(independentTransaction(conversationId,
-                () -> segment(workspaceId, conversationId, cutoffSeq)));
-        applyConstraints(segmentation);
-        return segmentation.projection();
+        return refreshConstraints(workspaceId, conversationId, cutoffSeq).projection();
     }
+
+    /** 仅聊天冻结使用完整性回执；研究入口保持原有调用契约。 */
+    public ConstraintRefresh refreshForAnswer(String workspaceId, String conversationId, int cutoffSeq) {
+        return refreshConstraints(workspaceId, conversationId, cutoffSeq);
+    }
+
+    private ConstraintRefresh refreshConstraints(String workspaceId, String conversationId, Integer cutoffSeq) {
+        Segmentation segmentation = null;
+        for (int attempt = 0; attempt < CONSTRAINT_APPLY_ATTEMPTS; attempt++) {
+            segmentation = Objects.requireNonNull(independentTransaction(conversationId,
+                    () -> segment(workspaceId, conversationId, cutoffSeq)));
+            ConstraintState observed = segmentation.constraintState();
+            boolean rebuild = !usable(observed);
+            var extraction = constraintProjection.extract(segmentation.messages(),
+                    segmentation.projection().segments(), rebuild ? 0 : observed.processedSeq(),
+                    rebuild ? List.of() : observed.steps());
+            // 重建不能发布半份新规则；已提交的旧基线和旧行保持原样。
+            if (rebuild && extraction.skipped() > 0) {
+                return receipt(segmentation, observed, false);
+            }
+            Segmentation prepared = segmentation;
+            ConstraintApply result = Objects.requireNonNull(independentTransaction(conversationId,
+                    () -> applyConstraintsInTransaction(prepared, extraction, rebuild)));
+            if (!result.retry()) {
+                boolean complete = usable(result.state())
+                        && result.state().processedSeq() >= lastUserSeq(segmentation.messages())
+                        && extraction.skipped() == 0;
+                return receipt(segmentation, result.state(), complete);
+            }
+            log.info("约束上下文已变化，事务外重新准备: conversationId={}, attempt={}",
+                    conversationId, attempt + 1);
+        }
+        log.warn("约束刷新未完成: reason=CONCURRENT_CHANGE, conversationId={}", conversationId);
+        return receipt(segmentation, null, false);
+    }
+
+    private boolean usable(ConstraintState state) {
+        return state != null && constraintProjection.version().equals(state.ruleVersion())
+                && (state.processedSeq() == 0 || !state.steps().isEmpty());
+    }
+
+    private static int lastUserSeq(List<TopicSegmenterV2.Message> messages) {
+        return messages.stream().filter(message -> "USER".equals(message.role()))
+                .mapToInt(TopicSegmenterV2.Message::seq).max().orElse(0);
+    }
+
+    private ConstraintRefresh receipt(Segmentation segmentation, ConstraintState state, boolean complete) {
+        return new ConstraintRefresh(segmentation.projection(), complete,
+                state == null ? -1 : state.processedSeq(), state == null ? -1 : state.lockVersion(),
+                state == null ? "" : state.ruleVersion());
+    }
+
+    /** 调用方已持会话锁；冻结前核对回执，不把落后或另一轮写入伪装为本轮完整投影。 */
+    void requireAnswerConstraints(String workspaceId, String conversationId, ConstraintRefresh refresh) {
+        ConstraintState current = latestState(workspaceId, conversationId);
+        if (refresh == null || !refresh.complete() || !usable(current)
+                || current.processedSeq() != refresh.processedSeq()
+                || current.lockVersion() != refresh.lockVersion()
+                || !current.ruleVersion().equals(refresh.ruleVersion())
+                || !sameTopics(conversationId, refresh.projection().segments())) {
+            throw new BusinessException("CONTEXT_CONSTRAINTS_INCOMPLETE",
+                    "会话约束尚未完整刷新，请重试", HttpStatus.CONFLICT);
+        }
+    }
+
+    public record ConstraintRefresh(TopicSegmenterV2.Projection projection, boolean complete,
+                                    int processedSeq, int lockVersion, String ruleVersion) {}
 
     /**
      * 一段必须独立提交的写。
@@ -227,81 +291,92 @@ public class ConversationTopicProjectionV2Service {
         return new Segmentation(workspaceId, conversationId, projection, messages, constraintState);
     }
 
-    /** 模型调用在事务外；只有真的抽到新消息才开短事务落库。 */
-    private void applyConstraints(Segmentation segmentation) {
-        ConversationConstraintProjectionV2Service.Extraction extraction = constraintProjection.extract(
-                segmentation.messages(), segmentation.projection().segments(),
-                segmentation.constraintState().processedSeq(), segmentation.constraintState().steps());
-        if (extraction.extracted() == 0) {
-            return;
-        }
-        Boolean applied = independentTransaction(segmentation.conversationId(),
-                () -> applyConstraintsInTransaction(segmentation, segmentation.constraintState(), extraction));
-        if (!Boolean.TRUE.equals(applied)) {
-            // 只剩「进度行已被消息删除清掉」这一种：库里已按删除对账，这里没写任何行，下一轮从 0 重抽。
-            log.warn("约束抽取结果未能落库，本轮放弃: conversationId={}, seq={}",
-                    segmentation.conversationId(), extraction.processedSeq());
-        }
-    }
-
-    /**
-     * 短事务：先按 watermark 与 lock_version 做乐观检查，检查通过才写约束行。
-     * <p>
-     * 检查失败说明抽取期间另一个 refresh 先提交了：胜者的水位还没覆盖本轮已抽取的消息，
-     * 直接编译库里的行会把过期约束冻进这次回答的快照。会话行锁已经在下面拿住，重读到的状态就是
-     * 权威状态，因此用最新基线把本轮已抽取的 ops 重新折叠（
-     * {@link ConversationConstraintProjectionV2Service#refold}，<b>不重复调用模型</b>）后有限次重试。
-     * 胜者已经处理过本轮全部消息时，库里就是正确的约束，直接当作成功。
-     * 只有进度行被删除（消息删除路径，库中约束已由它自己按 REVOKED 对账）才放弃。
-     * <p>
-     * 这里重新拿会话行锁（只覆盖几条 upsert，不含模型调用）：消息删除也拿同一把锁并
-     * 把约束标 REVOKED/清空正文，不重新加锁的话，删除后本轮 upsert 会把旧行又写回 ACTIVE。
-     */
-    private Boolean applyConstraintsInTransaction(Segmentation segmentation,
-                                                  ConstraintState state,
-                                                  ConversationConstraintProjectionV2Service.Extraction extraction) {
+    /** 短事务只验证和提交；依赖变化交回事务外重抽，不在会话锁里调用模型。 */
+    private ConstraintApply applyConstraintsInTransaction(Segmentation segmentation,
+            ConversationConstraintProjectionV2Service.Extraction extraction, boolean rebuild) {
         String workspaceId = segmentation.workspaceId();
         String conversationId = segmentation.conversationId();
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
-        if (locked.isEmpty()) {
-            return false;
+        if (locked.isEmpty()) return new ConstraintApply(null, false);
+        Integer invalid = jdbc.queryForObject("""
+                select count(*) from conversation_message
+                where workspace_id = ? and conversation_id = ? and message_seq <= ?
+                  and context_status <> 'CURRENT'
+                """, Integer.class, workspaceId, conversationId,
+                segmentation.messages().stream().mapToInt(TopicSegmenterV2.Message::seq).max().orElse(0));
+        ConstraintState current = latestState(workspaceId, conversationId);
+        if (current == null || (invalid != null && invalid > 0)) {
+            // 删除后的基线不能被迟到的模型结果重建，原文和派生正文均不得复活。
+            return new ConstraintApply(null, false);
         }
-        ConstraintState current = state;
-        ConversationConstraintProjectionV2Service.Extraction pending = extraction;
-        for (int attempt = 1; attempt <= CONSTRAINT_APPLY_ATTEMPTS; attempt++) {
-            List<ConstraintOpMerger.Step> merged = new ArrayList<>(current.steps());
-            merged.addAll(pending.steps());
-            int updated = jdbc.update("""
-                    update conversation_constraint_state_v2
-                    set processed_seq = ?, steps_json = ?, rule_version = ?,
-                        lock_version = lock_version + 1, updated_at = current_timestamp
-                    where conversation_id = ? and workspace_id = ?
-                      and lock_version = ? and processed_seq = ?
-                    """, pending.processedSeq(), writeSteps(merged), constraintProjection.version(),
-                    conversationId, workspaceId, current.lockVersion(), current.processedSeq());
-            if (updated == 1) {
-                persistConstraints(workspaceId, conversationId, pending);
-                return true;
+        if (!sameTopics(conversationId, segmentation.projection().segments())) {
+            return new ConstraintApply(current, true);
+        }
+        ConstraintState observed = segmentation.constraintState();
+        var pending = extraction;
+        if (!current.equals(observed)) {
+            if (!usable(current) || (rebuild && !"UNBUILT".equals(observed.ruleVersion()))
+                    || (!"UNBUILT".equals(observed.ruleVersion())
+                        && !current.ruleVersion().equals(observed.ruleVersion()))) {
+                return new ConstraintApply(current, true);
             }
-            ConstraintState latest = latestState(workspaceId, conversationId);
-            if (latest == null) {
-                return false;
+            if (current.processedSeq() >= extraction.processedSeq()) {
+                return new ConstraintApply(current, false);
             }
+            // 比较实际步骤而非只看水位：后缀的 NOOP/targetId 依赖此前 ACTIVE。
+            List<ConstraintOpMerger.Step> expected = new ArrayList<>(observed.steps());
+            expected.addAll(extraction.steps().stream()
+                    .filter(step -> step.seq() <= current.processedSeq()).toList());
+            if (!sameSteps(expected, current.steps())) return new ConstraintApply(current, true);
             pending = constraintProjection.refold(segmentation.projection().segments(),
-                    latest.processedSeq(), latest.steps(), pending.steps());
-            if (pending.steps().isEmpty()) {
-                log.info("约束已由并发刷新先行写入，本轮采用库中结果: conversationId={}, processedSeq={}",
-                        conversationId, latest.processedSeq());
-                return true;
-            }
-            current = latest;
+                    current.processedSeq(), current.steps(), extraction.steps());
+            rebuild = false;
         }
-        return false;
+        if (pending.extracted() == 0 && !rebuild) return new ConstraintApply(current, false);
+        List<ConstraintOpMerger.Step> merged = new ArrayList<>(rebuild ? List.of() : current.steps());
+        merged.addAll(pending.steps());
+        int updated = jdbc.update("""
+                update conversation_constraint_state_v2
+                set processed_seq = ?, steps_json = ?, rule_version = ?,
+                    lock_version = lock_version + 1, updated_at = current_timestamp
+                where conversation_id = ? and workspace_id = ?
+                  and lock_version = ? and processed_seq = ? and rule_version = ?
+                """, pending.processedSeq(), writeSteps(merged), constraintProjection.version(),
+                conversationId, workspaceId, current.lockVersion(), current.processedSeq(), current.ruleVersion());
+        if (updated != 1) return new ConstraintApply(current, true);
+        persistConstraints(workspaceId, conversationId, pending);
+        return new ConstraintApply(new ConstraintState(pending.processedSeq(), current.lockVersion() + 1,
+                constraintProjection.version(), List.copyOf(merged)), false);
     }
 
-    /** 冲突后重读库里的最新基线。只读；版本已升级或进度行已被删除时按相应语义归一。 */
+    private boolean sameTopics(String conversationId, List<TopicSegmenterV2.Segment> expected) {
+        List<TopicSegmenterV2.Segment> current = jdbc.query("""
+                select id, topic_id, start_seq, end_seq, decision_status, decision_reason, rule_version
+                from conversation_topic_segment_v2 where conversation_id = ? order by start_seq for update
+                """, (rs, index) -> new TopicSegmenterV2.Segment(rs.getString("id"), rs.getString("topic_id"),
+                rs.getInt("start_seq"), rs.getInt("end_seq"), rs.getString("decision_status"),
+                rs.getString("decision_reason"), rs.getString("rule_version")), conversationId);
+        return current.equals(expected);
+    }
+
+    private static boolean sameSteps(List<ConstraintOpMerger.Step> expected,
+                                     List<ConstraintOpMerger.Step> actual) {
+        if (expected.size() != actual.size()) return false;
+        for (int index = 0; index < expected.size(); index++) {
+            var left = expected.get(index);
+            var right = actual.get(index);
+            // 话题身份已在同一事务按当前切分验证；历史步骤在折叠时按此切分重新定位。
+            if (left.seq() != right.seq() || !left.messageId().equals(right.messageId())
+                    || !left.ops().equals(right.ops())) return false;
+        }
+        return true;
+    }
+
+    private record ConstraintApply(ConstraintState state, boolean retry) {}
+
+    /** 重读真实已提交基线；不把跨版本状态伪装成水位零。 */
     private ConstraintState latestState(String workspaceId, String conversationId) {
         List<ConstraintState> rows = jdbc.query("""
                 select processed_seq, steps_json, rule_version, lock_version
@@ -313,12 +388,7 @@ public class ConversationTopicProjectionV2Service {
         if (rows.isEmpty()) {
             return null;
         }
-        ConstraintState latest = rows.get(0);
-        if (!constraintProjection.version().equals(latest.ruleVersion())) {
-            // 规则版本已升级：旧基线不能按新规则继续折叠，等价于 readConstraintState 的归零重抽。
-            return new ConstraintState(0, latest.lockVersion(), constraintProjection.version(), List.of());
-        }
-        return latest;
+        return rows.get(0);
     }
 
     /** 约束行落库与对账：只处理本轮已处理的区间，快照里没有的旧行删除。 */
@@ -387,25 +457,19 @@ public class ConversationTopicProjectionV2Service {
                 rs.getString("rule_version"), readSteps(rs.getString("steps_json"))),
                 conversationId, workspaceId);
         if (rows.isEmpty()) {
+            Integer existing = jdbc.queryForObject("""
+                    select count(*) from conversation_constraint_v2 where workspace_id = ? and conversation_id = ?
+                    """, Integer.class, workspaceId, conversationId);
+            String initialVersion = existing != null && existing > 0 ? "UNBUILT" : constraintProjection.version();
             jdbc.update("""
                     insert into conversation_constraint_state_v2(conversation_id, workspace_id,
                         processed_seq, steps_json, rule_version, lock_version)
                     values (?, ?, 0, null, ?, 0)
-                    """, conversationId, workspaceId, constraintProjection.version());
-            return ConstraintState.empty(constraintProjection.version());
+                    """, conversationId, workspaceId, initialVersion);
+            return ConstraintState.empty(initialVersion);
         }
-        ConstraintState state = rows.get(0);
-        boolean currentVersion = constraintProjection.version().equals(state.ruleVersion());
-        if (!currentVersion || (state.processedSeq() > 0 && state.steps().isEmpty())) {
-            jdbc.update("""
-                    update conversation_constraint_state_v2
-                    set processed_seq = 0, steps_json = null, rule_version = ?,
-                        lock_version = lock_version + 1, updated_at = current_timestamp
-                    where conversation_id = ? and workspace_id = ?
-                    """, constraintProjection.version(), conversationId, workspaceId);
-            return new ConstraintState(0, state.lockVersion() + 1, constraintProjection.version(), List.of());
-        }
-        return state;
+        // 只读已提交状态。过期或损坏基线在事务外重建，成功后与约束行一次提交。
+        return rows.get(0);
     }
 
     private static List<ConstraintOpMerger.Step> readSteps(String json) {
@@ -415,7 +479,7 @@ public class ConversationTopicProjectionV2Service {
         try {
             return STATE_MAPPER.readValue(json, STEP_LIST);
         } catch (JsonProcessingException ex) {
-            // 基线读不回来就当作没有：readConstraintState 会把 watermark 一并归零重抽。
+            // 保留已提交的版本与水位；调用方在事务外从零重建，完整成功后才替换。
             log.warn("约束抽取基线无法读取，改为从 0 重抽: {}", ex.getClass().getSimpleName());
             return List.of();
         }

@@ -64,7 +64,7 @@ public class ContextV2ShadowSnapshotService {
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose) {
-        if (!rollout.shadowEnabled(workspaceId) || exists(answerRunId)) return;
+        if (!rollout.shadowEnabled(workspaceId) || settled(answerRunId)) return;
         Integer cutoff = jdbc.queryForObject("""
                 select m.message_seq from answer_run r
                 join conversation_message m on m.id = r.query_message_id
@@ -73,9 +73,9 @@ public class ContextV2ShadowSnapshotService {
                 """, Integer.class, answerRunId, workspaceId, conversationId,
                 queryMessageId, workspaceId, conversationId);
         if (cutoff == null) throw new IllegalArgumentException("Answer Run query identity is invalid");
-        topics.refreshForInputCutoff(workspaceId, conversationId, cutoff);
+        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff);
         independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
-                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose));
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
     }
 
     /**
@@ -95,8 +95,8 @@ public class ContextV2ShadowSnapshotService {
 
     private void persistSnapshot(String workspaceId, String actorId, String conversationId,
                                  String queryMessageId, String answerRunId, int cutoff,
-                                 String currentInput, String taskPurpose) {
-        if (exists(answerRunId)) return;
+                                 String currentInput, String taskPurpose,
+                                 ConversationTopicProjectionV2Service.ConstraintRefresh refreshed) {
         // 与消息删除同一把锁：删除的 redaction 扫描必须能看到这份快照，插入也不能落在删除之后。
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
@@ -105,11 +105,16 @@ public class ContextV2ShadowSnapshotService {
             throw new BusinessException("CONVERSATION_NOT_FOUND", "Conversation does not belong to Workspace",
                     HttpStatus.NOT_FOUND);
         }
+        if (settled(answerRunId)) return;
+        topics.requireAnswerConstraints(workspaceId, conversationId, refreshed);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
                 cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
         requireCurrentMemories(workspaceId, projection);
         String snapshotId = Ids.newId();
         String json = write(projection);
+        // FAILED 没有冻结正文或引用，可在成功重试的同一事务内替换；READY/REDACTED 永不重写。
+        jdbc.update("delete from context_v2_shadow_snapshot where answer_run_id = ? and status = 'FAILED'",
+                answerRunId);
         jdbc.update("""
                 insert into context_v2_shadow_snapshot(id, workspace_id, answer_run_id,
                     conversation_id, query_message_id, cutoff_seq, status,
@@ -254,6 +259,14 @@ public class ContextV2ShadowSnapshotService {
                     """, json, sha256(json), snapshot.id());
         }
         return redacted;
+    }
+
+    private boolean settled(String answerRunId) {
+        Integer count = jdbc.queryForObject("""
+                select count(*) from context_v2_shadow_snapshot
+                where answer_run_id = ? and status <> 'FAILED'
+                """, Integer.class, answerRunId);
+        return count != null && count > 0;
     }
 
     private boolean exists(String answerRunId) {

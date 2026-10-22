@@ -223,6 +223,77 @@ class ConversationTopicProjectionV2ConstraintIncrementalTest {
     }
 
     @Test
+    void failedVersionRebuildDoesNotPublishNewVersionOrPartialRows() {
+        userMessage("m1", 1, "以后用表格。");
+        userMessage("m3", 3, "以后用中文。");
+        topics.refresh(WORKSPACE, CONVERSATION);
+        String before = stepsJson();
+        int version = lockVersion();
+        jdbc.update("update conversation_constraint_state_v2 set rule_version = 'old' where conversation_id = ?",
+                CONVERSATION);
+        extractor.responder = request -> "m1".equals(request.messageId())
+                ? languageConstraint("英文") : new ConstraintOpsExtractor.Result.Unusable("TIMEOUT");
+        topics.refresh(WORKSPACE, CONVERSATION);
+        assertThat(processedSeq()).isEqualTo(3);
+        assertThat(lockVersion()).isEqualTo(version);
+        assertThat(stepsJson()).isEqualTo(before);
+        assertThat(jdbc.queryForObject("select rule_version from conversation_constraint_state_v2", String.class))
+                .isEqualTo("old");
+        assertThat(constraintText(ConstraintIds.of("m1", "table", 0))).isEqualTo("format.table");
+    }
+
+    @Test
+    void concurrentDifferentPrefixRepreparesDependentNoopOutsideTheTransaction() throws Exception {
+        userMessage("m1", 1, "以后用英文。");
+        userMessage("m3", 3, "继续用中文。");
+        var entered = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
+        extractor.onCall = request -> {
+            if (calls.getAndIncrement() == 0) {
+                entered.countDown();
+                await(release);
+            }
+        };
+        extractor.responder = request -> {
+            if ("m1".equals(request.messageId())) return languageConstraint("中文");
+            boolean chinese = request.active().stream().anyMatch(active -> "中文".equals(active.value()));
+            return chinese ? new ConstraintOpsExtractor.Result.Ok(List.of(new ConstraintOp(
+                    ConstraintOp.Op.NOOP, null, null, null, null, 0.9)), ConstraintOpsPrompt.PROMPT_VERSION)
+                    : languageConstraint("中文");
+        };
+        var pool = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            var running = pool.submit(() -> topics.refresh(WORKSPACE, CONVERSATION));
+            assertThat(entered.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            // 第二连接取得同一会话锁，证明等待模型的线程没有持有该锁。
+            new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())).executeWithoutResult(status -> {
+                jdbc.queryForObject("select id from conversation where id = ? for update", String.class, CONVERSATION);
+                winnerApplied(1, new ConstraintOpMerger.Step("m1", 1, "", List.of(new ConstraintOp(
+                        ConstraintOp.Op.ADD, ConstraintSlot.LANGUAGE, "英文", ConstraintScope.CONVERSATION, null, 0.9))));
+            });
+            release.countDown();
+            running.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(extractor.messageIds).containsExactly("m1", "m3", "m3");
+            assertThat(extractor.transactionActive).containsOnly(false);
+            assertThat(constraintText(ConstraintIds.of("m3", "language", 0))).isEqualTo("中文");
+            assertThat(constraintStatus(ConstraintIds.of("m1", "language", 0))).isEqualTo("REVOKED");
+        } finally {
+            release.countDown();
+            pool.shutdownNow();
+        }
+    }
+
+    private static void await(java.util.concurrent.CountDownLatch latch) {
+        try {
+            if (!latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) throw new AssertionError("等待并发测试超时");
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(ex);
+        }
+    }
+
+    @Test
     void forbiddenPolaritySurvivesTheStepsJsonBaselineAcrossRefreshes() {
         userMessage("m1", 1, "不要表格。");
         extractor.responder = request -> forbiddenTableConstraint();
