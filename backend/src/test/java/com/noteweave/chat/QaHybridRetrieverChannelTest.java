@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -94,6 +95,49 @@ class QaHybridRetrieverChannelTest {
         });
         assertThat(keywords.getAllValues()).extracting(QaKeywordQuery::query)
                 .doesNotContain("ignored alternative");
+    }
+
+    @Test
+    void vectorFailureKeepsKeywordScoresAndNeverRequiresLocalFallback() {
+        Harness harness = harness();
+        when(harness.search().vectorRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+        when(harness.search().keywordRetrieve(any())).thenReturn(List.of(hit("only")));
+        var result = harness.retriever().retrieve("workspace", "query", Set.of());
+        assertThat(result.chunks()).extracting(QaPassageRetriever.RetrievedChunk::chunkId).containsExactly("only");
+        assertThat(result.degradationReasons()).containsExactly("QA_VECTOR_RECALL_UNAVAILABLE");
+        assertThat(result.measurements()).containsEntry("vector_candidate_count", 0L)
+                .containsEntry("keyword_candidate_count", 1L).containsEntry("mysql_fallback_used", 0L);
+    }
+
+    @Test
+    void keywordFailureKeepsVectorResults() {
+        Harness harness = harness();
+        when(harness.search().keywordRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+        var result = harness.retriever().retrieve("workspace", "query", Set.of());
+        assertThat(result.chunks()).hasSize(1);
+        assertThat(result.degradationReasons()).containsExactly("QA_KEYWORD_RECALL_UNAVAILABLE");
+    }
+
+    @Test
+    void bothFailuresFailButSuccessfulEmptyChannelDoesNot() {
+        Harness harness = harness();
+        when(harness.search().vectorRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+        var empty = harness.retriever().retrieve("workspace", "query", Set.of());
+        assertThat(empty.chunks()).isEmpty();
+        when(harness.search().keywordRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+        assertThatThrownBy(() -> harness.retriever().retrieve("workspace", "query", Set.of()))
+                .isInstanceOf(com.noteweave.retrieval.provider.RetrievalProviderException.class)
+                .hasMessage("QA recall channels are unavailable");
+    }
+
+    @Test
+    void businessFailureIsNeverConvertedToProviderDegradation() {
+        Harness harness = harness();
+        var failure = new com.noteweave.common.BusinessException("ORIGIN_INVALID", "denied",
+                org.springframework.http.HttpStatus.FORBIDDEN);
+        when(harness.search().vectorRetrieve(any())).thenThrow(failure);
+        assertThatThrownBy(() -> harness.retriever().retrieve("workspace", "query", Set.of()))
+                .isSameAs(failure);
     }
 
     private Harness harness() {

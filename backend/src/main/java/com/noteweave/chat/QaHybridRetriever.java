@@ -4,6 +4,7 @@ import com.noteweave.answer.strategy.RetrievalExecutionTrace.RankedCandidateTrac
 import com.noteweave.chat.QaPassageRetriever.RetrievedChunk;
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
 import com.noteweave.conversation.ContextTokenEstimator;
+import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaEvidenceSelectionPolicy;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
 import com.noteweave.retrieval.RetrievalChannels;
@@ -71,19 +72,39 @@ public class QaHybridRetriever {
     ) {
         QaRetrievalStrategyProfile safeProfile = profile == null ? QaRetrievalStrategyProfile.V2 : profile;
         RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
-        if (!embeddingClient.isEnabled()) {
-            throw new RetrievalProviderException("EMBEDDING_PROVIDER_DISABLED",
-                    "QA hybrid retrieval requires query embedding");
-        }
-        EmbeddingClient.EmbeddingResult embedding = embeddingClient.embedQuery(safeChannels.vectorQuery());
-        List<Float> queryVector = embedding.singleVector();
-        List<QaHybridSearchPort.QaSearchHit> vectorHits = new ArrayList<>(searchPort.vectorRetrieve(
-                new QaVectorQuery(workspaceId, safeChannels.vectorQuery(), queryVector, sourceScope,
-                        QaRetrievalStrategyProfile.RECALL_LIMIT,
-                        QaRetrievalStrategyProfile.VECTOR_THRESHOLD)));
-        List<QaHybridSearchPort.QaSearchHit> keywordHits = new ArrayList<>(searchPort.keywordRetrieve(
-                keywordQuery(workspaceId, safeChannels.lexicalQuery(), sourceScope, safeChannels)));
         List<String> pipelineDegradations = new ArrayList<>();
+        List<QaHybridSearchPort.QaSearchHit> vectorHits = new ArrayList<>();
+        List<QaHybridSearchPort.QaSearchHit> keywordHits = new ArrayList<>();
+        String embeddingModel = "";
+        boolean vectorAvailable = false;
+        boolean keywordAvailable = false;
+        try {
+            if (!embeddingClient.isEnabled()) {
+                throw new RetrievalProviderException("EMBEDDING_PROVIDER_DISABLED", "Query embedding is disabled");
+            }
+            var embedding = embeddingClient.embedQuery(safeChannels.vectorQuery());
+            embeddingModel = embedding.model();
+            vectorHits.addAll(searchPort.vectorRetrieve(new QaVectorQuery(
+                    workspaceId, safeChannels.vectorQuery(), embedding.singleVector(), sourceScope,
+                    QaRetrievalStrategyProfile.RECALL_LIMIT, QaRetrievalStrategyProfile.VECTOR_THRESHOLD)));
+            vectorAvailable = true;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            pipelineDegradations.add("QA_VECTOR_RECALL_UNAVAILABLE");
+        }
+        try {
+            keywordHits.addAll(searchPort.keywordRetrieve(
+                    keywordQuery(workspaceId, safeChannels.lexicalQuery(), sourceScope, safeChannels)));
+            keywordAvailable = true;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            pipelineDegradations.add("QA_KEYWORD_RECALL_UNAVAILABLE");
+        }
+        if (!vectorAvailable && !keywordAvailable) {
+            throw new RetrievalProviderException("QA_RECALL_CHANNELS_UNAVAILABLE", "QA recall channels are unavailable");
+        }
         List<QaRrfFusionService.FusedHit> primaryFused = fusionService.fuse(
                 vectorHits, keywordHits,
                 QaRetrievalStrategyProfile.RRF_K,
@@ -93,16 +114,24 @@ public class QaHybridRetriever {
         List<String> expansions = primaryFused.size() < LOW_RECALL_EXPANSION_THRESHOLD
                 ? extraQueries(safeChannels) : List.of();
         for (String expansion : expansions) {
-            try {
+            if (vectorAvailable) try {
                 List<Float> expansionVector = embeddingClient.embedQuery(expansion).singleVector();
                 mergeDistinct(vectorHits, searchPort.vectorRetrieve(new QaVectorQuery(
                         workspaceId, expansion, expansionVector, sourceScope,
                         QaRetrievalStrategyProfile.RECALL_LIMIT,
                         QaRetrievalStrategyProfile.VECTOR_THRESHOLD)));
+            } catch (BusinessException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                pipelineDegradations.add("QA_QUERY_EXPANSION_UNAVAILABLE");
+            }
+            if (keywordAvailable) try {
                 mergeDistinct(keywordHits, searchPort.keywordRetrieve(new QaKeywordQuery(
                         workspaceId, expansion, sourceScope,
                         QaRetrievalStrategyProfile.RECALL_LIMIT,
                         QaRetrievalStrategyProfile.KEYWORD_THRESHOLD)));
+            } catch (BusinessException ex) {
+                throw ex;
             } catch (RuntimeException ex) {
                 pipelineDegradations.add("QA_QUERY_EXPANSION_UNAVAILABLE");
             }
@@ -159,7 +188,7 @@ public class QaHybridRetriever {
         pipelineDegradations.addAll(reranked.degradationReasons());
         return new HybridResult(selected, !pipelineDegradations.isEmpty(),
                 List.copyOf(new java.util.LinkedHashSet<>(pipelineDegradations)), measurements,
-                embedding.model(), reranked.model(), rankedTrace(owned, selected));
+                embeddingModel, reranked.model(), rankedTrace(owned, selected));
     }
 
     /** V2：先按资料多样性取 6 条，再按字符预算截断；相邻段落整段拼入。只用于历史计划。 */

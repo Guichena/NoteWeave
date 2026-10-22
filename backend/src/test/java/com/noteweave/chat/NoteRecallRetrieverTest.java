@@ -229,6 +229,53 @@ class NoteRecallRetrieverTest {
         assertThat(terms.getValue()).contains("学习机").doesNotContain("学习");
     }
 
+    @Test
+    void independentChannelFailuresKeepSuccessfulRecallAndEmptySuccessDoesNotFallback() {
+        for (boolean semanticFails : List.of(true, false)) {
+            NoteRecallRepository repository = mock(NoteRecallRepository.class);
+            NoteJournalRetriever journal = mock(NoteJournalRetriever.class);
+            when(repository.findCurrentSourcesByIds(eq("workspace"), anyCollection())).thenAnswer(invocation -> {
+                Collection<?> ids = invocation.getArgument(1);
+                return ids.contains("source") ? List.of(source("source", "Spring", "[]")) : List.of();
+            });
+            when(journal.sourceSignals(eq("workspace"), anySet())).thenReturn(Map.of());
+            EmbeddingClient embedding = mock(EmbeddingClient.class);
+            when(embedding.isEnabled()).thenReturn(true);
+            when(embedding.embedQuery(any())).thenReturn(
+                    new EmbeddingClient.EmbeddingResult(List.of(List.of(1f)), "stub", 1, 1));
+            NoteSourceSearchPort search = mock(NoteSourceSearchPort.class);
+            var hit = new NoteSourceHit("source", "snapshot", "Spring", "PDF", "", List.of(), "", 0.9);
+            if (semanticFails) {
+                when(search.semanticRetrieve(any(), any(), anyInt())).thenThrow(new IllegalStateException());
+                when(search.metadataRetrieve("workspace", "spring", 80)).thenReturn(List.of(hit));
+            } else {
+                when(search.semanticRetrieve(any(), any(), anyInt())).thenReturn(List.of(hit));
+                when(search.metadataRetrieve("workspace", "spring", 80)).thenThrow(new IllegalStateException());
+            }
+            var retriever = new NoteRecallRetriever(repository, journal, new NoteRelationGraph(),
+                    new NoteRecallRanker(), embedding, search, null, null, true);
+            var plan = retriever.retrieve("workspace", "spring");
+            assertThat(plan.candidateSources()).extracting(CandidateSource::sourceId).containsExactly("source");
+            assertThat(plan.degradationReasons()).contains(semanticFails
+                    ? "NOTE_SEMANTIC_RECALL_UNAVAILABLE" : "NOTE_METADATA_RECALL_UNAVAILABLE");
+            assertThat(plan.measurements()).containsEntry("note_local_fallback_used", 0L);
+            verify(repository, never()).findLexicalSourceIds(any(), anyCollection(), anyInt());
+        }
+    }
+
+    @Test
+    void businessFailureMustNotBecomeLocalFallback() {
+        var repository = mock(NoteRecallRepository.class);
+        var search = mock(NoteSourceSearchPort.class);
+        var failure = new com.noteweave.common.BusinessException("ORIGIN_INVALID", "denied",
+                org.springframework.http.HttpStatus.FORBIDDEN);
+        when(search.metadataRetrieve("workspace", "spring", 80)).thenThrow(failure);
+        var retriever = new NoteRecallRetriever(repository, mock(NoteJournalRetriever.class),
+                new NoteRelationGraph(), new NoteRecallRanker(), null, search, null, null, true);
+        assertThatThrownBy(() -> retriever.retrieve("workspace", "spring")).isSameAs(failure);
+        verify(repository, never()).findLexicalSourceIds(any(), anyCollection(), anyInt());
+    }
+
     private CandidateSource source(String id, String title, String tagsJson) {
         return new CandidateSource(
                 id, title, "PDF", 1, 1, "", "", "", tagsJson, "{}", "",

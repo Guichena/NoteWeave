@@ -6,6 +6,7 @@ import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallTrace;
 import com.noteweave.chat.NoteRetrievalService.NoteRelationSignal;
 import com.noteweave.common.text.LexicalTerms;
+import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.NoteRetrievalStrategyProfile;
 import com.noteweave.retrieval.RetrievalChannels;
 import com.noteweave.retrieval.note.NoteSourceRerankService;
@@ -81,12 +82,11 @@ public class NoteRecallRetriever {
         Set<String> terms = LexicalTerms.queryTerms(lexicalQuery);
         Map<String, Integer> noteSignals = journalRetriever.sourceSignals(workspaceId, terms);
         List<NoteJournalHit> journalHits = journalRetriever.retrieve(workspaceId, lexicalQuery);
-        boolean sourceRecallUnavailable = embeddingClient == null
-                || sourceSearchPort == null
-                || !embeddingClient.isEnabled();
         List<String> semanticOrder = new ArrayList<>();
         List<String> metadataOrder = new ArrayList<>();
-        if (!sourceRecallUnavailable) {
+        boolean semanticAvailable = false;
+        boolean metadataAvailable = false;
+        if (embeddingClient != null && sourceSearchPort != null && embeddingClient.isEnabled()) {
             try {
                 var vector = embeddingClient.embedQuery(safeChannels.vectorQuery()).singleVector();
                 for (var hit : sourceSearchPort.semanticRetrieve(
@@ -95,17 +95,32 @@ public class NoteRecallRetriever {
                         semanticOrder.add(hit.sourceId());
                     }
                 }
+                semanticAvailable = true;
+            } catch (BusinessException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                degradationReasons.add("NOTE_SEMANTIC_RECALL_UNAVAILABLE");
+            }
+        }
+        if (sourceSearchPort != null) {
+            try {
                 for (var hit : metadataHits(workspaceId, safeChannels)) {
                     if (hit != null && hit.sourceId() != null && !hit.sourceId().isBlank()) {
                         metadataOrder.add(hit.sourceId());
                     }
                 }
+                metadataAvailable = true;
+            } catch (BusinessException ex) {
+                throw ex;
             } catch (RuntimeException ex) {
-                sourceRecallUnavailable = true;
-                semanticOrder.clear();
-                metadataOrder.clear();
+                degradationReasons.add("NOTE_METADATA_RECALL_UNAVAILABLE");
             }
         }
+        if (!semanticAvailable && metadataAvailable
+                && !degradationReasons.contains("NOTE_SEMANTIC_RECALL_UNAVAILABLE")) {
+            degradationReasons.add("NOTE_SEMANTIC_RECALL_UNAVAILABLE");
+        }
+        boolean sourceRecallUnavailable = !semanticAvailable && !metadataAvailable;
         if (sourceRecallUnavailable) {
             degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
             if (!localMetadataFallbackEnabled) {
