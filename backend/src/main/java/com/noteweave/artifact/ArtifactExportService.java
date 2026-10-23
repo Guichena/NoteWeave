@@ -70,6 +70,8 @@ public class ArtifactExportService {
     @Transactional
     public List<ArtifactFileMetadataResponse> materializeExports(String artifactVersionId) {
         ExportRow row = loadVersionById(artifactVersionId);
+        // 归档导出同样要过来源校验，避免绕过下载接口直接写出引用已删除来源的文件
+        requireVersionSourcesVisible(row);
         persistFile(
                 row,
                 MARKDOWN,

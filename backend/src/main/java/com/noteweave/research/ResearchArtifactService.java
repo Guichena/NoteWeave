@@ -33,6 +33,7 @@ public class ResearchArtifactService {
     private final WikiIngestService wikiIngestService;
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ResearchContextV2Gate contextGate;
+    private final ResearchGeneratedSourceReadGate reportDependencyGate;
 
     public ResearchArtifactService(
             JdbcTemplate jdbcTemplate,
@@ -44,7 +45,21 @@ public class ResearchArtifactService {
             SourceCatalogVersionService sourceCatalogVersionService
     ) {
         this(jdbcTemplate, objectMapper, workspaceService, storage, sourceParseService,
-                wikiIngestService, sourceCatalogVersionService, null);
+                wikiIngestService, sourceCatalogVersionService, null, null);
+    }
+
+    public ResearchArtifactService(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            WorkspaceService workspaceService,
+            ObjectStorage storage,
+            SourceParseService sourceParseService,
+            WikiIngestService wikiIngestService,
+            SourceCatalogVersionService sourceCatalogVersionService,
+            ResearchContextV2Gate contextGate
+    ) {
+        this(jdbcTemplate, objectMapper, workspaceService, storage, sourceParseService,
+                wikiIngestService, sourceCatalogVersionService, contextGate, null);
     }
 
     @Autowired
@@ -56,7 +71,8 @@ public class ResearchArtifactService {
             SourceParseService sourceParseService,
             WikiIngestService wikiIngestService,
             SourceCatalogVersionService sourceCatalogVersionService,
-            ResearchContextV2Gate contextGate
+            ResearchContextV2Gate contextGate,
+            ResearchGeneratedSourceReadGate reportDependencyGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -66,6 +82,7 @@ public class ResearchArtifactService {
         this.wikiIngestService = wikiIngestService;
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.contextGate = contextGate;
+        this.reportDependencyGate = reportDependencyGate;
     }
 
     @Transactional
@@ -74,6 +91,7 @@ public class ResearchArtifactService {
         requireFrozenContext(researchRunId);
         SaveReportRow row = loadSaveReportRow(workspaceId, researchRunId);
         if (row.reportSourceId() != null && !row.reportSourceId().isBlank()) {
+            // 已经发布过的报告直接返回原来源，不因后来删除依赖而改变幂等结果
             return loadSavedReportSource(workspaceId, row.reportSourceId());
         }
         if (!"COMPLETED".equals(row.status())
@@ -84,6 +102,7 @@ public class ResearchArtifactService {
                     "Research report is not complete and cannot be saved as a source"
             );
         }
+        requireReportDependenciesReadable(workspaceId, researchRunId);
 
         byte[] reportBytes = row.finalReportMarkdown().getBytes(StandardCharsets.UTF_8);
         String contentHash = sha256(reportBytes);
@@ -218,6 +237,13 @@ public class ResearchArtifactService {
 
     private void requireFrozenContext(String researchRunId) {
         if (contextGate != null) contextGate.requireReadable(researchRunId);
+    }
+
+    /** 把报告保存为来源或导出产物前，确认依赖的来源仍然可读；普通读取保留脱敏后的历史视图。 */
+    public void requireReportDependenciesReadable(String workspaceId, String researchRunId) {
+        if (reportDependencyGate != null) {
+            reportDependencyGate.requireReportDependenciesReadable(workspaceId, researchRunId);
+        }
     }
 
     public ResearchReportFileResponse buildReportFileResponse(
