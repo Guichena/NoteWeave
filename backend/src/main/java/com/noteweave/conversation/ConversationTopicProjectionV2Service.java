@@ -20,6 +20,8 @@ import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
@@ -41,20 +43,35 @@ public class ConversationTopicProjectionV2Service {
     private final JdbcTemplate jdbc;
     private final ConversationTopicSummaryV2Service summaries;
     private final EmbeddingClient embeddings;
+    private final boolean semanticSegmentationEnabled;
     private final TopicBoundaryReviewService reviews;
     private final TopicSegmenterV2 segmenter = new TopicSegmenterV2();
     private final ConversationConstraintProjectionV2Service constraintProjection;
     private final TransactionTemplate transactionTemplate;
 
+    /** 供手工装配的测试使用，语义切分保持默认开启。 */
     public ConversationTopicProjectionV2Service(JdbcTemplate jdbc,
                                                  ConversationTopicSummaryV2Service summaries,
                                                  EmbeddingClient embeddings,
                                                  TopicBoundaryReviewService reviews,
                                                  ConversationConstraintProjectionV2Service constraintProjection,
                                                  PlatformTransactionManager transactionManager) {
+        this(jdbc, summaries, embeddings, reviews, constraintProjection, transactionManager, true);
+    }
+
+    @Autowired
+    public ConversationTopicProjectionV2Service(JdbcTemplate jdbc,
+                                                 ConversationTopicSummaryV2Service summaries,
+                                                 EmbeddingClient embeddings,
+                                                 TopicBoundaryReviewService reviews,
+                                                 ConversationConstraintProjectionV2Service constraintProjection,
+                                                 PlatformTransactionManager transactionManager,
+                                                 @Value("${noteweave.conversation.semantic-segmentation-enabled:true}")
+                                                 boolean semanticSegmentationEnabled) {
         this.jdbc = jdbc;
         this.summaries = summaries;
         this.embeddings = embeddings;
+        this.semanticSegmentationEnabled = semanticSegmentationEnabled;
         this.reviews = reviews;
         this.constraintProjection = constraintProjection;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -206,7 +223,7 @@ public class ConversationTopicProjectionV2Service {
         List<TopicSegmenterV2.Message> messages = rows.stream()
                 .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(), row.text()))
                 .toList();
-        boolean embed = embeddings != null && embeddings.isEnabled();
+        boolean embed = semanticSegmentationEnabled && embeddings != null && embeddings.isEnabled();
         if (embed) {
             // 切分向量始终取用户原话，检索改写的 standalone query 不参与（M5-M08）
             messages = TopicSegmentationVectors.attach(messages, embeddings);
