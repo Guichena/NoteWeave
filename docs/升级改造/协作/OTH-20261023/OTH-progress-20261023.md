@@ -54,7 +54,7 @@
 
 ## 明确未完成
 
-1. OTH-11 投递耗尽收尾的资格判断：`RetrievalProjectionDeadLetterFinalizer.finalizeFailure` 返回布尔，`TaskOutboxDispatcherService.finalizeDeliveryExhausted` 在返回 false 时仍无条件 `failTask`，可能把已被新批次接管的任务打失败。最小修法是引入 FINALIZED/IGNORED/FAILED 三态并让真失败抛出回滚，保持死信与业务收尾同事务。未新增迁移。
+1. OTH-11 投递耗尽收尾的资格判断：`RetrievalProjectionDeadLetterFinalizer.finalizeFailure` 返回布尔，`TaskOutboxDispatcherService.finalizeDeliveryExhausted` 在返回 false 时仍无条件 `failTask`，可能把已被新批次接管的任务打失败。修法是引入 FINALIZED/IGNORED/FAILED 三态：IGNORED 直接返回，FAILED 由调用方在同一事务内按原逻辑 `failTask`。不要改成抛出，抛出会连死信状态一起回滚。未新增迁移。
 2. OTH-12 本地读取闭环：需要服务端读取策略、最终证据资格适配、Note 同快照身份、前端 `qaLocalAvailable`。原四类文件范围不足。
 3. OTH-15 端到端验收。
 
