@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatLlmClient;
@@ -27,16 +28,21 @@ import com.noteweave.research.ResearchAgentIncrementalFinalizationService;
 import com.noteweave.research.ResearchAgentTaskCoordinatorService;
 import com.noteweave.research.ResearchAgentTaskService;
 import com.noteweave.security.CurrentUserProvider;
+import com.noteweave.support.DeterministicEmbeddingTestConfiguration;
+import com.noteweave.support.RetrievalIndexCleanup;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -48,15 +54,26 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest(properties = {
         "noteweave.context.v2.shadow-enabled=false",
         "noteweave.context.v2.active-enabled=false",
-        "noteweave.context.v2.default-mode=OFF"
+        "noteweave.context.v2.default-mode=OFF",
+        "noteweave.conversation.semantic-segmentation-enabled=false"
 })
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
+@Import(DeterministicEmbeddingTestConfiguration.class)
 class ConversationTurnModuleContractTest {
 
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
+    @Autowired ElasticsearchClient elasticsearchClient;
+
+    private final List<String> workspaceIds = new ArrayList<>();
+
+    @AfterEach
+    void deleteWorkspaceIndices() {
+        RetrievalIndexCleanup cleanup = new RetrievalIndexCleanup(elasticsearchClient);
+        workspaceIds.forEach(cleanup::deleteWorkspaceIndices);
+    }
     @Autowired ConversationTopicProjectionV2Service topicProjectionV2Service;
     @Autowired ConversationTopicSummaryV2Service topicSummaryV2Service;
     @Autowired ConversationContextCompilerV2Service contextCompilerV2Service;
@@ -1924,8 +1941,10 @@ class ConversationTurnModuleContractTest {
                         ))))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString())
+        String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("workspace_id").asText();
+        workspaceIds.add(workspaceId);
+        return workspaceId;
     }
 
     private String createConversation(String workspaceId) throws Exception {
@@ -1963,25 +1982,41 @@ class ConversationTurnModuleContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parse_status", org.hamcrest.Matchers.anyOf(
                         org.hamcrest.Matchers.equalTo("PARSED"),
-                        org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))))
-                .andExpect(jsonPath("$.data.index_status", org.hamcrest.Matchers.anyOf(
-                        org.hamcrest.Matchers.equalTo("INDEXED"),
-                        org.hamcrest.Matchers.equalTo("INDEX_QUEUED"),
-                        org.hamcrest.Matchers.equalTo("DISABLED"))));
+                        org.hamcrest.Matchers.equalTo("PARSING_QUEUED"))));
         MvcResult sources = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId))
                 .andExpect(status().isOk())
                 .andReturn();
         for (JsonNode source : objectMapper.readTree(sources.getResponse().getContentAsString()).path("data")) {
             if (fileName.equals(source.path("title").asText())) {
                 String sourceId = source.path("source_id").asText();
-                // These evidence contracts exercise the explicit MySQL fallback with a ready projection fixture.
-                jdbcTemplate.update("update source set index_status = 'INDEXED' where id = ?", sourceId);
-                jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
-                jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED' where source_id = ?", sourceId);
+                awaitSourceIndexed(sourceId);
                 return sourceId;
             }
         }
         throw new AssertionError("Uploaded source was not listed: " + fileName);
+    }
+
+    private void awaitSourceIndexed(String sourceId) {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            String indexStatus = jdbcTemplate.queryForObject(
+                    "select index_status from source where id = ?", String.class, sourceId);
+            if ("INDEXED".equals(indexStatus)) {
+                return;
+            }
+            if ("FAILED".equals(indexStatus)) {
+                throw new AssertionError("资料检索投影失败: sourceId=" + sourceId);
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待资料检索投影时被中断: sourceId=" + sourceId, ex);
+            }
+        }
+        String indexStatus = jdbcTemplate.queryForObject(
+                "select index_status from source where id = ?", String.class, sourceId);
+        throw new AssertionError("等待资料检索投影超时: sourceId=" + sourceId + ", index_status=" + indexStatus);
     }
 
     private String insertTurnMessage(String workspaceId, String conversationId, int seq,

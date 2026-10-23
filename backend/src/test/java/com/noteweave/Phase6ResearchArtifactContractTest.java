@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.artifact.ArtifactJobService;
@@ -29,6 +30,8 @@ import com.noteweave.research.ResearchAgentCoordinatorRunScanner;
 import com.noteweave.research.ResearchRunDetailResponse;
 import com.noteweave.research.ResearchRunService;
 import com.noteweave.task.TaskService;
+import com.noteweave.support.DeterministicEmbeddingTestConfiguration;
+import com.noteweave.support.RetrievalIndexCleanup;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -37,6 +40,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Disabled;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,8 +55,8 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
-@Import(TestResearchOutboxPublisherConfig.class)
+@ActiveProfiles({"test", "test-es"})
+@Import({DeterministicEmbeddingTestConfiguration.class, TestResearchOutboxPublisherConfig.class})
 class Phase6ResearchArtifactContractTest {
 
     @Autowired
@@ -63,6 +67,17 @@ class Phase6ResearchArtifactContractTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private ElasticsearchClient elasticsearchClient;
+
+    private final List<String> workspaceIds = new ArrayList<>();
+
+    @AfterEach
+    void deleteWorkspaceIndices() {
+        RetrievalIndexCleanup cleanup = new RetrievalIndexCleanup(elasticsearchClient);
+        workspaceIds.forEach(cleanup::deleteWorkspaceIndices);
+    }
 
     @Autowired
     private ArtifactJobService artifactJobService;
@@ -1128,7 +1143,7 @@ void artifactJobShouldCreateTaskExposeWorkerInputAndPersistVersion() throws Exce
                 .andReturn();
         String reportSourceId = objectMapper.readTree(saved.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
-        markSourceProjected(reportSourceId);
+        awaitSourceIndexed(reportSourceId);
         String reportSnapshotId = jdbcTemplate.queryForObject(
                 "select id from source_snapshot where source_id = ? order by version_no desc limit 1",
                 String.class, reportSourceId);
@@ -1573,14 +1588,15 @@ void completedArtifactVersionShouldBeSavedAsWorkspaceSourceIdempotently() throws
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.artifact_job_id").value(artifactJobId))
                 .andExpect(jsonPath("$.data.artifact_version_id").value(versionId))
-                .andExpect(jsonPath("$.data.status").value("READY"))
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andExpect(jsonPath("$.data.generated_by").value("artifact_agent"))
                 .andExpect(jsonPath("$.data.generated_ref_id").value(versionId))
                 .andReturn();
         String sourceId = objectMapper.readTree(firstSave.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
+        awaitSourceIndexed(sourceId);
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from source where id = ?", String.class, sourceId)).isEqualTo("READY");
 
         mockMvc.perform(post(
                         "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/{versionNo}/save-as-source",
@@ -4989,7 +5005,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
 
         String reportSourceId = objectMapper.readTree(saveReportResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
-        markSourceProjected(reportSourceId);
+        awaitSourceIndexed(reportSourceId);
 
         String conversationId = createConversation(workspaceId);
         JsonNode message = sendMessage(conversationId, "QA", "请总结 ResearchReportCitationToken 的含义");
@@ -6520,6 +6536,7 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
                 set wiki_enabled = false
                 where id = ?
                 """, workspaceId);
+        workspaceIds.add(workspaceId);
         return workspaceId;
     }
 
@@ -6556,18 +6573,34 @@ void artifactJobShouldSupportWaitingProgressAndResumeToCompletion() throws Excep
         MvcResult completeResult = mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andReturn();
         String sourceId = objectMapper.readTree(completeResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
-        markSourceProjected(sourceId);
+        awaitSourceIndexed(sourceId);
         return sourceId;
     }
 
-    private void markSourceProjected(String sourceId) {
-        jdbcTemplate.update("update source set status = 'READY', index_status = 'INDEXED' where id = ?", sourceId);
-        jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
-        jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where source_id = ?", sourceId);
+    private void awaitSourceIndexed(String sourceId) {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            String indexStatus = jdbcTemplate.queryForObject(
+                    "select index_status from source where id = ?", String.class, sourceId);
+            if ("INDEXED".equals(indexStatus)) {
+                return;
+            }
+            if ("FAILED".equals(indexStatus)) {
+                throw new AssertionError("资料检索投影失败: sourceId=" + sourceId);
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待资料检索投影时被中断: sourceId=" + sourceId, ex);
+            }
+        }
+        String indexStatus = jdbcTemplate.queryForObject(
+                "select index_status from source where id = ?", String.class, sourceId);
+        throw new AssertionError("等待资料检索投影超时: sourceId=" + sourceId + ", index_status=" + indexStatus);
     }
 
     private JsonNode sendMessage(String conversationId, String answerMode, String content) throws Exception {

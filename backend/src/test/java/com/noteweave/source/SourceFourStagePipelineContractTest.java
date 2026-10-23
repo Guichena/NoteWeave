@@ -16,6 +16,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
@@ -31,17 +32,21 @@ import com.noteweave.retrieval.provider.RetrievalProviderException;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.storage.ObjectStorage;
+import com.noteweave.support.DeterministicEmbeddingTestConfiguration;
+import com.noteweave.support.RetrievalIndexCleanup;
 import com.noteweave.task.TaskService;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -52,11 +57,12 @@ import org.springframework.transaction.PlatformTransactionManager;
 /**
  * 资料处理四个阶段的契约：每个阶段只在快照处于对应阶段时执行并投递下一阶段，
  * 重复消息不会重复处理；索引阶段复用向量化阶段写入的向量；索引失败后按退避自动重试，也可以手动重新处理。
- * 测试环境没有 Kafka 和 Elasticsearch，这里用异步模式构造各阶段服务并逐个调用，向量服务和索引写入用替身。
+ * 测试环境没有 Kafka，这里用异步模式构造各阶段服务并逐个调用，向量服务和索引写入用替身。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
+@Import(DeterministicEmbeddingTestConfiguration.class)
 class SourceFourStagePipelineContractTest {
 
     @Autowired MockMvc mockMvc;
@@ -77,6 +83,15 @@ class SourceFourStagePipelineContractTest {
     @Autowired WorkspaceAccessGuard accessGuard;
     @Autowired SourceParsePort sourceParsePort;
     @Autowired SourceTranscriptionService transcriptionService;
+    @Autowired ElasticsearchClient elasticsearchClient;
+
+    private final List<String> workspaceIds = new ArrayList<>();
+
+    @AfterEach
+    void deleteWorkspaceIndices() {
+        RetrievalIndexCleanup cleanup = new RetrievalIndexCleanup(elasticsearchClient);
+        workspaceIds.forEach(cleanup::deleteWorkspaceIndices);
+    }
 
     @Test
     void eachStageRunsOnceAndHandsItsResultToTheNextStage() throws Exception {
@@ -217,6 +232,7 @@ class SourceFourStagePipelineContractTest {
     void reprocessEndpointRestartsAFailedParseAndRejectsHealthySources() throws Exception {
         String workspaceId = createWorkspace();
         String sourceId = upload(workspaceId, "broken.md", "# 重新处理\n\n解析失败后重新处理。");
+        awaitSourceIndexed(sourceId);
         mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/sources/{sourceId}/reprocess", workspaceId, sourceId))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("SOURCE_REPROCESS_NOT_NEEDED"));
@@ -224,6 +240,14 @@ class SourceFourStagePipelineContractTest {
         String snapshotId = jdbc.queryForObject("select id from source_snapshot where source_id = ?", String.class, sourceId);
         jdbc.update("""
                 delete from source_window where source_chunk_id in (select id from source_chunk where source_snapshot_id = ?)
+                """, snapshotId);
+        jdbc.update("""
+                delete from knowledge_version_citation where citation_id in (
+                    select id from citation where source_chunk_id in (
+                        select id from source_chunk where source_snapshot_id = ?))
+                """, snapshotId);
+        jdbc.update("""
+                delete from citation where source_chunk_id in (select id from source_chunk where source_snapshot_id = ?)
                 """, snapshotId);
         jdbc.update("delete from source_chunk where source_snapshot_id = ?", snapshotId);
         jdbc.update("update source_snapshot set parse_status = 'FAILED', index_status = 'FAILED' where id = ?", snapshotId);
@@ -368,6 +392,14 @@ class SourceFourStagePipelineContractTest {
         jdbc.update("""
                 delete from source_window where source_chunk_id in (select id from source_chunk where source_snapshot_id = ?)
                 """, snapshotId);
+        jdbc.update("""
+                delete from knowledge_version_citation where citation_id in (
+                    select id from citation where source_chunk_id in (
+                        select id from source_chunk where source_snapshot_id = ?))
+                """, snapshotId);
+        jdbc.update("""
+                delete from citation where source_chunk_id in (select id from source_chunk where source_snapshot_id = ?)
+                """, snapshotId);
         jdbc.update("delete from source_chunk where source_snapshot_id = ?", snapshotId);
         jdbc.update("""
                 update source_snapshot set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = null
@@ -444,11 +476,37 @@ class SourceFourStagePipelineContractTest {
         return value == null ? 0 : value;
     }
 
+    private void awaitSourceIndexed(String sourceId) {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            String indexStatus = jdbc.queryForObject(
+                    "select index_status from source where id = ?", String.class, sourceId);
+            if ("INDEXED".equals(indexStatus)) {
+                return;
+            }
+            if ("FAILED".equals(indexStatus)) {
+                throw new AssertionError("资料检索投影失败: sourceId=" + sourceId);
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待资料检索投影时被中断: sourceId=" + sourceId, ex);
+            }
+        }
+        String indexStatus = jdbc.queryForObject(
+                "select index_status from source where id = ?", String.class, sourceId);
+        throw new AssertionError("等待资料检索投影超时: sourceId=" + sourceId + ", index_status=" + indexStatus);
+    }
+
     private String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces").contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("name", "four-stage", "description", "pipeline"))))
                 .andExpect(status().isOk()).andReturn();
-        return mapper.readTree(result.getResponse().getContentAsString()).path("data").path("workspace_id").asText();
+        String workspaceId = mapper.readTree(result.getResponse().getContentAsString())
+                .path("data").path("workspace_id").asText();
+        workspaceIds.add(workspaceId);
+        return workspaceId;
     }
 
     private String upload(String workspaceId, String fileName, String markdown) throws Exception {

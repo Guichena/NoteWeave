@@ -12,9 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.storage.ObjectStorage;
+import com.noteweave.support.DeterministicEmbeddingTestConfiguration;
+import com.noteweave.support.RetrievalIndexCleanup;
 import com.noteweave.chat.RetrievalHydrator;
 import com.noteweave.answer.strategy.AnswerContext;
 import com.noteweave.answer.strategy.EvidenceBundle;
@@ -23,15 +26,18 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.infra.JdbcEvidenceOwnershipAdapter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.time.Instant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -40,7 +46,8 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
+@Import(DeterministicEmbeddingTestConfiguration.class)
 class Phase1And2ContractTest {
 
     @Autowired
@@ -54,6 +61,17 @@ class Phase1And2ContractTest {
 
     @Autowired
     private ObjectStorage storage;
+
+    @Autowired
+    private ElasticsearchClient elasticsearchClient;
+
+    private final List<String> workspaceIds = new ArrayList<>();
+
+    @AfterEach
+    void deleteWorkspaceIndices() {
+        RetrievalIndexCleanup cleanup = new RetrievalIndexCleanup(elasticsearchClient);
+        workspaceIds.forEach(cleanup::deleteWorkspaceIndices);
+    }
 
     @Test
     void retrievalHydrationShouldExcludeSupersededSourceSnapshots() throws Exception {
@@ -228,14 +246,13 @@ class Phase1And2ContractTest {
         MvcResult completeResult = mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andReturn();
 
         JsonNode complete = objectMapper.readTree(completeResult.getResponse().getContentAsString());
         String sourceId = complete.path("data").path("source_id").asText();
         String taskId = complete.path("data").path("task_id").asText();
         assertThat(sourceId).isNotBlank();
-        markSourceProjected(sourceId);
+        awaitSourceIndexed(sourceId);
 
         mockMvc.perform(get("/api/v2/tasks/{taskId}", taskId))
                 .andExpect(status().isOk())
@@ -300,7 +317,7 @@ class Phase1And2ContractTest {
                 .andExpect(jsonPath("$.data.maximum_output_tokens").value(1200))
                 .andExpect(jsonPath("$.data.retrieval_degraded").value(true))
                 .andExpect(jsonPath("$.data.retrieval_degradation_reasons")
-                        .value(org.hamcrest.Matchers.hasItem("qa_mysql_fallback")));
+                        .value(org.hamcrest.Matchers.hasItem("QA_RERANK_UNAVAILABLE")));
 
         Map<String, Object> revisionContract = jdbcTemplate.queryForMap("""
                 select prompt_version, evidence_bundle_ref
@@ -359,22 +376,23 @@ class Phase1And2ContractTest {
         assertThat(retrievalSummary.path("selected_evidence_characters").asInt()).isGreaterThan(0);
         assertThat(retrievalSummary.path("degraded").asBoolean()).isTrue();
         assertThat(retrievalSummary.path("degradation_reasons").toString())
-                .contains("qa_mysql_fallback");
+                .contains("QA_RERANK_UNAVAILABLE");
         assertThat(retrievalSummary.path("maximum_output_tokens").asInt()).isEqualTo(1200);
         assertThat(retrievalSummary.path("execution_trace").path("steps").get(0)
                 .path("channel").asText()).isEqualTo("QA_PASSAGE");
         assertThat(retrievalSummary.path("execution_trace").path("steps").get(0)
                 .path("degraded").asBoolean()).isTrue();
         assertThat(retrievalSummary.path("execution_trace").path("steps").get(0)
-                .path("measurements").path("mysql_fallback_used").asInt()).isEqualTo(1);
+                .path("measurements").path("mysql_fallback_used").asInt()).isZero();
         assertThat(retrievalSummary.path("execution_trace").path("steps").get(0)
                 .path("measurements").path("strategy_v2_enabled").asInt()).isEqualTo(1);
         assertThat(retrievalSummary.path("execution_trace").path("selected_evidence").isArray())
                 .isTrue();
         assertThat(retrievalSummaryPayload)
-                .doesNotContain("excerpt")
                 .doesNotContain("title")
                 .doesNotContain("content");
+        assertThat(retrievalSummary.path("execution_trace").path("selected_evidence").toString())
+                .doesNotContain("excerpt");
 
         ChatStreamTestSupport.performAnswerRun(mockMvc, workspaceId, answerRunId)
                 .andExpect(status().isOk())
@@ -772,8 +790,10 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workspace_id").isNotEmpty())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString())
+        String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("workspace_id").asText();
+        workspaceIds.add(workspaceId);
+        return workspaceId;
     }
 
     private String createUpload(String workspaceId) throws Exception {
@@ -815,20 +835,36 @@ class Phase1And2ContractTest {
                 .andExpect(status().isOk());
         mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"));
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"));
         String sourceId = jdbcTemplate.queryForObject(
                 "select source_id from document_upload where id = ?",
                 String.class,
                 uploadId
         );
-        markSourceProjected(sourceId);
+        awaitSourceIndexed(sourceId);
     }
 
-    private void markSourceProjected(String sourceId) {
-        jdbcTemplate.update("update source set status = 'READY', index_status = 'INDEXED' where id = ?", sourceId);
-        jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
-        jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where source_id = ?", sourceId);
+    private void awaitSourceIndexed(String sourceId) {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            String indexStatus = jdbcTemplate.queryForObject(
+                    "select index_status from source where id = ?", String.class, sourceId);
+            if ("INDEXED".equals(indexStatus)) {
+                return;
+            }
+            if ("FAILED".equals(indexStatus)) {
+                throw new AssertionError("资料检索投影失败: sourceId=" + sourceId);
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待资料检索投影时被中断: sourceId=" + sourceId, ex);
+            }
+        }
+        String indexStatus = jdbcTemplate.queryForObject(
+                "select index_status from source where id = ?", String.class, sourceId);
+        throw new AssertionError("等待资料检索投影超时: sourceId=" + sourceId + ", index_status=" + indexStatus);
     }
 
     private String createConversation(String workspaceId) throws Exception {
