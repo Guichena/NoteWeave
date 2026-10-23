@@ -104,8 +104,10 @@ public class QaPassageRetriever {
             try {
                 QaHybridRetriever.HybridResult hybrid = hybridRetriever.retrieve(
                         workspaceId, safeChannels, allowedSources, profile);
+                Map<String, Long> hybridMeasurements = new LinkedHashMap<>(hybrid.measurements());
+                hybridMeasurements.put("strategy_v2_enabled", profile.v2Enabled() ? 1L : 0L);
                 return new RetrievalResult(hybrid.chunks(), hybrid.degraded(),
-                        hybrid.degradationReasons(), hybrid.measurements(), hybrid.rankedCandidates());
+                        hybrid.degradationReasons(), hybridMeasurements, hybrid.rankedCandidates());
             } catch (BusinessException ex) {
                 throw ex;
             } catch (Exception ex) {

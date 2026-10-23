@@ -1,6 +1,7 @@
 package com.noteweave.retrieval.qa;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.KnnSearch;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
@@ -135,6 +136,11 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
                         hit.score() == null ? 0.0d : hit.score()));
             }
             return hits;
+        } catch (ElasticsearchException ex) {
+            if (ex.error() != null && "index_not_found_exception".equals(ex.error().type())) {
+                return List.of();
+            }
+            throw new IllegalStateException("QA Elasticsearch retrieval failed", ex);
         } catch (IOException ex) {
             throw new IllegalStateException("QA Elasticsearch retrieval failed", ex);
         }

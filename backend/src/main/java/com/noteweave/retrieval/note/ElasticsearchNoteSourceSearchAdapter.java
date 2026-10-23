@@ -1,6 +1,7 @@
 package com.noteweave.retrieval.note;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.KnnSearch;
 import co.elastic.clients.elasticsearch._types.query_dsl.BoolQuery;
 import co.elastic.clients.elasticsearch._types.query_dsl.Query;
@@ -123,6 +124,11 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
                         text(source.get("metadata_text")), hit.score() == null ? 0.0d : hit.score()));
             }
             return result;
+        } catch (ElasticsearchException ex) {
+            if (ex.error() != null && "index_not_found_exception".equals(ex.error().type())) {
+                return List.of();
+            }
+            throw new IllegalStateException("Note source Elasticsearch retrieval failed", ex);
         } catch (IOException ex) {
             throw new IllegalStateException("Note source Elasticsearch retrieval failed", ex);
         }
