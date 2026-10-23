@@ -687,11 +687,14 @@ public class MemoryApplicationFeedbackService {
     }
 
     private boolean lockLiveMessage(String workspaceId, String messageId) {
-        return jdbcTemplate.query("""
+        // 用 RowMapper 而不是 ResultSetExtractor：rs -> rs.next() 既返回值又是语句表达式，
+        // 会让 JdbcTemplate.query 的两个重载同时匹配，编译期报歧义。
+        List<String> locked = jdbcTemplate.query("""
                 select id from conversation_message
                 where workspace_id = ? and id = ? and context_status <> 'DELETED'
                 for update
-                """, rs -> rs.next(), workspaceId, messageId);
+                """, (rs, rowNum) -> rs.getString(1), workspaceId, messageId);
+        return !locked.isEmpty();
     }
 
     private String previousAssistantId(String workspaceId, String userMessageId) {
