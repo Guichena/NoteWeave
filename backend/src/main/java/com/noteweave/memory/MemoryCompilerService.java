@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -28,6 +29,7 @@ public class MemoryCompilerService {
 
     private final JdbcTemplate jdbcTemplate;
     private final MemoryCompilerReadRepository readRepository;
+    private final MemorySourceReadGate sourceReadGate;
     private final ObjectProvider<CapabilityCatalogPort> capabilityCatalogProvider;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCompilerPolicy compilerPolicy;
@@ -52,6 +54,7 @@ public class MemoryCompilerService {
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.readRepository = new MemoryCompilerReadRepository(jdbcTemplate, objectMapper);
+        this.sourceReadGate = new MemorySourceReadGate(jdbcTemplate, objectMapper);
         this.capabilityCatalogProvider = capabilityCatalogProvider;
         this.currentUserProvider = currentUserProvider;
         this.compilerPolicy = compilerPolicy;
@@ -216,7 +219,10 @@ public class MemoryCompilerService {
             String currentUserId,
             String query
     ) {
-        List<MemoryCompilerReadRepository.StateRow> stateRows = loadStateRows(workspaceId);
+        // 先排除来源不可读的条目，再计算缓存键，避免已删除来源的旧 Pack 命中缓存。
+        List<MemoryCompilerReadRepository.StateRow> stateRows =
+                filterReadable(workspaceId, loadStateRows(workspaceId),
+                        MemoryCompilerReadRepository.StateRow::memoryVersionId);
         List<MemoryCompilerReadRepository.StateRow> eligibleState = stateRows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
@@ -250,7 +256,9 @@ public class MemoryCompilerService {
             return cached.get();
         }
 
-        List<MemoryCompilerReadRepository.ObjectRow> rows = loadObjectRows(workspaceId);
+        List<MemoryCompilerReadRepository.ObjectRow> rows =
+                filterReadable(workspaceId, loadObjectRows(workspaceId),
+                        MemoryCompilerReadRepository.ObjectRow::memoryVersionId);
         List<PreparedMemory> prepared = rows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
@@ -423,6 +431,21 @@ public class MemoryCompilerService {
             recordDatabaseLoad("pack", "error", startedAt);
             throw exception;
         }
+    }
+
+    /** 批量校验来源可读性后过滤；不修改数据库，只影响本次编译结果。 */
+    private <T> List<T> filterReadable(String workspaceId, List<T> rows, Function<T, String> revisionId) {
+        if (rows.isEmpty()) {
+            return rows;
+        }
+        Set<String> staleRevisionIds = sourceReadGate.staleRevisionIds(
+                workspaceId, rows.stream().map(revisionId).toList());
+        if (staleRevisionIds.isEmpty()) {
+            return rows;
+        }
+        return rows.stream()
+                .filter(row -> !staleRevisionIds.contains(revisionId.apply(row)))
+                .toList();
     }
 
     private String requestFingerprint(

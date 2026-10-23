@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,7 @@ public class MemoryItemQueryService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCandidatePolicy candidatePolicy;
+    private final MemorySourceReadGate sourceReadGate;
 
     public MemoryItemQueryService(
             JdbcTemplate jdbcTemplate,
@@ -38,6 +40,7 @@ public class MemoryItemQueryService {
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.currentUserProvider = currentUserProvider;
         this.candidatePolicy = candidatePolicy;
+        this.sourceReadGate = new MemorySourceReadGate(jdbcTemplate, objectMapper);
     }
 
     public List<MemoryItemResponse> listItems(String workspaceId) {
@@ -45,7 +48,7 @@ public class MemoryItemQueryService {
         String userId = currentUserProvider.requireUserId();
         Map<String, SignalEvidence> signals = loadSignalEvidence(workspaceId);
         // 个人范围的记忆只对其所有者可见，与编译时的范围规则一致
-        return jdbcTemplate.query("""
+        List<MemoryItemResponse> items = jdbcTemplate.query("""
                 select i.id as item_id, i.memory_scope, i.status as item_status, i.review_status,
                        i.utility_score, i.application_count, i.last_confirmed_at,
                        r.id as revision_id, r.status as revision_status, r.version_no, r.display_text,
@@ -113,6 +116,13 @@ public class MemoryItemQueryService {
                     rs.getInt("reinforcement_count"),
                     toInstant(rs.getTimestamp("last_reinforced_at")));
         }, workspaceId, userId);
+        // 来源被删除或不再可读时，只在读路径排除，不物理删除 memory_item。
+        Set<String> staleRevisionIds = sourceReadGate.staleRevisionIds(
+                workspaceId,
+                items.stream().map(MemoryItemResponse::revisionId).toList());
+        return items.stream()
+                .filter(item -> !staleRevisionIds.contains(item.revisionId()))
+                .toList();
     }
 
     /** 与 MemoryCandidateGate 的判定一致：全部条件满足才直接生效。 */

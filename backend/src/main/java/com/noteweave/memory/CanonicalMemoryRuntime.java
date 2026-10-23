@@ -1,5 +1,6 @@
 package com.noteweave.memory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.common.Ids;
 import com.noteweave.common.BusinessException;
@@ -9,6 +10,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -20,15 +22,18 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCompilerPolicy compilerPolicy;
+    private final MemorySourceReadGate sourceReadGate;
 
     public CanonicalMemoryRuntime(
             JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
             CurrentUserProvider currentUserProvider,
             MemoryCompilerPolicy compilerPolicy
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.currentUserProvider = currentUserProvider;
         this.compilerPolicy = compilerPolicy;
+        this.sourceReadGate = new MemorySourceReadGate(jdbcTemplate, objectMapper);
     }
 
     @Override
@@ -63,7 +68,17 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
                 rs.getTimestamp("updated_at").toInstant()
         ), query.workspaceId());
 
-        List<MemoryReferenceResponse> references = rows.stream()
+        // 来源被删除或不再可读时，只在召回路径排除，不修改 memory_item。
+        Set<String> staleRevisionIds = sourceReadGate.staleRevisionIds(
+                query.workspaceId(),
+                rows.stream().map(RuntimeRow::memoryVersionId).toList());
+        List<RuntimeRow> readableRows = staleRevisionIds.isEmpty()
+                ? rows
+                : rows.stream()
+                        .filter(row -> !staleRevisionIds.contains(row.memoryVersionId()))
+                        .toList();
+
+        List<MemoryReferenceResponse> references = readableRows.stream()
                 .filter(row -> compilerPolicy.scopeAllowed(
                         row.memoryScope(), row.ownerUserId(), currentUserId))
                 .sorted(Comparator
