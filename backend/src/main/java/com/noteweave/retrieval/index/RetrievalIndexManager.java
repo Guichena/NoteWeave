@@ -11,24 +11,39 @@ import java.util.Map;
 import java.util.Objects;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 @Component
 public class RetrievalIndexManager {
     static final String TEXT_ANALYZER = "noteweave_cjk_text";
     private final ElasticsearchClient client;
+    private final int replicas;
 
     @Autowired
-    public RetrievalIndexManager(ObjectProvider<ElasticsearchClient> clientProvider) {
-        this.client = clientProvider.getIfAvailable();
+    public RetrievalIndexManager(
+            ObjectProvider<ElasticsearchClient> clientProvider,
+            @Value("${noteweave.elasticsearch.replicas:1}") int replicas
+    ) {
+        this(clientProvider.getIfAvailable(), replicas);
     }
 
     private RetrievalIndexManager(ElasticsearchClient client) {
+        this(client, 1);
+    }
+
+    private RetrievalIndexManager(ElasticsearchClient client, int replicas) {
         this.client = client;
+        this.replicas = Math.max(0, replicas);
     }
 
     public static RetrievalIndexManager withClient(ElasticsearchClient client) {
         return new RetrievalIndexManager(client);
+    }
+
+    /** 供测试指定副本数，避免单节点 ES 场景出现未分配副本分片。 */
+    static RetrievalIndexManager withClient(ElasticsearchClient client, int replicas) {
+        return new RetrievalIndexManager(client, replicas);
     }
 
     public void createIndex(
@@ -157,10 +172,13 @@ public class RetrievalIndexManager {
      * 内置过滤器不需要额外安装分词插件。
      */
     IndexSettings settings() {
-        return IndexSettings.of(settings -> settings.analysis(analysis -> analysis
-                .analyzer(TEXT_ANALYZER, analyzer -> analyzer.custom(custom -> custom
-                        .tokenizer("standard")
-                        .filter("cjk_width", "lowercase", "cjk_bigram")))));
+        // 副本数由 noteweave.elasticsearch.replicas 决定，单节点测试环境设为 0，避免副本分片无法分配。
+        return IndexSettings.of(settings -> settings
+                .numberOfReplicas(String.valueOf(replicas))
+                .analysis(analysis -> analysis
+                        .analyzer(TEXT_ANALYZER, analyzer -> analyzer.custom(custom -> custom
+                                .tokenizer("standard")
+                                .filter("cjk_width", "lowercase", "cjk_bigram")))));
     }
 
     TypeMapping mapping(ProjectionType type, int dimensions) {

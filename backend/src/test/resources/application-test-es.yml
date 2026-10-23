@@ -5,6 +5,8 @@ noteweave:
     port: ${NOTEWEAVE_ES_PORT:9200}
     username: ${NOTEWEAVE_ES_USERNAME:elastic}
     password: ${NOTEWEAVE_ES_PASSWORD:}
+    # 测试用单节点 ES 无法分配副本分片，副本数固定为 0，避免索引长期处于 yellow 状态并堆积未分配分片
+    replicas: 0
   embedding:
     enabled: true
     model: stub-embedding

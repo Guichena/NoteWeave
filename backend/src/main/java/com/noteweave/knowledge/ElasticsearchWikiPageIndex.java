@@ -29,20 +29,27 @@ class ElasticsearchWikiPageIndex implements WikiPageIndex {
     private final ElasticsearchClient client;
     private final String indexName;
     private final int dimensions;
+    private final int replicas;
 
     @Autowired
     ElasticsearchWikiPageIndex(
             ObjectProvider<ElasticsearchClient> clientProvider,
             @Value("${noteweave.knowledge.wiki-index-name:noteweave-wiki}") String indexName,
-            @Value("${noteweave.embedding.dimensions:1024}") int dimensions
+            @Value("${noteweave.embedding.dimensions:1024}") int dimensions,
+            @Value("${noteweave.elasticsearch.replicas:1}") int replicas
     ) {
-        this(clientProvider.getIfAvailable(), indexName, dimensions);
+        this(clientProvider.getIfAvailable(), indexName, dimensions, replicas);
     }
 
     ElasticsearchWikiPageIndex(ElasticsearchClient client, String indexName, int dimensions) {
+        this(client, indexName, dimensions, 1);
+    }
+
+    ElasticsearchWikiPageIndex(ElasticsearchClient client, String indexName, int dimensions, int replicas) {
         this.client = client;
         this.indexName = indexName == null || indexName.isBlank() ? "noteweave-wiki" : indexName;
         this.dimensions = dimensions;
+        this.replicas = Math.max(0, replicas);
     }
 
     @Override
@@ -187,7 +194,10 @@ class ElasticsearchWikiPageIndex implements WikiPageIndex {
             if (exists) {
                 return true;
             }
-            client.indices().create(request -> request.index(indexName).mappings(mapping()));
+            client.indices().create(request -> request
+                    .index(indexName)
+                    .settings(settings -> settings.numberOfReplicas(String.valueOf(replicas)))
+                    .mappings(mapping()));
             return true;
         } catch (Exception ex) {
             log.warn("Wiki 索引 {} 不可用: {}", indexName, ex.toString());

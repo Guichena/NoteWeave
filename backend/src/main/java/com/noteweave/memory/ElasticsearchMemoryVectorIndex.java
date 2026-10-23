@@ -30,20 +30,27 @@ public class ElasticsearchMemoryVectorIndex implements MemoryVectorIndex {
     private final ElasticsearchClient client;
     private final String indexName;
     private final int dimensions;
+    private final int replicas;
 
     @Autowired
     public ElasticsearchMemoryVectorIndex(
             ObjectProvider<ElasticsearchClient> clientProvider,
             @Value("${noteweave.memory.index-name:noteweave-memory}") String indexName,
-            @Value("${noteweave.embedding.dimensions:1024}") int dimensions
+            @Value("${noteweave.embedding.dimensions:1024}") int dimensions,
+            @Value("${noteweave.elasticsearch.replicas:1}") int replicas
     ) {
-        this(clientProvider.getIfAvailable(), indexName, dimensions);
+        this(clientProvider.getIfAvailable(), indexName, dimensions, replicas);
     }
 
     ElasticsearchMemoryVectorIndex(ElasticsearchClient client, String indexName, int dimensions) {
+        this(client, indexName, dimensions, 1);
+    }
+
+    ElasticsearchMemoryVectorIndex(ElasticsearchClient client, String indexName, int dimensions, int replicas) {
         this.client = client;
         this.indexName = indexName == null || indexName.isBlank() ? "noteweave-memory" : indexName;
         this.dimensions = dimensions;
+        this.replicas = Math.max(0, replicas);
     }
 
     @Override
@@ -128,7 +135,10 @@ public class ElasticsearchMemoryVectorIndex implements MemoryVectorIndex {
             if (exists) {
                 return true;
             }
-            client.indices().create(request -> request.index(indexName).mappings(mapping()));
+            client.indices().create(request -> request
+                    .index(indexName)
+                    .settings(settings -> settings.numberOfReplicas(String.valueOf(replicas)))
+                    .mappings(mapping()));
             return true;
         } catch (Exception ex) {
             log.warn("记忆索引 {} 不可用: {}", indexName, ex.toString());
