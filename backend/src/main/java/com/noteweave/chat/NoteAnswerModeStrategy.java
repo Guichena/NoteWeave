@@ -158,10 +158,13 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
             builder.append("\n");
         }
         for (NoteJournalHit hit : recallPlan.journalHits()) {
-            // 来源已删除或不可读的历史笔记只保留审计记录，不再进入资料定位，避免把失效内容当成当前依据。
-            if ("source-unavailable".equals(hit.freshnessStatus())) continue;
             builder.append("- 历史笔记《").append(hit.title()).append("》");
-            if (!"fresh".equals(hit.freshnessStatus())) builder.append("（来源已更新，以当前原文为准）");
+            if ("source-unavailable".equals(hit.freshnessStatus())) {
+                // 来源被删除不代表笔记没用了：笔记仍可作为背景参考，只是不能引用原文。
+                builder.append("（引用的来源已删除，笔记内容仅供参考，原文不可引用）");
+            } else if (!"fresh".equals(hit.freshnessStatus())) {
+                builder.append("（来源已更新，以当前原文为准）");
+            }
             builder.append("\n");
         }
         builder.append("\n## 摘录证据\n");
@@ -196,8 +199,13 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         }
         boolean hasStaleJournal = journalHits.stream()
                 .anyMatch(hit -> "stale-source-updated".equals(hit.freshnessStatus()));
+        boolean hasUnavailableJournal = journalHits.stream()
+                .anyMatch(hit -> "source-unavailable".equals(hit.freshnessStatus()));
         if (hasStaleJournal) {
             builder.append("历史整理里存在已更新或已失效的来源，本轮已经优先按当前可读原文窗口重新核对。");
+        }
+        if (hasUnavailableJournal) {
+            builder.append("历史整理里有笔记引用的来源已删除，这些笔记只作背景参考，不要引用原文。");
         }
         builder.append("\n");
         Set<String> seenSources = new LinkedHashSet<>();

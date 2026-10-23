@@ -102,7 +102,7 @@ public class NoteJournalRetriever {
     private record Freshness(String status, String note, int stale, int unavailable, int penalty) {
         static Freshness fresh() { return new Freshness("fresh", "引用资料保持最新，可直接复用。", 0, 0, 0); }
         static Freshness from(int stale, int unavailable) {
-            if (unavailable > 0) return new Freshness("source-unavailable", "这条历史 Note 绑定的部分来源已失效，当前只作为审计线索保留。", stale, unavailable, 6);
+            if (unavailable > 0) return new Freshness("source-unavailable", "这条历史 Note 绑定的部分来源已删除，笔记内容仍可参考，原文不可引用。", stale, unavailable, 6);
             if (stale > 0) return new Freshness("stale-source-updated", "这条历史 Note 绑定的来源在记录后已更新，需要重新核对原文窗口。", stale, unavailable, 3);
             return fresh();
         }

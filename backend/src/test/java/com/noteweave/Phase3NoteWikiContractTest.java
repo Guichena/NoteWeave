@@ -566,7 +566,8 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("active-availability.md")))
                 .andReturn();
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream).doesNotContain("历史笔记《失效来源整理》");
+        assertThat(stream).contains("历史笔记《失效来源整理》");
+        assertThat(stream).contains("引用的来源已删除，笔记内容仅供参考");
         String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
         assertThat(evidenceSection).doesNotContain("失效来源整理");
         Integer auditNoteCount = jdbcTemplate.queryForObject(
