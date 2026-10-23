@@ -85,23 +85,37 @@ public final class ConstraintOpSchema {
     }
 
     /**
-     * 只接受一个完整的 JSON 根：允许整段响应被单个代码围栏包住，拒绝前后缀说明文字、拼接的多个根、
-     * 重复键与截断。原来按首个 {@code [} 到末个 {@code ]} 截取，会把对象里合法的嵌套数组截断，
-     * 也能让两段输出拼成一个恰好可解析的数组，所以改成对整串严格解析。
+     * 取出唯一的一个 JSON 数组根。
+     * <p>
+     * 模型常在数组前后加一句说明或代码围栏，这些文字可以忽略；结构必须完整：截断、重复键，
+     * 以及根之后又跟着第二个 JSON 值（两段输出拼在一起）一律判失败。原来按首个 {@code [} 到末个
+     * {@code ]} 截取，会把对象里合法的嵌套数组截断，也能把两段输出拼成一个恰好可解析的数组。
      */
     private static JsonNode readRoot(ObjectMapper mapper, String output) {
         if (output == null || output.isBlank()) {
             return null;
         }
         String text = stripSingleFence(output.trim());
-        if (text == null || text.isEmpty()) {
+        if (text == null || text.isBlank()) {
             return null;
         }
-        try (com.fasterxml.jackson.core.JsonParser parser = mapper.createParser(text)) {
+        int start = text.indexOf('[');
+        if (start < 0) {
+            return null;
+        }
+        // 从数组起点交给 Jackson 解析：嵌套数组与字符串里的方括号按语法处理，不再按字符位置切。
+        try (com.fasterxml.jackson.core.JsonParser parser = mapper.createParser(text.substring(start))) {
             parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
             JsonNode root = mapper.readTree(parser);
-            if (root == null || parser.nextToken() != null) {
+            if (root == null) {
                 return null;
+            }
+            try {
+                if (parser.nextToken() != null) {
+                    return null;
+                }
+            } catch (JsonProcessingException trailing) {
+                // 根之后是说明文字，不是 JSON，可以忽略。
             }
             return root;
         } catch (java.io.IOException ex) {
@@ -109,20 +123,17 @@ public final class ConstraintOpSchema {
         }
     }
 
-    /** 整个响应只有一个代码围栏时剥掉围栏，其余情况原样返回；围栏不完整时返回 {@code null}。 */
+    /** 整段响应被一对代码围栏包住时剥掉围栏与语言标记，其余情况原样返回。 */
     private static String stripSingleFence(String text) {
-        if (!text.startsWith("```")) {
+        if (!text.startsWith("```") || !text.endsWith("```") || text.length() <= 6) {
             return text;
         }
-        int lineEnd = text.indexOf('\n');
-        if (lineEnd < 0) {
-            return null;
+        String body = text.substring(3, text.length() - 3);
+        int lineEnd = body.indexOf('\n');
+        if (lineEnd >= 0) {
+            body = body.substring(lineEnd + 1);
         }
-        String body = text.substring(lineEnd + 1).stripTrailing();
-        if (!body.endsWith("```")) {
-            return null;
-        }
-        return body.substring(0, body.length() - 3).trim();
+        return body.trim();
     }
 
     private static ItemResult parseItem(JsonNode node) {

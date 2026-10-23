@@ -103,22 +103,19 @@ public class ConversationTopicProjectionV2Service {
                     rebuild ? List.of() : observed.steps());
             // 重建不能发布半份新规则；已提交的旧基线和旧行保持原样。
             if (rebuild && extraction.skipped() > 0) {
-                return receipt(segmentation, observed, false);
+                return receipt(segmentation, observed);
             }
             Segmentation prepared = segmentation;
             ConstraintApply result = Objects.requireNonNull(independentTransaction(conversationId,
                     () -> applyConstraintsInTransaction(prepared, extraction, rebuild)));
             if (!result.retry()) {
-                boolean complete = usable(result.state())
-                        && result.state().processedSeq() >= lastUserSeq(segmentation.messages())
-                        && extraction.skipped() == 0;
-                return receipt(segmentation, result.state(), complete);
+                return receipt(segmentation, result.state());
             }
             log.info("约束上下文已变化，事务外重新准备: conversationId={}, attempt={}",
                     conversationId, attempt + 1);
         }
         log.warn("约束刷新未完成: reason=CONCURRENT_CHANGE, conversationId={}", conversationId);
-        return receipt(segmentation, null, false);
+        return receipt(segmentation, null);
     }
 
     private boolean usable(ConstraintState state) {
@@ -126,21 +123,21 @@ public class ConversationTopicProjectionV2Service {
                 && (state.processedSeq() == 0 || !state.steps().isEmpty());
     }
 
-    private static int lastUserSeq(List<TopicSegmenterV2.Message> messages) {
-        return messages.stream().filter(message -> "USER".equals(message.role()))
-                .mapToInt(TopicSegmenterV2.Message::seq).max().orElse(0);
-    }
-
-    private ConstraintRefresh receipt(Segmentation segmentation, ConstraintState state, boolean complete) {
-        return new ConstraintRefresh(segmentation.projection(), complete,
+    private ConstraintRefresh receipt(Segmentation segmentation, ConstraintState state) {
+        return new ConstraintRefresh(segmentation.projection(),
                 state == null ? -1 : state.processedSeq(), state == null ? -1 : state.lockVersion(),
                 state == null ? "" : state.ruleVersion());
     }
 
-    /** 调用方已持会话锁；冻结前核对回执，不把落后或另一轮写入伪装为本轮完整投影。 */
+    /**
+     * 调用方已持会话锁；冻结前核对回执，不把落后或另一轮写入伪装成本轮投影。
+     * <p>
+     * 这里只核对状态一致性，不要求本轮把所有用户消息都抽取成功：抽取模型不可用时投影仍然是一致的，
+     * 只是最新几条消息的约束还没进来。把模型可用性当成不一致会让回答整体返回 409，代价远大于收益。
+     */
     void requireAnswerConstraints(String workspaceId, String conversationId, ConstraintRefresh refresh) {
         ConstraintState current = latestState(workspaceId, conversationId);
-        if (refresh == null || !refresh.complete() || !usable(current)
+        if (refresh == null || !usable(current)
                 || current.processedSeq() != refresh.processedSeq()
                 || current.lockVersion() != refresh.lockVersion()
                 || !current.ruleVersion().equals(refresh.ruleVersion())
@@ -150,7 +147,7 @@ public class ConversationTopicProjectionV2Service {
         }
     }
 
-    public record ConstraintRefresh(TopicSegmenterV2.Projection projection, boolean complete,
+    public record ConstraintRefresh(TopicSegmenterV2.Projection projection,
                                     int processedSeq, int lockVersion, String ruleVersion) {}
 
     /**
