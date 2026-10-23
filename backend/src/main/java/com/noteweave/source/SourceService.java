@@ -27,6 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SourceService {
 
+    public static final String DELETE_REASON_USER = "USER";
+    public static final String DELETE_REASON_COMPLIANCE = "COMPLIANCE";
+
     private static final ObjectMapper METADATA_READER = new ObjectMapper();
 
     private final JdbcTemplate jdbcTemplate;
@@ -176,30 +179,90 @@ public class SourceService {
                 .record(System.nanoTime() - startedAt, TimeUnit.NANOSECONDS);
     }
 
+    /** 兼容原有调用方式，默认按用户主动删除处理。 */
     @Transactional
     public DeleteSourceResponse deleteSource(String workspaceId, String sourceId) {
+        return deleteSource(workspaceId, sourceId, DELETE_REASON_USER);
+    }
+
+    /**
+     * 删除资料并记录删除原因。
+     *
+     * <p>USER 表示用户主动删除，历史笔记继续保留；COMPLIANCE 表示合规删除，
+     * 引用该资料的笔记会退出可用状态，但笔记内容和审计信息不做物理删除。</p>
+     */
+    @Transactional
+    public DeleteSourceResponse deleteSource(String workspaceId, String sourceId, String reason) {
+        String deleteReason = parseDeleteReason(reason);
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
         String actor = auditActorProvider.currentOrSystem("SOURCE");
         SourceRef source = loadSource(workspaceId, sourceId);
         LinkedHashSet<String> cleanupObjectKeys = new LinkedHashSet<>(loadSnapshotObjectKeys(sourceId));
-        jdbcTemplate.update("""
-                update source
-                set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
-                    updated_by = ?, updated_at = current_timestamp
-                where workspace_id = ? and id = ?
-                """, actor, workspaceId, sourceId);
+        if (DELETE_REASON_COMPLIANCE.equals(deleteReason)) {
+            // 合规删除显式写入原因；USER 使用字段默认值，历史删除记录同样按 USER 解释
+            jdbcTemplate.update("""
+                    update source
+                    set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
+                        delete_reason = ?, updated_by = ?, updated_at = current_timestamp
+                    where workspace_id = ? and id = ?
+                    """, deleteReason, actor, workspaceId, sourceId);
+        } else {
+            jdbcTemplate.update("""
+                    update source
+                    set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
+                        updated_by = ?, updated_at = current_timestamp
+                    where workspace_id = ? and id = ?
+                    """, actor, workspaceId, sourceId);
+        }
         jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'DELETED', index_status = 'DELETED'
                 where source_id = ?
                 """, sourceId);
+        if (DELETE_REASON_COMPLIANCE.equals(deleteReason)) {
+            revokeNotesReferencingSource(workspaceId, sourceId, actor);
+        }
         runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         cancelPendingSourceTasks(workspaceId, sourceId);
         if (releaseFileObject(source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
         sourceCatalogVersionService.bump(workspaceId);
         String wikiTaskId = wikiCommandPort.requestSourceRetract(workspaceId, sourceId, source.title());
-        eventPublisher.publishEvent(new SourceDeletedEvent(workspaceId, sourceId, List.copyOf(cleanupObjectKeys)));
+        eventPublisher.publishEvent(new SourceDeletedEvent(
+                workspaceId, sourceId, List.copyOf(cleanupObjectKeys), deleteReason));
         return new DeleteSourceResponse(sourceId, "DELETED", wikiTaskId);
+    }
+
+    /** 合规删除时让引用该资料的笔记退出可用状态，笔记内容与审计信息保留。 */
+    private void revokeNotesReferencingSource(String workspaceId, String sourceId, String actor) {
+        jdbcTemplate.update("""
+                update knowledge_item
+                set status = 'REVOKED', updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ?
+                  and item_type = 'NOTE'
+                  and status = 'ACTIVE'
+                  and exists (
+                      select 1
+                      from knowledge_version_citation kvc
+                      join citation c on c.id = kvc.citation_id
+                      where kvc.knowledge_version_id = knowledge_item.latest_version_id
+                        and c.workspace_id = ?
+                        and c.source_id = ?
+                  )
+                """, actor, workspaceId, workspaceId, sourceId);
+    }
+
+    /** 校验删除原因，空值按 USER 处理，非法值返回 400。 */
+    public static String parseDeleteReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return DELETE_REASON_USER;
+        }
+        String normalized = reason.trim();
+        if (!DELETE_REASON_USER.equals(normalized) && !DELETE_REASON_COMPLIANCE.equals(normalized)) {
+            throw new BusinessException(
+                    "SOURCE_DELETE_REASON_INVALID",
+                    "删除原因只能是 USER 或 COMPLIANCE");
+        }
+        return normalized;
     }
 
     private boolean releaseFileObject(String fileObjectId) {

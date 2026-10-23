@@ -71,7 +71,8 @@ public class KnowledgeGovernanceService {
         Set<String> readablePageIds = pages.stream().map(WikiSearchRow::itemId)
                 .collect(java.util.stream.Collectors.toSet());
         List<WikiIssueResponse> issues = lintWiki(workspaceId).stream()
-                .filter(issue -> readablePageIds.contains(issue.itemId())).toList();
+                .filter(issue -> readablePageIds.contains(issue.itemId())
+                        || "SOURCE_REVOKED".equals(issue.issueType())).toList();
         int pageCount = pages.size();
         List<String[]> links = jdbcTemplate.query("""
                 select source_item_id, target_item_id, relation_status
@@ -249,6 +250,7 @@ public class KnowledgeGovernanceService {
                 "页面缺少来源引用。", "补充来源引用或从资料 ingest 重新生成",
                 false, "FOCUS_MANUAL_REPAIR"
         ), workspaceId));
+        // 页面引用的来源被删除后，读路径会隐藏页面，这里补充治理问题说明页面消失的原因
         issues.addAll(jdbcTemplate.query("""
                 select i.id, i.title
                 from knowledge_item i
@@ -257,6 +259,24 @@ public class KnowledgeGovernanceService {
                 join citation c on c.id = kvc.citation_id
                 join source s on s.id = c.source_id
                 where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                  and s.status = 'DELETED'
+                group by i.id, i.title
+                """, (rs, rowNum) -> new WikiIssueResponse(
+                "SOURCE_REVOKED", "HIGH", rs.getString("id"), rs.getString("title"),
+                "页面引用的来源已删除，正文可能失效。",
+                "重新绑定来源或重建页面",
+                false, "FOCUS_MANUAL_REPAIR"
+        ), workspaceId));
+        // 已删除来源由 SOURCE_REVOKED 单独提示，这里排除它们，避免同一页面重复报出过期问题
+        issues.addAll(jdbcTemplate.query("""
+                select i.id, i.title
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_version_citation kvc on kvc.knowledge_version_id = v.id
+                join citation c on c.id = kvc.citation_id
+                join source s on s.id = c.source_id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                  and s.status <> 'DELETED'
                 group by i.id, i.title, v.created_at
                 having max(s.updated_at) > v.created_at
                 """, (rs, rowNum) -> new WikiIssueResponse(
