@@ -158,6 +158,8 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
             builder.append("\n");
         }
         for (NoteJournalHit hit : recallPlan.journalHits()) {
+            // 来源已删除或不可读的历史笔记只保留审计记录，不再进入资料定位，避免把失效内容当成当前依据。
+            if ("source-unavailable".equals(hit.freshnessStatus())) continue;
             builder.append("- 历史笔记《").append(hit.title()).append("》");
             if (!"fresh".equals(hit.freshnessStatus())) builder.append("（来源已更新，以当前原文为准）");
             builder.append("\n");
@@ -192,7 +194,8 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         if (Boolean.parseBoolean(context.attributes().getOrDefault(ATTRIBUTE_HAS_CHAT_CONTROLS, "false"))) {
             builder.append("本轮还应用了工作台级 Chat Control Pack。");
         }
-        boolean hasStaleJournal = journalHits.stream().anyMatch(hit -> !"fresh".equals(hit.freshnessStatus()));
+        boolean hasStaleJournal = journalHits.stream()
+                .anyMatch(hit -> "stale-source-updated".equals(hit.freshnessStatus()));
         if (hasStaleJournal) {
             builder.append("历史整理里存在已更新或已失效的来源，本轮已经优先按当前可读原文窗口重新核对。");
         }
