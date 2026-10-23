@@ -160,6 +160,11 @@ class SourceFourStagePipelineContractTest {
         Fixture fixture = pendingSource("retry.md", "# 延迟双删\n\n" + "删除缓存后等待一段时间再删一次。\n\n".repeat(40));
         EmbeddingClient failing = mock(EmbeddingClient.class);
         when(failing.isEnabled()).thenReturn(true);
+        when(failing.embedDocumentsWithBudget(anyList(), any())).thenAnswer(call -> {
+            Runnable beforeRequest = call.getArgument(1);
+            if (beforeRequest != null) beforeRequest.run();
+            return failing.embedDocuments(call.getArgument(0));
+        });
         when(failing.embedDocuments(anyList())).thenThrow(
                 new RetrievalProviderException("EMBEDDING_PROVIDER_TIMEOUT", "timeout"));
         Pipeline pipeline = pipeline(failing);
@@ -403,6 +408,13 @@ class SourceFourStagePipelineContractTest {
         int dimensions = properties.embedding().dimensions();
         EmbeddingClient client = mock(EmbeddingClient.class);
         when(client.isEnabled()).thenReturn(true);
+        // 资料批次走带预算的入口：桩里先执行许可回调，再委派原来的向量桩，
+        // 否则 mock 的默认方法会返回 null，整条批次链会在契约校验处失败。
+        when(client.embedDocumentsWithBudget(anyList(), any())).thenAnswer(call -> {
+            Runnable beforeRequest = call.getArgument(1);
+            if (beforeRequest != null) beforeRequest.run();
+            return client.embedDocuments(call.getArgument(0));
+        });
         when(client.embedDocuments(anyList())).thenAnswer(call -> {
             List<String> texts = call.getArgument(0);
             List<List<Float>> vectors = new ArrayList<>();
