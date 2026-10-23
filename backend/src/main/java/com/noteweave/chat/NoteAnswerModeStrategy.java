@@ -159,10 +159,14 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         }
         for (NoteJournalHit hit : recallPlan.journalHits()) {
             builder.append("- 历史笔记《").append(hit.title()).append("》");
-            if ("source-unavailable".equals(hit.freshnessStatus())) {
-                // 来源被删除不代表笔记没用了：笔记仍可作为背景参考，只是不能引用原文。
+            String freshnessStatus = hit.freshnessStatus();
+            if ("source-deleted".equals(freshnessStatus)) {
+                // 来源已删除时笔记仍可作背景参考，只是不能再引用原文
                 builder.append("（引用的来源已删除，笔记内容仅供参考，原文不可引用）");
-            } else if (!"fresh".equals(hit.freshnessStatus())) {
+            } else if ("source-unavailable".equals(freshnessStatus)) {
+                // 解析中或解析失败属于暂不可用，与已删除区分开
+                builder.append("（引用的来源暂不可用，笔记内容仅供参考）");
+            } else if ("stale-source-updated".equals(freshnessStatus)) {
                 builder.append("（来源已更新，以当前原文为准）");
             }
             builder.append("\n");
@@ -201,11 +205,16 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
                 .anyMatch(hit -> "stale-source-updated".equals(hit.freshnessStatus()));
         boolean hasUnavailableJournal = journalHits.stream()
                 .anyMatch(hit -> "source-unavailable".equals(hit.freshnessStatus()));
-        if (hasStaleJournal) {
-            builder.append("历史整理里存在已更新或已失效的来源，本轮已经优先按当前可读原文窗口重新核对。");
+        boolean hasDeletedJournal = journalHits.stream()
+                .anyMatch(hit -> "source-deleted".equals(hit.freshnessStatus()));
+        if (hasDeletedJournal) {
+            builder.append("历史整理里有笔记引用的来源已删除，这些笔记只作背景参考，不要引用原文。");
         }
         if (hasUnavailableJournal) {
-            builder.append("历史整理里有笔记引用的来源已删除，这些笔记只作背景参考，不要引用原文。");
+            builder.append("历史整理里有笔记引用的来源暂不可用，这些笔记只作背景参考。");
+        }
+        if (hasStaleJournal) {
+            builder.append("历史整理里存在来源已更新的笔记，本轮已经优先按当前可读原文窗口重新核对。");
         }
         builder.append("\n");
         Set<String> seenSources = new LinkedHashSet<>();

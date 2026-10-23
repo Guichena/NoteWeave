@@ -567,11 +567,61 @@ class Phase3NoteWikiContractTest {
                 .andReturn();
         String stream = result.getResponse().getContentAsString();
         assertThat(stream).contains("历史笔记《失效来源整理》");
-        assertThat(stream).contains("引用的来源已删除，笔记内容仅供参考");
+        assertThat(stream).contains("引用的来源已删除，笔记内容仅供参考，原文不可引用");
         String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
         assertThat(evidenceSection).doesNotContain("失效来源整理");
         Integer auditNoteCount = jdbcTemplate.queryForObject(
                 "select count(*) from knowledge_item where workspace_id = ? and item_type = 'NOTE' and title = '失效来源整理'",
+                Integer.class, workspaceId);
+        assertThat(auditNoteCount).isEqualTo(1);
+    }
+
+    @Test
+    void noteModeShouldMarkFailedJournalSourceAsUnavailableInsteadOfDeleted() throws Exception {
+        String workspaceId = createWorkspace();
+        String failedSourceId = uploadSource(workspaceId, "failed-journal.md", """
+                AvailabilityFailed failedOnlyToken
+                这份资料会先沉淀成历史 Note，然后解析失败并被标记为 FAILED。
+                """);
+        uploadSource(workspaceId, "active-failed-availability.md", """
+                AvailabilityFailed activeFailedToken
+                这份资料会继续保持 READY，用来承接后续的 Note 回答。
+                """);
+        String conversationId = createConversation(workspaceId);
+
+        JsonNode qaMessage = sendMessage(conversationId, "QA", "请总结 failedOnlyToken");
+        String assistantMessageId = qaMessage.path("data").path("assistant_message_id").asText();
+        ChatStreamTestSupport.perform(mockMvc, qaMessage.path("data").path("assistant_request_id").asText())
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
+
+        createJournalNote(workspaceId, "暂不可用来源整理", """
+                # 暂不可用来源整理
+
+                AvailabilityFailed failedOnlyToken 的历史整理，来源解析失败后只保留笔记内容。
+                """, assistantMessageId);
+
+        jdbcTemplate.update("""
+                update source
+                set status = 'FAILED', updated_at = current_timestamp
+                where id = ?
+                """, failedSourceId);
+
+        JsonNode noteMessage = sendMessage(conversationId, "NOTE", "继续整理 AvailabilityFailed");
+        String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
+
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("active-failed-availability.md")))
+                .andReturn();
+        String stream = result.getResponse().getContentAsString();
+        assertThat(stream).contains("历史笔记《暂不可用来源整理》");
+        assertThat(stream).contains("引用的来源暂不可用，笔记内容仅供参考");
+        assertThat(stream).doesNotContain("引用的来源已删除");
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(evidenceSection).doesNotContain("暂不可用来源整理");
+        Integer auditNoteCount = jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_item where workspace_id = ? and item_type = 'NOTE' and title = '暂不可用来源整理'",
                 Integer.class, workspaceId);
         assertThat(auditNoteCount).isEqualTo(1);
     }
