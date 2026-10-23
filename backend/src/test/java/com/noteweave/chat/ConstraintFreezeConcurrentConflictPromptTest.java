@@ -145,26 +145,42 @@ class ConstraintFreezeConcurrentConflictPromptTest {
                 .contains("- 中文");
     }
 
+    /**
+     * 抽取模型不可用只说明最新这条消息的约束还没进来，不能让整轮回答失败。
+     * 冻结用的是已提交的一致状态，水位不覆盖最新 USER 是降级，不是数据不一致。
+     */
     @Test
-    void incompleteConstraintsCannotFreezeAndFailedReceiptCanRetry() {
+    void unavailableExtractionStillFreezesWithKnownConstraints() {
         userMessage(QUERY_MESSAGE, 1, "以后用中文。");
         pendingAssistant("m2", 2, QUERY_MESSAGE);
         jdbc.update("insert into answer_run(id, workspace_id, conversation_id, query_message_id) values (?, ?, ?, ?)",
                 ANSWER_RUN, WORKSPACE, CONVERSATION, QUERY_MESSAGE);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> snapshots.freezeAnswer(
-                WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA"))
-                .isInstanceOf(com.noteweave.common.BusinessException.class)
-                .hasMessageContaining("约束");
-        assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isZero();
-        snapshots.recordFailure(WORKSPACE, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "CONTEXT_CONSTRAINTS_INCOMPLETE");
-        extractor.ops.put(QUERY_MESSAGE, language("中文"));
+
         snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA");
-        assertThat(frozenProjection().constraints()).extracting(ContextProjectionV2.UserConstraint::text)
-                .containsExactly("中文");
+
+        assertThat(frozenProjection().constraints()).isEmpty();
+        // 已冻结的 READY 不重写。
         String original = jdbc.queryForObject("select projection_sha256 from context_v2_shadow_snapshot", String.class);
         snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA");
         assertThat(jdbc.queryForObject("select projection_sha256 from context_v2_shadow_snapshot", String.class))
                 .isEqualTo(original);
+        assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isEqualTo(1);
+    }
+
+    /** 失败回执可以被成功重试替换，最终每个 answer_run 只有一行。 */
+    @Test
+    void failedReceiptCanBeReplacedByARetry() {
+        userMessage(QUERY_MESSAGE, 1, "以后用中文。");
+        pendingAssistant("m2", 2, QUERY_MESSAGE);
+        jdbc.update("insert into answer_run(id, workspace_id, conversation_id, query_message_id) values (?, ?, ?, ?)",
+                ANSWER_RUN, WORKSPACE, CONVERSATION, QUERY_MESSAGE);
+        snapshots.recordFailure(WORKSPACE, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "CONTEXT_BUDGET_EXCEEDED");
+        extractor.ops.put(QUERY_MESSAGE, language("中文"));
+
+        snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN, "以后用中文。", "QA");
+
+        assertThat(frozenProjection().constraints()).extracting(ContextProjectionV2.UserConstraint::text)
+                .containsExactly("中文");
         assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isEqualTo(1);
     }
 
