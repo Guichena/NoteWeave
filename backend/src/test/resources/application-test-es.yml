@@ -1,0 +1,10 @@
+noteweave:
+  elasticsearch:
+    enabled: true
+    host: ${NOTEWEAVE_ES_HOST:127.0.0.1}
+    port: ${NOTEWEAVE_ES_PORT:9200}
+    username: ${NOTEWEAVE_ES_USERNAME:elastic}
+    password: ${NOTEWEAVE_ES_PASSWORD:}
+  embedding:
+    enabled: true
+    model: stub-embedding

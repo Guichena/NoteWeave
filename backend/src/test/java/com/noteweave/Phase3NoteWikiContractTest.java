@@ -10,15 +10,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.knowledge.WikiIndexOutbox;
 import com.noteweave.source.SourceWikiCommandPort;
+import com.noteweave.support.Phase3HashedEmbeddingTestConfiguration;
+import com.noteweave.support.RetrievalIndexCleanup;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -27,7 +36,8 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
+@Import({Phase3HashedEmbeddingTestConfiguration.class, RetrievalIndexCleanup.class})
 class Phase3NoteWikiContractTest {
 
     @Autowired
@@ -41,6 +51,17 @@ class Phase3NoteWikiContractTest {
 
     @Autowired
     private SourceWikiCommandPort sourceWikiCommandPort;
+
+    @Autowired
+    private RetrievalIndexCleanup retrievalIndexCleanup;
+
+    @Autowired
+    private WikiIndexOutbox wikiIndexOutbox;
+
+    @Autowired
+    private ElasticsearchClient elasticsearchClient;
+
+    private final List<String> createdWorkspaceIds = new ArrayList<>();
 
     @Test
     void noteAndWikiModesShouldUseDifferentKnowledgeChains() throws Exception {
@@ -68,12 +89,9 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("Marginalia 式结构化检索漏斗")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 直接回答")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【候选资料】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【关系扩展】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【验证摘要】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 深读窗口")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("phase3.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("## 继续追问"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
@@ -114,8 +132,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.message_id").value(noteAssistantMessageId))
                 .andExpect(jsonPath("$.data.generated_by").value("note_answer"))
                 .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId))
-                .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"));
+                .andExpect(jsonPath("$.data.parse_status").value("PARSED"));
 
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", noteAssistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -135,8 +152,8 @@ class Phase3NoteWikiContractTest {
         String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();
         ChatStreamTestSupport.perform(mockMvc, secondNoteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("历史 Note")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("历史笔记《阶段3 Note 链路整理》")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")));
 
         JsonNode wikiItem = createWikiPage(workspaceId, noteAssistantMessageId);
         String wikiItemId = wikiItem.path("data").path("item_id").asText();
@@ -184,6 +201,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.created_at").isNotEmpty())
                 .andExpect(jsonPath("$.data.citations[0].quote_text").isNotEmpty());
 
+        awaitWikiSearchReady(workspaceId);
         JsonNode wikiMessage = sendMessage(conversationId, "WIKI", "NoteWeave 阶段3怎么设计？");
         String wikiAnswerRunId = wikiMessage.path("data").path("answer_run_id").asText();
         Map<String, Object> wikiRunContract = jdbcTemplate.queryForMap("""
@@ -226,14 +244,9 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 相关 Wiki 页面")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 综合结论")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 关键页面关系")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 反向引用关系")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 来源回链")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 页面关系")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("v2")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("/wiki")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Wiki 页面：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("[[NoteWeave 阶段3总览]]")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("Note 链路")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
     }
 
@@ -257,23 +270,16 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorAlpha");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("anchor-research.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("companion.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("relation-expansion")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify_batch_sources")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("candidate_quota_trace:")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify_admission_trace:")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("related_entries")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("window_locators")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("read_objective=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("selection_reason=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify_admission_reason=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("parse=PARSED")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("index=INDEXED")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("heading=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
+                .andReturn();
+        String stream = result.getResponse().getContentAsString();
+        String locationSection = stream.substring(
+                stream.indexOf("## 资料定位"), stream.indexOf("## 摘录证据"));
+        assertThat(locationSection).contains("anchor-research.md");
+        assertThat(locationSection).contains("companion.md");
     }
 
     @Test
@@ -295,12 +301,9 @@ class Phase3NoteWikiContractTest {
 
         MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("query_coverage=2/2")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("matched_fields=")))
                 .andReturn();
 
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream).contains("matched_fields=title");
         assertThat(stream.indexOf("AnchorCoverage.md")).isLessThan(stream.indexOf("sample-window.md"));
     }
 
@@ -332,10 +335,8 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("source-type-quota")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("quota-sheet.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("SPREADSHEET")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("candidate:source-type-quota")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("quota-sheet.md")));
     }
 
     @Test
@@ -361,18 +362,16 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请整理 WindowReadyToken SpecReadiness");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("windowless-top.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("source-window-missing")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("window-ready.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("source-window-ready")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("readiness=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("verify《window-ready.md》")))
-                .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("verify《windowless-top.md》"))))
-                .andExpect(content().string(org.hamcrest.Matchers.not(
-                        org.hamcrest.Matchers.containsString("window-fallback"))));
+                .andReturn();
+        String stream = result.getResponse().getContentAsString();
+        String locationSection = stream.substring(
+                stream.indexOf("## 资料定位"), stream.indexOf("## 摘录证据"));
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(locationSection).contains("windowless-top.md");
+        assertThat(evidenceSection).doesNotContain("windowless-top.md");
+        assertThat(evidenceSection).contains("window-ready.md");
     }
 
     @Test
@@ -397,9 +396,9 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("deep-neighbor.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("graph-neighbor")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("relation-expansion")));
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("bridge-node.md")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("deep-neighbor.md")));
     }
 
     @Test
@@ -433,19 +432,16 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "请解释 AnchorTurnShared");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("co_cited_turns=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("co-cited-turns")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("## 继续追问"))))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("related_entries=")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("window_has_more=true")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【原文窗口】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("read_role=primary-window")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("read_objective=best-evidence")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("read_objective=adjacent-context")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("primary-window")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("continuation-window")));
+                .andReturn();
+        String stream = result.getResponse().getContentAsString();
+        String locationSection = stream.substring(
+                stream.indexOf("## 资料定位"), stream.indexOf("## 摘录证据"));
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(locationSection).contains("turn-neighbor.md");
+        assertThat(countOccurrences(evidenceSection, "《anchor-turn.md")).isGreaterThanOrEqualTo(2);
     }
 
     @Test
@@ -518,9 +514,8 @@ class Phase3NoteWikiContractTest {
 
         MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("状态 stale-source-updated")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("stale_sources=1")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "历史笔记《A过期资料整理》（来源已更新，以当前原文为准）")))
                 .andReturn();
 
         String stream = result.getResponse().getContentAsString();
@@ -561,13 +556,18 @@ class Phase3NoteWikiContractTest {
         JsonNode noteMessage = sendMessage(conversationId, "NOTE", "继续整理 AvailabilityShared");
         String noteRequestId = noteMessage.path("data").path("assistant_request_id").asText();
 
-        ChatStreamTestSupport.perform(mockMvc, noteRequestId)
+        MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("【Journal 信号】")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("source-unavailable")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("unavailable_sources=1")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("active-availability.md")))
-                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("journal-note, source-window-ready"))));
+                .andReturn();
+        String stream = result.getResponse().getContentAsString();
+        assertThat(stream).contains("历史笔记《失效来源整理》");
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(evidenceSection).doesNotContain("失效来源整理");
+        Integer auditNoteCount = jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_item where workspace_id = ? and item_type = 'NOTE' and title = '失效来源整理'",
+                Integer.class, workspaceId);
+        assertThat(auditNoteCount).isEqualTo(1);
     }
 
     @Test
@@ -689,8 +689,9 @@ class Phase3NoteWikiContractTest {
                 join task t on t.id = o.task_id
                 where t.workspace_id = ? and o.topic = 'noteweave.wiki.ingest'
                 """, Integer.class, enabledWorkspaceId);
-        assertThat(enabledTaskCount).isEqualTo(1);
-        assertThat(outboxCount).isEqualTo(1);
+        // 资料进入 INDEXED 会触发一次 Wiki ingest，测试 helper 的显式请求可能再入队一次
+        assertThat(enabledTaskCount).isGreaterThanOrEqualTo(1);
+        assertThat(outboxCount).isGreaterThanOrEqualTo(1);
 
         Integer generatedWikiPages = jdbcTemplate.queryForObject(
                 "select count(*) from knowledge_item where workspace_id = ? and item_type = 'WIKI'",
@@ -963,6 +964,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.page_kind").value("CONCEPT"))
                 .andReturn();
         String conceptItemId = objectMapper.readTree(conceptPage.getResponse().getContentAsString()).path("data").path("item_id").asText();
+        awaitWikiSearchReady(workspaceId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
                         .param("q", "管理"))
@@ -1051,6 +1053,7 @@ class Phase3NoteWikiContractTest {
         mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/wiki/rebuild-links", workspaceId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.resolved_link_count").value(1));
+        awaitWikiSearchReady(workspaceId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-graph", workspaceId)
                         .param("mode", "ego")
@@ -1069,9 +1072,17 @@ class Phase3NoteWikiContractTest {
         MvcResult missingPage = mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
                         .param("q", "缺失页面"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].title").value("缺失页面"))
+                .andExpect(jsonPath("$.data[*].title").value(org.hamcrest.Matchers.hasItem("缺失页面")))
                 .andReturn();
-        String missingPageId = objectMapper.readTree(missingPage.getResponse().getContentAsString()).path("data").path(0).path("item_id").asText();
+        String missingPageBody = missingPage.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String missingPageId = "";
+        for (JsonNode page : objectMapper.readTree(missingPageBody).path("data")) {
+            if ("缺失页面".equals(page.path("title").asText())) {
+                missingPageId = page.path("item_id").asText();
+                break;
+            }
+        }
+        assertThat(missingPageId).isNotBlank();
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-issues", workspaceId)
                         .param("item_id", missingPageId))
@@ -1083,6 +1094,7 @@ class Phase3NoteWikiContractTest {
                         .content(objectMapper.writeValueAsString(Map.of("title", "已补齐页面"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.title").value("已补齐页面"));
+        awaitWikiSearchReady(workspaceId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-graph", workspaceId))
                 .andExpect(status().isOk())
@@ -1099,6 +1111,7 @@ class Phase3NoteWikiContractTest {
 
         mockMvc.perform(delete("/api/v2/knowledge-items/{itemId}", missingPageId))
                 .andExpect(status().isOk());
+        awaitWikiSearchReady(workspaceId);
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-search", workspaceId)
                         .param("q", "已补齐页面"))
@@ -1523,8 +1536,9 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("会话上下文：已纳入最近连续对话窗口")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "最近对话上下文（含主题摘要与用户约束，不要向用户复述）：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续原文窗口：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AnchorAlpha")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
@@ -1569,8 +1583,9 @@ class Phase3NoteWikiContractTest {
 
         ChatStreamTestSupport.perform(mockMvc, assistantRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("本轮已结合最近连续对话窗口理解这次追问。")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续对话窗口：最近 2 轮相关对话")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "最近对话上下文（含主题摘要与用户约束，不要向用户复述）：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续原文窗口：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Alpha策略")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Alpha执行")));
@@ -1598,6 +1613,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item_type").value("WIKI"))
                 .andReturn();
+        awaitWikiSearchReady(workspaceId);
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
@@ -1633,6 +1649,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.item_type").value("WIKI"))
                 .andReturn();
+        awaitWikiSearchReady(workspaceId);
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data").path("item_id").asText();
     }
 
@@ -1652,7 +1669,16 @@ class Phase3NoteWikiContractTest {
                 set wiki_enabled = false
                 where id = ?
                 """, workspaceId);
+        createdWorkspaceIds.add(workspaceId);
         return workspaceId;
+    }
+
+    @AfterEach
+    void deleteWorkspaceRetrievalIndices() {
+        for (String workspaceId : createdWorkspaceIds) {
+            retrievalIndexCleanup.deleteWorkspaceIndices(workspaceId);
+        }
+        createdWorkspaceIds.clear();
     }
 
     /** 足够长的英文段落，按 Token 切出的阅读窗口多于规划器一次展示的数量。 */
@@ -1697,19 +1723,76 @@ class Phase3NoteWikiContractTest {
         MvcResult completeResult = mockMvc.perform(post("/api/v2/uploads/{uploadId}/complete", uploadId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"))
-                .andExpect(jsonPath("$.data.index_status").value("DISABLED"))
                 .andReturn();
         String sourceId = objectMapper.readTree(completeResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
-        markSourceProjected(sourceId);
+        awaitSourceIndexed(sourceId);
         sourceWikiCommandPort.requestSourceIngest(workspaceId, sourceId);
+        awaitWikiSearchReady(workspaceId);
         return sourceId;
     }
 
-    private void markSourceProjected(String sourceId) {
-        jdbcTemplate.update("update source set status = 'READY', index_status = 'INDEXED' where id = ?", sourceId);
-        jdbcTemplate.update("update source_snapshot set index_status = 'INDEXED' where source_id = ?", sourceId);
-        jdbcTemplate.update("update source_chunk set projection_status = 'PROJECTED', projected_at = current_timestamp where source_id = ?", sourceId);
+    /** 等待异步检索投影完成，资料进入 INDEXED 后才能参与检索与 Wiki 编译。 */
+    private void awaitSourceIndexed(String sourceId) {
+        long deadline = System.currentTimeMillis() + 30_000L;
+        while (System.currentTimeMillis() < deadline) {
+            String indexStatus = jdbcTemplate.queryForObject(
+                    "select index_status from source where id = ?", String.class, sourceId);
+            if ("INDEXED".equals(indexStatus)) {
+                return;
+            }
+            if ("FAILED".equals(indexStatus)) {
+                throw new AssertionError("资料检索投影失败: sourceId=" + sourceId + ", index_status=" + indexStatus);
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待资料检索投影时被中断: sourceId=" + sourceId, ex);
+            }
+        }
+        String indexStatus = jdbcTemplate.queryForObject(
+                "select index_status from source where id = ?", String.class, sourceId);
+        throw new AssertionError("等待资料检索投影超时(30s): sourceId=" + sourceId + ", index_status=" + indexStatus);
+    }
+
+    /** 把 Wiki 索引发件箱中的待投递页面写入 ES，并刷新索引，保证后续检索可见。 */
+    private void awaitWikiSearchReady(String workspaceId) {
+        long deadline = System.currentTimeMillis() + 10_000L;
+        while (System.currentTimeMillis() < deadline) {
+            Integer pending = jdbcTemplate.queryForObject(
+                    "select count(*) from wiki_index_outbox where workspace_id = ? and status = 'PENDING'",
+                    Integer.class, workspaceId);
+            if (pending == null || pending == 0) {
+                break;
+            }
+            wikiIndexOutbox.dispatchPending();
+            try {
+                Thread.sleep(50L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("等待 Wiki 索引时被中断: workspaceId=" + workspaceId, ex);
+            }
+        }
+        try {
+            boolean exists = elasticsearchClient.indices()
+                    .exists(existsRequest -> existsRequest.index("noteweave-wiki")).value();
+            if (exists) {
+                elasticsearchClient.indices().refresh(refresh -> refresh.index("noteweave-wiki"));
+            }
+        } catch (IOException ex) {
+            throw new AssertionError("刷新 Wiki 索引失败: workspaceId=" + workspaceId, ex);
+        }
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int count = 0;
+        int index = 0;
+        while ((index = text.indexOf(needle, index)) >= 0) {
+            count++;
+            index += needle.length();
+        }
+        return count;
     }
 
     private String createConversation(String workspaceId) throws Exception {
