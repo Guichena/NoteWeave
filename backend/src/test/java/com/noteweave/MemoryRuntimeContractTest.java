@@ -27,7 +27,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
 class MemoryRuntimeContractTest {
 
     @Autowired

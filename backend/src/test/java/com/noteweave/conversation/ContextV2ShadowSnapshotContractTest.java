@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.MockMvc;
         "noteweave.context.v2.default-mode=OFF"
 })
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
 class ContextV2ShadowSnapshotContractTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;

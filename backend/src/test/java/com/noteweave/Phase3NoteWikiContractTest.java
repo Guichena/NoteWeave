@@ -304,7 +304,12 @@ class Phase3NoteWikiContractTest {
                 .andReturn();
 
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream.indexOf("AnchorCoverage.md")).isLessThan(stream.indexOf("sample-window.md"));
+        String locationSection = stream.substring(
+                stream.indexOf("## 资料定位"), stream.indexOf("## 摘录证据"));
+        assertThat(locationSection).contains("AnchorCoverage.md", "sample-window.md");
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(evidenceSection.indexOf("AnchorCoverage.md"))
+                .isLessThan(evidenceSection.indexOf("sample-window.md"));
     }
 
     @Test
@@ -1727,14 +1732,24 @@ class Phase3NoteWikiContractTest {
         String sourceId = objectMapper.readTree(completeResult.getResponse().getContentAsString())
                 .path("data").path("source_id").asText();
         awaitSourceIndexed(sourceId);
+        refreshRetrievalIndices();
         sourceWikiCommandPort.requestSourceIngest(workspaceId, sourceId);
         awaitWikiSearchReady(workspaceId);
         return sourceId;
     }
 
+    /** 投影写入后立即刷新，避免近实时检索在断言前看不到刚写入的文档。 */
+    private void refreshRetrievalIndices() {
+        try {
+            elasticsearchClient.indices().refresh(refresh -> refresh
+                    .index("noteweave_qa_chunk_*", "noteweave_note_source_*"));
+        } catch (Exception ignored) {
+            // 索引尚未创建时忽略，检索会返回空结果
+        }
+    }
+
     /** 等待异步检索投影完成，资料进入 INDEXED 后才能参与检索与 Wiki 编译。 */
-    private void awaitSourceIndexed(String sourceId) {
-        long deadline = System.currentTimeMillis() + 30_000L;
+    private void awaitSourceIndexed(String sourceId) {        long deadline = System.currentTimeMillis() + 30_000L;
         while (System.currentTimeMillis() < deadline) {
             String indexStatus = jdbcTemplate.queryForObject(
                     "select index_status from source where id = ?", String.class, sourceId);

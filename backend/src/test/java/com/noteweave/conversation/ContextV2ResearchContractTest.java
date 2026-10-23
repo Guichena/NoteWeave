@@ -48,7 +48,7 @@ import org.springframework.test.web.servlet.MockMvc;
         "noteweave.context.v2.research-active-enabled=true"
 })
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
 class ContextV2ResearchContractTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;

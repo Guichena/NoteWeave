@@ -30,7 +30,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = "noteweave.context.v2.active-enabled=true")
 @AutoConfigureMockMvc
-@ActiveProfiles("test")
+@ActiveProfiles({"test", "test-es"})
 class ContextV2ActiveAnswerContractTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
