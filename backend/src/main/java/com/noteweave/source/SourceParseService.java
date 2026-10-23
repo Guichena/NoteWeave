@@ -117,7 +117,7 @@ public class SourceParseService implements SourceParsePort {
             }
             persistParsedDocument(workspaceId, sourceId, snapshotId, locked.sha256(), extracted);
             String sourceParseTaskId = findSourceParseTaskId(sourceId);
-            if (messagingMode.isAsyncEnabled() && elasticsearchEnabled && sourceParseTaskId == null) {
+            if (elasticsearchEnabled && sourceParseTaskId == null) {
                 sourceParseTaskId = taskCommandPort.createTask(
                         workspaceId, "SOURCE_PARSE", "SOURCE", sourceId, "PARSING", "生成资料解析与索引");
                 taskCommandPort.startTask(sourceParseTaskId);
