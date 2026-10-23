@@ -33,6 +33,10 @@ public enum ConstraintSlot {
      */
     NEGATION("negation", "negation", "NEGATION");
 
+    /** 取值已经以否定词开头时视为完整否定句，不再重复加「不要」。 */
+    private static final java.util.List<String> NEGATION_PREFIXES = java.util.List.of(
+            "不要", "别", "勿", "禁止", "避免", "无需", "不用", "不需要");
+
     private final String wire;
     private final String internalSlot;
     private final String dbKind;
@@ -62,20 +66,44 @@ public enum ConstraintSlot {
      * 禁止项的渲染文本：{@code constraint_text} 直接存这句话，回答提示词与检索改写都按行渲染。
      * <p>
      * 只用于 {@code polarity=FORBID}（以及 {@link #NEGATION} 槽位）；正向槽位仍用取值本身。
-     * 不能把内部槽位名（{@code format.table}）写进提示词，否则回答模型看到的只是一条正向要求。
+     * 模型给了可读取值时必须保留它：{@code DETAIL, value=简短} 要落成「不要简短」，
+     * 固定成「不要展开细节」会把用户的意思说反。取值本身已经是完整否定句时不再叠一层，
+     * 避免出现「不要不要展开」。内部槽位名（{@code format.table}）不是用户可读取值，按缺值处理。
      */
     public String forbidText(String value) {
+        String readable = readableValue(value);
+        if (readable == null) {
+            return switch (this) {
+                case LANGUAGE -> "不要使用这种语言";
+                case TABLE -> "不要使用表格";
+                case CONCLUSION -> "不要先给结论";
+                case BULLETS -> "不要使用分点";
+                case LENGTH_LIMIT -> "不要限制字数";
+                case DETAIL -> "不要展开细节";
+                case CITATION -> "不要标注来源";
+                case CODE -> "不要给出代码";
+                case NEGATION -> "不要这样做";
+            };
+        }
+        for (String prefix : NEGATION_PREFIXES) {
+            if (readable.startsWith(prefix)) {
+                return readable;
+            }
+        }
         return switch (this) {
-            case LANGUAGE -> value == null ? "不要使用这种语言" : "不要使用" + value;
-            case TABLE -> "不要使用表格";
-            case CONCLUSION -> "不要先给结论";
-            case BULLETS -> "不要使用分点";
-            case LENGTH_LIMIT -> "不要限制字数";
-            case DETAIL -> "不要展开细节";
-            case CITATION -> "不要标注来源";
-            case CODE -> "不要给出代码";
-            case NEGATION -> value == null ? "不要这样做" : "不要" + value;
+            case LANGUAGE -> "不要使用" + readable;
+            case LENGTH_LIMIT -> "不要限制为" + readable;
+            default -> "不要" + readable;
         };
+    }
+
+    /** 用户可读取的取值；缺值或内部槽位名（含点号）都不算可读取值。 */
+    private static String readableValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() || trimmed.indexOf('.') >= 0 ? null : trimmed;
     }
 
     /**

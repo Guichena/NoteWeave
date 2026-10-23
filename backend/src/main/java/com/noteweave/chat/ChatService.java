@@ -465,14 +465,15 @@ public class ChatService {
     }
 
     /**
-     * 冻结约束按极性渲染：{@code REQUIRE} 直接给要求，{@code FORBID} 前置「禁止：」，
-     * 让回答模型不用从正文反推「不要使用表格」是一条禁止项。
+     * 冻结约束逐行渲染：正文本身已经是可直接执行的完整指令，禁止项在落库时就是「不要使用表格」
+     * 这种单次否定的句子，所以这里不再前置「禁止：」，否则会出现「禁止：不要使用表格」的双重否定。
+     * 极性仍结构化保存，用于别的渲染入口与统计。
      */
     static String renderV2UserConstraints(ContextV2ShadowSnapshotService.FrozenAnswer frozen) {
         if (frozen == null || frozen.projection().constraints().isEmpty()) return "";
         StringBuilder builder = new StringBuilder("## 当前有效的用户约束（冻结会话）\n");
         frozen.projection().constraints().forEach(rule -> builder
-                .append(rule.polarity() == ConstraintPolarity.FORBID ? "- 禁止：" : "- ")
+                .append("- ")
                 .append(rule.text()).append("\n"));
         return builder.append("\n").toString();
     }

@@ -63,22 +63,11 @@ public final class ConstraintOpSchema {
         if (mapper == null) {
             throw new IllegalArgumentException("mapper 不能为空");
         }
-        if (output == null || output.isBlank()) {
+        JsonNode root = readRoot(mapper, output);
+        if (root == null) {
             return ParseResult.failure(NOT_JSON);
         }
-        // 截取首个 [ 到末个 ]：模型经常包一层说明文字或 ```json 围栏。
-        int start = output.indexOf('[');
-        int end = output.lastIndexOf(']');
-        if (start < 0 || end <= start) {
-            return ParseResult.failure(NOT_JSON);
-        }
-        JsonNode root;
-        try {
-            root = mapper.readTree(output.substring(start, end + 1));
-        } catch (JsonProcessingException ex) {
-            return ParseResult.failure(NOT_JSON);
-        }
-        if (root == null || !root.isArray()) {
+        if (!root.isArray()) {
             return ParseResult.failure(NOT_ARRAY);
         }
         if (root.size() > MAX_OPS) {
@@ -93,6 +82,47 @@ public final class ConstraintOpSchema {
             ops.add(item.op());
         }
         return new ParseResult(List.copyOf(ops), null);
+    }
+
+    /**
+     * 只接受一个完整的 JSON 根：允许整段响应被单个代码围栏包住，拒绝前后缀说明文字、拼接的多个根、
+     * 重复键与截断。原来按首个 {@code [} 到末个 {@code ]} 截取，会把对象里合法的嵌套数组截断，
+     * 也能让两段输出拼成一个恰好可解析的数组，所以改成对整串严格解析。
+     */
+    private static JsonNode readRoot(ObjectMapper mapper, String output) {
+        if (output == null || output.isBlank()) {
+            return null;
+        }
+        String text = stripSingleFence(output.trim());
+        if (text == null || text.isEmpty()) {
+            return null;
+        }
+        try (com.fasterxml.jackson.core.JsonParser parser = mapper.createParser(text)) {
+            parser.enable(com.fasterxml.jackson.core.JsonParser.Feature.STRICT_DUPLICATE_DETECTION);
+            JsonNode root = mapper.readTree(parser);
+            if (root == null || parser.nextToken() != null) {
+                return null;
+            }
+            return root;
+        } catch (java.io.IOException ex) {
+            return null;
+        }
+    }
+
+    /** 整个响应只有一个代码围栏时剥掉围栏，其余情况原样返回；围栏不完整时返回 {@code null}。 */
+    private static String stripSingleFence(String text) {
+        if (!text.startsWith("```")) {
+            return text;
+        }
+        int lineEnd = text.indexOf('\n');
+        if (lineEnd < 0) {
+            return null;
+        }
+        String body = text.substring(lineEnd + 1).stripTrailing();
+        if (!body.endsWith("```")) {
+            return null;
+        }
+        return body.substring(0, body.length() - 3).trim();
     }
 
     private static ItemResult parseItem(JsonNode node) {

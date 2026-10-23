@@ -112,14 +112,30 @@ class ConstraintPolarityAnswerPromptEndToEndTest {
                 .containsEntry("英文", ConstraintPolarity.REQUIRE)
                 .containsEntry("不要使用表格", ConstraintPolarity.FORBID);
 
-        // 3) 回答提示词（ChatService 拼进回答属性的那一段）：FORBID 行带「禁止：」前缀，REQUIRE 行保持原样。
+        // 3) 回答提示词（ChatService 拼进回答属性的那一段）：正文已是完整否定句，不再叠「禁止：」前缀。
         String prompt = answerPrompt(projection);
         assertThat(prompt)
                 .contains("## 当前有效的用户约束（冻结会话）")
                 .contains("- 英文")
-                .contains("- 禁止：不要使用表格")
-                .doesNotContain("- 不要使用表格")
+                .contains("- 不要使用表格")
+                .doesNotContain("禁止：")
                 .doesNotContain("format.table");
+    }
+
+    /** 「不要简短」要保留模型给的值：落库正文是「不要简短」，不是固定的「不要展开细节」。 */
+    @Test
+    void forbidRowKeepsTheModelValueInsteadOfTheFixedOpposite() {
+        userMessage("m1", 1, "回答不要简短。");
+        extractor.ops.put("m1", List.of(op(ConstraintSlot.DETAIL, "简短", ConstraintPolarity.FORBID)));
+
+        topics.refresh(WORKSPACE, CONVERSATION);
+
+        String detailId = ConstraintIds.of("m1", "detail", 0);
+        assertThat(textOf(detailId)).isEqualTo("不要简短");
+        assertThat(polarityOf(detailId)).isEqualTo("FORBID");
+        assertThat(answerPrompt(compile()))
+                .contains("- 不要简短")
+                .doesNotContain("不要展开细节");
     }
 
     /** 正向要求不受影响：没有 FORBID 行时提示词与加列前完全一致。 */

@@ -53,6 +53,12 @@ class ConstraintSlotMappingTest {
         assertThat(ConstraintSlot.BULLETS.forbidText(null)).isEqualTo("不要使用分点");
         assertThat(ConstraintSlot.NEGATION.forbidText(null)).isEqualTo("不要这样做");
         assertThat(ConstraintSlot.NEGATION.forbidText("大段配置")).isEqualTo("不要大段配置");
+        // 模型给了可读取值时保留它，不能固定成相反的意思。
+        assertThat(ConstraintSlot.DETAIL.forbidText("简短")).isEqualTo("不要简短");
+        assertThat(ConstraintSlot.LENGTH_LIMIT.forbidText("100字")).isEqualTo("不要限制为100字");
+        // 取值本身已是完整否定句时不再叠一层。
+        assertThat(ConstraintSlot.DETAIL.forbidText("不要展开")).isEqualTo("不要展开");
+        assertThat(ConstraintSlot.LENGTH_LIMIT.forbidText("不要太长")).isEqualTo("不要太长");
     }
 
     @Test

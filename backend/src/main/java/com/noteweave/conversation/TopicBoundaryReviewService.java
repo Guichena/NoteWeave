@@ -52,7 +52,8 @@ public class TopicBoundaryReviewService {
         try {
             reviewPending();
         } catch (RuntimeException ex) {
-            log.warn("话题边界复核失败: {}", ex.getMessage());
+            // 只记异常类型：正文可能带上游响应片段，不写进日志。
+            log.warn("话题边界复核失败: type={}", ex.getClass().getSimpleName());
         }
     }
 

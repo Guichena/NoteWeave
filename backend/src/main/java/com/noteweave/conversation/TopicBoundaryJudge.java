@@ -56,7 +56,9 @@ final class TopicBoundaryJudge {
                 }
                 user = user + "\n上次输出不合规，只输出 JSON，decision 取 SAME、NEW、RETURN。RETURN 还要给出 topic_index。";
             } catch (RuntimeException ex) {
-                log.warn("话题边界复核失败: {}", ex.getMessage());
+                // 只记类型与尝试次数：异常正文可能带上游响应片段，不写进日志。
+                log.warn("话题边界复核失败: type={}, attempt={}/{}",
+                        ex.getClass().getSimpleName(), attempt + 1, MAX_ATTEMPTS);
                 user = user + "\n上次调用失败，只输出 JSON，decision 取 SAME、NEW、RETURN。RETURN 还要给出 topic_index。";
             }
         }

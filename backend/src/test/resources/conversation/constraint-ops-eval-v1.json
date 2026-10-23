@@ -472,7 +472,7 @@
     },
     {
       "id": "no-table-use-bullets",
-      "note": "一条消息里两个要求：不要表格（FORBID + 被否定对象的槽位，落成禁止项文本）与改用分点（REQUIRE），两行都落库且互不撤回。",
+      "note": "一条消息里两个要求：不要表格（FORBID + 被否定对象的槽位，落成禁止项文本）与改用分点（REQUIRE），两行都落库且互不撤回。这句话没有「以后」「每次」这类长期措辞，按默认口径只作用于当前话题。",
       "messages": [
         {
           "id": "c1",
@@ -491,7 +491,7 @@
               "slot": "table",
               "value": "format.table",
               "polarity": "FORBID",
-              "scope": "conversation",
+              "scope": "current-topic",
               "confidence": 0.85
             },
             {
@@ -499,7 +499,7 @@
               "slot": "bullets",
               "value": "format.bullets",
               "polarity": "REQUIRE",
-              "scope": "conversation",
+              "scope": "current-topic",
               "confidence": 0.85
             }
           ]
@@ -511,7 +511,7 @@
           "slot": "table",
           "op_index": 0,
           "value": "不要使用表格",
-          "scope": "CONVERSATION",
+          "scope": "CURRENT_TOPIC",
           "status": "ACTIVE",
           "polarity": "FORBID"
         },
@@ -520,7 +520,7 @@
           "slot": "bullets",
           "op_index": 1,
           "value": "format.bullets",
-          "scope": "CONVERSATION",
+          "scope": "CURRENT_TOPIC",
           "status": "ACTIVE",
           "polarity": "REQUIRE"
         }
