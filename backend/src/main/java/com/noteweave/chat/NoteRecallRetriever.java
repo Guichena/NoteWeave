@@ -24,7 +24,6 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 
 @Component
 public class NoteRecallRetriever {
@@ -36,7 +35,6 @@ public class NoteRecallRetriever {
     private final NoteSourceSearchPort sourceSearchPort;
     private final NoteSourceRerankService rerankService;
     private final NoteTagResolver tagResolver;
-    private final boolean localMetadataFallbackEnabled;
 
     public NoteRecallRetriever(
             NoteRecallRepository repository,
@@ -44,7 +42,7 @@ public class NoteRecallRetriever {
             NoteRelationGraph relationGraph,
             NoteRecallRanker ranker
     ) {
-        this(repository, journalRetriever, relationGraph, ranker, null, null, null, null, true);
+        this(repository, journalRetriever, relationGraph, ranker, null, null, null, null);
     }
 
     @Autowired
@@ -56,9 +54,7 @@ public class NoteRecallRetriever {
             EmbeddingClient embeddingClient,
             NoteSourceSearchPort sourceSearchPort,
             NoteSourceRerankService rerankService,
-            NoteTagResolver tagResolver,
-            @Value("${noteweave.retrieval.note.local-metadata-fallback-enabled:false}")
-            boolean localMetadataFallbackEnabled
+            NoteTagResolver tagResolver
     ) {
         this.repository = repository;
         this.journalRetriever = journalRetriever;
@@ -68,7 +64,6 @@ public class NoteRecallRetriever {
         this.sourceSearchPort = sourceSearchPort;
         this.rerankService = rerankService;
         this.tagResolver = tagResolver;
-        this.localMetadataFallbackEnabled = localMetadataFallbackEnabled;
     }
 
     public NoteRecallPlan retrieve(String workspaceId, String query) {
@@ -120,18 +115,12 @@ public class NoteRecallRetriever {
                 && !degradationReasons.contains("NOTE_SEMANTIC_RECALL_UNAVAILABLE")) {
             degradationReasons.add("NOTE_SEMANTIC_RECALL_UNAVAILABLE");
         }
-        boolean sourceRecallUnavailable = !semanticAvailable && !metadataAvailable;
-        if (sourceRecallUnavailable) {
+        if (!semanticAvailable && !metadataAvailable) {
             degradationReasons.add("NOTE_SOURCE_RECALL_UNAVAILABLE");
-            if (!localMetadataFallbackEnabled) {
-                throw new RetrievalProviderException(
-                        "NOTE_SOURCE_RETRIEVAL_PROVIDER_UNAVAILABLE",
-                        "Note source retrieval provider is unavailable"
-                );
-            }
-            degradationReasons.add("NOTE_LOCAL_METADATA_FALLBACK");
-            metadataOrder = new ArrayList<>(emptyIfNull(repository.findLexicalSourceIds(
-                    workspaceId, terms, NoteRetrievalStrategyProfile.CHANNEL_LIMIT)));
+            throw new RetrievalProviderException(
+                    "NOTE_SOURCE_RETRIEVAL_PROVIDER_UNAVAILABLE",
+                    "Note source retrieval provider is unavailable"
+            );
         }
         List<String> tagOrder = tagResolver == null
                 ? List.of()
@@ -152,19 +141,6 @@ public class NoteRecallRetriever {
                 : tagResolver.resolve(terms, directSources);
         Map<String, Integer> tagScores = tagResolution.sourceScores();
         tagOrder = orderByScore(tagScores);
-        Map<String, NoteRecallRanker.MetadataRank> metadataRanks = sourceRecallUnavailable
-                ? ranker.rankMetadata(directSources, terms)
-                : Map.of();
-        if (sourceRecallUnavailable) {
-            metadataOrder = directSources.stream()
-                    .filter(source -> metadataRanks.getOrDefault(
-                            source.sourceId(), NoteRecallRanker.MetadataRank.empty()).score() > 0)
-                    .sorted(Comparator.comparingInt((CandidateSource source) -> metadataRanks.getOrDefault(
-                                    source.sourceId(), NoteRecallRanker.MetadataRank.empty()).score()).reversed()
-                            .thenComparing(CandidateSource::sourceId))
-                    .map(CandidateSource::sourceId)
-                    .toList();
-        }
 
         Map<String, Integer> preRelation = new HashMap<>();
         addChannel(preRelation, semanticOrder, NoteRetrievalStrategyProfile.VECTOR_WEIGHT);
@@ -218,7 +194,6 @@ public class NoteRecallRetriever {
                 .filter(source -> fused.getOrDefault(source.sourceId(), 0) > 0)
                 .map(source -> scoreCandidate(
                         source,
-                        metadataRanks,
                         metadataParts.getOrDefault(source.sourceId(), 0),
                         tagParts.getOrDefault(source.sourceId(), 0),
                         semanticParts.getOrDefault(source.sourceId(), 0),
@@ -234,7 +209,6 @@ public class NoteRecallRetriever {
         baseMeasurements.put("resolved_tag_count", (long) tagResolution.resolvedTags().size());
         baseMeasurements.put("semantic_hit_count", (long) semanticOrder.size());
         baseMeasurements.put("metadata_index_hit_count", (long) metadataOrder.size());
-        baseMeasurements.put("note_local_fallback_used", sourceRecallUnavailable ? 1L : 0L);
         if (scored.isEmpty()) {
             degradationReasons.add("note_no_relevant_candidates");
             return new NoteRecallPlan(journalHits, List.of(), List.of(), List.of(), new NoteRecallTrace(
@@ -279,7 +253,6 @@ public class NoteRecallRetriever {
 
     private NoteRecallRanker.ScoredCandidate scoreCandidate(
             CandidateSource source,
-            Map<String, NoteRecallRanker.MetadataRank> metadataRanks,
             int metadataChannelScore,
             int tagChannelScore,
             int semanticScore,
@@ -288,8 +261,7 @@ public class NoteRecallRetriever {
             NoteRelationSignal relationSignal,
             int fusedScore
     ) {
-        NoteRecallRanker.MetadataRank metadataRank = metadataRanks.getOrDefault(
-                source.sourceId(), NoteRecallRanker.MetadataRank.empty());
+        NoteRecallRanker.MetadataRank metadataRank = NoteRecallRanker.MetadataRank.empty();
         int metadataScore = metadataChannelScore + tagChannelScore;
         CandidateSource scoredSource = source.withScore(fusedScore)
                 .withRecallSignals(recallSignals(

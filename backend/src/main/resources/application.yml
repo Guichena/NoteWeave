@@ -111,10 +111,6 @@ noteweave:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
     evidence-sufficiency:
       enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
-    qa:
-      mysql-fallback-enabled: ${NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED:false}
-    note:
-      local-metadata-fallback-enabled: ${NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED:false}
   answer:
     events:
       channel-retention-seconds: ${NOTEWEAVE_ANSWER_EVENTS_CHANNEL_RETENTION_SECONDS:900}

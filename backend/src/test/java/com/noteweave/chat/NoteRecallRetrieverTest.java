@@ -8,7 +8,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -26,53 +25,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 class NoteRecallRetrieverTest {
-    @Test
-    void shouldOrchestrateRepositoryJournalRelationAndRankerWithoutChangingRecallShape() {
-        NoteRecallRepository repository = mock(NoteRecallRepository.class);
-        NoteJournalRetriever journalRetriever = mock(NoteJournalRetriever.class);
-        CandidateSource source = new CandidateSource(
-                "source", "Spring reference", "MARKDOWN", 1, 1,
-                "", "", "", "[]", "{}", "",
-                0, "", List.of(), List.of(), 0, 0, "", ""
-        );
-        when(repository.findLexicalSourceIds(eq("workspace"), anyCollection(), anyInt()))
-                .thenReturn(List.of("source"));
-        when(repository.findCurrentSourcesByIds(eq("workspace"), anyCollection()))
-                .thenReturn(List.of(source));
-        when(journalRetriever.sourceSignals(eq("workspace"), anySet()))
-                .thenReturn(Map.of());
-        when(journalRetriever.retrieve("workspace", "spring")).thenReturn(List.of());
-        NoteRecallRetriever retriever = new NoteRecallRetriever(
-                repository,
-                journalRetriever,
-                new NoteRelationGraph(),
-                new NoteRecallRanker()
-        );
-
-        var plan = retriever.retrieve("workspace", "spring");
-
-        assertThat(plan.candidateSources()).extracting(CandidateSource::sourceId)
-                .containsExactly("source");
-        assertThat(plan.candidateSources().get(0).recallSignals())
-                .contains("coverage-aware-metadata-rank", "source-window-ready");
-        assertThat(plan.trace().candidateCount()).isEqualTo(1);
-        assertThat(plan.trace().metadataScoreSum()).isPositive();
-        assertThat(plan.candidateSources().get(0).matchedFields()).contains("title");
-        assertThat(plan.degraded()).isTrue();
-        assertThat(plan.degradationReasons())
-                .containsExactly(
-                        "NOTE_SOURCE_RECALL_UNAVAILABLE",
-                        "NOTE_LOCAL_METADATA_FALLBACK",
-                        "NOTE_SOURCE_RERANK_UNAVAILABLE"
-                );
-        assertThat(plan.measurements()).containsEntry("note_local_fallback_used", 1L);
-        verify(repository).findLexicalSourceIds(eq("workspace"), anyCollection(), anyInt());
-        verify(repository).findCurrentSourcesByIds(eq("workspace"), anyCollection());
-        verify(repository, never()).findCurrentSources(any());
-        verify(repository, never()).sourceIdsByNote(any());
-        verify(repository, never()).sourceIdsByAnsweredTurn(any());
-    }
-
     @Test
     void semanticRecallHitShouldSeedRelationExpansion() {
         NoteRecallRepository repository = mock(NoteRecallRepository.class);
@@ -101,7 +53,7 @@ class NoteRecallRetrieverTest {
         when(search.metadataRetrieve("workspace", "unmatched query", 80)).thenReturn(List.of());
         NoteRecallRetriever retriever = new NoteRecallRetriever(
                 repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
-                embedding, search, null, null, false);
+                embedding, search, null, null);
 
         var plan = retriever.retrieve("workspace", "unmatched query");
 
@@ -128,17 +80,16 @@ class NoteRecallRetrieverTest {
         when(search.metadataRetrieve("workspace", "spring", 80)).thenReturn(List.of());
         NoteRecallRetriever retriever = new NoteRecallRetriever(
                 repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
-                embedding, search, null, null, false);
+                embedding, search, null, null);
 
         var plan = retriever.retrieve("workspace", "spring");
 
         assertThat(plan.candidateSources()).isEmpty();
         assertThat(plan.degradationReasons()).containsExactly("note_no_relevant_candidates");
-        assertThat(plan.measurements()).containsEntry("note_local_fallback_used", 0L);
     }
 
     @Test
-    void unavailableProviderMustFailWhenLocalFallbackIsDisabled() {
+    void unavailableProviderMustFailClosed() {
         NoteRecallRepository repository = mock(NoteRecallRepository.class);
         NoteJournalRetriever journalRetriever = mock(NoteJournalRetriever.class);
         when(journalRetriever.sourceSignals(eq("workspace"), anySet()))
@@ -146,7 +97,7 @@ class NoteRecallRetrieverTest {
         when(journalRetriever.retrieve("workspace", "query")).thenReturn(List.of());
         NoteRecallRetriever retriever = new NoteRecallRetriever(
                 repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
-                null, null, null, null, false);
+                null, null, null, null);
 
         assertThatThrownBy(() -> retriever.retrieve("workspace", "query"))
                 .isInstanceOfSatisfying(RetrievalProviderException.class, error ->
@@ -179,7 +130,7 @@ class NoteRecallRetrieverTest {
         when(search.semanticRetrieve(eq("workspace"), eq(List.of(1f)), anyInt())).thenReturn(semanticHits);
         NoteRecallRetriever retriever = new NoteRecallRetriever(
                 repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
-                embedding, search, null, null, false);
+                embedding, search, null, null);
 
         retriever.retrieve("workspace", "roundrobinquery");
 
@@ -219,7 +170,7 @@ class NoteRecallRetrieverTest {
         when(search.metadataRetrieve("workspace", "expansionprobe", 80)).thenReturn(List.of());
         NoteRecallRetriever retriever = new NoteRecallRetriever(
                 repository, journalRetriever, new NoteRelationGraph(), new NoteRecallRanker(),
-                embedding, search, null, null, false);
+                embedding, search, null, null);
 
         retriever.retrieve("workspace", "expansionprobe");
 
@@ -253,27 +204,24 @@ class NoteRecallRetrieverTest {
                 when(search.metadataRetrieve("workspace", "spring", 80)).thenThrow(new IllegalStateException());
             }
             var retriever = new NoteRecallRetriever(repository, journal, new NoteRelationGraph(),
-                    new NoteRecallRanker(), embedding, search, null, null, true);
+                    new NoteRecallRanker(), embedding, search, null, null);
             var plan = retriever.retrieve("workspace", "spring");
             assertThat(plan.candidateSources()).extracting(CandidateSource::sourceId).containsExactly("source");
             assertThat(plan.degradationReasons()).contains(semanticFails
                     ? "NOTE_SEMANTIC_RECALL_UNAVAILABLE" : "NOTE_METADATA_RECALL_UNAVAILABLE");
-            assertThat(plan.measurements()).containsEntry("note_local_fallback_used", 0L);
-            verify(repository, never()).findLexicalSourceIds(any(), anyCollection(), anyInt());
         }
     }
 
     @Test
-    void businessFailureMustNotBecomeLocalFallback() {
+    void businessFailureMustPropagateUnchanged() {
         var repository = mock(NoteRecallRepository.class);
         var search = mock(NoteSourceSearchPort.class);
         var failure = new com.noteweave.common.BusinessException("ORIGIN_INVALID", "denied",
                 org.springframework.http.HttpStatus.FORBIDDEN);
         when(search.metadataRetrieve("workspace", "spring", 80)).thenThrow(failure);
         var retriever = new NoteRecallRetriever(repository, mock(NoteJournalRetriever.class),
-                new NoteRelationGraph(), new NoteRecallRanker(), null, search, null, null, true);
+                new NoteRelationGraph(), new NoteRecallRanker(), null, search, null, null);
         assertThatThrownBy(() -> retriever.retrieve("workspace", "spring")).isSameAs(failure);
-        verify(repository, never()).findLexicalSourceIds(any(), anyCollection(), anyInt());
     }
 
     private CandidateSource source(String id, String title, String tagsJson) {

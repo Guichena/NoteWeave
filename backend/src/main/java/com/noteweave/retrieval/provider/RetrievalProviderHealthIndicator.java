@@ -6,7 +6,6 @@ import org.springframework.stereotype.Component;
 import com.noteweave.config.NoteWeaveProperties;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 
 @Component("retrievalProviders")
 public class RetrievalProviderHealthIndicator implements HealthIndicator {
@@ -14,7 +13,6 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
     private final EmbeddingClient embeddingClient;
     private final RerankClient rerankClient;
     private final int expectedDimensions;
-    private final boolean mysqlFallbackEnabled;
     private final boolean elasticsearchEnabled;
     private volatile CachedHealth cachedHealth;
 
@@ -22,38 +20,26 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
     public RetrievalProviderHealthIndicator(
             EmbeddingClient embeddingClient,
             RerankClient rerankClient,
-            NoteWeaveProperties properties,
-            @Value("${noteweave.retrieval.qa.mysql-fallback-enabled:false}") boolean mysqlFallbackEnabled
+            NoteWeaveProperties properties
     ) {
         this.embeddingClient = embeddingClient;
         this.rerankClient = rerankClient;
         this.expectedDimensions = properties.embedding().dimensions();
-        this.mysqlFallbackEnabled = mysqlFallbackEnabled;
         this.elasticsearchEnabled = properties.elasticsearch().enabled();
     }
 
     public RetrievalProviderHealthIndicator(EmbeddingClient embeddingClient, RerankClient rerankClient) {
-        this(embeddingClient, rerankClient, false);
+        this(embeddingClient, rerankClient, true);
     }
 
     public RetrievalProviderHealthIndicator(
             EmbeddingClient embeddingClient,
             RerankClient rerankClient,
-            boolean mysqlFallbackEnabled
-    ) {
-        this(embeddingClient, rerankClient, mysqlFallbackEnabled, true);
-    }
-
-    public RetrievalProviderHealthIndicator(
-            EmbeddingClient embeddingClient,
-            RerankClient rerankClient,
-            boolean mysqlFallbackEnabled,
             boolean elasticsearchEnabled
     ) {
         this.embeddingClient = embeddingClient;
         this.rerankClient = rerankClient;
         this.expectedDimensions = -1;
-        this.mysqlFallbackEnabled = mysqlFallbackEnabled;
         this.elasticsearchEnabled = elasticsearchEnabled;
     }
 
@@ -100,8 +86,7 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
         }
         boolean primaryAvailable = elasticsearchEnabled
                 && embeddingEnabled && rerankEnabled && embeddingProbe && rerankProbe;
-        boolean retrievalAvailable = primaryAvailable || mysqlFallbackEnabled;
-        Health.Builder builder = retrievalAvailable ? Health.up() : Health.outOfService();
+        Health.Builder builder = primaryAvailable ? Health.up() : Health.outOfService();
         return builder
                 .withDetail("embedding_configured", embeddingEnabled)
                 .withDetail("rerank_configured", rerankEnabled)
@@ -109,8 +94,6 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
                 .withDetail("embedding_probe", embeddingProbe)
                 .withDetail("rerank_probe", rerankProbe)
                 .withDetail("primary_available", primaryAvailable)
-                .withDetail("mysql_fallback_enabled", mysqlFallbackEnabled)
-                .withDetail("degraded", !primaryAvailable && mysqlFallbackEnabled)
                 .withDetail("probe_error_code", errorCode)
                 .build();
     }

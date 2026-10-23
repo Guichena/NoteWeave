@@ -42,19 +42,10 @@ class ProductionConfigurationGuardTest {
     }
 
     @Test
-    void productionMustRejectQaMysqlFallback() {
-        assertThatThrownBy(() -> ProductionConfigurationGuard.validateValues(
-                "token-with-entropy", "database-secret-2026", "minio-secret-2026",
-                "artifact-callback-secret-with-entropy", false, true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED");
-    }
-
-    @Test
     void productionMustRejectLocalQuotaFallback() {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateValues(
                 "token-with-entropy", "database-secret-2026", "minio-secret-2026",
-                "artifact-callback-secret-with-entropy", false, false, true))
+                "artifact-callback-secret-with-entropy", false, true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NOTEWEAVE_QUOTA_LOCAL_FALLBACK_ENABLED");
     }
@@ -63,7 +54,7 @@ class ProductionConfigurationGuardTest {
     void productionMustRejectAnswerTemplateFallback() {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateValues(
                 "token-with-entropy", "database-secret-2026", "minio-secret-2026",
-                "artifact-callback-secret-with-entropy", false, false, false, true))
+                "artifact-callback-secret-with-entropy", false, false, true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED");
     }
@@ -97,13 +88,6 @@ class ProductionConfigurationGuardTest {
     }
 
     @Test
-    void productionMustRejectNoteLocalMetadataFallback() {
-        assertThatThrownBy(() -> ProductionConfigurationGuard.validateNoteLocalFallback(true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED");
-    }
-
-    @Test
     void productionMustRejectResearchRateLimitLocalFallback() {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateResearchRateLimitLocalFallback(true))
                 .isInstanceOf(IllegalStateException.class)
@@ -124,7 +108,7 @@ class ProductionConfigurationGuardTest {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateProductionValues(
                 "coordinator-token-with-entropy", "shared-token-with-entropy", "shared-token-with-entropy",
                 "database-secret-2026", "minio-secret-2026", "artifact-callback-secret-with-entropy",
-                false, false, false, false, "https://artifact-worker.internal", "SASL_SSL"))
+                false, false, false, "https://artifact-worker.internal", "SASL_SSL"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("distinct per audience");
     }
@@ -134,14 +118,14 @@ class ProductionConfigurationGuardTest {
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateProductionValues(
                 "coordinator-token-with-entropy", "research-token-with-entropy", "artifact-token-with-entropy",
                 "database-secret-2026", "minio-secret-2026", "artifact-callback-secret-with-entropy",
-                false, false, false, false, "http://artifact-worker.internal", "SASL_SSL"))
+                false, false, false, "http://artifact-worker.internal", "SASL_SSL"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("HTTPS");
 
         assertThatThrownBy(() -> ProductionConfigurationGuard.validateProductionValues(
                 "coordinator-token-with-entropy", "research-token-with-entropy", "artifact-token-with-entropy",
                 "database-secret-2026", "minio-secret-2026", "artifact-callback-secret-with-entropy",
-                false, false, false, false, "https://artifact-worker.internal", "SASL_PLAINTEXT"))
+                false, false, false, "https://artifact-worker.internal", "SASL_PLAINTEXT"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("SASL_SSL");
     }

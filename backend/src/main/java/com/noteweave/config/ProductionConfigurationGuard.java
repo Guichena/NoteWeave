@@ -17,8 +17,6 @@ public class ProductionConfigurationGuard {
     private final String minioSecretKey;
     private final String artifactCallbackSecret;
     private final boolean localUserFallback;
-    private final boolean qaMysqlFallbackEnabled;
-    private final boolean noteLocalMetadataFallbackEnabled;
     private final boolean quotaLocalFallbackEnabled;
     private final boolean researchRateLimitLocalFallbackEnabled;
     private final boolean llmTemplateFallbackEnabled;
@@ -42,9 +40,6 @@ public class ProductionConfigurationGuard {
             @Value("${noteweave.storage.minio.secret-key:}") String minioSecretKey,
             @Value("${noteweave.worker.artifact-callback-secret:}") String artifactCallbackSecret,
             @Value("${noteweave.security.local-user-fallback:false}") boolean localUserFallback,
-            @Value("${noteweave.retrieval.qa.mysql-fallback-enabled:false}") boolean qaMysqlFallbackEnabled,
-            @Value("${noteweave.retrieval.note.local-metadata-fallback-enabled:false}")
-            boolean noteLocalMetadataFallbackEnabled,
             @Value("${noteweave.quota.local-fallback-enabled:false}") boolean quotaLocalFallbackEnabled,
             @Value("${noteweave.research.agent.rate-limit.allow-local-fallback:false}")
             boolean researchRateLimitLocalFallbackEnabled,
@@ -68,8 +63,6 @@ public class ProductionConfigurationGuard {
         this.minioSecretKey = minioSecretKey;
         this.artifactCallbackSecret = artifactCallbackSecret;
         this.localUserFallback = localUserFallback;
-        this.qaMysqlFallbackEnabled = qaMysqlFallbackEnabled;
-        this.noteLocalMetadataFallbackEnabled = noteLocalMetadataFallbackEnabled;
         this.quotaLocalFallbackEnabled = quotaLocalFallbackEnabled;
         this.researchRateLimitLocalFallbackEnabled = researchRateLimitLocalFallbackEnabled;
         this.llmTemplateFallbackEnabled = llmTemplateFallbackEnabled;
@@ -90,11 +83,10 @@ public class ProductionConfigurationGuard {
         validateEnvironmentAlignment(environment, activeProfiles);
         if (isProduction(environment)) {
             validateKafkaEnabled(kafkaEnabled);
-            validateNoteLocalFallback(noteLocalMetadataFallbackEnabled);
             validateResearchRateLimitLocalFallback(researchRateLimitLocalFallbackEnabled);
             validateProductionValues(internalAuthToken, researchInternalAuthToken, artifactInternalAuthToken,
                     datasourcePassword, minioSecretKey,
-                    artifactCallbackSecret, localUserFallback, qaMysqlFallbackEnabled,
+                    artifactCallbackSecret, localUserFallback,
                     quotaLocalFallbackEnabled, llmTemplateFallbackEnabled, artifactWorkerBaseUrl,
                     kafkaSecurityProtocol, redisPassword, elasticPassword, kafkaSaslPassword,
                     minioAccessKey, minioEndpoint, elasticScheme);
@@ -126,13 +118,6 @@ public class ProductionConfigurationGuard {
         }
     }
 
-    public static void validateNoteLocalFallback(boolean noteLocalMetadataFallbackEnabled) {
-        if (noteLocalMetadataFallbackEnabled) {
-            throw new IllegalStateException(
-                    "Production must disable NOTEWEAVE_NOTE_LOCAL_METADATA_FALLBACK_ENABLED");
-        }
-    }
-
     public static void validateResearchRateLimitLocalFallback(boolean enabled) {
         if (enabled) {
             throw new IllegalStateException(
@@ -160,7 +145,7 @@ public class ProductionConfigurationGuard {
     ) {
         validateValues(internalAuthToken, datasourcePassword, minioSecretKey,
                 "test-artifact-callback-secret-with-entropy",
-                localUserFallback, false);
+                localUserFallback);
     }
 
     public static void validateValues(
@@ -171,7 +156,7 @@ public class ProductionConfigurationGuard {
             boolean localUserFallback
     ) {
         validateValues(internalAuthToken, datasourcePassword, minioSecretKey,
-                artifactCallbackSecret, localUserFallback, false, false, false);
+                artifactCallbackSecret, localUserFallback, false, false);
     }
 
     public static void validateValues(
@@ -180,23 +165,10 @@ public class ProductionConfigurationGuard {
             String minioSecretKey,
             String artifactCallbackSecret,
             boolean localUserFallback,
-            boolean qaMysqlFallbackEnabled
-    ) {
-        validateValues(internalAuthToken, datasourcePassword, minioSecretKey,
-                artifactCallbackSecret, localUserFallback, qaMysqlFallbackEnabled, false, false);
-    }
-
-    public static void validateValues(
-            String internalAuthToken,
-            String datasourcePassword,
-            String minioSecretKey,
-            String artifactCallbackSecret,
-            boolean localUserFallback,
-            boolean qaMysqlFallbackEnabled,
             boolean quotaLocalFallbackEnabled
     ) {
         validateValues(internalAuthToken, datasourcePassword, minioSecretKey,
-                artifactCallbackSecret, localUserFallback, qaMysqlFallbackEnabled,
+                artifactCallbackSecret, localUserFallback,
                 quotaLocalFallbackEnabled, false);
     }
 
@@ -206,7 +178,6 @@ public class ProductionConfigurationGuard {
             String minioSecretKey,
             String artifactCallbackSecret,
             boolean localUserFallback,
-            boolean qaMysqlFallbackEnabled,
             boolean quotaLocalFallbackEnabled,
             boolean llmTemplateFallbackEnabled
     ) {
@@ -226,9 +197,6 @@ public class ProductionConfigurationGuard {
         if (localUserFallback) {
             throw new IllegalStateException("Production must disable NOTEWEAVE_LOCAL_USER_FALLBACK");
         }
-        if (qaMysqlFallbackEnabled) {
-            throw new IllegalStateException("Production must disable NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED");
-        }
         if (quotaLocalFallbackEnabled) {
             throw new IllegalStateException("Production must disable NOTEWEAVE_QUOTA_LOCAL_FALLBACK_ENABLED");
         }
@@ -245,7 +213,6 @@ public class ProductionConfigurationGuard {
             String minioSecretKey,
             String artifactCallbackSecret,
             boolean localUserFallback,
-            boolean qaMysqlFallbackEnabled,
             boolean quotaLocalFallbackEnabled,
             boolean llmTemplateFallbackEnabled,
             String artifactWorkerBaseUrl,
@@ -254,7 +221,7 @@ public class ProductionConfigurationGuard {
         validateProductionValues(
                 internalAuthToken, researchInternalAuthToken, artifactInternalAuthToken,
                 datasourcePassword, minioSecretKey, artifactCallbackSecret,
-                localUserFallback, qaMysqlFallbackEnabled, quotaLocalFallbackEnabled,
+                localUserFallback, quotaLocalFallbackEnabled,
                 llmTemplateFallbackEnabled, artifactWorkerBaseUrl, kafkaSecurityProtocol,
                 null, null, null, null, null, null
         );
@@ -268,7 +235,6 @@ public class ProductionConfigurationGuard {
             String minioSecretKey,
             String artifactCallbackSecret,
             boolean localUserFallback,
-            boolean qaMysqlFallbackEnabled,
             boolean quotaLocalFallbackEnabled,
             boolean llmTemplateFallbackEnabled,
             String artifactWorkerBaseUrl,
@@ -281,7 +247,7 @@ public class ProductionConfigurationGuard {
             String elasticScheme
     ) {
         validateValues(internalAuthToken, datasourcePassword, minioSecretKey, artifactCallbackSecret,
-                localUserFallback, qaMysqlFallbackEnabled, quotaLocalFallbackEnabled,
+                localUserFallback, quotaLocalFallbackEnabled,
                 llmTemplateFallbackEnabled);
         if (isWeak(researchInternalAuthToken, "replace-with-a-dedicated-research-worker-token")) {
             throw new IllegalStateException("Production requires a non-default NOTEWEAVE_RESEARCH_INTERNAL_AUTH_TOKEN");

@@ -636,8 +636,7 @@ class ArchitectureBoundaryTest {
                 .contains("QA_RETRIEVAL_PROVIDER_UNAVAILABLE")
                 .doesNotContain("hybridRetriever, true", "retrievalHydrator, null, true");
         assertThat(guard)
-                .contains("qaMysqlFallbackEnabled")
-                .contains("Production must disable NOTEWEAVE_QA_MYSQL_FALLBACK_ENABLED");
+                .doesNotContain("MYSQL_FALLBACK");
     }
 
     @Test

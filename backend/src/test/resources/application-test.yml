@@ -32,10 +32,6 @@ noteweave:
       enabled: true
     evidence-sufficiency:
       enabled: true
-    qa:
-      mysql-fallback-enabled: true
-    note:
-      local-metadata-fallback-enabled: true
   llm:
     enabled: false
     template-fallback-enabled: true

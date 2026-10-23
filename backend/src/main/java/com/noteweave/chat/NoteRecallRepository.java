@@ -112,11 +112,6 @@ public class NoteRecallRepository {
         return filterVisible(workspaceId, sources);
     }
 
-    /** 用标题、摘要、标签、元数据、类型和当前快照正文预筛降级 BM25F 的候选。 */
-    public List<String> findLexicalSourceIds(String workspaceId, Collection<String> terms, int limit) {
-        return findMatchingSourceIds(workspaceId, terms, Set.of(), limit, LEXICAL_TERM);
-    }
-
     /** 标签通道：tags_json 命中查询词的资料。 */
     public List<String> findTagSourceIds(String workspaceId, Collection<String> terms, int limit) {
         return findMatchingSourceIds(workspaceId, terms, Set.of(), limit, TAG_TERM);
@@ -393,23 +388,6 @@ public class NoteRecallRepository {
         }
         return count;
     }
-
-    private static final String LEXICAL_TERM = """
-            lower(s.title) like ?
-            or lower(coalesce(s.summary, '')) like ?
-            or lower(coalesce(s.tags_json, '')) like ?
-            or lower(coalesce(s.metadata_json, '')) like ?
-            or lower(coalesce(s.source_type, '')) like ?
-            or exists (
-                select 1 from source_chunk c
-                join source_snapshot ss on ss.id = c.source_snapshot_id
-                  and ss.index_status = 'INDEXED'
-                  and ss.version_no = (
-                      select max(current_ss.version_no) from source_snapshot current_ss
-                      where current_ss.source_id = s.id and current_ss.index_status = 'INDEXED')
-                where c.source_id = s.id and lower(c.content) like ?
-            )
-            """;
 
     private static final String TITLE_SUMMARY_TERM = """
             lower(s.title) like ? or lower(coalesce(s.summary, '')) like ?
