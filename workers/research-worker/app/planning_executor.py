@@ -78,9 +78,10 @@ class PlanningExecutor:
         if scoped and hasattr(bounded,"max_total_calls"):
             bounded.max_total_calls = context.profile.max_llm_calls
             bounded.max_attempts = 1
+            # 规划复核失败会让整份规划作废，连接错误等传输失败重试一次；总调用数仍受 max_total_calls 限制
             bounded.purpose_options = {**bounded.purpose_options,
-                **{purpose:{**bounded.purpose_options.get(purpose,{}),"max_attempts":1}
-                   for purpose in (PURPOSE,"research.planning.requirements")}}
+                PURPOSE: {**bounded.purpose_options.get(PURPOSE, {}), "max_attempts": 1},
+                "research.planning.requirements": {**bounded.purpose_options.get("research.planning.requirements", {}), "max_attempts": 2}}
         if llm_client is None:
             return self._complete(claim, snapshot, planning_input, None, ["PLANNING_LLM_UNAVAILABLE"], 0, 0)
 
@@ -121,9 +122,15 @@ class PlanningExecutor:
                            claim.agent_task_id, "; ".join(draft.problems)[:800])
         completeness = None
         if scoped and accepted_plan is not None:
-            from app.planning_completeness import audit_planning
+            from app.planning_completeness import apply_requirement_checks, audit_planning
             completeness = audit_planning(planning_input,accepted_plan,llm_client)
-            if not completeness["complete"] and _llm_call_count(llm_client) < int(snapshot.budget.get("llm_calls",0)) - 1:
+            accepted_plan, completeness = apply_requirement_checks(accepted_plan, completeness)
+            unchecked = all(item["status"] == "NOT_CHECKED" for item in completeness["clauses"])
+            if not completeness["complete"] and unchecked and _llm_call_count(llm_client) < int(snapshot.budget.get("llm_calls",0)):
+                # 复核调用本身失败时规划没有被否定，重新复核即可，不要求模型按未映射重写规划
+                completeness = audit_planning(planning_input,accepted_plan,llm_client,completeness["model_calls"])
+                accepted_plan, completeness = apply_requirement_checks(accepted_plan, completeness)
+            elif not completeness["complete"] and _llm_call_count(llm_client) < int(snapshot.budget.get("llm_calls",0)) - 1:
                 pending = {item["clause_id"] for item in completeness["clauses"] if item["status"] != "MAPPED"}
                 missing = [item["text"] for item in planning_input.get("requested_clauses",[]) if item["clause_id"] in pending]
                 errors = ["原问题仍有明确要求未映射到规划，请补齐并返回完整规划：" + "; ".join(missing)]
@@ -143,6 +150,7 @@ class PlanningExecutor:
                 else:
                     attempts.append(_planning_attempt(len(attempts) + 1, None, None))
                 completeness = audit_planning(planning_input,accepted_plan,llm_client,completeness["model_calls"])
+                accepted_plan, completeness = apply_requirement_checks(accepted_plan, completeness)
             if not completeness["complete"]:
                 reasons.append("PLANNING_EXPLICIT_REQUIREMENTS_INCOMPLETE")
                 if planning_input.get("completion_gap_policy_version") == 1:

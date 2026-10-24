@@ -58,6 +58,65 @@ def audit_planning(input_data, plan, client, previous_calls=0):
             **({"requirement_checks": requirement_checks} if modern else {})}
 
 
+def apply_requirement_checks(plan, completeness):
+    """按复核结论调整规划，不再因个别扩充条件整份作废。
+
+    EXPANDED 项去掉复核指出的扩充条件，这些条件转为应覆盖要点（成文时回答，不阻塞完成）；
+    PROVENANCE_ONLY 项删除，其来源约束并入其余内容项。只处理复核明确给出的结论：
+    有分句未映射、复核未执行，或删除后某个分句失去全部内容项时保持原样。
+    """
+    checks = completeness.get("requirement_checks")
+    clauses = completeness.get("clauses", [])
+    if (completeness.get("complete") or not checks or not clauses
+            or any(item["status"] == "NOT_CHECKED" for item in checks)
+            or any(item["status"] != "MAPPED" for item in clauses)):
+        return plan, completeness
+    points = list(plan.get("required_points", []))
+    kept, provenance, dropped = [], [], set()
+    for check in checks:
+        index = check["requirement_index"]
+        requirement = {**plan["user_requirements"][index]}
+        if check["status"] == "PROVENANCE_ONLY":
+            provenance.append(requirement)
+            dropped.add(index)
+            continue
+        if check["status"] == "EXPANDED":
+            invalid = set(check["invalid_condition_indexes"])
+            conditions = requirement.get("conditions", [])
+            points.extend(value for position, value in enumerate(conditions) if position in invalid)
+            requirement["conditions"] = [value for position, value in enumerate(conditions) if position not in invalid]
+            if not requirement["conditions"]:
+                return plan, completeness
+        kept.append((index, requirement))
+    if not kept:
+        return plan, completeness
+    extra = [constraint for requirement in provenance for constraint in requirement.get("source_constraints", [])]
+    for _, requirement in kept:
+        merged = list(requirement.get("source_constraints", []))
+        for constraint in extra:
+            if constraint not in merged and len(merged) < 4:
+                merged.append(constraint)
+        if "source_constraints" in requirement:
+            requirement["source_constraints"] = merged
+    positions = {old: new for new, (old, _) in enumerate(kept)}
+    remapped = []
+    for clause in clauses:
+        refs = [positions[ref] for ref in clause["requirement_indexes"] if ref in positions]
+        if not refs:
+            # 只关联到纯来源项的分句是来源要求，约束适用于全部内容项
+            if not set(clause["requirement_indexes"]) <= dropped:
+                return plan, completeness
+            refs = list(range(len(kept)))
+        remapped.append({**clause, "requirement_indexes": refs})
+    if {ref for clause in remapped for ref in clause["requirement_indexes"]} != set(range(len(kept))):
+        return plan, completeness
+    revised = {**plan, "user_requirements": [requirement for _, requirement in kept],
+               "required_points": list(dict.fromkeys(point for point in points if str(point).strip()))}
+    return revised, {**completeness, "clauses": remapped, "complete": True,
+                     "requirement_checks": [{"requirement_index": position, "status": "VALID", "invalid_condition_indexes": []}
+                                            for position in range(len(kept))]}
+
+
 def _requirement_checks(values, requirements):
     if not isinstance(values, list) or len(values) != len(requirements):
         raise ValueError("规划逐条件核验缺项")
