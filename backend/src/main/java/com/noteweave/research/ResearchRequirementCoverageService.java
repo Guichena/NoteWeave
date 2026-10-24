@@ -676,7 +676,7 @@ final class ResearchRequirementCoverageService {
                        support.quorum_group_key, support.candidate_quorum, support.candidate_slot,
                        support.source_identities_json, support.source_fingerprints_json, support.source_scope_json
                 from research_requirement_fact fact join research_requirement_fact_support support on support.fact_id = fact.fact_id
-                where fact.research_run_id = ? and fact.cell_key = ? and fact.plan_revision = ? and fact.entity_set_version = ?
+                where fact.research_run_id = ? and fact.cell_key = ? and fact.plan_revision <= ? and fact.entity_set_version = ?
                   and support.qualification_status = 'QUALIFIED'
                 order by fact.fact_id, support.support_id
                 """, rs -> {
@@ -759,7 +759,7 @@ final class ResearchRequirementCoverageService {
             int minimum = jdbc.queryForObject("select minimum_count from research_requirement where requirement_id = ?", Integer.class, id);
             String scopeJson = jdbc.queryForObject("select scope_json from research_requirement where requirement_id = ?", String.class, id);
             JsonNode scope = scopeJson == null ? mapper.createObjectNode() : read(scopeJson);
-            for (String json : jdbc.queryForList("select fact_ids_json from research_requirement_observation where requirement_id = ? and coverage_status = 'SATISFIED'", String.class, id)) {
+            for (String json : observations(id, true)) {
                 List<String> refs = strings(read(json));
                 Set<String> eligible = new LinkedHashSet<>(refs); eligible.retainAll(eligibleFacts);
                 if ("CURRENT".equals(scope.path("temporal_mode").asText()) && (scope.path("required_versions").isEmpty() || fullCompletion(run)))
@@ -838,7 +838,7 @@ final class ResearchRequirementCoverageService {
             String id = String.valueOf(req.get("requirement_id"));
             if (improvedCompletion(runId) && !"RUN".equals(req.get("scope_type"))) {
                 Set<String> associated = new LinkedHashSet<>();
-                for (String json : jdbc.queryForList("select fact_ids_json from research_requirement_observation where requirement_id = ?", String.class, id)) associated.addAll(strings(read(json)));
+                for (String json : observations(id, false)) associated.addAll(strings(read(json)));
                 associated.retainAll(facts.keySet()); item.put("supporting_fact_ids", List.copyOf(associated));
             }
             if ("RUN".equals(req.get("scope_type"))) {
@@ -879,12 +879,28 @@ final class ResearchRequirementCoverageService {
         return Map.copyOf(result);
     }
 
+    /**
+     * 同一单元格同一需求在当前及更早修订上的观察记录。只换检索策略的重规划会提高修订号并重建需求编号，
+     * 已合格事实仍适用于同一单元格的同一需求，不能因修订号变化而丢失。
+     */
+    private List<String> observations(String requirementId, boolean satisfiedOnly) {
+        return jdbc.queryForList("""
+                select observation.fact_ids_json from research_requirement_observation observation
+                join research_requirement prior on prior.requirement_id = observation.requirement_id
+                join research_requirement target on target.requirement_id = ?
+                where prior.research_run_id = target.research_run_id and prior.cell_key = target.cell_key
+                  and prior.requirement_text = target.requirement_text and prior.origin = target.origin
+                  and prior.scope_type = target.scope_type and prior.entity_set_version = target.entity_set_version
+                  and prior.plan_revision <= target.plan_revision
+                """ + (satisfiedOnly ? " and observation.coverage_status = 'SATISFIED'" : "")
+                + " order by prior.plan_revision, observation.requirement_id", String.class, requirementId);
+    }
+
     /** 只计算仍有合格证据的关联事实，部分观察不授予完成资格。 */
     private int observedFactCount(Map<String, Object> requirement, Map<String, Map<String, Object>> eligible) {
         String run = jdbc.queryForObject("select research_run_id from research_requirement where requirement_id = ?",String.class,requirement.get("requirement_id"));
         int maximum = 0;
-        for (String json : jdbc.queryForList("select fact_ids_json from research_requirement_observation where requirement_id = ?",
-                String.class, requirement.get("requirement_id"))) {
+        for (String json : observations(String.valueOf(requirement.get("requirement_id")), false)) {
             Set<String> ids = new LinkedHashSet<>(strings(read(json)));
             ids.retainAll(eligible.keySet());
             var scope = mapper.valueToTree(requirement.get("scope"));
