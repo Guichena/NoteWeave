@@ -45,7 +45,7 @@ def _claim(*, target_cells: list[dict[str, object]] | None = None) -> AgentTaskC
         "lease_epoch": 2,
         "fencing_token": 7,
         "target_cells": target_cells or [],
-        "budget": {"llm_calls": 2, "search_calls": 1},
+        "budget": {"llm_calls": 3, "search_calls": 1},
         "provider_key": "research-default",
         "source_policy": {
             "source_scope": [{"source_id": "source-1", "title": "数据库笔记", "sample_text": "JSONB GIN"}],
@@ -162,14 +162,39 @@ def test_invalid_plan_should_be_repaired_once_with_the_rejection_reasons() -> No
     assert any("at least 2" in problem for problem in llm.calls[1][1]["previous_output_rejected"])
 
 
-def test_two_invalid_plans_should_fall_back() -> None:
-    llm = _SequenceLlm("not json", _plan(entities=[]))
+def test_three_invalid_plans_should_fall_back() -> None:
+    llm = _SequenceLlm("not json", _plan(entities=[]), _plan(entities=[]))
 
     completion = _executor(llm)(_command(), _claim())
 
     assert completion.role_result["status"] == "FALLBACK"
     assert "plan" not in completion.role_result
     assert completion.role_result["degradation_reasons"] == ["PLANNING_LLM_OUTPUT_INVALID"]
+    assert len(llm.calls) == 3
+
+
+def test_third_attempt_repairs_a_plan_rejected_twice() -> None:
+    llm = _SequenceLlm("not json", _plan(dimensions=[{"label": "唯一维度"}]), _plan())
+
+    completion = _executor(llm)(_command(), _claim())
+
+    assert completion.role_result["status"] == "PLANNED"
+    assert len(llm.calls) == 3
+    assert any("at least 2" in problem for problem in llm.calls[2][1]["previous_output_rejected"])
+
+
+def test_third_attempt_is_skipped_when_the_reserved_budget_allows_only_two_calls() -> None:
+    source = json.loads(_claim().task_snapshot_json)
+    source.pop("snapshot_digest")
+    source["budget"]["llm_calls"] = 2
+    digest = snapshot_digest(source)
+    claim = AgentTaskClaim(TASK_ID, 2, 7, "[]", '{"llm_calls":2}', json.dumps({**source, "snapshot_digest": digest}, ensure_ascii=False), digest)
+    llm = _SequenceLlm("not json", _plan(entities=[]), _plan())
+
+    completion = _executor(llm)(_command(), claim)
+
+    assert completion.role_result["status"] == "FALLBACK"
+    assert len(llm.calls) == completion.budget_usage.llm_calls == 2
 
 
 def test_missing_llm_should_fall_back_without_searching() -> None:
@@ -306,6 +331,15 @@ def test_meta_dimensions_are_dropped_but_evidence_content_columns_stay() -> None
         {"label": "证据缺口"}, {"label": "因果与相关性证据等级"},
     ]), PLANNING_INPUT)
     assert [item["label"] for item in conflict.plan["dimensions"]] == ["支持的证据与来源", "反对的证据与来源", "研究或案例来源"]
+
+
+def test_too_few_dimensions_after_dropping_a_citation_column_names_the_removed_column() -> None:
+    draft = validate_plan(_plan(dimensions=[{"label": "Hybrid retrieval mechanism"},
+                                            {"label": "Official documentation reference"}]), PLANNING_INPUT)
+
+    assert draft.plan is None
+    assert any("Official documentation reference" in problem and "aspects an expert" in problem
+               for problem in draft.problems)
 
 
 def test_required_point_without_a_dimension_is_sent_back_then_filled_on_the_last_attempt() -> None:

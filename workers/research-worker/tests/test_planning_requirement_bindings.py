@@ -150,7 +150,7 @@ def test_explicit_requirements_are_protected_even_when_optional_in_the_protocol(
 def test_unrepaired_invalid_binding_still_falls_back_and_retains_diagnostics(monkeypatch):
     monkeypatch.setitem(PLANNING_INPUT, "requirement_coverage_enabled", True)
     raw = _plan(user_requirements=[requirement("不存在的维度")])
-    completion = _executor(_SequenceLlm(raw, raw))(_command(), _claim())
+    completion = _executor(_SequenceLlm(raw, raw, raw))(_command(), _claim())
     assert completion.role_result["status"] == "FALLBACK"
     assert "plan" not in completion.role_result
-    assert [item["status"] for item in completion.role_result["planning_diagnostics"]["attempts"]] == ["REJECTED", "REJECTED"]
+    assert [item["status"] for item in completion.role_result["planning_diagnostics"]["attempts"]] == ["REJECTED"] * 3

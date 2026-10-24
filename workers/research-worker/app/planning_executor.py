@@ -97,7 +97,11 @@ class PlanningExecutor:
         draft = PlanDraft(None)
         accepted_plan = None
         attempts = []
-        for attempt in range(2):
+        for attempt in range(3):
+            # 规划退回规则模板后这一题基本无法答全，前两次都不合格且预算还够时再给一次修复机会
+            if attempt == 2 and (accepted_plan is not None
+                                 or _llm_call_count(llm_client) >= int(snapshot.budget.get("llm_calls", 0))):
+                break
             raw = _call_model(llm_client, snapshot, planning_input, probe_hits, draft.problems if attempt else [],
                               candidate_plan=accepted_plan,
                               rejected_plan=draft.repair_context if accepted_plan is None else None)
@@ -109,7 +113,7 @@ class PlanningExecutor:
                 reasons.append("PLANNING_LLM_CALL_FAILED")
                 draft = PlanDraft(None, ["Previous call returned no plan; return the complete plan object."])
                 continue
-            draft = validate_plan(raw, planning_input, final_attempt=attempt == 1)
+            draft = validate_plan(raw, planning_input, final_attempt=attempt >= 1)
             attempts.append(_planning_attempt(attempt + 1, raw, draft))
             if draft.plan is not None:
                 accepted_plan = draft.plan
@@ -425,6 +429,7 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
     required_points = _remap_bindings(raw.get("required_points"), dimension_aliases)
     # 引用、来源、原文、可信度这类列描述的是报告格式，不是要研究的内容；提示里已禁止，这里再按名称过滤一次
     dimensions = [item for item in raw_dimensions if not _META_DIMENSION.search(" ".join(str(item["label"]).split()))]
+    meta_labels = [str(item["label"]) for item in raw_dimensions if item not in dimensions]
     # 每列要求只从已映射的研究要点推导，忽略模型额外附带的同名字段。
     dimensions = [{key: value for key, value in item.items() if key != "requirements"} for item in dimensions]
     protected = set()
@@ -456,6 +461,11 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
         problems.append("entities must contain at least one item with a non-empty label")
     if len(dimensions) < min_columns:
         problems.append(f"dimensions must contain at least {min_columns} distinct labels")
+        if meta_labels:
+            # 只说列数不够时，模型常把同一个引用列换个名字再交回来
+            problems.append(f"removed {meta_labels}: every cell already carries its quoted source, so citation or "
+                            "source columns are not dimensions; split the subject matter into the aspects an expert "
+                            "would check instead")
     if len(dimensions) > max_columns:
         problems.append(f"dimensions must not exceed {max_columns}")
     if len(entities) > max_rows:

@@ -625,10 +625,10 @@ public class ResearchAgentTaskCoordinatorService {
         return new CoordinatorReceipt(existed ? 0 : 1, existed ? 1 : 0, outbox.idempotentReplay() ? 0 : 1, 0);
     }
 
-    /** PLANNING 任务的预算：一次探测检索，模型生成一次加修复一次。 */
+    /** PLANNING 任务的预算：一次探测检索，模型生成一次、复核或修复一次，前两次都不合格时再修复一次。 */
     static Map<String, Long> planningBudget() {
         Map<String, Long> budget = new LinkedHashMap<>();
-        budget.put("llm_calls", 2L);
+        budget.put("llm_calls", 3L);
         budget.put("search_calls", 1L);
         budget.put("fetch_calls", 0L);
         budget.put("read_calls", 0L);
