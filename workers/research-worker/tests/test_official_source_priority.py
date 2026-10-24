@@ -148,6 +148,23 @@ def test_major_version_doc_path_is_compared_but_other_numbers_are_not() -> None:
         "https://www.postgresql.org/docs/16/gin.html"]
 
 
+def test_unversioned_entity_prefers_current_docs_over_pages_pinned_to_an_old_release() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["envoyproxy.io"], "entity_label": "Envoy"})
+
+    def hit(url: str, quality: str = "OFFICIAL_DOC") -> SimpleNamespace:
+        return SimpleNamespace(url=url, source_domain=url.split("/")[2], source_quality=quality, adapter="serper")
+
+    ordered = _prioritize_authoritative_hits(snapshot, [
+        hit("https://www.envoyproxy.io/docs/envoy/v1.5.0/intro/arch_overview/load_balancing"),
+        hit("https://blog.example.com/envoy-load-balancing", "SECONDARY_SOURCE"),
+        hit("https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/overview"),
+    ])
+
+    # 旧版官方文档只排到当前文档之后，仍在二手来源之前
+    assert [item.url.split("/")[2] + ("/latest" if "/latest/" in item.url else "") for item in ordered] == [
+        "www.envoyproxy.io/latest", "www.envoyproxy.io", "blog.example.com"]
+
+
 def test_site_query_uses_the_english_search_intent_instead_of_a_chinese_label() -> None:
     llm = _Llm({"queries": [{"query": "MySQL 8.4 JSON index", "intent": "direct"}]})
     column = CellColumn("operators", "可加速的查询运算符", search_intents=("JSON operators that use indexes",))

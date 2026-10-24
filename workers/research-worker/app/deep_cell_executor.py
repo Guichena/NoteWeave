@@ -1045,6 +1045,7 @@ def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: li
             if set(result["reason_codes"]) & {"SOURCE_VERSION_MISMATCH", "SOURCE_DEVELOPMENT_BRANCH_MISMATCH"}:
                 continue
         tier, mismatch = _source_tier(snapshot, hit), _version_mismatch(versions, hit)
+        stale = _pinned_version(versions, hit)
         if scope:
             mismatch = int(result["version_status"] == "UNKNOWN")
         if scope and scope.get("source_preference") == "ORIGINAL_RESEARCH":
@@ -1052,7 +1053,7 @@ def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: li
         key = (tier, mismatch, str(getattr(hit, "query", "")))
         occurrence = counts.get(key, 0)
         counts[key] = occurrence + 1
-        ranked.append(((mismatch, tier, occurrence, index) if scope else (tier, mismatch, occurrence, index), hit))
+        ranked.append(((mismatch, tier, stale, occurrence, index) if scope else (tier, mismatch, stale, occurrence, index), hit))
     ordered = [hit for _, hit in sorted(ranked, key=lambda item: item[0])]
     return [
         hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
@@ -1129,6 +1130,23 @@ def _version_mismatch(versions: set[str], hit: object) -> int:
 
 
 _VERSIONED_DOC_DIRS = frozenset({"docs", "doc", "documentation", "manual", "refman", "reference", "javase", "pdf"})
+_CURRENT_ALIASES = frozenset({"latest", "current", "stable"})
+
+
+def _pinned_version(versions: set[str], hit: object) -> int:
+    """研究对象没有指定版本时，网址固定在某个版本的文档（如 /docs/envoy/v1.5.0/）排在同档次当前页面之后。
+
+    这类页面常是多年前的旧版；只在同一来源档次内调整先后，不让官方旧版文档落到二手来源后面。
+    """
+    if versions:
+        return 0
+    segments = [segment for segment in urlsplit(str(getattr(hit, "url", "") or "")).path.lower().split("/") if segment]
+    if any(segment in _CURRENT_ALIASES for segment in segments):
+        return 0
+    if any(re.fullmatch(r"v?\d+\.\d+(?:\.\d+)*", segment) for segment in segments):
+        return 1
+    return int(any(previous in _VERSIONED_DOC_DIRS and re.fullmatch(r"\d{1,3}", segment)
+                   for previous, segment in zip(segments, segments[1:])))
 
 
 def _interleave_hits_by_domain(hits: list[object]) -> list[object]:
