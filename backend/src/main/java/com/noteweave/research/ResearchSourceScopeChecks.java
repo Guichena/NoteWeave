@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 语义回执必须绑定冻结事实与归档原文；未知范围不得升级为已确认事实。 */
+/** 语义回执必须绑定冻结事实与归档原文；明确不符的来源拒收，无法判断的保留并在当前状态需求上另行核对。 */
 final class ResearchSourceScopeChecks {
     static void validate(Object raw) {
         JsonNode root = new ObjectMapper().valueToTree(raw);
@@ -42,11 +42,13 @@ final class ResearchSourceScopeChecks {
         if (root.path("model_calls").asLong() > envelope.budgetUsage().getOrDefault("llm_calls",0L)) throw invalid();
         for (JsonNode item : root.path("checks")) if (item.path("cluster_key").equals(cluster.path("cluster_key"))) selected = item;
         if (selected == null || !selected.path("cell_key").equals(cluster.path("cell_key"))) throw invalid();
-        if (!"MATCH".equals(selected.path("product").asText())) reasons.add("SOURCE_PRODUCT_" + selected.path("product").asText());
-        if (!"APPLICABLE".equals(selected.path("branch").asText())) reasons.add("SOURCE_BRANCH_" + selected.path("branch").asText());
+        // 无法判断（包括核验调用失败后的回退值）记为 UNKNOWN，只有明确不符才拒收；
+        // 当前状态需求是否能用未标日期的来源，由 canAnswerCurrent 按文档是否带版本号再判断
+        if ("MISMATCH".equals(selected.path("product").asText())) reasons.add("SOURCE_PRODUCT_MISMATCH");
+        if ("MISMATCH".equals(selected.path("branch").asText())) reasons.add("SOURCE_BRANCH_MISMATCH");
         String temporal = selected.path("time").asText();
-        if ("AFTER_CUTOFF".equals(temporal) || "UNKNOWN".equals(temporal)
-                || "CURRENT".equals(scope.path("temporal_mode").asText()) && !"APPLICABLE".equals(temporal)
+        if ("AFTER_CUTOFF".equals(temporal)
+                || "CURRENT".equals(scope.path("temporal_mode").asText()) && "HISTORICAL".equals(temporal)
                     && !scope.path("allow_historical_facts").asBoolean()) reasons.add("SOURCE_TIME_" + temporal);
         String date = selected.path("date").asText(), quote = selected.path("date_quote").asText();
         if (date.isBlank() && "REQUESTED_DATE".equals(scope.path("cutoff_mode").asText()) && "CURRENT".equals(scope.path("temporal_mode").asText()))

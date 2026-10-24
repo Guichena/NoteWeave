@@ -21,7 +21,7 @@ final class ResearchSourceScopePolicy {
     private static final Set<String> DEVELOPMENT = Set.of("dev", "development", "nightly", "main", "master", "next");
     private static final Set<String> CURRENT = Set.of("current", "stable", "latest");
     private static final Pattern CURRENT_REQUEST = Pattern.compile("目前|当前|现阶段|现今|最新|\\b(?:current|currently|latest|today|now)\\b", Pattern.CASE_INSENSITIVE);
-    private static final Pattern HISTORY_REQUEST = Pattern.compile("首次|最初|引入|历史|何时|\\b(?:introduced|initial|historical|first|when)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern HISTORY_REQUEST = Pattern.compile("首次|最初|引入|历史|何时|开始|起始|哪个版本|哪一版|哪一个版本|\\b(?:introduced|initial|historical|first|when|since|starting|started|added\\s+in)\\b", Pattern.CASE_INSENSITIVE);
 
     static Map<String, Object> freeze(String cell, String entity, String question, String asOf) {
         Map<String, Object> scope = new LinkedHashMap<>();
@@ -36,6 +36,14 @@ final class ResearchSourceScopePolicy {
     static String temporalMode(String text) {
         if (CURRENT_REQUEST.matcher(text).find()) return "CURRENT";
         return HISTORY_REQUEST.matcher(text).find() ? "HISTORICAL" : "UNSPECIFIED";
+    }
+
+    /** 单元格先按自己的需求文本判断；题目同时问历史和当前时不再整体继承，避免首次提供的版本也被当成当前状态核验。 */
+    static String cellTemporalMode(String question, String cellText) {
+        String own = temporalMode(cellText);
+        if (!"UNSPECIFIED".equals(own)) return own;
+        boolean mixed = CURRENT_REQUEST.matcher(question).find() && HISTORY_REQUEST.matcher(question).find();
+        return mixed ? "UNSPECIFIED" : temporalMode(question);
     }
 
     static String cutoffDate(String question, String startedDate) {

@@ -1,4 +1,4 @@
-"""逐事实核验产品、分支与时间适用性，未知结果保留为未通过。"""
+"""逐事实核验产品、分支与时间适用性；无法判断记为 UNKNOWN，由后端按需求类型决定能否采用。"""
 from app.execution_control import require_execution_active
 from app.json_repair import parse_json_payload
 
@@ -28,8 +28,9 @@ def check_source_scopes(snapshot, clusters, evidence, windows, client, budget=3)
     by_window = {window.window_id: window for window in windows}
     scopes = {item["cell_key"]: item for item in snapshot.query_policy["requirement_contract"].get("source_scopes", [])}
     checks, calls = [], 0
-    for offset in range(0, len(clusters), 4):
-        batch = clusters[offset:offset + 4]
+    # 每批 6 条，最多 12 条事实只占两次调用，留一次给失败批次重试
+    for offset in range(0, len(clusters), 6):
+        batch = clusters[offset:offset + 6]
         inputs = []
         for cluster in batch:
             sources = []
@@ -49,7 +50,11 @@ def check_source_scopes(snapshot, clusters, evidence, windows, client, budget=3)
             inputs.append({"cluster_key": cluster["cluster_key"], "cell_key": cluster["cell_key"],
                 "claim": cluster["claim_text"], "scope": scope, "sources": sources})
         indexed = {}
-        if client is not None and calls < budget:
+        later_batches = -(-(len(clusters) - offset - len(batch)) // 6)
+        # 调用失败或返回的编号与本批不一致时整批会变成 UNKNOWN；重试一次，但要给后面每批留出首次调用
+        for attempt in range(2):
+            if indexed or client is None or calls >= budget or attempt and budget - calls - 1 < later_batches:
+                break
             require_execution_active()
             calls += 1
             try:

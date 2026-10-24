@@ -165,6 +165,12 @@ final class ResearchRequirementCoverageService {
             String entityKey = cell.substring(0, cell.indexOf(':'));
             String entity = String.valueOf(policy.getOrDefault("entity_label", entityKey));
             Map<String, Object> sourceScope = new LinkedHashMap<>(ResearchSourceScopePolicy.freeze(cell, entity, question, asOf));
+            StringBuilder cellText = new StringBuilder();
+            strings(configured.path(column)).forEach(text -> cellText.append(' ').append(text));
+            for (JsonNode spec : specs) if (column.equals(spec.path("key").asText())) cellText.append(' ').append(spec.path("label").asText());
+            if (v2) for (JsonNode definition : definitions)
+                if (column.equals(definition.path("dimension_key").asText())) cellText.append(' ').append(definition.path("text").asText());
+            sourceScope.put("temporal_mode", ResearchSourceScopePolicy.cellTemporalMode(question, cellText.toString()));
             if (fullCompletion(runId)) sourceScope.put("cutoff_mode", asOf.equals(startedDate) ? "RUN_STARTED_AT" : "REQUESTED_DATE");
             if (modern) sourceScopes.add(sourceScope);
             Map<String, Object> requirementScope = modern ? new LinkedHashMap<>(Map.of("temporal_mode", sourceScope.get("temporal_mode"),
@@ -783,9 +789,12 @@ final class ResearchRequirementCoverageService {
         for (JsonNode scope : scopes) {
             if (scope.path("evidence").isEmpty()) return true;
             for (JsonNode evidence : scope.path("evidence")) {
+                String status = evidence.path("temporal_status").asText();
                 if (evidence.has("semantic_check")) {
-                    if ("APPLICABLE".equals(evidence.path("semantic_check").path("time").asText())) return true;
-                } else if (!"VERSIONED_SOURCE".equals(evidence.path("temporal_status").asText())) return true;
+                    String time = evidence.path("semantic_check").path("time").asText();
+                    // 官方文档大多不标发布日期：日期无法判断时，只接受不带版本号的当前页面
+                    if ("APPLICABLE".equals(time) || "UNKNOWN".equals(time) && Set.of("CURRENT_ALIAS", "UNKNOWN").contains(status)) return true;
+                } else if (!"VERSIONED_SOURCE".equals(status)) return true;
             }
         }
         return false;
