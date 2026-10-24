@@ -74,18 +74,17 @@ def test_runtime_versions_still_reject_other_documentation_versions():
     ([{"requirement_index": True, "claim_indices": [0]}], False),
     ([], False),
 ])
-def test_partial_column_answer_stays_sourced_instead_of_completing_the_cell(coverage, complete):
+def test_legacy_partial_column_answer_is_submitted_for_verification(coverage, complete):
+    # 未启用需求覆盖时没有跨轮累计：直接回答了列中某一部分的事实照常提交核验，不降为线索
     snapshot = SimpleNamespace(query_policy={"entity_label": "Atlas"})
     column = SimpleNamespace(key="status", label="Status", description="Initial release status\nCurrent release status")
     card = _card("w", "Atlas was initially experimental")
     llm = _SequenceLlm({"answering_indices": [0], "coverage": coverage})
     partial = []
     accepted = _keep_answering_cards(snapshot, column, [card], llm, partial_out=partial)
-    assert bool(accepted) is complete
-    if not complete:
-        retained = _retained_cards([card], [card], accepted, partial)
-        assert retained[0].relation_type == "WEAK_SUPPORT"
-        assert retained[0].support_score > 0
+    assert accepted == [card]
+    assert partial == []
+    assert _retained_cards([card], [card], accepted, partial) == []
 
 
 def test_invalid_answer_check_keeps_the_source_without_verifying_the_cell():
@@ -105,10 +104,10 @@ def test_structured_requirements_survive_flattening_the_description_between_serv
     column = SimpleNamespace(key="status", **specs["status"])
     llm = _SequenceLlm({"answering_indices": [0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     partial = []
-    assert _keep_answering_cards(SimpleNamespace(query_policy={}), column, [_card("w", "Initial finding")], llm,
-                                 partial_out=partial) == []
+    card = _card("w", "Initial finding")
+    assert _keep_answering_cards(SimpleNamespace(query_policy={}), column, [card], llm, partial_out=partial) == [card]
     assert [item["text"] for item in llm.calls[0][1]["requirements"]] == ["Initial status", "Current status"]
-    assert len(partial) == 1
+    assert partial == []
 
 
 def test_answer_check_receives_source_versions_and_dates_for_current_status():
