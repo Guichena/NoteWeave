@@ -826,13 +826,12 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     if contract is not None:
         # 部分事实可以核验，整格是否完成由 Java 按跨轮累计后的需求覆盖决定。
         return answering
-    if covered == set(range(len(requirements))):
-        return answering
-    if partial_out is not None:
-        partial_out.extend(answering)
-    _LOG.info("Research cell coverage incomplete column=%s covered=%s required=%s",
-                getattr(column, "key", ""), len(covered), len(requirements))
-    return []
+    if covered != set(range(len(requirements))):
+        # 未启用需求覆盖时没有跨轮累计，部分回答若降为线索，已找到的正确事实就全部不算；
+        # 直接回答了列中某一部分的事实照常提交核验，未回答的部分由成文时如实说明
+        _LOG.info("Research cell coverage incomplete column=%s covered=%s required=%s",
+                  getattr(column, "key", ""), len(covered), len(requirements))
+    return answering
 
 
 def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[object], windows: list[object]) -> list[object]:

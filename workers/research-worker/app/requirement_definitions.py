@@ -44,6 +44,16 @@ def compile_requirements(raw, question, dimensions, entities, *, required=False,
         return []
     if raw == [] and not required:
         return []
+    if not required and isinstance(raw, list):
+        # 未启用需求覆盖时显式需求只作参考：个别条目不合格（例如把版本号当成数量）只丢弃该条，不让整份规划作废
+        result = []
+        for item in raw[:24]:
+            try:
+                compiled = compile_requirements([item], question, dimensions, entities, required=True, structured=structured)
+            except ValueError:
+                continue
+            result.extend(entry for entry in compiled if entry not in result)
+        return result
     if not isinstance(raw, list) or not 1 <= len(raw) <= 24:
         raise ValueError("必须列出 1 到 24 个用户明确要求")
     question = normalized(question)
