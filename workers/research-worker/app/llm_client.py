@@ -185,6 +185,12 @@ class OpenAICompatibleLlmClient:
             payload,
             max(1000, self.max_input_chars - self.context_safety_buffer_chars),
         )
+        compaction = compacted_payload.get("_context_compaction")
+        if isinstance(compaction, dict):
+            # 通用压缩会截断列表和长文本，记录触发情况，用于判断是否需要按用途装配上下文
+            logger.warning("LLM context compaction applied purpose=%s original_chars=%s budget=%s fallback=%s",
+                           purpose, compaction.get("original_chars"), compaction.get("char_budget"),
+                           compaction.get("fallback", "TRUNCATED"))
         request_payload: dict[str, object] = {
             "model": model,
             "messages": [
@@ -245,6 +251,8 @@ class OpenAICompatibleLlmClient:
         termination_reason = "RETRY_EXHAUSTED"
         attempts = 0
         http_statuses: list[int] = []
+        # 每次拿到响应的尝试都可能计费，逐次保留 usage；没有拿到响应的尝试用量未知
+        attempt_usages: list[dict[str, object]] = []
         for attempt in range(1, purpose_max_attempts + 1):
             if self.cancellation_checker is not None:
                 self.cancellation_checker()
@@ -257,6 +265,8 @@ class OpenAICompatibleLlmClient:
                     timeout=purpose_timeout_seconds,
                 )
                 data = completion.model_dump()
+                usage = data.get("usage") if isinstance(data, dict) else None
+                attempt_usages.append(usage if isinstance(usage, dict) else {})
                 termination_reason = "SUCCESS"
                 # 网关偶尔返回 200 但内容为空或不是 JSON（第九轮前 30 分钟约三分之一的抽取调用如此），
                 # 这类结果重试通常就能拿到正常响应；最后一次仍不正常时照常返回，由调用方按非法 JSON 处理
@@ -289,7 +299,7 @@ class OpenAICompatibleLlmClient:
         if data is None:
             self._record_call(
                 purpose, request_payload, {}, attempts, started, termination_reason,
-                http_statuses=http_statuses,
+                http_statuses=http_statuses, attempt_usages=attempt_usages,
             )
             return ""
 
@@ -297,19 +307,19 @@ class OpenAICompatibleLlmClient:
         if not isinstance(choices, list) or not choices:
             self._record_call(
                 purpose, request_payload, data, attempts, started, "EMPTY_CHOICES",
-                http_statuses=http_statuses,
+                http_statuses=http_statuses, attempt_usages=attempt_usages,
             )
             return ""
         message = choices[0].get("message") if isinstance(choices[0], dict) else None
         if not isinstance(message, dict):
             self._record_call(
                 purpose, request_payload, data, attempts, started, "EMPTY_MESSAGE",
-                http_statuses=http_statuses,
+                http_statuses=http_statuses, attempt_usages=attempt_usages,
             )
             return ""
         self._record_call(
             purpose, request_payload, data, attempts, started, termination_reason,
-            http_statuses=http_statuses,
+            http_statuses=http_statuses, attempt_usages=attempt_usages,
         )
         return str(message.get("content") or "")
 
@@ -323,15 +333,18 @@ class OpenAICompatibleLlmClient:
         termination_reason,
         *,
         http_statuses: list[int] | None = None,
+        attempt_usages: list[dict[str, object]] | None = None,
     ) -> None:
         usage = response_payload.get("usage") if isinstance(response_payload, dict) else {}
         usage = usage if isinstance(usage, dict) else {}
-        input_tokens = (
-            int(usage.get("prompt_tokens") or max(1, len(json.dumps(request_payload)) // 4))
-            if attempts > 0
-            else 0
-        )
-        output_tokens = int(usage.get("completion_tokens") or 0) if attempts > 0 else 0
+        if attempt_usages is None:
+            attempt_usages = [usage] if attempts > 0 and response_payload else []
+        estimated_input = max(1, len(json.dumps(request_payload)) // 4)
+        # 拿到响应的每次尝试都计入；没有 usage 的按请求长度估算输入
+        input_tokens = sum(int(item.get("prompt_tokens") or estimated_input) for item in attempt_usages)
+        output_tokens = sum(int(item.get("completion_tokens") or 0) for item in attempt_usages)
+        if attempts > 0 and not attempt_usages:
+            input_tokens = estimated_input
         purpose_config = self.purpose_options.get(str(purpose), {})
         input_rate = float(purpose_config.get("input_cost_per_million") or self.input_cost_per_million)
         output_rate = float(purpose_config.get("output_cost_per_million") or self.output_cost_per_million)
@@ -346,7 +359,11 @@ class OpenAICompatibleLlmClient:
                 "attempt_count": attempts,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
-                "tokens_reported": attempts == 1 and "prompt_tokens" in usage and "completion_tokens" in usage,
+                "tokens_reported": (attempts > 0 and len(attempt_usages) == attempts and all(
+                    "prompt_tokens" in item and "completion_tokens" in item for item in attempt_usages)),
+                # 没拿到响应的尝试（超时、连接错误、服务端错误）是否计费未知，单独计数，不按零处理
+                "unknown_usage_attempts": max(0, attempts - len(attempt_usages)),
+                "price_known": input_rate > 0 or output_rate > 0,
                 "latency_ms": round((time.perf_counter() - started) * 1000, 3),
                 "estimated_cost": round(estimated_cost, 8),
                 "termination_reason": termination_reason,
@@ -373,6 +390,9 @@ class OpenAICompatibleLlmClient:
             "input_tokens": sum(int(item["input_tokens"]) for item in self.call_records),
             "output_tokens": sum(int(item["output_tokens"]) for item in self.call_records),
             "estimated_cost": round(sum(float(item["estimated_cost"]) for item in self.call_records), 8),
+            # 单价未配置时估算费用为 0 不代表免费
+            "price_known": bool(self.call_records) and all(item.get("price_known", False) for item in self.call_records),
+            "unknown_usage_attempts": sum(int(item.get("unknown_usage_attempts") or 0) for item in self.call_records),
             "retry_count": sum(max(0, int(item["attempt_count"]) - 1) for item in self.call_records),
             "http_429_count": sum(
                 int(status == 429)

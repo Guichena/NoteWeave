@@ -255,6 +255,7 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
                 query = body[:DEEPSEEK_MAX_QUERY_CHARS - len(suffix) - 1].rstrip() + " " + suffix
         results = super().search(query[:DEEPSEEK_MAX_QUERY_CHARS], limit, page)
         mapped: list[dict[str, object]] = []
+        foreign: list[dict[str, object]] = []
         seen: set[str] = set()
         for item in results:
             try:
@@ -262,19 +263,20 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
             except (TypeError, ValueError):
                 score = 0.0
             url = _safe_result_url(str(item.get("url") or ""))
-            # 同一页面的不同分块去锚点后网址相同，只保留排在前面的一条；外语版本的文档与中英文版内容重复，直接跳过
-            if not url or url in seen or _foreign_locale(url):
+            # 同一页面的不同分块去锚点后网址相同，只保留排在前面的一条
+            if not url or url in seen:
                 continue
             seen.add(url)
             title = " ".join(str(item.get("title") or "").split()) or (urllib.parse.urlsplit(url).hostname or url)
-            mapped.append({
+            # 其他语言版本的页面多与中英文版重复，排到最后；但它可能是唯一的原始来源，不能直接丢掉
+            (foreign if _foreign_locale(url) else mapped).append({
                 "title": title[:280],
                 "url": url,
                 "snippet": item.get("summary") or item.get("snippet") or "",
                 "score": score,
                 "date": item.get("date") or "",
             })
-        return mapped
+        return mapped + foreign
 
     def _headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}

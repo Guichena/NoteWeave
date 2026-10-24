@@ -97,6 +97,27 @@ def test_internal_retries_cannot_exceed_the_remaining_role_budget(monkeypatch):
     assert client.usage_summary()["calls"][-1]["termination_reason"] == "CALL_BUDGET_EXHAUSTED"
 
 
+def test_usage_of_every_answered_attempt_is_counted(monkeypatch):
+    replies = iter([("not json", 7), ('{"ok": true}', 11)])
+
+    def respond(request, **kwargs):
+        content, output = next(replies)
+        return io.BytesIO(json.dumps({
+            "choices": [{"message": {"content": content}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 100, "completion_tokens": output},
+        }).encode())
+
+    monkeypatch.setattr("app.llm_client.credential_safe_urlopen", respond)
+    monkeypatch.setattr("app.llm_client.time.sleep", lambda _: None)
+    client = _client()
+    assert client.complete_json("research.extract", {}) == '{"ok": true}'
+    call = client.usage_summary()["calls"][-1]
+    assert (call["attempt_count"], call["input_tokens"], call["output_tokens"]) == (2, 200, 18)
+    assert call["tokens_reported"] is True and call["unknown_usage_attempts"] == 0
+    # 单价未配置时估算费用为 0，但不能当作免费
+    assert client.usage_summary()["price_known"] is False
+
+
 def test_call_diagnostics_record_output_limit_and_reasoning_token_count(monkeypatch):
     def respond(request, **kwargs):
         return io.BytesIO(json.dumps({
