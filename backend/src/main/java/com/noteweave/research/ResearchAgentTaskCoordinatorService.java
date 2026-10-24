@@ -69,10 +69,6 @@ public class ResearchAgentTaskCoordinatorService {
         return planAndEnqueueForWave(runId, 1);
     }
 
-    CoordinatorReceipt advanceReportFeedback(String runId, int checkpoint, int wave) {
-        return new ResearchReportFeedbackService(jdbcTemplate, objectMapper).advance(runId, checkpoint, wave, this);
-    }
-
     /** Taskizes one coordinator-authorized wave; MA4I ownership is supplied by the caller. */
     @Transactional
     public CoordinatorReceipt planAndEnqueueForWave(String runId, int waveNo) {
@@ -116,19 +112,9 @@ public class ResearchAgentTaskCoordinatorService {
                     && Integer.valueOf(c.version()).equals(a.get("version")) && Integer.valueOf(c.planRevision()).equals(a.get("plan"))
                     && Integer.valueOf(c.entitySetVersion()).equals(a.get("entities")))).toList();
         }
-        var completionPolicy = new ResearchRequirementCoverageService(jdbcTemplate,objectMapper);
-        if (completionPolicy.fullCompletion(runId) && completionPolicy.enforces(runId)) {
-            // 首轮排序前先保存全部适用需求，避免尚未建任务的明确要求没有权重。
-            for (CellScope cell : cells) withCellScope(brief.queryPolicy(),runId,entityId(cell.cellKey()),List.of(cell.cellKey()));
-        }
-        Map<String,Integer> schedulingScores = ResearchCompletionScheduler.scores(jdbcTemplate,objectMapper,runId);
-        cells = cells.stream().sorted(java.util.Comparator.<CellScope>comparingInt(cell -> schedulingScores.getOrDefault(cell.cellKey(),0)).reversed()
-                .thenComparing(CellScope::cellKey)).toList();
         for (List<CellScope> bundle : bundles(cells)) {
             CellScope first = bundle.get(0);
-            TaskPriority basePriority = priorityFor(bundle);
-            int coveragePriority = bundle.stream().mapToInt(cell -> schedulingScores.getOrDefault(cell.cellKey(),0)).max().orElse(0);
-            TaskPriority priority = new TaskPriority(basePriority.score() + coveragePriority,basePriority.reason() + (coveragePriority == 0 ? "" : "+COMPLETION_GAIN_COST"));
+            TaskPriority priority = priorityFor(bundle);
             String entityId = entityId(first.cellKey());
             if (bundle.stream().anyMatch(cell -> !entityId(cell.cellKey()).equals(entityId)
                     || cell.planRevision() != first.planRevision() || cell.entitySetVersion() != first.entitySetVersion()
@@ -199,10 +185,8 @@ public class ResearchAgentTaskCoordinatorService {
         ResearchBriefCompiler.CompiledBrief brief = researchBriefCompiler.compile(run.id(), run.question());
         List<Map<String, Object>> sources = loadTrustedSources(
                 run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
-        Map<String,Integer> schedulingScores = ResearchCompletionScheduler.scores(jdbcTemplate,objectMapper,run.id());
         List<CounterfactualTarget> targets = command.targets().stream()
-                .sorted(java.util.Comparator.<CounterfactualTarget>comparingInt(target -> schedulingScores.getOrDefault(target.cellKey(),0)).reversed()
-                        .thenComparing(CounterfactualTarget::cellKey).thenComparing(CounterfactualTarget::reasonDigest))
+                .sorted(java.util.Comparator.comparing(CounterfactualTarget::cellKey).thenComparing(CounterfactualTarget::reasonDigest))
                 .toList();
         if (targets.stream().map(CounterfactualTarget::cellKey).distinct().count() != targets.size()) {
             throw new BusinessException("RESEARCH_AGENT_REPAIR_INVALID", "Counterfactual target cells must be unique");
@@ -408,13 +392,6 @@ public class ResearchAgentTaskCoordinatorService {
         input.put("question", run.question());
         input.put("table", Map.of("entities", rows, "columns", columns, "verified_cells", verified));
         input.put("prior_proposals", prior);
-        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        if (coverage.enabled(runId)) {
-            input.put("requirement_definitions", planGuidance(runId).getOrDefault("requirement_definitions", List.of()));
-            Map<String, Object> progress = coverage.readModel(runId);
-            input.put("missing_requirements", ((List<?>) progress.get("requirements")).stream()
-                    .map(item -> (Map<?, ?>) item).filter(item -> !"SATISFIED".equals(item.get("status"))).toList());
-        }
         List<String> previousQueries = new ArrayList<>();
         for (String json : jdbcTemplate.queryForList("select queries_json from research_discovery_round where research_run_id = ? and queries_json is not null order by round_no", String.class, runId))
             previousQueries.addAll(readStringListOrEmpty(json));
@@ -478,10 +455,6 @@ public class ResearchAgentTaskCoordinatorService {
             List<String> cellKeys
     ) {
         Map<String, Object> policy = new LinkedHashMap<>(basePolicy);
-        if (new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).fullCompletion(runId)) {
-            policy.put("completion_runtime_version", 1);
-            policy.put("navigation_policy", Map.of("max_follow_pages", 2, "max_depth", 1, "same_host", true));
-        }
         String label = jdbcTemplate.query("""
                 select source_title from research_row
                 where research_run_id = ? and row_key = ?
@@ -513,7 +486,7 @@ public class ResearchAgentTaskCoordinatorService {
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(runId), cellKeys.stream()).toArray());
         if (Boolean.TRUE.equals(counterRequired)) policy.put("counter_required", true);
         policy.putAll(planGuidance(runId));
-        return new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).attach(runId, cellKeys, policy);
+        return policy;
     }
 
     /** 模型规划写入的列定义；没有经过模型规划的 Run 返回空表，退回使用列标签。 */
@@ -564,9 +537,6 @@ public class ResearchAgentTaskCoordinatorService {
                 if (!key.isBlank() && !points.isEmpty()) requirements.put(key, List.copyOf(points));
             });
             if (!requirements.isEmpty()) guidance.put("column_requirements", Map.copyOf(requirements));
-            if (node.path("brief").path("requirement_definitions").isArray())
-                guidance.put("requirement_definitions", objectMapper.convertValue(
-                        node.path("brief").path("requirement_definitions"), java.util.List.class));
             return Map.copyOf(guidance);
         } catch (JsonProcessingException exception) {
             return Map.of();
@@ -598,13 +568,9 @@ public class ResearchAgentTaskCoordinatorService {
                 run.workspaceId(), run.sourceScopeJson(), run.retrievalMode());
         String logicalKey = "planning:" + run.id();
         Map<String, Long> budget = planningBudget();
-        if (new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(runId)) {
-            budget = new LinkedHashMap<>(budget); budget.put("llm_calls",5L);
-        }
         Map<String, Object> queryPolicy = new LinkedHashMap<>(brief.queryPolicy());
         queryPolicy.put("allowed_tools", List.of("search"));
         queryPolicy.put("planning_input", planningInput);
-        if (new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(runId)) queryPolicy.put("completion_runtime_version",1);
         ResearchAgentTaskService.TaskSnapshot task = taskService.createTask(new ResearchAgentTaskService.CreateTaskCommand(
                 run.id(), logicalKey, logicalKey, 1, ResearchAgentRoles.PLANNING, "planning", "branch-main",
                 1, 1, List.of(), new LinkedHashMap<String, Object>(budget), List.of(),
@@ -831,17 +797,7 @@ public class ResearchAgentTaskCoordinatorService {
 
     private TaskPriority repairPriority(String runId, CellScope cell) {
         int reportDependency = reportDependencyWeight(columnKey(cell.cellKey()));
-        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        int missingWeight = 0;
-        if (coverage.improvedCompletion(runId)) {
-            var progress = objectMapper.valueToTree(coverage.readModel(runId));
-            for (var requirement : progress.path("requirements")) {
-                if (cell.cellKey().equals(requirement.path("cell_key").asText()) && !"SATISFIED".equals(requirement.path("status").asText()))
-                    missingWeight += "EXPLICIT".equals(requirement.path("origin").asText()) ? 500 : 50;
-            }
-        }
-        return new TaskPriority(20_000 + reportDependency + missingWeight,
-                "COUNTERFACTUAL+" + reportDependencyReason(reportDependency) + (missingWeight > 0 ? "+MISSING_REQUIREMENTS" : ""));
+        return new TaskPriority(20_000 + reportDependency, "COUNTERFACTUAL+" + reportDependencyReason(reportDependency));
     }
 
     private int reportDependencyWeight(String columnKey) {
@@ -925,14 +881,6 @@ public class ResearchAgentTaskCoordinatorService {
         String cause = repairCause(runId, cellKey, target);
         repair.put("repair_cause", cause);
         repair.put("tried_queries", scoped.get("tried_queries"));
-        Object contractRaw = scoped.get("requirement_contract");
-        if (contractRaw instanceof Map<?, ?> contract) {
-            repair.put("missing_requirement_ids", contract.get("missing_requirement_ids"));
-            repair.put("requirements", contract.get("requirements"));
-            repair.put("qualified_facts", contract.get("facts"));
-            repair.put("as_of_date", contract.get("as_of_date"));
-            repair.put("source_scopes", contract.get("source_scopes"));
-        }
         List<Map<String, Object>> claims = new ArrayList<>();
         for (String key : target.conflictEvidenceKeys()) {
             claims.addAll(jdbcTemplate.query("select claim_text, coalesce(source_domain, '') as source_domain from source_evidence where research_run_id = ? and evidence_key = ?",
@@ -954,47 +902,6 @@ public class ResearchAgentTaskCoordinatorService {
             }
         }
         repair.put("claims", claims.stream().distinct().toList());
-        JsonNode contract = objectMapper.valueToTree(contractRaw);
-        if (contract.path("coverage_execution_version").asInt() == 1) {
-            Set<String> scopedCells = new LinkedHashSet<>();
-            contract.path("requirements").forEach(req -> { if (!"RUN".equals(req.path("scope_type").asText())) scopedCells.add(req.path("cell_key").asText()); });
-            List<Map<String, Object>> actions = new ArrayList<>();
-            for (String scopedCell : scopedCells) {
-                var requirement = java.util.stream.StreamSupport.stream(contract.path("requirements").spliterator(), false)
-                        .filter(req -> scopedCell.equals(req.path("cell_key").asText())).findFirst().orElseThrow();
-                var pendingFacts = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).auditFacts(runId, scopedCell,
-                        requirement.path("plan_revision").asInt(), requirement.path("entity_set_version").asInt());
-                List<Integer> gains = jdbcTemplate.query("""
-                        select progress.new_fact_count + progress.new_satisfied_requirement_count from research_requirement_progress progress
-                        join research_agent_completion completion on completion.id = progress.completion_id
-                        join research_agent_task task on task.id = completion.research_agent_task_id
-                        where progress.research_run_id = ? and task.plan_revision = ? and task.entity_set_version = ?
-                          and task.target_cells_json like ? order by progress.created_at desc, progress.completion_id desc limit 2
-                        """, (rs, n) -> rs.getInt(1), runId, requirement.path("plan_revision").asInt(), requirement.path("entity_set_version").asInt(), "%\"" + scopedCell + "\"%");
-                if (new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(runId)) gains = jdbcTemplate.query("""
-                        select gain.new_fact_count + gain.new_requirement_count + gain.resolved_conflict_count
-                        from research_cell_gain gain join research_runtime_metric metric on metric.completion_id = gain.completion_id
-                        where gain.research_run_id = ? and gain.cell_key = ? and gain.plan_revision = ? and gain.entity_set_version = ?
-                          and metric.role in ('DEEP_CELL','COUNTERFACTUAL') order by gain.event_seq desc limit 2
-                        """,(rs,n) -> rs.getInt(1),runId,scopedCell,requirement.path("plan_revision").asInt(),requirement.path("entity_set_version").asInt());
-                int noGain = 0; for (int gain : gains) { if (gain > 0) break; noGain++; }
-                Map<String, Object> action = new LinkedHashMap<>(ResearchRequirementActionPlanner.plan(contract, scopedCell, "EVIDENCE_CONFLICT".equals(cause), !pendingFacts.isEmpty(), noGain));
-                action.put("unconfirmed_claims", pendingFacts.stream().map(fact -> fact.get("claim_text")).distinct().limit(6).toList());
-                if (new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).fullCompletion(runId)) {
-                    var feedback = new ResearchReportFeedbackService(jdbcTemplate, objectMapper).details(runId, scopedCell).stream()
-                            .filter(item -> Set.of("OPEN", "TASKIZED").contains(item.get("status"))).toList();
-                    action.put("report_missing_facts", feedback);
-                    if (!feedback.isEmpty()) {
-                        action.put("action", "POPULATE_REQUIREMENTS");
-                        action.put("missing_requirement_texts", feedback.stream().map(item -> item.get("missing_detail")).toList());
-                    }
-                }
-                actions.add(Map.copyOf(action));
-            }
-            repair.put("actions", actions); repair.put("dispatch_version", 1);
-            // 同一对象的合并任务保留每个单元格的动作，不能只携带第一列的缺项。
-            repair.put("target_cell_keys", List.copyOf(scopedCells));
-        }
         policy.put("repair_target", repair);
         Integer equivalentRepair = jdbcTemplate.queryForObject("select count(*) from research_verifier_decision where research_run_id = ? and target_id = ? and decision_type = 'QUORUM_REPAIR_REQUIRED' and reason_code = 'SEMANTIC_EQUIVALENCE_APPROVED' and decision_status = 'OPEN'",
                 Integer.class, runId, cellKey);

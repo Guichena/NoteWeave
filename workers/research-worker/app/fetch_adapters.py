@@ -181,7 +181,6 @@ class UrlFetchAdapter:
         published_at = ""
         updated_at = ""
         reported_transport_attempt_count = 0
-        navigation_links = []
 
         if self.transport is not None:
             fetch_method = "TRANSPORT"
@@ -206,8 +205,6 @@ class UrlFetchAdapter:
             updated_at = str(snapshot.get("updated_at") or "").strip()
             reported_transport_attempt_count = int(snapshot.get("transport_attempt_count") or 0)
             fetched_text = str(snapshot.get("text") or "").strip()
-            from app.document_navigation import document_links
-            navigation_links = (snapshot.get("navigation_links") or document_links(fetched_text, hit.url))[:200]
             snapshot_status = str(snapshot.get("snapshot_status") or snapshot_status).strip() or snapshot_status
             snapshot_key = str(snapshot.get("snapshot_key") or snapshot_key).strip()
             fetch_status = str(snapshot.get("fetch_status") or fetch_status).strip() or fetch_status
@@ -283,7 +280,6 @@ class UrlFetchAdapter:
             hit_id=hit.hit_id,
             source_id=hit.source_id,
             source_title=hit.source_title,
-            navigation_links=navigation_links,
             query=hit.query,
             rank=hit.rank,
             url=hit.url,
@@ -460,10 +456,8 @@ class HttpUrlSnapshotTransport:
                 "transport_fallback_code": "EMPTY_FETCH_TEXT",
             }
         injection_signals = detect_prompt_injection(cleaned_text)
-        from app.document_navigation import document_links
         return {
             "text": cleaned_text,
-            "navigation_links": document_links(text, url),
             "snapshot_key": _snapshot_key(url, cleaned_text),
             "snapshot_status": "HTTP_FETCHED",
             "fetch_status": "FETCHED",

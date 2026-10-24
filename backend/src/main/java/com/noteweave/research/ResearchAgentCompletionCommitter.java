@@ -142,16 +142,13 @@ class ResearchAgentCompletionCommitter {
                 run.id(), task.id(), envelope.evidence(), trustedSources);
         ResearchEvidenceQualificationService.QualificationBatch evidenceQualification =
                 evidenceQualificationService.evaluate(task, envelope, trustedEvidence);
-        var requirementCoverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        var coverageAssessment = requirementCoverage.assess(task, envelope, trustedEvidence, evidenceQualificationService);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_LOCKS, 0);
 
         String executionId = Ids.newId();
         String completionId = Ids.newId();
         Set<String> rejectedCandidateKeys = new HashSet<>(evidenceQualification.rejectedCandidateKeys());
         rejectedCandidateKeys.addAll(repairExecution.rejectedCandidates(task, envelope));
-        MergeOutcome plannedOutcome = planMergeOutcome(
-                task, envelope, cells, trustedEvidence, rejectedCandidateKeys, coverageAssessment.blockedCandidates());
+        MergeOutcome plannedOutcome = planMergeOutcome(task, envelope, cells, trustedEvidence, rejectedCandidateKeys);
         BudgetLedger ledger = calculateBudget(
                 task, envelope, reservation, envelope.budgetUsage(), envelope.evidence().size(),
                 plannedOutcome.accepted().size(), plannedOutcome.rejected().size());
@@ -206,16 +203,13 @@ class ResearchAgentCompletionCommitter {
         evidenceQualificationService.persist(
                 run.id(), completionId, evidenceQualification, evidenceByKey, candidates, cells);
         MergeOutcome mergeOutcome = task.candidateQuorum() == 2
-                ? applyQuorumVerdictAndCas(run.id(), task, completionId, cells, plannedOutcome,
-                        coverageBlockedCells(envelope, coverageAssessment.blockedCandidates()))
-                : applyVerdictsAndCas(run.id(), task, completionId, candidates, cells, evidenceByKey,
-                        rejectedCandidateKeys, coverageAssessment.blockedCandidates());
+                ? applyQuorumVerdictAndCas(run.id(), task, completionId, cells, plannedOutcome)
+                : applyVerdictsAndCas(run.id(), task, completionId, candidates, cells, evidenceByKey, rejectedCandidateKeys);
         if (!plannedOutcome.equals(mergeOutcome)) {
             throw new IllegalStateException("Persisted merge outcome differs from the locked completion plan");
         }
         resolveCounterfactualRepairDecisions(run.id(), task, mergeOutcome);
         new ResearchClaimClusterService(jdbcTemplate, objectMapper).persist(task, envelope, completionId);
-        requirementCoverage.persist(task, completionId, coverageAssessment);
 
         persistBudget(reservation, completionId, envelope.executionKey(), ledger);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_BUDGET_FINALIZE, 0);
@@ -251,8 +245,6 @@ class ResearchAgentCompletionCommitter {
                         "Not every task target binding could be released");
             }
         }
-
-        new ResearchRuntimeMetricsService(jdbcTemplate, objectMapper).record(task, envelope, completionId);
         return finalReceipt;
     }
 
@@ -457,8 +449,6 @@ class ResearchAgentCompletionCommitter {
             }
         }
         for (CellRow cell : cells) {
-            boolean partialSynthesis = "SYNTHESIS".equals(task.role()) && "GAP".equals(cell.status())
-                    && new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(task.runId());
             int expectedVersion = expected.get(cell.cellKey());
             String bindingOwner = task.candidateQuorum() == 2 ? task.quorumGroupKey() : task.id();
             boolean planRevisionStale = roleResultTask
@@ -471,7 +461,7 @@ class ResearchAgentCompletionCommitter {
                     || cell.fencingToken() != task.fencingToken())) || "FROZEN".equals(cell.status())
                     || (!roleResultTask && "VERIFIED".equals(cell.status()))
                     || (roleResultTask && !ResearchAgentRoles.ownsNoCells(task.role())
-                        && !"EVIDENCE_AUDIT".equals(task.role()) && !"VERIFIED".equals(cell.status()) && !partialSynthesis)) {
+                        && !"EVIDENCE_AUDIT".equals(task.role()) && !"VERIFIED".equals(cell.status()))) {
                 throw snapshotStale("Canonical target cell no longer matches the task snapshot");
             }
         }
@@ -525,7 +515,7 @@ class ResearchAgentCompletionCommitter {
                         archive.adapter(), "EXTERNAL_ARCHIVED", archive.snapshotKey(),
                         normalizeSourceOrigin(archive.sourceUrl(), archive.provider(), archive.sourceId()),
                         normalizeSourceDomain(archive.sourceUrl(), archive.provider(), archive.sourceId()),
-                        archive.contentSha256().toLowerCase(Locale.ROOT), archive.contentText()));
+                        archive.contentSha256().toLowerCase(Locale.ROOT)));
                 continue;
             }
             TrustedSource source = trustedSources.get(item.sourceId());
@@ -550,7 +540,7 @@ class ResearchAgentCompletionCommitter {
             String workspaceOrigin = "workspace-source:" + source.id();
             result.put(item.evidenceKey(), new TrustedEvidenceSource(
                     source.id(), source.title(), null, "workspace", "workspace", "WORKSPACE", null,
-                    workspaceOrigin, workspaceOrigin, sha256Hex(trustedContent), trustedContent));
+                    workspaceOrigin, workspaceOrigin, sha256Hex(trustedContent)));
         }
         return Map.copyOf(result);
     }
@@ -653,19 +643,12 @@ class ResearchAgentCompletionCommitter {
             ResearchAgentCompletionEnvelope envelope,
             List<CellRow> cells,
             Map<String, TrustedEvidenceSource> trustedEvidence,
-            Set<String> qualificationRejectedCandidates,
-            Set<String> coverageBlockedCandidates
+            Set<String> qualificationRejectedCandidates
     ) {
         if (task.candidateQuorum() == 2) {
-            return mergePlanner.requireCoverage(mergePlanner.planQuorum(task, envelope, trustedEvidence,
-                    loadQuorumCandidates(task), qualificationRejectedCandidates), coverageBlockedCells(envelope, coverageBlockedCandidates));
+            return mergePlanner.planQuorum(task, envelope, trustedEvidence, loadQuorumCandidates(task), qualificationRejectedCandidates);
         }
-        return mergePlanner.planSingle(envelope, cells, qualificationRejectedCandidates, coverageBlockedCandidates);
-    }
-
-    private Set<String> coverageBlockedCells(ResearchAgentCompletionEnvelope envelope, Set<String> blockedCandidates) {
-        return envelope.candidates().stream().filter(candidate -> blockedCandidates.contains(candidate.candidateKey()))
-                .map(ResearchAgentCompletionEnvelope.Candidate::cellKey).collect(java.util.stream.Collectors.toSet());
+        return mergePlanner.planSingle(envelope, cells, qualificationRejectedCandidates);
     }
 
     private List<QuorumCandidate> loadQuorumCandidates(TaskRow task) {
@@ -744,11 +727,11 @@ class ResearchAgentCompletionCommitter {
     }
 
     private MergeOutcome applyQuorumVerdictAndCas(
-            String runId, TaskRow task, String completionId, List<CellRow> cells, MergeOutcome planned, Set<String> incompleteCells
+            String runId, TaskRow task, String completionId, List<CellRow> cells, MergeOutcome planned
     ) {
         if (planned.accepted().isEmpty() && planned.rejected().isEmpty()) return planned;
         List<QuorumCandidate> candidates = loadQuorumCandidates(task);
-        MergeOutcome durable = mergePlanner.requireCoverage(mergePlanner.quorumOutcome(candidates), incompleteCells);
+        MergeOutcome durable = mergePlanner.quorumOutcome(candidates);
         if (!planned.equals(durable)) throw new IllegalStateException("Durable quorum decision differs from its locked plan");
         QuorumCandidate chosen = candidates.stream().sorted(Comparator
                 .comparing((QuorumCandidate item) -> item.blindDigest() == null ? "" : item.blindDigest())
@@ -837,8 +820,7 @@ class ResearchAgentCompletionCommitter {
             List<CandidatePersisted> candidates,
             List<CellRow> cells,
             Map<String, EvidencePersisted> evidenceByKey,
-            Set<String> qualificationRejectedCandidates,
-            Set<String> coverageBlockedCandidates
+            Set<String> qualificationRejectedCandidates
     ) {
         Map<String, CellRow> cellsByKey = new HashMap<>();
         cells.forEach(cell -> cellsByKey.put(cell.cellKey(), cell));
@@ -853,11 +835,9 @@ class ResearchAgentCompletionCommitter {
                     "SUPPORTS".equals(evidence.relationType())
                             && ResearchEquivalentClaims.supports(candidate, evidence.evidenceKey(), evidence.claimText()));
             boolean qualificationRejected = qualificationRejectedCandidates.contains(candidate.candidateKey());
-            boolean incomplete = coverageBlockedCandidates.contains(candidate.candidateKey());
-            boolean supported = literalSupport && !qualificationRejected && !incomplete;
+            boolean supported = literalSupport && !qualificationRejected;
             String decision = supported ? "ACCEPTED" : "REJECTED";
             String reason = supported ? "VERIFIED_AND_VERSION_MATCHED"
-                    : incomplete ? ResearchRequirementCoverageService.INCOMPLETE
                     : literalSupport ? "EVIDENCE_QUALIFICATION_REJECTED" : "NOT_ENOUGH_INFO";
             String verdict = supported ? "SUPPORTS" : "NOT_ENOUGH_INFO";
             int resultVersion = candidate.baseCellVersion();
@@ -1314,13 +1294,8 @@ class ResearchAgentCompletionCommitter {
             String snapshotKey,
             String sourceOrigin,
             String sourceDomain,
-            String lineageDigest,
-            String scopeText
+            String lineageDigest
     ) {
-        TrustedEvidenceSource(String sourceId, String sourceTitle, String sourceUrl, String provider, String adapter,
-                              String snapshotStatus, String snapshotKey, String sourceOrigin, String sourceDomain, String lineageDigest) {
-            this(sourceId, sourceTitle, sourceUrl, provider, adapter, snapshotStatus, snapshotKey, sourceOrigin, sourceDomain, lineageDigest, "");
-        }
         List<String> quorumIdentities() {
             return quorumIdentityTokens(sourceDomain, lineageDigest);
         }

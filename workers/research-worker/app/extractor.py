@@ -122,7 +122,7 @@ def _extract_evidence_cards_detailed_with_llm(
         "research.extract",
         {
             "question": plan.normalized_question,
-            "as_of_date": plan.stop_contract.get("as_of_date") or datetime.now(timezone.utc).date().isoformat(),
+            "as_of_date": datetime.now(timezone.utc).date().isoformat(),
             "research_type": plan.research_type,
             "target_entity_type": plan.target_entity_type,
             "schema_columns": [col.key for col in plan.research_schema.columns],
@@ -132,10 +132,6 @@ def _extract_evidence_cards_detailed_with_llm(
                 for col in plan.research_schema.columns
             ],
             "target_entity": str(plan.stop_contract.get("deep_cell_entity_label") or ""),
-            "source_scopes": plan.stop_contract.get("source_scopes", []),
-            "requirement_specs": [item for item in plan.stop_contract.get("requirement_specs", [])
-                                  if any(str(item.get("cell_key", "")).endswith(":" + col.key)
-                                         for col in plan.research_schema.columns)],
             "recovery_mode": str(plan.stop_contract.get("recovery_mode", "")).strip().upper(),
             "extraction_policy": [
                 "NEVER write internal knowledge; every claim must cite a window_id",
@@ -146,9 +142,6 @@ def _extract_evidence_cards_detailed_with_llm(
                 "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
-                "When requirement_specs asks for DISTINCT_FACTS, extract each distinct requested item as its own card. "
-                "Repeated descriptions of one item are one fact; never split one fact into paraphrases to reach minimum_count. "
-                "Keep the item's name and the requested property together, with its version and time conditions.",
                 "when a column asks for a command, option, parameter, configuration item or condition, prefer a quote "
                 "that names it literally (for example '--max-connections=N' or 'only when the cache is cold') over a "
                 "general description of the feature",
@@ -158,10 +151,7 @@ def _extract_evidence_cards_detailed_with_llm(
                 "for current status or maturity, distinguish earlier-release documentation, current stable "
                 "documentation and development versions using source_url and dates; never turn a historical "
                 "experimental status into a claim about today. Preserve the version and time scope in claim_text",
-                ("For each (entity, column), produce at most 12 SUPPORTS cards covering different requested facts. "
-                 "Prioritize the missing requirement_specs. Selection and the submission budget are enforced later; do not merge independent facts into one claim."
-                 if plan.stop_contract.get("evidence_selection_version") == 1 else
-                 "for each (entity, column) produce up to three SUPPORTS cards, each stating a different fact that answers the column (up to five when the column asks for a list of items), plus at most one CONFLICTS card; never emit two cards for the same fact"),
+                "for each (entity, column) produce up to three SUPPORTS cards, each stating a different fact that answers the column (up to five when the column asks for a list of items), plus at most one CONFLICTS card; never emit two cards for the same fact",
                 "CONFLICTS is relative to another card: when sources disagree, emit one directional finding as SUPPORTS and the opposing finding as CONFLICTS; never emit only CONFLICTS cards",
                 "relation_type is judged against the column, not against the question's hypothesis: a finding that X does not help is SUPPORTS for a column that asks for opposing or inconclusive evidence",
                 "if the window does not support any schema column, skip the window",

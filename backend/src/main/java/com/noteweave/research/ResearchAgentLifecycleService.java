@@ -291,17 +291,6 @@ public class ResearchAgentLifecycleService {
         if (TARGET_STALE_REASON.equals(command.reasonCode().trim())) {
             cancelStaleTask(command.taskId());
         }
-        if ("RESEARCH_AGENT_TASK_SNAPSHOT_STALE".equals(command.reasonCode().trim())
-                && new ResearchRequirementCoverageService(jdbcTemplate,new com.fasterxml.jackson.databind.ObjectMapper()).answerPolicy(command.researchRunId())
-                && ResearchStaleSnapshotRecovery.invalidCandidateScope(jdbcTemplate,command.researchRunId(),command.taskId())) {
-            int changed = jdbcTemplate.update("""
-                    update research_agent_task set status = 'FAILED', terminal_reason = 'SNAPSHOT_STALE_REPLAN',
-                        terminal_at = current_timestamp, worker_instance_id = null, lease_expires_at = null,
-                        next_attempt_at = null, updated_at = current_timestamp
-                    where id = ? and status not in ('SUBMITTED','FAILED','CANCELLED')
-                    """,command.taskId());
-            if (changed > 0) { releaseReservationsForTask(command.taskId()); releaseCellBindings(command.taskId()); }
-        }
         return new DeliveryFailureReceipt(id, false);
     }
 

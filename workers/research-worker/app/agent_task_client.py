@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import base64
-import time
 import hmac
 import http.client
 import json
@@ -120,8 +118,7 @@ class JavaResearchAgentTaskClient:
         payload = self._data(self._request(
             "POST",
             f"/internal/research-agent-tasks/{agent_task_id}/claim",
-            {"worker_instance_id": self.worker_instance_id, "lease_seconds": lease_seconds,
-             "supported_features": ["requirement_coverage_v1", "requirement_coverage_v2", "source_scope_v1", "synthesis_upload_v1", "fact_semantics_v1", "statement_support_v1", "coverage_execution_v1", "report_coverage_v1", "completion_runtime_v1", "requirement_answer_policy_v1", "completion_gap_policy_v1"]},
+            {"worker_instance_id": self.worker_instance_id, "lease_seconds": lease_seconds},
             idempotency_key=f"{agent_task_id}:{self.worker_instance_id}:claim",
         ))
         return AgentTaskClaim(
@@ -379,94 +376,6 @@ class JavaResearchAgentTaskClient:
             },
             idempotency_key=f"agent-failure:{failure_identity}",
         ))
-
-    def recover_synthesis_result(self, snapshot):
-        receipt = self._data(self._request("POST", f"/internal/research-agent-tasks/{snapshot.task_id}/synthesis-recovery",
-            self._synthesis_lease(snapshot)))
-        if (type(receipt.get("ready")) is not bool or type(receipt.get("recorded_llm_calls")) is not int
-                or not 0 <= receipt["recorded_llm_calls"] <= int(snapshot.budget.get("llm_calls", 0))
-                or receipt["ready"] and not isinstance(receipt.get("reference"), dict)):
-            raise AgentTaskProtocolError("报告恢复回执不符合约定")
-        return receipt
-
-    def _synthesis_lease(self, snapshot):
-        return {"worker_instance_id": self.worker_instance_id, "lease_epoch": snapshot.lease_epoch,
-                "fencing_token": snapshot.fencing_token, "snapshot_digest": snapshot.snapshot_digest}
-
-    def require_synthesis_call(self, snapshot, index, purpose):
-        from app.execution_control import require_execution_active
-        payload = {**self._synthesis_lease(snapshot), "call_index": index, "purpose": purpose}
-        for attempt in range(3):
-            require_execution_active()
-            try:
-                receipt = self._data(self._request("POST", f"/internal/research-agent-tasks/{snapshot.task_id}/synthesis-call-permit", payload))
-                break
-            except AgentTaskApiError as error:
-                if attempt == 2 or error.status_code < 500 and error.status_code != 429:
-                    raise
-                time.sleep(0.2 * (attempt + 1))
-        if (set(receipt) != {"call_index", "recorded_llm_calls", "idempotent_replay"}
-                or type(receipt["call_index"]) is not int or receipt["call_index"] != index
-                or type(receipt["recorded_llm_calls"]) is not int
-                or not 1 <= receipt["recorded_llm_calls"] <= int(snapshot.budget.get("llm_calls", 0))
-                or type(receipt["idempotent_replay"]) is not bool):
-            raise AgentTaskProtocolError("成文调用授权回执不符合约定")
-        return receipt
-
-    def upload_synthesis_result(self, snapshot, result, *, llm_calls=None):
-        from app.execution_control import require_execution_active
-        from app.research_agent_completion_contract import canonical_json_bytes
-        if snapshot.role != "SYNTHESIS" or snapshot.query_policy.get("synthesis_input", {}).get("report_upload_version") != 1:
-            raise AgentTaskProtocolError("当前任务未启用报告分段提交")
-        content = canonical_json_bytes(result)
-        if not 1 <= len(content) <= 4 * 1024 * 1024:
-            raise AgentTaskProtocolError("报告内容超出分段提交的大小限制")
-        content_digest = "sha256:" + hashlib.sha256(content).hexdigest()
-        part_bytes = 65536
-        count = (len(content) + part_bytes - 1) // part_bytes
-        present = set()
-        if snapshot.query_policy.get("synthesis_input", {}).get("report_recovery_version") == 1:
-            if type(llm_calls) is not int or llm_calls < 0:
-                raise AgentTaskProtocolError("报告生成缺少真实模型消耗")
-            receipt = self._data(self._request("POST", f"/internal/research-agent-tasks/{snapshot.task_id}/synthesis-generation",
-                {**self._synthesis_lease(snapshot), "content_digest": content_digest, "part_count": count,
-                 "total_bytes": len(content), "llm_calls": llm_calls}))
-            if (type(receipt.get("recorded_llm_calls")) is not int or receipt["recorded_llm_calls"] < llm_calls
-                    or receipt["recorded_llm_calls"] > int(snapshot.budget.get("llm_calls", 0))
-                    or not isinstance(receipt.get("present_parts"), list)
-                    or any(type(i) is not int or not 0 <= i < count for i in receipt["present_parts"])):
-                raise AgentTaskProtocolError("报告生成登记回执不符合约定")
-            present = set(receipt["present_parts"])
-        for index in range(count):
-            require_execution_active()
-            if index in present:
-                continue
-            part = content[index * part_bytes:(index + 1) * part_bytes]
-            part_digest = "sha256:" + hashlib.sha256(part).hexdigest()
-            payload = {"worker_instance_id": self.worker_instance_id, "lease_epoch": snapshot.lease_epoch,
-                       "fencing_token": snapshot.fencing_token, "snapshot_digest": snapshot.snapshot_digest,
-                       "content_digest": content_digest, "part_index": index, "part_count": count,
-                       "total_bytes": len(content), "part_digest": part_digest,
-                       "content_base64": base64.b64encode(part).decode("ascii")}
-            for attempt in range(3):
-                require_execution_active()
-                try:
-                    receipt = self._data(self._request("POST", f"/internal/research-agent-tasks/{snapshot.task_id}/synthesis-parts", payload,
-                        idempotency_key=f"synthesis-part:{snapshot.task_id}:{snapshot.lease_epoch}:{snapshot.fencing_token}:{index}:{part_digest}"))
-                    break
-                except AgentTaskApiError as error:
-                    if attempt == 2 or error.status_code < 500 and error.status_code != 429:
-                        raise
-                    time.sleep(0.2 * (attempt + 1))
-            if (set(receipt) != {"content_digest", "part_index", "part_digest", "idempotent_replay"}
-                    or receipt["content_digest"] != content_digest or receipt["part_digest"] != part_digest
-                    or type(receipt["part_index"]) is not int or receipt["part_index"] != index
-                    or type(receipt["idempotent_replay"]) is not bool):
-                raise AgentTaskProtocolError("报告片段回执与提交内容不一致")
-        require_execution_active()
-        return {"result_schema_version": "research-synthesis-reference.v1", "role": "SYNTHESIS", "status": "CANDIDATE",
-                "ledger_digest": result["ledger_digest"], "audit_digest": result["audit_digest"],
-                "artifact_ref": {"content_digest": content_digest, "part_count": count, "total_bytes": len(content)}}
 
     def _request(self, method: str, path: str, payload: dict[str, Any] | None = None,
                  idempotency_key: str = "", request_timeout_seconds: float = 30.0) -> dict[str, Any]:

@@ -38,16 +38,7 @@ class ResearchSemanticAuditService {
         for (JsonNode cell : input.path("cells")) {
             String cellKey = cell.path("cell_key").asText(); cells.put(cellKey, cell);
             JsonNode list = cell.path("clusters");
-            if (cell.has("pairs")) {
-                Map<String, JsonNode> byKey = new HashMap<>();
-                list.forEach(cluster -> byKey.put(cluster.path("cluster_key").asText(), cluster));
-                if (!cell.path("pairs").isArray() || cell.path("pairs").size() > 20) throw invalid();
-                for (JsonNode requested : cell.path("pairs")) {
-                    String left = requested.path("left_cluster_key").asText(), right = requested.path("right_cluster_key").asText();
-                    if (requested.size() != 2 || left.equals(right) || !byKey.containsKey(left) || !byKey.containsKey(right)
-                            || expected.put(pair(cellKey, left, right), new JsonNode[] {byKey.get(left), byKey.get(right)}) != null) throw invalid();
-                }
-            } else for (int i = 0; i < list.size(); i++) for (int j = 0; j < i; j++)
+            for (int i = 0; i < list.size(); i++) for (int j = 0; j < i; j++)
                 expected.put(pair(cellKey, list.get(j).path("cluster_key").asText(), list.get(i).path("cluster_key").asText()), new JsonNode[] {list.get(j), list.get(i)});
             Integer current = jdbc.queryForObject("select count(*) from research_cell where research_run_id = ? and cell_key = ? and cell_version = ? and semantic_revision = ?",
                     Integer.class, task.runId(), cellKey, cell.path("cell_version").asInt(), cell.path("semantic_revision").asInt());
@@ -100,21 +91,13 @@ class ResearchSemanticAuditService {
                     recordConflict(task, cell, expected.get(pair(cellKey, check.path("left_cluster_key").asText(), check.path("right_cluster_key").asText())), roleResultId);
                 }
             }
-            boolean complete = true;
-            if ("PASS".equals(status) && cell.has("pairs")) {
-                var semantics = new ResearchFactSemanticCoverage(jdbc);
-                List<String> ids = new ArrayList<>(); cell.path("clusters").forEach(cluster -> ids.add(cluster.path("cluster_key").asText()));
-                complete = semantics.allChecked(ids, semantics.relations(task.runId(), cellKey));
-                if (!complete) jdbc.update("update research_cell set semantic_audit_status = 'PENDING' where research_run_id = ? and cell_key = ?", task.runId(), cellKey);
-            }
-            if ("PASS".equals(status) && complete) {
+            if ("PASS".equals(status)) {
                 resolveOlderConflicts(task.runId(), cellKey, cell.path("semantic_revision").asInt());
                 approveEquivalentRepair(task, cellKey, cell, checks, roleResultId);
             }
         }
         String expectedStatus = anyNotRun ? "BLOCKED" : anyRepair ? "REPAIR_REQUIRED" : "PASS";
         if (!expectedStatus.equals(result.path("status").asText())) throw invalid();
-        if (input.path("fact_semantics_version").asInt() == 1) new ResearchRequirementCoverageService(jdbc, mapper).reconcileAuditedCoverage(task.runId());
     }
 
     private void recordConflict(ResearchAgentCompletionCommitter.TaskRow task, JsonNode cell, JsonNode[] pair, String roleResultId) {
@@ -131,7 +114,6 @@ class ResearchSemanticAuditService {
                 "语义冲突，需要定向反证", Json.write(mapper, notes));
         jdbc.update("update research_cell set cell_status = 'CONFLICTED', last_verifier_decision = 'GLOBAL_CONFLICT:SEMANTIC_CONTRADICTION', updated_at = current_timestamp where research_run_id = ? and cell_key = ? and cell_status <> 'FROZEN'",
                 task.runId(), cell.path("cell_key").asText());
-        new ResearchRequirementCoverageService(jdbc, mapper).invalidateEvidence(task.runId(), cell.path("cell_key").asText(), keys, "SEMANTIC_CONTRADICTION");
     }
 
     private void resolveOlderConflicts(String runId, String cellKey, int revision) {
@@ -144,17 +126,13 @@ class ResearchSemanticAuditService {
 
     private void approveEquivalentRepair(ResearchAgentCompletionCommitter.TaskRow task, String cellKey, JsonNode cell, List<JsonNode> checks, String roleResultId) {
         String runId = task.runId();
-        var coverage = new ResearchRequirementCoverageService(jdbc, mapper);
-        boolean modern = coverage.modernState(runId);
         List<Map<String, Object>> decisions = jdbc.query("""
                 select id, evidence_ids_json, notes_json from research_verifier_decision where research_run_id = ? and target_id = ?
                     and decision_type = 'QUORUM_REPAIR_REQUIRED' and reason_code = 'QUORUM_VALUE_CONFLICT' and decision_status = 'OPEN'
                 """, (rs, n) -> Map.of("id", rs.getString(1), "keys", clusters.read(rs.getString(2)),
                         "notes", rs.getString(3) == null ? mapper.createObjectNode() : clusters.read(rs.getString(3))), runId, cellKey);
-        if (decisions.isEmpty() || (!modern && (checks.isEmpty() || checks.stream().anyMatch(check -> !"EQUIVALENT".equals(check.path("equivalence_verdict").asText()))))) return;
+        if (decisions.isEmpty() || checks.isEmpty() || checks.stream().anyMatch(check -> !"EQUIVALENT".equals(check.path("equivalence_verdict").asText()))) return;
         for (var decision : decisions) {
-            if (modern && !coverage.equivalentQuorum(runId, cellKey, task.planRevision(), task.entitySetVersion(),
-                    ((JsonNode) decision.get("notes")).path("quorum_group_key").asText())) continue;
             Set<String> currentKeys = new HashSet<>();
             cell.path("clusters").forEach(cluster -> cluster.path("evidence_keys").forEach(key -> currentKeys.add(key.asText())));
             Set<String> decisionKeys = new HashSet<>();

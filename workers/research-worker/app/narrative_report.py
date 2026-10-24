@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import json
 from dataclasses import dataclass, replace
 
 from app.json_repair import parse_json_payload
@@ -36,109 +35,6 @@ class NarrativeReportPolisher:
         self.llm_client = llm_client
 
     def polish(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
-        from app.answer_policy import active, polish_answers
-        if active(synthesis_input):
-            return polish_answers(synthesis_input, self.llm_client)
-        if "requirement_coverage" not in synthesis_input:
-            return self._polish_batch(synthesis_input)
-        cells = _validated_cells(synthesis_input)
-        chunks = _synthesis_chunks(cells)
-        # 调用次数来自服务端冻结的预算，不通过分批扩大预算。
-        remaining = max(0, int(synthesis_input.get("narrative_llm_budget", 2)))
-        coverage_budget = max(1, remaining // 4) if remaining and synthesis_input.get("report_coverage_version") == 1 else 0
-        remaining -= coverage_budget
-        # 为独立的逐句核验预留预算，成文调用不能提前用完。
-        statement_budget = remaining // 3 if synthesis_input.get("statement_support_version") == 1 else 0
-        remaining -= statement_budget
-        results = []
-        for index, chunk in enumerate(chunks):
-            require_execution_active()
-            chunk_keys = {str(cell["cell_key"]) for cell in chunk}
-            batch = {**synthesis_input, "cells": chunk,
-                     "required_points": _requirements_for_chunk(synthesis_input, chunk_keys),
-                     "leads": synthesis_input.get("leads", []) if index == 0 else []}
-            batch["requirement_coverage"] = {"requirements": [item for item in synthesis_input["requirement_coverage"].get("requirements", [])
-                if item.get("cell_key") in chunk_keys or item.get("scope_type") == "RUN"]}
-            polisher = NarrativeReportPolisher(self.llm_client if remaining >= 2 else None)
-            result = polisher._polish_batch(batch)
-            remaining -= result.llm_calls
-            results.append(result)
-        narrative = dict(results[0].narrative)
-        narrative["sections"] = [section for result in results for section in result.narrative["sections"]]
-        narrative["limitations"] = list(dict.fromkeys(
-            item for result in results for item in result.narrative["limitations"]))
-        question = str(synthesis_input.get("question") or "")
-        if _comparison_table_required(question, cells):
-            # 对比表由完整账本生成，不能只呈现第一批研究对象。
-            narrative["comparison_table"] = _cells_table(cells, question_chinese=_writes_chinese(question))
-        _preserve_facts(narrative, cells, question)
-        if synthesis_input.get("report_metadata_version") == 1:
-            chinese = _writes_chinese(question)
-            narrative["title"] = "研究报告" if chinese else "Research report"
-            for section in narrative["sections"]:
-                section["heading"] = "研究发现" if chinese else "Findings"
-            if narrative.get("comparison_table"):
-                narrative["comparison_table"] = _cells_table(cells, question_chinese=chinese)
-        calls = sum(result.llm_calls for result in results)
-        fallback = any(result.mode == "FALLBACK" for result in results)
-        statement_repaired = False
-        if synthesis_input.get("statement_support_version") == 1:
-            from app.statement_support import verify_report, bind_preserved_facts
-            checks, check_calls, repaired = verify_report(narrative, cells, self.llm_client, statement_budget + remaining)
-            _preserve_facts(narrative, cells, question)
-            bind_preserved_facts(narrative, cells, checks)
-            narrative["statement_support"] = {"schema_version": "research-statement-support.v1",
-                                                "checks": checks, "model_calls": check_calls}
-            calls += check_calls
-            fallback |= repaired
-            statement_repaired = repaired
-            if synthesis_input.get("report_coverage_version") == 1:
-                from app.report_coverage import audit_report_coverage
-                report_coverage, coverage_calls = audit_report_coverage(narrative, synthesis_input, self.llm_client,
-                                                                       coverage_budget + statement_budget + remaining - check_calls)
-                narrative["report_coverage"] = report_coverage
-                calls += coverage_calls
-                if not report_coverage["complete"] and self.llm_client is not None and int(synthesis_input.get("narrative_llm_budget", 0)) - calls >= 3:
-                    from app.report_coverage import repair_answers
-                    from app.statement_support import _NEUTRAL, _NEUTRAL_EN
-                    paragraphs, repaired_ids, repair_calls = repair_answers(narrative, synthesis_input, self.llm_client)
-                    calls += repair_calls
-                    if paragraphs:
-                        chinese = _writes_chinese(question)
-                        section_index = len(narrative["sections"])
-                        addition = {"title": narrative["title"], "executive_summary": _NEUTRAL if chinese else _NEUTRAL_EN,
-                                    "sections": [{"heading": "补充回答" if chinese else "Additional answers", "paragraphs": paragraphs}], "comparison_table": {}}
-                        extra_checks, extra_calls, extra_fallback = verify_report(addition, cells, self.llm_client, 1)
-                        calls += extra_calls
-                        narrative["sections"].extend(addition["sections"])
-                        for check in extra_checks:
-                            if check["location"] == "summary":
-                                continue
-                            location = check["location"].replace("sections/0/", f"sections/{section_index}/", 1)
-                            check = {**check, "location": location, "statement_id": location + "/" + check["statement_id"].rsplit("/", 1)[1]}
-                            narrative["statement_support"]["checks"].append(check)
-                        narrative["statement_support"]["model_calls"] += extra_calls
-                        # 只复核改写涉及的需求，其他已通过的答案和引用保持原判定。
-                        for req in synthesis_input["requirement_coverage"]["requirements"]:
-                            note = "报告尚未完整回答：" + str(req.get("entity_label") or "") + " / " + req["text"]
-                            if req["requirement_id"] in repaired_ids and note not in synthesis_input.get("limitations", []):
-                                narrative["limitations"] = [item for item in narrative["limitations"] if item != note]
-                        updated, updated_calls = audit_report_coverage(narrative, synthesis_input, self.llm_client, 1,
-                                                                      previous=report_coverage, target_ids=repaired_ids)
-                        narrative["report_coverage"] = updated
-                        calls += updated_calls
-                        fallback |= extra_fallback
-        if synthesis_input.get("report_metadata_version") == 1:
-            for section in narrative["sections"]:
-                section["heading"] = "研究发现" if _writes_chinese(question) else "Findings"
-        mode = "FALLBACK" if not calls else "PARTIAL_FALLBACK" if fallback else "LLM"
-        reasons = list(dict.fromkeys(result.reason for result in results if result.reason))
-        if statement_repaired:
-            reasons.append("STATEMENT_SUPPORT_LOCAL_FALLBACK")
-        return NarrativeReportResult(narrative, _render_markdown(narrative), mode,
-                                     ";".join(reasons) or None, llm_calls=calls)
-
-    def _polish_batch(self, synthesis_input: dict[str, object]) -> NarrativeReportResult:
         cells = _validated_cells(synthesis_input)
         leads = _validated_leads(synthesis_input, {str(cell["cell_key"]) for cell in cells})
         # 后端偶尔把整次研究的原因码（如 UNRESOLVED_CELLS_REMAIN）放进局限列表，读者看不懂，成文时略去
@@ -247,7 +143,6 @@ class NarrativeReportPolisher:
             "frozen_cells": _prompt_cells(cells),
             "tentative_cells": _prompt_cells(leads),
             "required_points": required_points,
-            "requirement_coverage": synthesis_input.get("requirement_coverage", {}),
             "research_question": question,
             "known_limitations": limitations,
         }
@@ -291,92 +186,10 @@ def _validated_cells(synthesis_input: dict[str, object]) -> list[dict[str, objec
             "column_label": str(raw.get("column_label") or "").strip(),
             "supporting_quotes": _clean_strings(raw.get("supporting_quotes")),
             "evidence_quotes": _evidence_quotes(raw.get("evidence_quotes"), evidence_keys),
-            "facts": _validated_facts(raw.get("facts"), evidence_keys),
         })
     if not cells:
         raise ValueError("SYNTHESIS input has no frozen cells")
     return sorted(cells, key=lambda item: str(item["cell_key"]))
-
-
-def _validated_facts(raw, evidence_keys):
-    if not isinstance(raw, list):
-        return []
-    result, seen = [], set()
-    for fact in raw:
-        if not isinstance(fact, dict):
-            raise ValueError("累计事实格式不符合约定")
-        identity = str(fact.get("fact_id") or "").strip()
-        claim = str(fact.get("claim_text") or "").strip()
-        keys = _clean_strings(fact.get("evidence_keys"))
-        if not identity or identity in seen or not claim or not keys or not set(keys) <= set(evidence_keys):
-            raise ValueError("累计事实缺少正文、引用或唯一身份")
-        seen.add(identity)
-        result.append({"fact_id": identity, "claim_text": claim, "evidence_keys": keys,
-                       "equivalent_fact_ids": fact.get("equivalent_fact_ids", [identity]),
-                       "source_scopes": fact.get("source_scopes", [])})
-    return result
-
-
-def _requirements_for_chunk(data, cell_keys):
-    coverage = data.get("requirement_coverage")
-    if not isinstance(coverage, dict):
-        return _clean_strings(data.get("required_points"))
-    return list(dict.fromkeys(str(item["text"]) for item in coverage.get("requirements", [])
-                             if isinstance(item, dict) and item.get("cell_key") in cell_keys and item.get("text")))
-
-
-def _synthesis_chunks(cells):
-    """按事实和原文大小分批，同一单元格可以分批，但每条事实的联合证据保持完整。"""
-    units = []
-    for cell in cells:
-        facts = cell.get("facts", [])
-        if not facts:
-            units.append(cell)
-            continue
-        for fact in facts:
-            keys = set(fact["evidence_keys"])
-            quotes = [quote for quote in cell["evidence_quotes"] if quote["evidence_key"] in keys]
-            units.append({**cell, "candidate_value": fact["claim_text"], "facts": [fact],
-                          "evidence_keys": fact["evidence_keys"], "evidence_quotes": quotes,
-                          "supporting_quotes": [quote["quote"] for quote in quotes]})
-    chunks, current, size, keys = [], [], 0, set()
-    for unit in units:
-        weight = len(json.dumps(_prompt_cells([unit]), ensure_ascii=False))
-        if current and (size + weight > 18000 or len(current) >= 6 and unit["cell_key"] not in keys):
-            chunks.append(current)
-            current, size, keys = [], 0, set()
-        if unit["cell_key"] in keys:
-            # 同格的事实在预算内合并，避免每条事实都消耗一次成文调用。
-            previous = next(item for item in current if item["cell_key"] == unit["cell_key"])
-            for field in ("facts", "evidence_keys", "evidence_quotes", "supporting_quotes"):
-                previous[field] = [*previous[field], *(value for value in unit[field] if value not in previous[field])]
-        else:
-            current.append(dict(unit))
-        size += weight
-        keys.add(unit["cell_key"])
-    if current:
-        chunks.append(current)
-    return chunks
-
-
-def _preserve_facts(narrative, cells, question):
-    """逐条保留已核验的事实与联合引用，模型没有完整表达的事实使用原结论补充。"""
-    paragraphs = [p for section in narrative["sections"] for p in section["paragraphs"]]
-    missing = []
-    chinese = _writes_chinese(question)
-    for cell in cells:
-        for fact in cell.get("facts", []) or [{"claim_text": cell["candidate_value"], "evidence_keys": cell["evidence_keys"]}]:
-            present = any(fact["claim_text"] in str(p.get("text", ""))
-                          and cell["cell_key"] in p.get("cell_keys", [])
-                          and set(fact["evidence_keys"]) <= set(p.get("evidence_keys", [])) for p in paragraphs)
-            if present:
-                continue
-            entity = str(cell.get("entity_label") or "")
-            text = (entity + ("：" if chinese else ": ") if entity else "") + fact["claim_text"]
-            missing.append({"text": text, "cell_keys": [cell["cell_key"]], "evidence_keys": fact["evidence_keys"]})
-    if missing:
-        narrative["sections"].append({"heading": "补充核验结果" if chinese else "Additional verified findings",
-                                      "paragraphs": missing})
 
 
 def _evidence_quotes(raw: object, evidence_keys: list[str]) -> list[dict[str, str]]:

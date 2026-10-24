@@ -121,11 +121,6 @@ public class ResearchRepairExecutionService {
             if (!cells.contains(check.path("cell_key").asText())) throw invalid();
             boolean knownClaim = envelope.candidates().stream().anyMatch(c -> c.cellKey().equals(check.path("cell_key").asText())
                     && c.candidateValue().equals(check.path("original_claim").asText()));
-            if (policy.has("requirement_contract") && envelope.extractionDiagnostics().get("claim_clusters") != null) {
-                for (JsonNode cluster : mapper.valueToTree(envelope.extractionDiagnostics().get("claim_clusters")))
-                    if (cluster.path("cell_key").asText().equals(check.path("cell_key").asText())
-                            && cluster.path("claim_text").asText().equals(check.path("original_claim").asText())) knownClaim = true;
-            }
             for (JsonNode claim : policy.path("repair_target").path("claims")) {
                 if (claim.path("claim_text").asText().equals(check.path("original_claim").asText())
                         && policy.path("repair_target").path("cell_key").asText().equals(check.path("cell_key").asText())) knownClaim = true;

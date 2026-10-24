@@ -408,24 +408,3 @@ def test_single_entity_dimension_labels_are_kept() -> None:
     assert [item["label"] for item in draft.plan["dimensions"]] == ["PostgreSQL 17 增量备份命令", "合并工具"]
 
 
-def test_rejected_atomic_conditions_get_one_bounded_repair_then_fallback():
-    source = json.loads(_claim().task_snapshot_json)
-    source.pop("snapshot_digest")
-    source["budget"]["llm_calls"] = 5
-    source["query_policy"]["planning_input"] = {**PLANNING_INPUT, "completion_runtime_version": 1,
-        "completion_gap_policy_version": 1, "requirement_coverage_enabled": True,
-        "requested_clauses": [{"clause_id": "clause:0", "text": PLANNING_INPUT["question"]}]}
-    digest = snapshot_digest(source)
-    claim = AgentTaskClaim(TASK_ID, 2, 7, "[]", '{"llm_calls":5}', json.dumps({**source, "snapshot_digest": digest}, ensure_ascii=False), digest)
-    raw = _plan(user_requirements=[{"text": "JSON 索引能力", "question_quote": PLANNING_INPUT["question"],
-        "dimension": "JSON 索引类型", "entities": [], "completion_mode": "SINGLE", "minimum_count": 1,
-        "count_expression": "", "answer_kind": "FACT", "temporal_mode": "UNSPECIFIED", "conditions": ["未要求的安装步骤"], "source_constraints": []}])
-    rejected = {"clauses": [{"clause_id": "clause:0", "status": "MAPPED", "requirement_indexes": [0]}],
-        "requirement_checks": [{"requirement_index": 0, "status": "EXPANDED", "invalid_condition_indexes": [0]}]}
-    llm = _SequenceLlm(raw, raw, rejected, raw, rejected)
-    completion = _executor(llm)(_command(), claim)
-    assert completion.role_result["status"] == "FALLBACK"
-    assert "plan" not in completion.role_result
-    assert "PLANNING_EXPLICIT_REQUIREMENTS_INCOMPLETE" in completion.role_result["degradation_reasons"]
-    assert len(llm.calls) == completion.budget_usage.llm_calls == 5
-    assert "未要求的安装步骤" in " ".join(llm.calls[3][1]["previous_output_rejected"])

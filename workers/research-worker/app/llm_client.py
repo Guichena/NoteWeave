@@ -219,7 +219,7 @@ class OpenAICompatibleLlmClient:
         thinking = purpose_config.get("thinking")
         if thinking not in ("enabled", "disabled"):
             # 规划、原文抽取和成文均有输出上限；思考模式可能先耗尽预算，正文仍为空。
-            direct_json = purpose in {"research.plan.matrix", "research.extract", "research.synthesis", "research.fact_selection"} and (
+            direct_json = purpose in {"research.plan.matrix", "research.extract", "research.synthesis"} and (
                 model.lower().startswith("deepseek-v4") or model.lower() == "deepseek-flash")
             thinking = "disabled" if model.lower().startswith("glm-5") or direct_json else None
         if thinking:

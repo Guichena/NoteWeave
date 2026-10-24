@@ -136,7 +136,7 @@ public class ResearchBudgetAndCheckpointService {
         if (!"RESERVED".equals(row.state())) {
             throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE", "Budget reservation is not releasable");
         }
-        Map<String, Long> consumed = knownConsumption(row);
+        Map<String, Long> consumed = row.consumed();
         Map<String, Long> released = subtract(row.reserved(), consumed);
         int updated = jdbcTemplate.update("""
                 update research_budget_reservation
@@ -179,7 +179,7 @@ public class ResearchBudgetAndCheckpointService {
             throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE",
                     "Lifecycle budget reservation identity or state is invalid");
         }
-        Map<String, Long> consumed = knownConsumption(row);
+        Map<String, Long> consumed = row.consumed();
         Map<String, Long> released = subtract(row.reserved(), consumed);
         int updated = jdbcTemplate.update("""
                 update research_budget_reservation
@@ -193,17 +193,6 @@ public class ResearchBudgetAndCheckpointService {
                     "Lifecycle budget reservation lost its release race");
         }
         return new BudgetSnapshot(row.reserved(), consumed, released, "RELEASED");
-    }
-
-    private Map<String,Long> knownConsumption(ReservationRow row) {
-        if (!new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(row.runId())) return row.consumed();
-        String raw = jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where id = ?",String.class,row.taskId());
-        if (raw == null || new ResearchDiscoveryBudget(jdbcTemplate,objectMapper).read(raw).path("query_policy").path("synthesis_input").path("report_call_meter_version").asInt() != 1) return row.consumed();
-        Long calls = jdbcTemplate.queryForObject("select count(*) from research_synthesis_call_permit where task_id = ?",Long.class,row.taskId());
-        Map<String,Long> consumed = new LinkedHashMap<>(row.consumed());
-        consumed.put("llm_calls",Math.max(consumed.getOrDefault("llm_calls",0L),calls == null ? 0L : calls));
-        if (consumed.get("llm_calls") > row.reserved().getOrDefault("llm_calls",0L)) throw new BusinessException("RESEARCH_BUDGET_USAGE_INVALID","已授权的成文调用超出预留预算");
-        return Map.copyOf(consumed);
     }
 
     @Transactional

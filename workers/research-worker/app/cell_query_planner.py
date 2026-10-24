@@ -74,9 +74,6 @@ class CellQueryContext:
     objective: str = ""
     boundaries: tuple[str, ...] = ()
     authoritative_domains: tuple[str, ...] = ()
-    as_of_date: str = ""
-    source_scopes: tuple[dict, ...] = ()
-    requirement_targets: tuple[dict, ...] = ()
 
 
 @dataclass
@@ -164,12 +161,10 @@ def _call_model(
             }],
         },
         "max_queries": context.max_queries,
-        "as_of_date": context.as_of_date or datetime.now(timezone.utc).date().isoformat(),
+        "as_of_date": datetime.now(timezone.utc).date().isoformat(),
         "role": context.role,
         "question": context.question,
         "entity": context.entity_label,
-        "source_scopes": list(context.source_scopes),
-        "requirement_targets": list(context.requirement_targets),
         "columns": [
             {"key": column.key, "label": column.label, "description": column.description,
              "search_intents": list(column.search_intents),
@@ -184,8 +179,6 @@ def _call_model(
         "constraints": list(context.constraints),
         "tried_queries": list(context.tried_queries),
     }
-    if context.requirement_targets:
-        payload["policy"].append("requirement_targets 明确各列的冻结条件和时间范围。当前状态查询先寻找正式版本、支持级别和生效说明，不能预设未指定的版本号；历史起点查询与当前状态分开，规范标识查询保留编号标题的对应关系。")
     if rejected:
         payload["previous_output_rejected"] = rejected[-8:]
     try:
@@ -232,14 +225,6 @@ def _validate(
             str(key) for key in item.get("column_keys", [])
             if isinstance(key, str) and key in allowed_columns
         ] if isinstance(item.get("column_keys"), list) else []
-        targets = [target for target in context.requirement_targets if target.get("column_key") in column_keys]
-        if targets and all(target.get("temporal_mode") == "CURRENT" for target in targets):
-            allowed = {version for target in targets for version in target.get("required_versions", [])}
-            for target in targets:
-                allowed.update(re.findall(r"(?<!\d)\d+\.\d+(?:\.\d+)*", target.get("criterion", "")))
-            if any(version not in allowed for version in re.findall(r"(?<!\d)\d+\.\d+(?:\.\d+)*", query)):
-                rejected.append({"query": query, "reason": "current status query presupposes an unspecified release"})
-                continue
         accepted.append(_spec(
             query, intent, column_keys,
             language=str(item.get("language") or "").strip().lower()[:8],
@@ -309,12 +294,6 @@ def _rule_plan(
         fallback_topic = column.description.strip() or (label if label.casefold() not in _GENERIC_COLUMN_LABELS else "")
         topic = next((intent.strip() for intent in column.search_intents if intent.strip()),
                      fallback_topic or question_keywords(context.question, limit=4))
-        targets = [target for target in context.requirement_targets if target.get("column_key") == column.key]
-        if targets and all(target.get("temporal_mode") == "CURRENT" for target in targets):
-            topic = "current supported status stable release notes effective version"
-            versions = {version for target in targets for version in target.get("required_versions", [])}
-            if versions:
-                topic = " ".join(sorted(versions)) + " " + topic
         query = topic if subject.casefold() in topic.casefold() else f"{subject} {topic}"
         candidates.append((query, "direct", [column.key]))
     # 列查询优先，宽查询只能使用剩余预算。
