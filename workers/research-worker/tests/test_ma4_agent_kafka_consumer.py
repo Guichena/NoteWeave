@@ -195,14 +195,17 @@ class _RecordingDlq:
 
 
 class _RecordingFailureReporter:
-    def __init__(self, fails: bool = False) -> None:
+    def __init__(self, fails: bool = False, rejection: Exception | None = None) -> None:
         self.fails = fails
+        self.rejection = rejection
         self.calls: list[tuple[object, dict[str, object]]] = []
 
     def report_delivery_failure(self, command, failure: dict[str, object]) -> None:
         self.calls.append((command, failure))
         if self.fails:
             raise ConnectionError("backend unavailable")
+        if self.rejection is not None:
+            raise self.rejection
 
 
 def _completion(claim: AgentTaskClaim, *, snapshot_digest: str | None = None):
@@ -620,6 +623,26 @@ def test_agent_consumer_should_not_commit_after_dlq_ack_when_failure_projection_
         )
 
     assert consumer.commit_count == 0
+
+
+def test_agent_consumer_should_commit_when_the_backend_rejects_a_stale_failure_projection() -> None:
+    from app.agent_kafka_consumer import consume_research_agent_commands
+    from app.agent_task_client import AgentTaskApiError
+
+    client = FakeAgentClient()
+    consumer = _FakeKafkaConsumer([_FakeKafkaMessage(_command())])
+
+    def invalid_identity(_command, claim):
+        return _completion(claim).model_copy(update={"fencing_token": claim.fencing_token + 1})
+
+    summary = consume_research_agent_commands(
+        consumer, client, invalid_identity, worker_instance_id="worker-a", dead_letter_sink=_RecordingDlq(),
+        failure_reporter=_RecordingFailureReporter(
+            rejection=AgentTaskApiError(400, "RESEARCH_AGENT_DELIVERY_FAILURE_OUTBOX_INVALID")))
+
+    # 后端明确拒绝的失败上报不会让 Worker 停在这条消息上
+    assert summary.dead_letter_count == 1
+    assert consumer.commit_count == 1
 
 
 def test_agent_consumer_factory_should_use_dedicated_topic_and_group(monkeypatch) -> None:
