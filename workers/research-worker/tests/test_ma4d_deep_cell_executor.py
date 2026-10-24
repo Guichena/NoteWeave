@@ -1147,6 +1147,27 @@ def test_answer_check_drops_claims_that_do_not_give_the_asked_value() -> None:
     assert _keep_answering_cards(snapshot, column, cards, None) == cards
 
 
+def test_answer_check_sees_the_research_question_so_evidence_columns_know_the_claim() -> None:
+    from types import SimpleNamespace
+
+    from app.deep_cell_executor import _keep_answering_cards
+
+    payloads = []
+
+    class CheckLlm:
+        def complete_json(self, purpose, payload):
+            payloads.append(payload)
+            return '{"answering_indices": [], "coverage": []}'
+
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Subject", "query": "服务端渲染是否必然改善 Core Web Vitals？"})
+    column = SimpleNamespace(label="支持的证据与来源", description="")
+    cards = [SimpleNamespace(claim_text="实验室高分不代表现场表现好", quote_text="a good Lab score, and not do well")]
+
+    assert _keep_answering_cards(snapshot, column, cards, CheckLlm()) == []
+    assert payloads[0]["research_question"] == "服务端渲染是否必然改善 Core Web Vitals？"
+    assert any("supporting column" in line for line in payloads[0]["policy"])
+
+
 def test_window_rejected_by_the_archive_is_dropped_instead_of_failing_the_task() -> None:
     from types import SimpleNamespace
 
