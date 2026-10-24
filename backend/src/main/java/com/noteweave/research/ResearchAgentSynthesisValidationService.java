@@ -249,14 +249,17 @@ class ResearchAgentSynthesisValidationService {
             if (!typedTokens(sources.toString()).containsAll(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")))) {
                 throw invalid("句子的数字或版本没有所引原文支持");
             }
-            String mentionedText = (subject + " " + statement).toLowerCase(Locale.ROOT);
+            // 句子提到了研究对象时，所引证据至少要属于其中一个，防止把一个对象的事实写到另一个对象名下；
+            // 比较句会同时提到两边而只引用其中一边的原文，属于正常写法
+            String mentionedText = (subject + " " + INLINE_CITATION.matcher(statement).replaceAll("")).toLowerCase(Locale.ROOT);
+            Set<String> mentioned = new HashSet<>();
             for (FrozenCell cell : allCells.values()) {
                 String stem = entityStem(cell.entity());
                 if (stem.length() >= 3 && Pattern.compile("(?<![A-Za-z0-9])" + Pattern.quote(stem) + "(?![A-Za-z0-9])")
-                        .matcher(mentionedText).find()
-                        && cited.stream().noneMatch(source -> entityStem(source.entity()).equals(stem))) {
-                    throw invalid("句子中的研究对象与所引证据不一致");
-                }
+                        .matcher(mentionedText).find()) mentioned.add(stem);
+            }
+            if (!mentioned.isEmpty() && cited.stream().noneMatch(source -> mentioned.contains(entityStem(source.entity())))) {
+                throw invalid("句子中的研究对象与所引证据不一致");
             }
         }
     }

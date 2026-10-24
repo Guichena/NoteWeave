@@ -29,6 +29,13 @@ class ResearchAgentSynthesisValidationServiceTest {
     }
 
     @Test
+    void acceptsComparisonSentenceThatNamesBothSubjectsAndCitesOneOfThem() {
+        validateMultiCellReport("Verified findings.", List.of(
+                paragraph("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg"), List.of("evidence:pg")),
+                validParagraphs().get(1)), Map.of());
+    }
+
+    @Test
     void rejectsBorrowingNumbersFromAnotherSentenceCitation() {
         assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
                 paragraph("PostgreSQL 17 supports GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql].",
