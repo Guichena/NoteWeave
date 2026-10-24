@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     research_agent_fault_invalid_json: bool = False
     research_agent_fault_tamper_quote: bool = False
     research_agent_fault_crash_after_archive: bool = False
+    # DEEP_CELL 任务内的取证轮数；1 表示只按规划检索一轮，大于 1 时由模型根据已找到的内容决定后续检索与阅读
+    research_agent_loop_rounds: int = Field(default=1, ge=1, le=3)
     research_agent_worker_instance_id: str = Field(default_factory=lambda: _default_worker_instance_id())
     research_agent_lease_seconds: int = Field(default=60, ge=4, le=3600)
     research_agent_heartbeat_interval_seconds: float | None = Field(default=None, gt=0)

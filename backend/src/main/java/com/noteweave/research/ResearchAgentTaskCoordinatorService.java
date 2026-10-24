@@ -892,12 +892,12 @@ public class ResearchAgentTaskCoordinatorService {
                 // Worker 按调用次数结算：检索词规划最多 2 次（生成一次，输出不合规时修复一次）；
                 // 每个单元格单独抽取最多 2 次，最多 6 张卡产生 15 对等价判定，每对最多 2 次。
                 "llm_calls", 2L + cells * 32L,
-                // Tool grants from earlier leases are charged at completion time. Reserve
-                // the task's three-attempt recovery ceiling so a legal retry can settle.
-                "search_calls", 3L,
-                "fetch_calls", 3L,
-                "read_calls", 3L,
-                "extract_calls", 3L,
+                // Tool grants from earlier leases are charged at completion time. Worker 的取证循环
+                // 最多三轮，另有文内链接跟进与一次租约重试，每类工具预留六轮
+                "search_calls", 6L,
+                "fetch_calls", 6L,
+                "read_calls", 6L,
+                "extract_calls", 6L,
                 "evidence_cards", evidence,
                 "evidence_appended", evidence,
                 "candidates_submitted", cells,
