@@ -61,6 +61,22 @@ def test_english_doc_sentence_matches_through_column_intents_for_a_chinese_quest
     assert _quote_matches_question_intent(_intent_terms_text(plan), quote)
 
 
+def test_english_paper_matches_a_chinese_conflict_question_through_issued_queries() -> None:
+    from types import SimpleNamespace
+
+    from app.extractor import _intent_terms_text, _quote_matches_question_intent
+
+    column = SimpleNamespace(label="支持证据", description="支持该说法的研究", search_intents=[])
+    plan = SimpleNamespace(normalized_question="提高测试覆盖率阈值能否减少线上缺陷？",
+                           research_schema=SimpleNamespace(columns=[column]), stop_contract={},
+                           query_set=["test coverage threshold defect escape empirical study"],
+                           query_specs=[SimpleNamespace(query="code coverage quality gate escaped defects case study")])
+
+    assert _quote_matches_question_intent(_intent_terms_text(plan), "Higher coverage did not reduce escaped defects.")
+    # 检索词里限定来源类型的词不算切题
+    assert not _quote_matches_question_intent(_intent_terms_text(plan), "This empirical study was funded by a grant.")
+
+
 def test_repair_queries_skip_duplicates_instead_of_dropping_the_whole_answer() -> None:
     import json
     from types import SimpleNamespace

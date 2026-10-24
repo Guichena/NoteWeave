@@ -30,6 +30,9 @@ _MAX_REJECTION_DETAIL_CHARS = 240
 _QUESTION_STOP_TERMS = frozenset({
     "about", "and", "compare", "evidence", "from", "how", "into", "must", "only",
     "research", "should", "summary", "that", "the", "this", "use", "what", "with",
+    # 检索词里限定来源类型的词，出现在原文里不能说明原文切题
+    "analysis", "case", "documentation", "docs", "empirical", "for", "guide", "literature", "official",
+    "paper", "preprint", "report", "review", "studies", "study", "survey", "systematic", "technical",
 })
 
 
@@ -727,11 +730,15 @@ def _is_external_window(window: ResearchReadWindow) -> bool:
 
 
 def _intent_terms_text(plan: ResearchPlan) -> str:
-    """判断原文是否切题时的参照词：问题加上列名、说明、检索意图和研究对象名。
-    只用问题时，中文问题里的拉丁词很少，英文文档里讲命令或参数的句子常被误判为答错列。"""
+    """判断原文是否切题时的参照词：问题加上列名、说明、检索意图、本次实际发出的检索词和研究对象名。
+    只用问题时，中文问题里的拉丁词很少，英文文档里讲命令或参数的句子常被误判为答错列；
+    冲突类问题的列名和说明也全是中文，英文论文只能靠实际检索词判断是否切题。"""
     columns = " ".join(" ".join((column.label, column.description, *column.search_intents))
                        for column in plan.research_schema.columns)
-    return " ".join((plan.normalized_question, columns, str(plan.stop_contract.get("deep_cell_entity_label") or "")))
+    queries = " ".join(dict.fromkeys((*getattr(plan, "query_set", ()),
+                                      *(spec.query for spec in getattr(plan, "query_specs", ())))))
+    return " ".join((plan.normalized_question, columns, queries,
+                     str(plan.stop_contract.get("deep_cell_entity_label") or "")))
 
 
 def _quote_matches_question_intent(question: str, quote: str) -> bool:
