@@ -210,3 +210,66 @@ def test_secondary_only_cell_stays_unverified_even_after_repair_when_official_so
 
     no_request = SimpleNamespace(query_policy={"research_brief": {"current_question": "微服务是否提高交付速度？"}})
     assert _prefer_primary_cards(no_request, cards, [blog]) == cards
+
+
+def _lb_windows() -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(window_id="w-doc", adapter="external_url", source_domain="docs.atlas.example",
+                        source_quality="OFFICIAL_DOC", url="https://docs.atlas.example/load-balancing.html"),
+        SimpleNamespace(window_id="w-blog", adapter="external_url", source_domain="blog.example",
+                        source_quality="GENERAL_WEB", url="https://blog.example/atlas-load-balancing"),
+    ]
+
+
+def _lb_snapshot(question: str = "Atlas 支持哪些负载均衡算法？") -> SimpleNamespace:
+    return SimpleNamespace(query_policy={"authoritative_domains": ["docs.atlas.example"], "entity_label": "Atlas",
+                                         "research_brief": {"current_question": question}})
+
+
+def test_secondary_answer_is_kept_when_the_official_card_only_touches_the_column() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    official = _card("w-doc", "Weights above 1 switch Atlas to random host selection")
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    column = SimpleNamespace(key="col-a", label="Load balancing algorithms")
+    llm = _Llm({"answering_indices": [1], "coverage": [{"requirement_index": 0, "claim_indices": [1]}]})
+    retained: list[object] = []
+
+    # 先按来源档次筛掉博客时，只剩没回答这一列的官方卡片，单元格会成为缺口
+    assert _answering_column_cards(_lb_snapshot(), column, [official, blog], _lb_windows(), llm, retained) == [blog]
+    assert retained == []
+
+
+def test_secondary_answers_are_dropped_only_when_official_cards_answer_every_requirement() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    official = _card("w-doc", "Round robin is the default policy")
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    one = SimpleNamespace(key="col-a", label="Default policy")
+    both = SimpleNamespace(key="col-a", label="Policies", requirements=["Default policy", "Supported policies"])
+
+    complete = _Llm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(_lb_snapshot(), one, [official, blog], _lb_windows(), complete, []) == [official]
+
+    partial = _Llm({"answering_indices": [0, 1], "coverage": [{"requirement_index": 0, "claim_indices": [0]},
+                                                              {"requirement_index": 1, "claim_indices": [1]}]})
+    assert _answering_column_cards(_lb_snapshot(), both, [official, blog], _lb_windows(), partial, []) == [official, blog]
+
+
+def test_required_official_sources_keep_secondary_answers_as_sourced_leads_only() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    column = SimpleNamespace(key="col-a", label="Load balancing algorithms")
+    llm = _Llm({"answering_indices": [0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    retained: list[object] = []
+
+    kept = _answering_column_cards(_lb_snapshot("请引用官方文档说明 Atlas 的负载均衡算法"), column, [blog],
+                                   _lb_windows(), llm, retained)
+
+    assert kept == []
+    assert [card.relation_type for card in retained] == ["WEAK_SUPPORT"]
+    assert retained[0].support_score > 0

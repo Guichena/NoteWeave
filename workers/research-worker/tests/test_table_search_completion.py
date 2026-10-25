@@ -258,3 +258,25 @@ def test_sentence_final_numbers_are_checked_before_english_punctuation():
                                        "evidence_quotes": [{"evidence_key": "evidence:count", "quote": "Count is 5."}]}]})
     assert _cited_text_supported("Count is 5. [evidence:count]", cells, ["evidence:count"], cells)
     assert not _cited_text_supported("Count is 99. [evidence:count]", cells, ["evidence:count"], cells)
+
+
+def test_cell_value_is_the_claim_the_answer_check_ranks_most_direct():
+    from app.deep_cell_executor import _candidate_payload, _trusted_evidence_payload
+
+    detail = _card("w1", "Failed upstreams are skipped for fail_timeout seconds", support=0.95)
+    answer = _card("w2", "Round robin is the default load balancing method", support=0.8)
+    llm = _SequenceLlm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [1]}]})
+
+    ranked = _keep_answering_cards(SimpleNamespace(query_policy={}), SimpleNamespace(label="Load balancing method"),
+                                   [detail, answer], llm)
+
+    assert ranked == [answer, detail]
+    snapshot = SimpleNamespace(task_id="task-1", lease_epoch=1, fencing_token=1,
+                               target_cells=[SimpleNamespace(cell_id="entity-a:col-a", expected_version=1)])
+    windows = [SimpleNamespace(window_id=window_id, snapshot_status="EXTERNAL_ARCHIVED", query="q", read_focus="f",
+                               url=f"https://docs.example/{window_id}", source_domain="docs.example", lineage_digest="")
+               for window_id in ("w1", "w2")]
+    candidates = _candidate_payload(snapshot, ranked, _trusted_evidence_payload(snapshot, ranked, windows),
+                                    windows=windows)
+    # 按证据数与抽取可信度挑时会选中可信度更高的旁支事实
+    assert [item["candidate_value"] for item in candidates] == [answer.claim_text]

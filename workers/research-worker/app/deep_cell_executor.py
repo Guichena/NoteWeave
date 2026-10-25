@@ -487,20 +487,15 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
                          raw_by_column: dict[str | None, list[object]], windows: list[object], llm_client: object | None,
                          require_active, retained_out: list[object] | None = None,
                          ) -> tuple[ExtractionResult, list[object], list[dict[str, object]]]:
-    """对各列的原始卡片做来源档次筛选、答案检查和事实选择，生成可提交的卡片与证据。"""
+    """对各列的原始卡片做答案检查和来源档次筛选，生成可提交的卡片与证据。"""
     if retained_out is None:
         retained_out = []
     columns = list(plan.research_schema.columns)
     if len(columns) <= 1:
         raw = list(raw_by_column.get(columns[0].key if columns else None, []))
         extraction = _merge_extractions(results, raw) if len(results) != 1 else results[0]
-        cards = _prefer_primary_cards(snapshot, raw, windows)
-        if columns:
-            primary = cards
-            partial: list[object] = []
-            cards = _keep_answering_cards(snapshot, columns[0], cards, llm_client, partial_out=partial,
-                                          windows=windows)
-            retained_out.extend(_retained_cards(raw, primary, cards, partial))
+        cards = (_answering_column_cards(snapshot, columns[0], raw, windows, llm_client, retained_out)
+                 if columns else _prefer_primary_cards(snapshot, raw, windows))
         evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
         return extraction, cards, evidence
     cards: list[object] = []
@@ -509,11 +504,7 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
     for column in columns:
         require_active()
         raw = list(raw_by_column.get(column.key, []))
-        primary = _prefer_primary_cards(snapshot, raw, windows)
-        partial: list[object] = []
-        column_cards = _keep_answering_cards(snapshot, column, primary, llm_client, partial_out=partial,
-                                           windows=windows)
-        retained_out.extend(_retained_cards(raw, primary, column_cards, partial))
+        column_cards = _answering_column_cards(snapshot, column, raw, windows, llm_client, retained_out)
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -544,27 +535,60 @@ ANSWER_CHECK_PURPOSE = "research.answer_check"
 MAX_RETAINED_CARDS_PER_CELL = 3
 
 
-def _retained_cards(raw: list[object], primary: list[object], answering: list[object],
-                    partial: list[object] | None = None) -> list[object]:
+def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object, raw: list[object],
+                            windows: list[object], llm_client: object | None, retained_out: list[object]) -> list[object]:
+    """先判断哪些卡片回答了这一列，再在回答了的卡片里按来源档次取舍。
+
+    先按来源档次筛掉再做答案检查时，官方页面上只沾边的句子会挤掉博客里完整回答这一列的卡片，
+    单元格最后只剩旁支事实，或者全部判为没回答而成为缺口。
+    """
+    if llm_client is None:
+        # 没有模型做答案检查时不知道各项要求是否答全，只按来源档次取舍
+        kept = _keep_answering_cards(snapshot, column, _prefer_primary_cards(snapshot, raw, windows), None)
+        retained_out.extend(_retained_cards(raw, [], kept))
+        return kept
+    partial: list[object] = []
+    coverage: list[list[object]] = []
+    answering = _keep_answering_cards(snapshot, column, raw, llm_client, partial_out=partial, windows=windows,
+                                      coverage_out=coverage)
+    kept = _prefer_primary_answers(snapshot, answering, windows, coverage)
+    judged = [] if partial or answering else (_prefer_primary_cards(snapshot, raw, windows) or raw)
+    retained_out.extend(_retained_cards(raw, judged, kept, partial or answering))
+    return kept
+
+
+def _prefer_primary_answers(snapshot: ResearchAgentTaskSnapshot, answering: list[object], windows: list[object],
+                            coverage: list[list[object]]) -> list[object]:
+    """回答了这一列的卡片里优先一手来源；一手来源没把各项要求答全时，留下答到其余部分的二手来源。"""
+    primary = _prefer_primary_cards(snapshot, answering, windows)
+    if not primary or len(primary) == len(answering) or _official_sources_required(snapshot):
+        return primary
+    if coverage and all(group and all(card in primary for card in group) for group in coverage):
+        return primary
+    return answering
+
+
+def _retained_cards(raw: list[object], judged: list[object], kept: list[object],
+                    sourced: list[object] | None = None) -> list[object]:
     """单元格最终没有可用结论时，把筛掉的卡片改成弱支持关系保留下来。
 
-    只因来源档次被筛掉的卡片原文确实回答了这一列，按有出处保留，支持分不变；
-    判为没有直接回答这一列的卡片按相关材料保留，支持分记 0。单元格有可用结论时什么都不保留。
+    sourced 是确实回答了这一列、但答案检查没有完成或只因来源档次被筛掉的卡片，按有出处保留，支持分不变；
+    judged 是判为没有直接回答这一列的卡片，按相关材料保留，支持分记 0。单元格有可用结论时什么都不保留。
     """
-    if answering or not raw:
+    if kept or not raw:
         return []
-    if partial:
+    if sourced:
         # 已回答部分要求的原文继续作为有出处的线索；弱支持不会把整格提前标成已完成。
         return [card.model_copy(update={"relation_type": "WEAK_SUPPORT",
                                         "support_score": max(float(card.support_score), 0.01)})
-                for card in partial[:MAX_RETAINED_CARDS_PER_CELL]]
-    if primary:
-        kept = [card.model_copy(update={"relation_type": "WEAK_SUPPORT", "support_score": 0.0}) for card in primary]
+                for card in sourced[:MAX_RETAINED_CARDS_PER_CELL]]
+    if judged:
+        retained = [card.model_copy(update={"relation_type": "WEAK_SUPPORT", "support_score": 0.0}) for card in judged]
     else:
         # 支持分是区分有出处与相关材料的依据，模型给 0 分时也要记成大于 0
-        kept = [card.model_copy(update={"relation_type": "WEAK_SUPPORT",
-                                        "support_score": max(float(card.support_score), 0.01)}) for card in raw]
-    return kept[:MAX_RETAINED_CARDS_PER_CELL]
+        retained = [card.model_copy(update={"relation_type": "WEAK_SUPPORT",
+                                            "support_score": max(float(card.support_score), 0.01)}) for card in raw]
+    return retained[:MAX_RETAINED_CARDS_PER_CELL]
 
 
 def _retained_payload(snapshot: ResearchAgentTaskSnapshot, retained: list[object], windows: list[object],
@@ -620,10 +644,17 @@ def _retained_payload(snapshot: ResearchAgentTaskSnapshot, retained: list[object
 
 def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, cards: list[object],
                           llm_client: object | None, *, partial_out: list[object] | None = None,
-                          windows: list[object] | None = None) -> list[object]:
-    """逐项检查列要求，直接回答了列中任一部分的结论照常提交核验，未回答的部分由成文如实说明。"""
-    if not cards or llm_client is None:
+                          windows: list[object] | None = None,
+                          coverage_out: list[list[object]] | None = None) -> list[object]:
+    """逐项检查列要求，直接回答了列中任一部分的结论照常提交核验，未回答的部分由成文如实说明。
+
+    返回的卡片按模型判断的直接程度排序，最直接回答这一列的排在最前，单元格的值取排在最前的结论；
+    coverage_out 按要求顺序记录合起来答全每项要求的卡片，没答全的要求记空列表。
+    """
+    if not cards:
         return cards
+    if llm_client is None:
+        return sorted(cards, key=lambda card: -float(getattr(card, "support_score", 0.0) or 0.0))
     requirements = list(getattr(column, "requirements", ()) or ()) or list(dict.fromkeys(
         line.strip() for line in str(getattr(column, "description", "")).splitlines() if line.strip()))
     requirements = requirements or [str(getattr(column, "label", ""))]
@@ -643,6 +674,11 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             "answering_indices includes every claim answering ANY PART of the requested value, even when "
             "the whole requirement is incomplete. Partial factual answers are retained as sourced leads; "
             "only coverage decides whether the cell can be completed.",
+            "Order answering_indices by how directly each claim answers the column: first the claim that states "
+            "the value the column label and its first requirement ask for (the asked value itself, not a related "
+            "mechanism or an edge case), then claims answering other requirements, then conditions and details. "
+            "When two claims are equally direct, put the one from the more authoritative "
+            "source (official documentation, specification, peer-reviewed study) first.",
             "For EVERY indexed requirement, list the answering claim indices whose quotes jointly answer ALL "
             "parts of that requirement. If any part is missing, use an empty list. A partial answer must not "
             "be marked complete. Do not infer missing facts from memory or from the question.",
@@ -670,7 +706,7 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
                     "published_at": str(getattr(sources.get(getattr(card, "window_id", "")), "published_at", "")),
                     "updated_at": str(getattr(sources.get(getattr(card, "window_id", "")), "updated_at", ""))}
                    for index, card in enumerate(cards)],
-        "output_schema": {"answering_indices": ["integer index of each relevant answering claim"],
+        "output_schema": {"answering_indices": ["integer index of each answering claim, most direct first"],
                           "coverage": [{"requirement_index": "integer", "claim_indices": ["integer"]}]},
     }
     try:
@@ -682,17 +718,20 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
         if partial_out is not None:
             partial_out.extend(cards)
         return []
-    keep = {index for index in indices if type(index) is int and 0 <= index < len(cards)}
-    answering = [card for index, card in enumerate(cards) if index in keep]
-    covered: set[int] = set()
+    order = list(dict.fromkeys(index for index in indices if type(index) is int and 0 <= index < len(cards)))
+    keep = set(order)
+    answering = [cards[index] for index in order]
+    covered: dict[int, list[object]] = {}
     for item in parsed.get("coverage") if isinstance(parsed.get("coverage"), list) else []:
         if not isinstance(item, dict):
             continue
         index, refs = item.get("requirement_index"), item.get("claim_indices")
         if (type(index) is int and 0 <= index < len(requirements) and isinstance(refs, list) and refs
                 and all(type(ref) is int and ref in keep for ref in refs)):
-            covered.add(index)
-    if covered != set(range(len(requirements))):
+            covered[index] = [cards[ref] for ref in dict.fromkeys(refs)]
+    if coverage_out is not None:
+        coverage_out.extend(covered.get(index, []) for index in range(len(requirements)))
+    if set(covered) != set(range(len(requirements))):
         # 部分回答若降为线索，已找到的正确事实就全部不算；只记录，未回答的部分由成文时如实说明
         _LOG.info("Research cell coverage incomplete column=%s covered=%s required=%s",
                   getattr(column, "key", ""), len(covered), len(requirements))
@@ -1441,9 +1480,11 @@ def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
     by_window = {w.window_id: w for w in windows or [] if getattr(w, "window_id", "")}
     targets = {item.cell_id: item.expected_version for item in snapshot.target_cells}
     rows = []
-    for card in cards:
+    rank: dict[str, int] = {}
+    for position, card in enumerate(cards):
         cell_id = f"{getattr(card, 'entity_id', '')}:{getattr(card, 'column_key', '')}"
         evidence_key = _scoped_evidence_key(snapshot, card)
+        rank.setdefault(evidence_key, position)
         value = unicodedata.normalize("NFC", str(getattr(card, "claim_text", "")))
         if (cell_id not in targets or evidence_key not in evidence_by_key or not value
                 or str(getattr(card, "relation_type", "")).upper() != "SUPPORTS"):
@@ -1462,8 +1503,12 @@ def _candidate_payload(snapshot: ResearchAgentTaskSnapshot, cards: list[object],
         by_cell.setdefault(cluster["cell_key"], []).append(cluster)
     proposals: list[dict[str, object]] = []
     for cell_id in sorted(by_cell):
-        # 取证据最多、可信度最高的一组作为单元格的值；其余组在成文时作为补充材料
-        group = max(by_cell[cell_id], key=lambda item: (len(item["evidence_keys"]), int(item["confidence_ppm"])))
+        # 卡片已按答案检查判断的直接程度排序，取排在最前的结论所在的一组作为单元格的值，
+        # 同样靠前时再比证据数与可信度；其余组在成文时作为补充材料。
+        # 几乎每组只有一条证据，按证据数与抽取可信度挑时，常选中只沾边的旁支事实
+        group = min(by_cell[cell_id], key=lambda item: (
+            min((rank.get(str(key), len(cards)) for key in item["evidence_keys"]), default=len(cards)),
+            -len(item["evidence_keys"]), -int(item["confidence_ppm"])))
         value, candidate_evidence = group["claim_text"], group["evidence_keys"]
         stable = _stable_hex(snapshot.task_id, str(snapshot.lease_epoch), str(snapshot.fencing_token),
                              cell_id, str(targets[cell_id]), value, *candidate_evidence)

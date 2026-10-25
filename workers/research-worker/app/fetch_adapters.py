@@ -791,6 +791,18 @@ class CompositeUrlSnapshotTransport:
         }
 
 
+# 抓取失败时最多补抓到预算的几倍，避免整页命中都打不开时把时间耗在逐个重试上
+FETCH_BACKFILL_FACTOR = 2
+
+
+def _readable_document(document: ResearchFetchedDocument) -> bool:
+    """与阅读环节的判断一致：工作台资料，或抓到了正文的网页快照。"""
+    if document.adapter == "workspace":
+        return True
+    return (document.fetch_status == "FETCHED" and document.content_origin == "FETCHED_SNAPSHOT"
+            and bool(document.snapshot_text.strip()))
+
+
 class CompositeFetchAdapter:
     def __init__(self, adapters: list[FetchAdapter], max_concurrency: int = 1) -> None:
         self.adapters = adapters
@@ -806,17 +818,38 @@ class CompositeFetchAdapter:
         if retention_budget <= 0:
             return []
 
-        selected_hits = _ordered_hits(plan, search_hits)[:retention_budget]
-        if self.max_concurrency <= 1 or len(selected_hits) <= 1:
+        # 论文库、出版社页面常返回 403，PDF 也读不出正文；抓取失败的网址不占阅读名额，
+        # 按顺序补抓后面的命中，直到读到的篇数达到预算，最多抓预算的两倍
+        ordered = _ordered_hits(plan, search_hits)[:retention_budget * FETCH_BACKFILL_FACTOR]
+        documents: list[ResearchFetchedDocument] = []
+        cursor = 0
+        while cursor < len(ordered):
+            needed = retention_budget - sum(1 for document in documents if _readable_document(document))
+            if needed <= 0:
+                break
+            batch = ordered[cursor:cursor + needed]
+            documents.extend(self._fetch_batch(task_input, plan, batch, start_index=cursor + 1))
+            cursor += len(batch)
+        return documents
+
+    def _fetch_batch(
+        self,
+        task_input: ResearchTaskInput,
+        plan: ResearchPlan,
+        hits: list[ResearchSearchHit],
+        *,
+        start_index: int,
+    ) -> list[ResearchFetchedDocument]:
+        if self.max_concurrency <= 1 or len(hits) <= 1:
             return [
                 document
-                for index, hit in enumerate(selected_hits, start=1)
+                for index, hit in enumerate(hits, start=start_index)
                 if (document := self._fetch_first_supported_hit(task_input, plan, hit, index)) is not None
             ]
-        with ThreadPoolExecutor(max_workers=min(self.max_concurrency, len(selected_hits))) as executor:
+        with ThreadPoolExecutor(max_workers=min(self.max_concurrency, len(hits))) as executor:
             futures = [
                 executor.submit(self._fetch_first_supported_hit, task_input, plan, hit, index)
-                for index, hit in enumerate(selected_hits, start=1)
+                for index, hit in enumerate(hits, start=start_index)
             ]
             return [document for future in futures if (document := future.result()) is not None]
 
