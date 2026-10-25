@@ -18,6 +18,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
+from app.fetch_access import fetch_blocked, record_fetch_outcome
 from app.http_security import credential_safe_urlopen, resolve_public_http_addresses
 from app.mcp_search_client import (
     TAVILY_EXTRACT_TOOL,
@@ -250,6 +251,7 @@ class UrlFetchAdapter:
                     transport_fallback_code = ""
                 if not transport_resolution:
                     transport_resolution = fetch_method
+            record_fetch_outcome(hit.url, bool(snapshot_text), fetch_failure_code)
 
         source_domain = hit.source_domain or infer_source_domain(hit.url)
         if untrusted_content and not prompt_injection_signals:
@@ -830,9 +832,10 @@ class CompositeFetchAdapter:
         if retention_budget <= 0:
             return []
 
-        # 论文库、出版社页面常返回 403，PDF 也读不出正文；抓取失败的网址不占阅读名额，
-        # 按顺序补抓后面的命中，直到读到的篇数达到预算，最多抓预算的两倍
-        ordered = _ordered_hits(plan, search_hits)[:retention_budget * FETCH_BACKFILL_FACTOR]
+        # 论文库、出版社页面常返回 403，PDF 也读不出正文；拒绝自动读取的站点排到最后，抓取失败的网址
+        # 不占阅读名额，按顺序补抓后面的命中，直到读到的篇数达到预算，最多抓预算的两倍
+        ordered = sorted(_ordered_hits(plan, search_hits), key=lambda hit: fetch_blocked(hit.url or ""))
+        ordered = ordered[:retention_budget * FETCH_BACKFILL_FACTOR]
         documents: list[ResearchFetchedDocument] = []
         cursor = 0
         while cursor < len(ordered):

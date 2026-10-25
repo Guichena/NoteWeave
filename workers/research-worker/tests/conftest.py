@@ -106,3 +106,13 @@ def fake_default_llm(monkeypatch: pytest.MonkeyPatch) -> _FakeLlmClient:
 def fake_llm_client() -> _FakeLlmClient:
     """直接访问 FakeLlmClient 实例(用于断言 LLM 调用次数)。"""
     return _FakeLlmClient()
+
+
+@pytest.fixture(autouse=True)
+def _reset_fetch_outcomes():
+    """站点读取记录是进程级状态，每个测试从空记录开始，避免前一个测试的 403 影响抓取顺序。"""
+    from app.fetch_access import reset_fetch_outcomes
+
+    reset_fetch_outcomes()
+    yield
+    reset_fetch_outcomes()

@@ -13,6 +13,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from app.fetch_access import fetch_blocked
 from app.json_repair import parse_json_payload
 from app.llm_client import LlmClient
 from app.models import ResearchQuerySpec
@@ -324,8 +325,10 @@ def _rule_plan(
 def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQueryContext) -> list[ResearchQuerySpec]:
     """保留每列的检索词和预算，补充定向来源查询，同时保留不限定域名的查询。"""
     limit = max(1, context.max_queries)
-    specs = list(specs[:limit])
-    domains = [domain.strip().lower() for domain in context.authoritative_domains if domain.strip()]
+    specs = [_without_blocked_scope(spec) for spec in specs[:limit]]
+    # 拒绝自动读取的站点（如 ACM、ScienceDirect）即使是原始出处，site: 查询的命中也全部读不了
+    domains = [domain.strip().lower() for domain in context.authoritative_domains
+               if domain.strip() and not fetch_blocked(domain)]
     scoped = [index for index, spec in enumerate(specs) if re.search(r"\bsite:", spec.query, re.I)]
     if scoped:
         return ensure_unrestricted_query(specs)
@@ -350,6 +353,15 @@ def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQuer
     spec = base.model_copy(update={"query": query, "family": "verified_evidence",
                                    "search_angle": "verified_evidence", "search_lane": "DEEP_FOCUS"})
     return [*specs[:1], spec, *specs[1:]]
+
+
+def _without_blocked_scope(spec: ResearchQuerySpec) -> ResearchQuerySpec:
+    """去掉指向拒绝自动读取站点的 site: 限定，保留检索词本身去找作者公开版本或其他转载。"""
+    if not any(fetch_blocked(scope) for scope in re.findall(r"\bsite:(\S+)", spec.query, re.I)):
+        return spec
+    query = normalize_query(re.sub(r"\bsite:(\S+)", lambda match: "" if fetch_blocked(match.group(1)) else match.group(0),
+                                   spec.query, flags=re.I))
+    return spec.model_copy(update={"query": query}) if query else spec
 
 
 def ensure_unrestricted_query(specs: list[ResearchQuerySpec]) -> list[ResearchQuerySpec]:
