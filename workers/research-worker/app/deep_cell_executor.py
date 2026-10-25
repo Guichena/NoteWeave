@@ -921,7 +921,12 @@ _HIGH_TRUST_QUALITIES = frozenset({"OFFICIAL_DOC", "GOVERNMENT_SOURCE", "ACADEMI
 
 
 def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: list[object]) -> list[object]:
-    """按来源与版本优先，同一档次先覆盖不同查询，再读取同一查询的更多结果。"""
+    """每条检索词先保证读到一篇，其余按来源与版本优先，同一档次先覆盖不同查询，再读取同一查询的更多结果。
+
+    只按来源档次排序时，某条检索词的命中如果全是二手来源，就排在所有官方页面之后被抓取预算截掉；
+    官方页面里恰好没有这一列要的事实时（例如 PostgreSQL 增量备份需要开启 summarize_wal 只出现在教程里），
+    这一列就永远拿不到答案。读到之后是否采用，仍由答案检查和来源档次决定。
+    """
     versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
     counts: dict[tuple[int, int, str], int] = {}
     ranked = []
@@ -932,7 +937,13 @@ def _prioritize_authoritative_hits(snapshot: ResearchAgentTaskSnapshot, hits: li
         occurrence = counts.get(key, 0)
         counts[key] = occurrence + 1
         ranked.append(((tier, mismatch, stale, occurrence, index), hit))
-    ordered = [hit for _, hit in sorted(ranked, key=lambda item: item[0])]
+    ranked.sort(key=lambda item: item[0])
+    leaders: dict[str, int] = {}
+    for position, (_, hit) in enumerate(ranked):
+        leaders.setdefault(str(getattr(hit, "query", "")), position)
+    first = set(leaders.values())
+    ordered = ([hit for position, (_, hit) in enumerate(ranked) if position in first]
+               + [hit for position, (_, hit) in enumerate(ranked) if position not in first])
     return [
         hit.model_copy(update={"rank": index}) if hasattr(hit, "model_copy") else hit
         for index, hit in enumerate(ordered, start=1)

@@ -273,3 +273,23 @@ def test_required_official_sources_keep_secondary_answers_as_sourced_leads_only(
     assert kept == []
     assert [card.relation_type for card in retained] == ["WEAK_SUPPORT"]
     assert retained[0].support_score > 0
+
+
+def test_every_query_gets_one_page_before_more_official_pages_of_another_query() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["postgresql.org"], "entity_label": "PostgreSQL 17"})
+
+    def hit(url: str, query: str) -> SimpleNamespace:
+        host = url.split("/")[2]
+        return SimpleNamespace(url=url, source_domain=host, adapter="serper", query=query,
+                               source_quality="OFFICIAL_DOC" if host.endswith("postgresql.org") else "SECONDARY_SOURCE")
+
+    hits = [hit("https://www.postgresql.org/docs/17/app-pgbasebackup.html", "pg_basebackup incremental"),
+            hit("https://www.postgresql.org/docs/17/app-pgcombinebackup.html", "pg_basebackup incremental"),
+            hit("https://www.postgresql.org/docs/17/backup-manifest.html", "pg_basebackup incremental"),
+            hit("https://blog.example.com/pg17-incremental", "incremental backup summarize_wal prerequisite")]
+
+    ordered = _prioritize_authoritative_hits(snapshot, hits)
+
+    # 只有二手来源的检索词也先读到一篇，排在同一条官方检索词的其余页面之前
+    assert [item.url.split("/")[-1] for item in ordered] == [
+        "app-pgbasebackup.html", "pg17-incremental", "app-pgcombinebackup.html", "backup-manifest.html"]
