@@ -289,32 +289,15 @@ class DeepCellExecutor:
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
         retained_cards: list[object] = []
-        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
-                            if not reused and plan.query_specs else [])
-        agent_trace: list[dict[str, object]] = []
-        if (snapshot.role == "DEEP_CELL" and not reused and allow_external and llm_client is not None
-                and load_settings().research_agent_loop_rounds > 1):
-            from app.agent_cell_loop import continue_research
-            results, raw_by_column = _extract_raw_cards(self.toolchain, task_input, plan, windows, llm_client, require_active)
-            context.usage.add("extract_calls")
-            loop = continue_research(self, snapshot, task_input, plan, allow_external, context, llm_client, require_active,
-                                     hits=hits, documents=documents, windows=windows, raw_by_column=raw_by_column,
-                                     results=results, tried_queries=executed_queries,
-                                     max_rounds=load_settings().research_agent_loop_rounds)
-            hits, documents, windows = loop.hits, loop.documents, loop.windows
-            archived_external_windows += loop.archived
-            executed_queries = loop.queries
-            agent_trace = loop.trace
-            extraction, cards, trusted_evidence = _select_column_cards(
-                snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards)
-        else:
-            extraction, cards, trusted_evidence = _extract_per_target_column(
-                self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active, retained_cards)
-            context.usage.add("extract_calls")
+        extraction, cards, trusted_evidence = _extract_per_target_column(
+            self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active, retained_cards)
+        context.usage.add("extract_calls")
         require_active()
         claim_clusters = []
         candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
                                         llm=llm_client, clusters_out=claim_clusters)
+        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
+                            if not reused and plan.query_specs else [])
         report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
                   "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
         repair_target = snapshot.query_policy.get("repair_target", {})
@@ -360,8 +343,6 @@ class DeepCellExecutor:
             "query_planning": query_planning,
             "termination": termination,
         }
-        if agent_trace:
-            trace["agent_loop"] = agent_trace
         budget_usage: dict[str, int] = {
             "search_calls": int(context.usage.values.get("search_calls", 0)),
             "fetch_calls": int(context.usage.values.get("fetch_calls", 0)),
@@ -478,22 +459,18 @@ def _extract_per_target_column(toolchain, snapshot: ResearchAgentTaskSnapshot, t
 
 
 def _extract_raw_cards(toolchain, task_input: ResearchTaskInput, plan: ResearchPlan, windows: list[object],
-                       llm_client: object | None, require_active, *, column_keys: set[str] | None = None,
+                       llm_client: object | None, require_active,
                        ) -> tuple[list[ExtractionResult], dict[str | None, list[object]]]:
-    """按列抽取原始卡片，不做答案检查；column_keys 限定只抽取这些列（取证循环后续轮次只补缺的列）。"""
+    """按列抽取原始卡片，不做答案检查。"""
     columns = list(plan.research_schema.columns)
     if len(columns) <= 1:
         key = columns[0].key if columns else None
-        if column_keys is not None and key not in column_keys:
-            return [], {}
         extraction = toolchain.extract(task_input, plan, windows, llm_client=llm_client)
         _require_extraction_provider_available(extraction, llm_client)
         return [extraction], {key: list(extraction.accepted_cards)}
     results: list[ExtractionResult] = []
     raw_by_column: dict[str | None, list[object]] = {}
     for column in columns:
-        if column_keys is not None and column.key not in column_keys:
-            continue
         require_active()
         column_plan = plan.model_copy(update={
             "research_schema": plan.research_schema.model_copy(update={"columns": [column], "required_column_count": 1}),
