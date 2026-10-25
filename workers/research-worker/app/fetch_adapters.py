@@ -152,7 +152,6 @@ class UrlFetchAdapter:
         fetch_index: int,
     ) -> ResearchFetchedDocument | None:
         del task_input
-        del plan
         if not hit.url.strip():
             return None
 
@@ -191,7 +190,8 @@ class UrlFetchAdapter:
             transport_resolution = "TRANSPORT"
             transport_fallback_reason = fetch_error_reason
             transport_fallback_code = fetch_failure_code
-            snapshot = self.transport.read(hit.url, hit.query, self.token_budget)
+            focus = "\n".join([" ".join(hit.query.split()), *_column_focus(plan)])
+            snapshot = self.transport.read(hit.url, focus, self.token_budget)
             untrusted_content = bool(snapshot.get("untrusted_content", True))
             prompt_injection_detected = bool(snapshot.get("prompt_injection_detected", False))
             prompt_injection_signals = [
@@ -793,6 +793,18 @@ class CompositeUrlSnapshotTransport:
 
 # 抓取失败时最多补抓到预算的几倍，避免整页命中都打不开时把时间耗在逐个重试上
 FETCH_BACKFILL_FACTOR = 2
+# 长页面按列各截一段时最多照顾的列数，每段至少还有几千字符
+MAX_FOCUS_COLUMNS = 4
+
+
+def _column_focus(plan: ResearchPlan) -> list[str]:
+    """同一任务里各列的名称与检索意图，每列一行；抓取长页面时为每列各截一段相关正文。"""
+    lines = []
+    for column in plan.research_schema.columns[:MAX_FOCUS_COLUMNS]:
+        line = " ".join(" ".join((column.label, *column.search_intents)).split())
+        if line:
+            lines.append(line)
+    return lines
 
 
 def _readable_document(document: ResearchFetchedDocument) -> bool:
@@ -1227,15 +1239,38 @@ PAGE_HEAD_CHARS = 2000
 
 
 def _select_query_relevant_text(text: str, query: str, token_budget: int) -> str:
-    """保留页面开头加上与检索词最相关的一段；页面不长时整页保留。"""
+    """保留页面开头加上与检索词最相关的一段；页面不长时整页保留。
+
+    query 有多行时，第一行是找到这一页的检索词，其余各行是同一任务里各列的检索意图（见 _column_focus）。
+    只按第一行截取时，同一页里其他列要的段落常落在截取范围之外，所以第一行占正文篇幅的一半，
+    其余篇幅按页面里能找到的各列检索意图分别截一段。
+    """
     max_chars = max(500, token_budget * 6)
     if len(text) <= max_chars:
         return text.strip()
+    lines = [line for line in query.splitlines() if line.strip()]
     head_chars = min(PAGE_HEAD_CHARS, max_chars // 5)
     if max_chars - head_chars < 500 or _boilerplate_head(text[:head_chars]):
-        return _best_query_window(text, query, max_chars)
-    window = _best_query_window(text[head_chars:], query, max_chars - head_chars)
-    return (text[:head_chars].rstrip() + "\n\n" + window).strip()
+        head, body, budget = "", text, max_chars
+    else:
+        head, body, budget = text[:head_chars].rstrip(), text[head_chars:], max_chars - head_chars
+    folded = body.casefold()
+    focus = [line for line in lines[1:] if any(term in folded for term in _query_terms(line))]
+    if len(lines) <= 1 or not focus or len(body) <= budget:
+        window = _best_query_window(body, lines[0] if len(lines) > 1 else query, budget)
+    else:
+        primary = budget // 2
+        each = (budget - primary) // len(focus)
+        spans = [(start, start + primary) for start in [_best_query_start(body, lines[0], primary)]]
+        spans += [(start, start + each) for start in (_best_query_start(body, line, each) for line in focus)]
+        merged: list[list[int]] = []
+        for start, end in sorted(spans):
+            if merged and start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        window = "\n\n".join(body[start:end].strip() for start, end in merged)
+    return (head + "\n\n" + window).strip() if head else window.strip()
 
 
 def _boilerplate_head(head: str) -> bool:
@@ -1246,10 +1281,7 @@ def _boilerplate_head(head: str) -> bool:
     return folded.count("](") + folded.count("http://") + folded.count("https://") >= 5
 
 
-def _best_query_window(text: str, query: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text.strip()
-    folded = text.casefold()
+def _query_terms(query: str) -> set[str]:
     # URLs in a source-scoped question are repeated throughout Markdown navigation
     # and reference links.  Treating their host/path fragments as research terms
     # makes a link-heavy page header outscore the article body.
@@ -1259,10 +1291,22 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
         "primary", "reports", "sources", "the", "uploads", "using", "which",
         "with", "www",
     }
-    terms = {
+    return {
         term for term in re.findall(r"[a-z0-9][a-z0-9._-]{2,}", query_without_urls)
         if term not in stop and not term.startswith("www.") and not any(char.isdigit() for char in term)
     }
+
+
+def _best_query_window(text: str, query: str, max_chars: int) -> str:
+    start = _best_query_start(text, query, max_chars)
+    return text[start:start + max_chars].strip()
+
+
+def _best_query_start(text: str, query: str, max_chars: int) -> int:
+    if len(text) <= max_chars:
+        return 0
+    folded = text.casefold()
+    terms = _query_terms(query)
     starts = {0}
     # Keep candidate generation deterministic and fair across terms.  The old
     # global 160-start cutoff depended on set iteration order and could exhaust
@@ -1278,7 +1322,7 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
             offset = index + len(term)
             term_matches += 1
     if len(starts) == 1:
-        return text[:max_chars].strip()
+        return 0
 
     boilerplate = ("cookie", "privacy", "advertisement", "manage preferences", "search articles")
 
@@ -1300,8 +1344,7 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
         prose_chars = len(re.findall(r"[a-z\u4e00-\u9fff]", candidate))
         return relevance - penalty, coverage, prose_chars, -start
 
-    best_start = max(starts, key=score)
-    return text[best_start:best_start + max_chars].strip()
+    return max(starts, key=score)
 
 
 def _strip_jina_wrapper(text: str) -> str:

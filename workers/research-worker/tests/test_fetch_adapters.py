@@ -359,7 +359,8 @@ def test_url_fetch_adapter_with_transport_should_use_snapshot_content() -> None:
     assert document.transport_fallback_code == ""
     assert document.transport_attempt_count == 1
     assert document.snapshot_archive_ready is True
-    assert transport.calls == [(hit.url, hit.query, 4000)]
+    # 第一行是找到这一页的检索词，其余各行是各列的检索意图，供长页面按列各截一段
+    assert [(url, query.splitlines()[0], budget) for url, query, budget in transport.calls] == [(hit.url, hit.query, 4000)]
 
 
 def test_url_fetch_adapter_with_composite_transport_should_record_fallback_chain() -> None:
@@ -650,3 +651,19 @@ def test_long_spec_page_keeps_its_header_with_the_identifier_and_release() -> No
     assert selected.startswith("JEP 491")
     assert "Release 24" in selected
     assert "release their carrier" in selected
+
+
+def test_long_page_keeps_a_passage_for_each_column_of_the_task() -> None:
+    filler = "Unrelated reference prose about directives and modules. "
+    text = ("Module ngx_http_upstream_module example configuration. " + filler * 60
+            + "The server directive accepts max_fails and fail_timeout parameters. " + filler * 200
+            + "The least_conn directive and the ip_hash directive select a load balancing method. " + filler * 100)
+    query = "nginx max_fails fail_timeout\n负载均衡算法 nginx load balancing method least_conn ip_hash"
+
+    selected = _select_query_relevant_text(text, query, token_budget=800)
+    only_hit_query = _select_query_relevant_text(text, query.splitlines()[0], token_budget=800)
+
+    assert "max_fails and fail_timeout" in selected
+    assert "least_conn directive and the ip_hash directive" in selected
+    assert "least_conn directive" not in only_hit_query
+    assert len(selected) <= 800 * 6 + 8
