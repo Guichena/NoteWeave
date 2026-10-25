@@ -17,7 +17,9 @@ Research 质量评测在 insta2 上的独立部署（compose 项目 `nw-research
 | `case_dump.py <标签> <题目> [--report]` | 评测目录 | 某题的列定义、单元格结论、评分理由，可选打印最终报告 |
 | `cell_clusters.py <标签> <题目>` | 评测目录 | 按取证任务打印每个单元格的候选组和最终选中的值，判断答案是没找到还是没选上 |
 | `retrieval_stats.py <标签...> [-v]` | 评测目录 | 各轮取证任务的搜索命中、抓取篇数、可读窗口与拒收原因 |
-| `fetch_probe.py` | 评测目录，从标准输入交给 Worker 容器运行 | 用默认抓取链路逐个读取网址，查看各抓取方式的失败原因 |
+| `fetch_probe.py`、`search_fetch_probe.py` | 评测目录，从标准输入交给 Worker 容器运行 | 用默认抓取链路逐个读取网址，或先搜索再逐个抓取，查看失败原因与站点分布 |
+| `point_trace.py <标签> <数据集> [题目...]` | 评测目录 | 未通过题缺的必答要点，对照规划的专家要点与各列定义 |
+| `excerpt_input.py`、`excerpt_replay.py` | 前者在评测目录生成输入，后者交给 Worker 容器运行 | 重放某一列在各存档窗口里实际交给抽取模型的原文段落，检查关键词是否被截掉 |
 | `replay_planning.py`、`replay_narrative.py` | 评测目录，复制进 Worker 容器运行 | 用数据库里的任务输入离线重放规划与成文 |
 | `eval_chain.sh <镜像标签>` | 评测目录 | 构建完成后部署并依次评测开发集与留出集，最后评分并与基线、`PREV` 指定的上一版对照；进度写入状态文件 |
 | `q.sh`、`qraw.sh` | 评测目录 | 在 MySQL 容器内执行只读查询，`qraw.sh` 不转义输出 |
