@@ -28,8 +28,8 @@ for label in final-dev-$TAG final-holdout-$TAG; do
   "$EVAL/score_eval.sh" "$label" > "$EVAL/runs/$label/score2.log" 2>&1
 done
 cd "$EVAL" && {
-  python3 compare_eval.py baseline-legacy-083b-r1 e1-fix8-loop1 final-dev-fix9 final-dev-$TAG
+  python3 compare_eval.py baseline-legacy-083b-r1 e1-fix8-loop1 final-dev-${PREV:-fix9} final-dev-$TAG
   echo
-  python3 compare_eval.py holdout-baseline-083b holdout-fix8-loop1 final-holdout-fix9 final-holdout-$TAG
+  python3 compare_eval.py holdout-baseline-083b holdout-fix8-loop1 final-holdout-${PREV:-fix9} final-holdout-$TAG
 } > "$EVAL/final-compare-$TAG.md" 2>&1
 log "CHAIN_DONE"
