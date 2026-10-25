@@ -16,6 +16,12 @@ _TYPED_TOKEN = re.compile(
     r"|(?<![\d.])v?\d+\.\d+(?:\.\d+)*(?!\d|\.\d)",
     re.IGNORECASE | re.ASCII,
 )
+# 原文常把百分比写成 60.6 percent，结论里写 60.6%；比对数字前统一成 %，与 Java 侧校验口径一致
+_PERCENT_WORD = re.compile(r"(\d)\s*(?:per\s?cent\b|％)", re.IGNORECASE)
+
+
+def _typed_tokens(text: str) -> set[str]:
+    return {_canonical_token(token) for token in _TYPED_TOKEN.findall(_PERCENT_WORD.sub(r"\1%", text))}
 
 
 @dataclass(frozen=True)
@@ -334,9 +340,7 @@ def _normalize_narrative(
     omitted = [cell for cell in cells if cell["cell_key"] not in covered_cells]
     if omitted:
         sections.append({"heading": "补充核验结果" if chinese else "Additional verified findings", "paragraphs": [
-            {"text": (f"{cell['entity_label']}：" if cell.get("entity_label") else "") + str(cell["candidate_value"])
-                     + ("（证据仍有分歧）" if chinese and cell["guarded"] else
-                        " (evidence still disputed)" if cell["guarded"] else ""),
+            {"text": _omitted_cell_text(cell, cells, chinese),
              "cell_keys": [cell["cell_key"]], "evidence_keys": list(cell["evidence_keys"])} for cell in omitted]})
     if not summary_supported:
         # 摘要有误时只替换摘要，已经逐句校验的正文继续保留。
@@ -368,6 +372,20 @@ def _normalize_narrative(
         "comparison_table": comparison_table,
         "limitations": limitations,
     }
+
+
+def _omitted_cell_text(cell: dict[str, object], cells: list[dict[str, object]], chinese: bool) -> str:
+    """正文没写到的已核验单元格补成一段：先用结论；结论里的数字在原文中写法不同、通不过逐句核对时改用原文，
+    补出的段落同样要能通过 Java 侧校验，否则整篇报告会被拒收。"""
+    prefix = f"{cell['entity_label']}：" if cell.get("entity_label") else ""
+    suffix = ("（证据仍有分歧）" if chinese else " (evidence still disputed)") if cell["guarded"] else ""
+    text = prefix + str(cell["candidate_value"]) + suffix
+    keys = list(cell["evidence_keys"])
+    if _cited_text_supported(text, [cell], keys, cells):
+        return text
+    quotes = cell.get("evidence_quotes") or []
+    quote = re.sub(r"^\[[^\]]*\]\s*", "", str(quotes[0]["quote"])) if quotes else str(cell["candidate_value"])
+    return prefix + quote + suffix
 
 
 def _verified_summary(sections: list[dict[str, object]], cells: list[dict[str, object]], chinese: bool) -> str:
@@ -406,8 +424,8 @@ def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evide
                 sources.append(str(cell.get("entity_label") or ""))
             else:
                 sources.extend([trusted_context, _cell_source_text(cell)])
-        source_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(" ".join(sources))}
-        fact_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(_INLINE_CITATION.sub("", statement))}
+        source_tokens = _typed_tokens(" ".join(sources))
+        fact_tokens = _typed_tokens(_INLINE_CITATION.sub("", statement))
         if not fact_tokens.issubset(source_tokens):
             return False
         # 句子提到了研究对象时，所引证据至少要属于其中一个，与 Java 侧校验口径一致；比较句同时提到两边、

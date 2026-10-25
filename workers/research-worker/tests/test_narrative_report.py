@@ -479,3 +479,27 @@ def test_comparison_sentence_may_name_both_subjects_while_citing_one_side() -> N
     assert _cited_text_supported("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", [pg], ["evidence:pg"], cells)
     # 只提到一个对象却引用另一个对象的证据，仍然拒绝
     assert not _cited_text_supported("PostgreSQL indexes virtual columns [evidence:mysql].", cells, ["evidence:mysql"], cells)
+
+
+def test_percent_word_in_the_quote_supports_the_percent_sign() -> None:
+    from app.narrative_report import _cited_text_supported
+
+    cell = {"cell_key": "survey", "candidate_value": "主观生产力均值为60.6%", "entity_label": "Japanese survey",
+            "evidence_keys": ["evidence:survey"],
+            "evidence_quotes": [{"evidence_key": "evidence:survey", "quote": "the mean productivity of WFH was 60.6 percent"}]}
+
+    assert _cited_text_supported("主观生产力均值为60.6% [evidence:survey]。", [cell], ["evidence:survey"], [cell])
+    assert not _cited_text_supported("主观生产力均值为61% [evidence:survey]。", [cell], ["evidence:survey"], [cell])
+
+
+def test_omitted_cell_falls_back_to_its_quote_when_the_value_has_an_unsupported_number() -> None:
+    from app.narrative_report import _cited_text_supported, _omitted_cell_text
+
+    cell = {"cell_key": "survey", "candidate_value": "主观生产力均值约为六成，即 60%", "entity_label": "Japanese survey",
+            "evidence_keys": ["evidence:survey"], "guarded": False,
+            "evidence_quotes": [{"evidence_key": "evidence:survey", "quote": "[Survey] the mean productivity of WFH was 60.6 percent"}]}
+
+    text = _omitted_cell_text(cell, [cell], True)
+    # 结论里的 60% 原文中没有，补段改用原文，并去掉原文前的标题
+    assert text == "Japanese survey：the mean productivity of WFH was 60.6 percent"
+    assert _cited_text_supported(text, [cell], ["evidence:survey"], [cell])
