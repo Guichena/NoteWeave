@@ -410,15 +410,14 @@ def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evide
         fact_tokens = {_canonical_token(token) for token in _TYPED_TOKEN.findall(_INLINE_CITATION.sub("", statement))}
         if not fact_tokens.issubset(source_tokens):
             return False
-        mentioned = [cell for cell in all_cells if _mentions_entity(subject + " " + statement,
-                                                                   str(cell.get("entity_label") or ""))]
-        cited_entities = {str(cell.get("entity_label") or "").casefold() for cell in cited}
-        # 同名实体的不同版本共享名称时，由数字检查进一步区分版本。
-        for cell in mentioned:
-            label = str(cell.get("entity_label") or "")
-            stem = _entity_stem(label)
-            if not any(_entity_stem(entity) == stem for entity in cited_entities):
-                return False
+        # 句子提到了研究对象时，所引证据至少要属于其中一个，与 Java 侧校验口径一致；比较句同时提到两边、
+        # 只引用其中一边的原文属于正常写法。同名实体的不同版本由上面的数字检查进一步区分。
+        prose = subject + " " + _INLINE_CITATION.sub("", statement)
+        mentioned = {_entity_stem(str(cell.get("entity_label") or "")) for cell in all_cells
+                     if _mentions_entity(prose, str(cell.get("entity_label") or ""))}
+        cited_stems = {_entity_stem(str(cell.get("entity_label") or "")) for cell in cited}
+        if mentioned and not mentioned & cited_stems:
+            return False
     return True
 
 

@@ -463,3 +463,19 @@ def test_truncated_model_output_keeps_the_completed_paragraphs() -> None:
     assert result.mode == "LLM"
     assert "Version 2.1 records a measured latency of 50 ms." in result.markdown
     assert "cut off" not in result.markdown
+
+
+def test_comparison_sentence_may_name_both_subjects_while_citing_one_side() -> None:
+    from app.narrative_report import _cited_text_supported
+
+    pg = {"cell_key": "pg", "candidate_value": "GIN indexes", "entity_label": "PostgreSQL 17", "evidence_keys": ["evidence:pg"],
+          "evidence_quotes": [{"evidence_key": "evidence:pg", "quote": "PostgreSQL 17 supports GIN indexes."}]}
+    mysql = {"cell_key": "mysql", "candidate_value": "Virtual column indexes", "entity_label": "MySQL 8.4",
+             "evidence_keys": ["evidence:mysql"],
+             "evidence_quotes": [{"evidence_key": "evidence:mysql", "quote": "MySQL 8.4 indexes virtual columns."}]}
+    cells = [pg, mysql]
+
+    # 比较句同时提到两边、只引用一边的原文，与 Java 侧校验口径一致
+    assert _cited_text_supported("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", [pg], ["evidence:pg"], cells)
+    # 只提到一个对象却引用另一个对象的证据，仍然拒绝
+    assert not _cited_text_supported("PostgreSQL indexes virtual columns [evidence:mysql].", cells, ["evidence:mysql"], cells)
