@@ -86,8 +86,9 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 # Extraction may return more cards, but the agent boundary deliberately admits
 # only the six strongest deterministic cards for a single target cell.
 MAX_EVIDENCE_CARDS_PER_CELL = 6
-# 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分
-MAX_EVIDENCE_PER_COMPLETION = 12
+# 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分。
+# 取 3 个单元格各 6 条：上限为 12 时四列任务每列只剩 3 条，排在后面的列举项（如各指标类型）进不了成文
+MAX_EVIDENCE_PER_COMPLETION = 18
 MAX_CANDIDATES_PER_COMPLETION = 3
 # 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大
 BASE_DOCUMENTS_PER_TASK = 4

@@ -992,18 +992,18 @@ def test_bundled_cells_extract_one_column_at_a_time_with_distinct_evidence_keys(
 
 
 def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
-    from app.deep_cell_executor import DeepCellExecutor
+    from app.deep_cell_executor import MAX_EVIDENCE_PER_COMPLETION, DeepCellExecutor
     from app.deterministic_fake_toolchain import DeterministicFakeToolchain
 
     class ManyCardsToolchain(DeterministicFakeToolchain):
-        """每个单元格抽出 6 张卡，三个单元格合计 18 张，超过一次完成的证据上限 12。"""
+        """每个单元格抽出 8 张卡，三个单元格合计 24 张，超过一次完成的证据上限 18。"""
 
         def extract(self, task_input, plan, windows, *, llm_client):
             result = super().extract(task_input, plan, windows, llm_client=llm_client)
             cards = tuple(
                 card.model_copy(update={"evidence_id": f"{card.evidence_id}-{index}",
                                         "claim_text": f"{card.claim_text} variant {index}"})
-                for card in result.accepted_cards for index in range(6)
+                for card in result.accepted_cards for index in range(8)
             )
             return result.model_copy(update={"accepted_cards": cards})
 
@@ -1019,7 +1019,7 @@ def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
     completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=ManyCardsToolchain(), enable_llm=False)(
         _command(), _claim(snapshot))
 
-    assert len(completion.evidence) <= 12
+    assert len(completion.evidence) <= MAX_EVIDENCE_PER_COMPLETION
     assert {candidate.cell_key for candidate in completion.candidates} == {
         "entity-1:method", "entity-1:result", "entity-1:cost"}
     # 没有模型时每张卡自成一簇，三个单元格合计超过 6 个簇，按单元格计数后仍能通过完成协议

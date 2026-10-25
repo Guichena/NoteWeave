@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from app.deep_cell_executor import _retained_cards, _retained_payload
+from app.deep_cell_executor import MAX_EVIDENCE_PER_COMPLETION, _retained_cards, _retained_payload
 from app.models import ResearchEvidenceCard
 from app.narrative_report import NarrativeReportPolisher, _comparison_table_required
 
@@ -84,7 +84,7 @@ def test_quorum_tasks_and_cells_with_a_candidate_submit_no_weak_material() -> No
 
 def test_weak_material_respects_the_completion_evidence_limit() -> None:
     cards = _retained_cards([_card("w1", "first")], [], [])
-    full = [{"evidence_key": f"evidence:{index}"} for index in range(12)]
+    full = [{"evidence_key": f"evidence:{index}"} for index in range(MAX_EVIDENCE_PER_COMPLETION)]
 
     assert _retained_payload(_snapshot(), cards, [_window("w1")], full, []) == ([], [])
 

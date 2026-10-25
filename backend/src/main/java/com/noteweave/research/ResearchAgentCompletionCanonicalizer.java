@@ -24,7 +24,7 @@ public class ResearchAgentCompletionCanonicalizer {
     public static final String SCHEMA_VERSION = "research-agent-completion.v1";
     public static final String SCHEMA_VERSION_V2 = "research-agent-completion.v2";
     public static final int MAX_CANONICAL_BYTES = 262_144;
-    public static final int MAX_EVIDENCE = 12;
+    public static final int MAX_EVIDENCE = 18;
     public static final int MAX_CANDIDATES = 3;
     public static final Set<String> WORKER_USAGE_KEYS = Set.of(
             "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
