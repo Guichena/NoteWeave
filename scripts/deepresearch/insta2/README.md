@@ -19,6 +19,7 @@ Research 质量评测在 insta2 上的独立部署（compose 项目 `nw-research
 | `retrieval_stats.py <标签...> [-v]` | 评测目录 | 各轮取证任务的搜索命中、抓取篇数、可读窗口与拒收原因 |
 | `fetch_probe.py`、`search_fetch_probe.py` | 评测目录，从标准输入交给 Worker 容器运行 | 用默认抓取链路逐个读取网址，或先搜索再逐个抓取，查看失败原因与站点分布 |
 | `point_trace.py <标签> <数据集> [题目...]` | 评测目录 | 未通过题缺的必答要点，对照规划的专家要点与各列定义 |
+| `evidence_grep.py <标签> <题目> <正则>` | 评测目录 | 在某题提交过的全部证据与最终报告里查关键词，判断要点缺在取证还是成文 |
 | `excerpt_input.py`、`excerpt_replay.py` | 前者在评测目录生成输入，后者交给 Worker 容器运行 | 重放某一列在各存档窗口里实际交给抽取模型的原文段落，检查关键词是否被截掉 |
 | `replay_planning.py`、`replay_narrative.py` | 评测目录，复制进 Worker 容器运行 | 用数据库里的任务输入离线重放规划与成文 |
 | `eval_chain.sh <镜像标签>` | 评测目录 | 构建完成后部署并依次评测开发集与留出集，最后评分并与基线、`PREV` 指定的上一版对照；进度写入状态文件 |
