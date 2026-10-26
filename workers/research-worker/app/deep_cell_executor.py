@@ -999,7 +999,9 @@ def _entity_versions(label: str) -> set[str]:
     label = re.sub(r"\b(?:RFC|PEP|JEP|CVE|ISO|IEC)\s*[-:]?\s*\d+(?:[-.:]\d+)*", "", label, flags=re.I)
     label = re.sub(r"\b(?:19|20)\d{2}\s*(?:edition|版|版本|年版)\b|\bedition\s+(?:19|20)\d{2}\b",
                    "", label, flags=re.I)
-    return set(re.findall(r"(?<![\w.])(\d+(?:\.\d+)*)(?![\w.])", label))
+    # 连在名称后面的数字是算法或协议名的一部分，例如 SHA-256、AES-128、UTF-8、HTTP/2，不是版本号；
+    # 误当成版本时，网址带任何版本号的官方文档都被判为版本不符，要求官方来源的单元格全部成为缺口
+    return set(re.findall(r"(?<![\w./-])(\d+(?:\.\d+)*)(?![\w.])", label))
 
 
 def _version_mismatch(versions: set[str], hit: object) -> int:

@@ -56,7 +56,8 @@ def test_rule_queries_cover_all_columns_before_a_broad_query_uses_the_budget():
     assert {key for spec in result.specs for key in spec.column_keys} == {"0", "1", "2"}
 
 
-@pytest.mark.parametrize("label", ["Rust 2024 edition", "Rust edition 2024", "PEP 703", "RFC 9110"])
+@pytest.mark.parametrize("label", ["Rust 2024 edition", "Rust edition 2024", "PEP 703", "RFC 9110",
+                                   "Git SHA-256 object format", "AES-128 encryption", "HTTP/2", "UTF-8 strings"])
 def test_edition_years_and_specification_identifiers_are_not_runtime_versions(label):
     assert not _entity_versions(label)
     assert _version_mismatch(_entity_versions(label), SimpleNamespace(
@@ -66,6 +67,8 @@ def test_edition_years_and_specification_identifiers_are_not_runtime_versions(la
 def test_runtime_versions_still_reject_other_documentation_versions():
     assert _version_mismatch(_entity_versions("PostgreSQL 17"), SimpleNamespace(
         url="https://www.postgresql.org/docs/16/backup.html")) == 1
+    assert _entity_versions("OAuth 2.1") == {"2.1"}
+    assert _entity_versions("TLS 1.3 handshake") == {"1.3"}
 
 
 @pytest.mark.parametrize("coverage,complete", [
