@@ -22,6 +22,7 @@ Research 质量评测在 insta2 上的独立部署（compose 项目 `nw-research
 | `evidence_grep.py <标签> <题目> <正则>` | 评测目录 | 在某题提交过的全部证据与最终报告里查关键词，判断要点缺在取证还是成文 |
 | `excerpt_input.py`、`excerpt_replay.py` | 前者在评测目录生成输入，后者交给 Worker 容器运行 | 重放某一列在各存档窗口里实际交给抽取模型的原文段落，检查关键词是否被截掉 |
 | `replay_planning.py`、`replay_narrative.py` | 评测目录，复制进 Worker 容器运行 | 用数据库里的任务输入离线重放规划与成文 |
+| `confirm_chain.sh <镜像标签> <轮次后缀>` | 评测目录 | 不构建、不部署，在已部署的同一镜像上把开发集与留出集再评测一轮，用于确认最终版本 |
 | `eval_chain.sh <镜像标签>` | 评测目录 | 构建完成后部署并依次评测开发集与留出集，最后评分并与基线、`PREV` 指定的上一版对照；进度写入状态文件 |
 | `q.sh`、`qraw.sh` | 评测目录 | 在 MySQL 容器内执行只读查询，`qraw.sh` 不转义输出 |
 | `run_with_env.py` | 评测目录 | 加载部署配置与评测账号后执行评测脚本 |
