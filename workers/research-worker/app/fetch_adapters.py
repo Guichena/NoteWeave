@@ -19,7 +19,13 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
 from app.fetch_access import fetch_blocked, record_fetch_outcome
-from app.http_security import credential_safe_urlopen, resolve_public_http_addresses
+from app.http_security import (
+    TOTAL_TIMEOUT_FACTOR,
+    ResponseDeadline,
+    ResponseDeadlineExceeded,
+    credential_safe_urlopen,
+    resolve_public_http_addresses,
+)
 from app.mcp_search_client import (
     TAVILY_EXTRACT_TOOL,
     McpSearchClient,
@@ -1065,8 +1071,10 @@ def _pinned_http_get(
             connection = _PinnedHTTPSConnection(connect_ip, parsed.hostname or "", port, timeout_seconds)
         else:
             connection = http.client.HTTPConnection(connect_ip, port=port, timeout=timeout_seconds)
+        deadline = ResponseDeadline(timeout_seconds * TOTAL_TIMEOUT_FACTOR)
         try:
             connection.request("GET", path, headers=request_headers)
+            deadline.attach(getattr(connection, "sock", None))
             response = connection.getresponse()
             response_headers = {str(key).title(): str(value) for key, value in response.getheaders()}
             if response.status in {301, 302, 303, 307, 308}:
@@ -1081,8 +1089,14 @@ def _pinned_http_get(
                 continue
             if response.status >= 400:
                 raise ValueError(f"HTTP_STATUS_{response.status}")
-            return _read_response_bytes(response, token_budget), response_headers, current_url
+            body = _read_response_bytes(response, token_budget)
+            deadline.check()
+            return body, response_headers, current_url
+        except Exception as exc:
+            deadline.check(exc)
+            raise
         finally:
+            deadline.cancel()
             connection.close()
     raise ValueError("URL_REDIRECT_LIMIT_EXCEEDED")
 
@@ -1121,6 +1135,9 @@ def _blocked_url_result(method: str, reason: str) -> dict[str, object]:
 
 
 def _is_retryable_fetch_error(exc: BaseException) -> bool:
+    # 超过总时限的读取方式多半还会再次挂住，直接换下一个读取方式
+    if isinstance(exc, ResponseDeadlineExceeded):
+        return False
     match = re.fullmatch(r"HTTP_STATUS_(\d{3})", str(exc).strip())
     if match is None:
         return True
@@ -1129,6 +1146,8 @@ def _is_retryable_fetch_error(exc: BaseException) -> bool:
 
 
 def _non_retryable_fetch_failure_code(exc: BaseException) -> str:
+    if isinstance(exc, ResponseDeadlineExceeded):
+        return "FETCH_DEADLINE_EXCEEDED"
     match = re.fullmatch(r"HTTP_STATUS_(\d{3})", str(exc).strip())
     return f"NON_RETRYABLE_HTTP_{match.group(1)}" if match else "NON_RETRYABLE_FETCH_ERROR"
 
