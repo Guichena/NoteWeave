@@ -850,10 +850,11 @@ public class ResearchAgentTaskCoordinatorService {
                 "llm_calls", 2L + cells * 32L,
                 // Tool grants from earlier leases are charged at completion time. Reserve
                 // the task's three-attempt recovery ceiling so a legal retry can settle.
-                "search_calls", 3L,
-                "fetch_calls", 3L,
-                "read_calls", 3L,
-                "extract_calls", 3L,
+                // Worker 在有要求没答到时补查一轮，每次尝试最多用两轮工具，三次尝试共六轮
+                "search_calls", 6L,
+                "fetch_calls", 6L,
+                "read_calls", 6L,
+                "extract_calls", 6L,
                 "evidence_cards", evidence,
                 "evidence_appended", evidence,
                 "candidates_submitted", cells,

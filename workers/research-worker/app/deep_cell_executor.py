@@ -93,6 +93,9 @@ MAX_CANDIDATES_PER_COMPLETION = 3
 # 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大
 BASE_DOCUMENTS_PER_TASK = 4
 MAX_DOCUMENTS_PER_TASK = 10
+# 没答到的要求补查一轮：最多几条检索词、读几篇还没读过的网页
+SUPPLEMENT_MAX_QUERIES = 3
+SUPPLEMENT_DOCUMENTS = 4
 PER_QUERY_RESULTS = 5
 
 class PermitClient(Protocol):
@@ -290,15 +293,38 @@ class DeepCellExecutor:
         self.permit_client.require_permit(snapshot, "extract")
         require_active()
         retained_cards: list[object] = []
-        extraction, cards, trusted_evidence = _extract_per_target_column(
-            self.toolchain, snapshot, task_input, plan, windows, llm_client, require_active, retained_cards)
+        uncovered: dict[str, list[str]] = {}
+        column_cache: dict[str, tuple] = {}
+        results, raw_by_column = _extract_raw_cards(self.toolchain, task_input, plan, windows, llm_client, require_active)
+        extraction, cards, trusted_evidence = _select_column_cards(
+            snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+            uncovered_out=uncovered, column_cache=column_cache)
         context.usage.add("extract_calls")
+        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
+                            if not reused and plan.query_specs else [])
+        supplement: dict[str, object] = {}
+        if (uncovered and snapshot.role == "DEEP_CELL" and not reused and allow_external and llm_client is not None
+                and load_settings().research_supplement_round):
+            extra = self._supplement_uncovered(snapshot, task_input, plan, context, llm_client, require_active,
+                                               uncovered, documents, executed_queries)
+            supplement = {"columns": len(uncovered), "queries": len(extra["queries"]),
+                          "windows": len(extra["windows"])}
+            if extra["windows"]:
+                hits, documents = hits + extra["hits"], documents + extra["documents"]
+                windows = windows + extra["windows"]
+                archived_external_windows += extra["archived"]
+                results = results + extra["results"]
+                for key, extra_cards in extra["raw_by_column"].items():
+                    raw_by_column[key] = list(raw_by_column.get(key, [])) + list(extra_cards)
+                retained_cards = []
+                extraction, cards, trusted_evidence = _select_column_cards(
+                    snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+                    column_cache=column_cache)
+            executed_queries = executed_queries + list(extra["queries"])
         require_active()
         claim_clusters = []
         candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
                                         llm=llm_client, clusters_out=claim_clusters)
-        executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
-                            if not reused and plan.query_specs else [])
         report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
                   "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
         repair_target = snapshot.query_policy.get("repair_target", {})
@@ -344,6 +370,8 @@ class DeepCellExecutor:
             "query_planning": query_planning,
             "termination": termination,
         }
+        if supplement:
+            trace["supplement"] = supplement
         budget_usage: dict[str, int] = {
             "search_calls": int(context.usage.values.get("search_calls", 0)),
             "fetch_calls": int(context.usage.values.get("fetch_calls", 0)),
@@ -370,6 +398,85 @@ class DeepCellExecutor:
             "candidates": candidates,
             "extraction_diagnostics": diagnostics,
         })
+
+    def _supplement_uncovered(self, snapshot: ResearchAgentTaskSnapshot, task_input: ResearchTaskInput,
+                              plan: ResearchPlan, context, llm_client, require_active, uncovered: dict[str, list[str]],
+                              documents: list[object], tried_queries: list[str]) -> dict[str, object]:
+        """答案检查认为某些列的要求没答到时，只针对这些要求补查一轮。
+
+        单元格只答了列中一部分要求时照常核验通过，后端不会再安排补查；例如 PostgreSQL 增量备份的前提条件
+        只找到要提供备份清单，缺 summarize_wal。这里用没答到的要求重新规划检索词，抓取还没读过的网页，
+        只为这些列重新抽取，原有卡片保留，合起来再做一次答案检查。
+        """
+        empty: dict[str, object] = {"hits": [], "documents": [], "windows": [], "archived": 0, "results": [],
+                                    "raw_by_column": {}, "queries": []}
+        columns = [column for column in plan.research_schema.columns if column.key in uncovered]
+        if not columns:
+            return empty
+        base = _cell_query_context(snapshot, plan)
+        labels = {column.key: column.label for column in base.columns}
+        targets = tuple(
+            CellColumn(key=column.key, label=labels.get(column.key) or column.label,
+                       description="Still unanswered: " + "; ".join(uncovered[column.key]),
+                       requirements=tuple(uncovered[column.key]))
+            for column in columns)
+        count = min(SUPPLEMENT_MAX_QUERIES, sum(len(uncovered[column.key]) for column in columns))
+        tried = tuple(dict.fromkeys([*base.tried_queries, *tried_queries]))
+        query_plan = plan_cell_queries(replace(base, columns=targets, max_queries=count, tried_queries=tried),
+                                       llm_client)
+        if not query_plan.specs:
+            return empty
+        stop_contract = dict(plan.stop_contract)
+        execution_profile = dict(stop_contract.get("execution_profile", {}))
+        execution_profile["search_query_budget"] = len(query_plan.specs)
+        stop_contract["execution_profile"] = execution_profile
+        stop_contract["tool_response_retention_budget"] = SUPPLEMENT_DOCUMENTS
+        round_plan = _scope_search_plan_to_domains(
+            snapshot, with_query_specs(plan, query_plan.specs).model_copy(update={"stop_contract": stop_contract}))
+        require_active()
+        context.toolbox.require("search")
+        self.permit_client.require_permit(snapshot, "search")
+        require_active()
+        hits = self.toolchain.search(task_input, round_plan, allow_external=True)
+        context.usage.add("search_calls")
+        queries = list(getattr(self.toolchain, "executed_queries", [spec.query for spec in query_plan.specs]))
+        read_urls = {str(getattr(document, "url", "") or "") for document in documents}
+        hits = _filter_external_hits_by_domain(snapshot, hits, round_plan)
+        hits = [hit for hit in _prioritize_authoritative_hits(snapshot, _interleave_hits_by_domain(hits))
+                if str(getattr(hit, "url", "") or "") not in read_urls]
+        if not hits:
+            return {**empty, "queries": queries}
+        require_active()
+        context.toolbox.require("fetch")
+        self.permit_client.require_permit(snapshot, "fetch")
+        require_active()
+        fetched = self.toolchain.fetch(task_input, round_plan, hits, allow_external=True)
+        context.usage.add("fetch_calls")
+        require_active()
+        context.toolbox.require("read")
+        self.permit_client.require_permit(snapshot, "read")
+        require_active()
+        windows = self.toolchain.read(task_input, round_plan, fetched, allow_external=True)
+        context.usage.add("read_calls")
+        # 每批读取的窗口编号都从一开始，加前缀保持任务内唯一，归档和证据键都依赖窗口编号
+        windows = [_with_window_id(window, f"s2-{window.window_id}") for window in windows]
+        windows, archived = _archive_external_windows(snapshot, windows, self.permit_client)
+        if not windows:
+            return {**empty, "hits": hits, "documents": fetched, "queries": queries}
+        require_active()
+        context.toolbox.require("extract")
+        self.permit_client.require_permit(snapshot, "extract")
+        require_active()
+        column_plan = plan.model_copy(update={
+            "research_schema": plan.research_schema.model_copy(update={"columns": columns,
+                                                                       "required_column_count": len(columns)}),
+            "state_columns": [column.key for column in columns],
+        })
+        results, raw_by_column = _extract_raw_cards(self.toolchain, task_input, column_plan, windows, llm_client,
+                                                    require_active)
+        context.usage.add("extract_calls")
+        return {"hits": hits, "documents": fetched, "windows": windows, "archived": archived, "results": results,
+                "raw_by_column": raw_by_column, "queries": queries}
 
     def _counter_checks(self, snapshot, task_input, plan, allow_external, originals, original_windows,
                         llm, context, evidence, report, require_active):
@@ -486,16 +593,22 @@ def _extract_raw_cards(toolchain, task_input: ResearchTaskInput, plan: ResearchP
 
 def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan, results: list[ExtractionResult],
                          raw_by_column: dict[str | None, list[object]], windows: list[object], llm_client: object | None,
-                         require_active, retained_out: list[object] | None = None,
+                         require_active, retained_out: list[object] | None = None, *,
+                         uncovered_out: dict[str, list[str]] | None = None,
+                         column_cache: dict[str, tuple] | None = None,
                          ) -> tuple[ExtractionResult, list[object], list[dict[str, object]]]:
-    """对各列的原始卡片做答案检查和来源档次筛选，生成可提交的卡片与证据。"""
+    """对各列的原始卡片做答案检查和来源档次筛选，生成可提交的卡片与证据。
+
+    uncovered_out 记录每列没有答到的要求；column_cache 让补查之后原始卡片没有变化的列沿用上一次的答案检查结果。
+    """
     if retained_out is None:
         retained_out = []
     columns = list(plan.research_schema.columns)
     if len(columns) <= 1:
         raw = list(raw_by_column.get(columns[0].key if columns else None, []))
         extraction = _merge_extractions(results, raw) if len(results) != 1 else results[0]
-        cards = (_answering_column_cards(snapshot, columns[0], raw, windows, llm_client, retained_out)
+        cards = (_column_selection(snapshot, columns[0], raw, windows, llm_client, retained_out,
+                                   uncovered_out, column_cache)
                  if columns else _prefer_primary_cards(snapshot, raw, windows))
         evidence = _trusted_evidence_payload(snapshot, cards, windows)[:MAX_EVIDENCE_CARDS_PER_CELL]
         return extraction, cards, evidence
@@ -505,7 +618,8 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
     for column in columns:
         require_active()
         raw = list(raw_by_column.get(column.key, []))
-        column_cards = _answering_column_cards(snapshot, column, raw, windows, llm_client, retained_out)
+        column_cards = _column_selection(snapshot, column, raw, windows, llm_client, retained_out,
+                                         uncovered_out, column_cache)
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -536,12 +650,38 @@ ANSWER_CHECK_PURPOSE = "research.answer_check"
 MAX_RETAINED_CARDS_PER_CELL = 3
 
 
+def _column_selection(snapshot: ResearchAgentTaskSnapshot, column: object, raw: list[object], windows: list[object],
+                      llm_client: object | None, retained_out: list[object],
+                      uncovered_out: dict[str, list[str]] | None, column_cache: dict[str, tuple] | None) -> list[object]:
+    identity = tuple(str(getattr(card, "evidence_id", "")) for card in raw)
+    cached = column_cache.get(column.key) if column_cache is not None else None
+    if cached is not None and cached[0] == identity:
+        _, kept, retained, uncovered = cached
+    else:
+        retained, uncovered = [], []
+        kept = _answering_column_cards(snapshot, column, raw, windows, llm_client, retained, uncovered_out=uncovered)
+        if column_cache is not None:
+            column_cache[column.key] = (identity, kept, retained, uncovered)
+    retained_out.extend(retained)
+    if uncovered_out is not None and uncovered:
+        uncovered_out[column.key] = list(uncovered)
+    return kept
+
+
+def _column_requirements(column: object) -> list[str]:
+    requirements = list(getattr(column, "requirements", ()) or ()) or list(dict.fromkeys(
+        line.strip() for line in str(getattr(column, "description", "")).splitlines() if line.strip()))
+    return requirements or [str(getattr(column, "label", ""))]
+
+
 def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object, raw: list[object],
-                            windows: list[object], llm_client: object | None, retained_out: list[object]) -> list[object]:
+                            windows: list[object], llm_client: object | None, retained_out: list[object], *,
+                            uncovered_out: list[str] | None = None) -> list[object]:
     """先判断哪些卡片回答了这一列，再在回答了的卡片里按来源档次取舍。
 
     先按来源档次筛掉再做答案检查时，官方页面上只沾边的句子会挤掉博客里完整回答这一列的卡片，
-    单元格最后只剩旁支事实，或者全部判为没回答而成为缺口。
+    单元格最后只剩旁支事实，或者全部判为没回答而成为缺口。uncovered_out 记录答案检查认为没有答到的要求，
+    没做成答案检查时按全部要求都没答到处理。
     """
     if llm_client is None:
         # 没有模型做答案检查时不知道各项要求是否答全，只按来源档次取舍
@@ -552,6 +692,9 @@ def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object,
     coverage: list[list[object]] = []
     answering = _keep_answering_cards(snapshot, column, raw, llm_client, partial_out=partial, windows=windows,
                                       coverage_out=coverage)
+    if uncovered_out is not None:
+        uncovered_out.extend(requirement for index, requirement in enumerate(_column_requirements(column))
+                             if index >= len(coverage) or not coverage[index])
     kept = _prefer_primary_answers(snapshot, answering, windows, coverage)
     judged = [] if partial or answering else (_prefer_primary_cards(snapshot, raw, windows) or raw)
     retained_out.extend(_retained_cards(raw, judged, kept, partial or answering))
@@ -656,9 +799,7 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
         return cards
     if llm_client is None:
         return sorted(cards, key=lambda card: -float(getattr(card, "support_score", 0.0) or 0.0))
-    requirements = list(getattr(column, "requirements", ()) or ()) or list(dict.fromkeys(
-        line.strip() for line in str(getattr(column, "description", "")).splitlines() if line.strip()))
-    requirements = requirements or [str(getattr(column, "label", ""))]
+    requirements = _column_requirements(column)
     sources = {getattr(window, "window_id", ""): window for window in windows or []}
     payload = {
         "policy": [
@@ -1439,6 +1580,15 @@ def _external_archive_candidate(window: object) -> bool:
         and str(getattr(window, "provider", "")).strip()
         and str(getattr(window, "window_text", "")).strip()
     )
+
+
+def _with_window_id(window: object, window_id: str) -> object:
+    model_copy = getattr(window, "model_copy", None)
+    if callable(model_copy):
+        return model_copy(update={"window_id": window_id})
+    clone = copy(window)
+    clone.window_id = window_id
+    return clone
 
 
 def _with_archive_receipt(window: object, snapshot_key: str) -> object:
