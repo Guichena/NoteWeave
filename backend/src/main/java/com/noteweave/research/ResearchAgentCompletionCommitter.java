@@ -1072,7 +1072,9 @@ class ResearchAgentCompletionCommitter {
     private List<TargetBinding> targetBindings(String json, String role) {
         try {
             List<Map<String, Object>> values = objectMapper.readValue(json, new TypeReference<>() { });
-            int maximum = Set.of("EVIDENCE_AUDIT", "SYNTHESIS").contains(role) ? 80 : 3;
+            // 取证类任务的目标单元格数与完成协议的候选上限一致（后端每个任务最多放 6 个单元格）
+            int maximum = Set.of("EVIDENCE_AUDIT", "SYNTHESIS").contains(role)
+                    ? 80 : ResearchAgentCompletionCanonicalizer.MAX_CANDIDATES;
             boolean emptyAllowed = ResearchAgentRoles.ownsNoCells(role);
             if (values == null || (!emptyAllowed && values.isEmpty()) || values.size() > maximum) {
                 throw snapshotStale("Task target snapshot has an invalid cell count");

@@ -531,6 +531,48 @@ def test_client_receipt_should_accept_nonnegative_int32_cell_versions_above_usag
     assert response["accepted_merges"][0]["to_version"] == 1_500_001  # type: ignore[index]
 
 
+def test_client_receipt_should_accept_merges_for_every_cell_of_one_entity_task(monkeypatch) -> None:
+    # 后端把同一研究对象最多 6 个单元格放进一个深挖任务，回执里每个单元格各有一条合并结果
+    from app.agent_task_client import JavaResearchAgentTaskClient
+
+    cells = [f"entity-1:field-{index}" for index in range(5)]
+    completion = build_completion_envelope({
+        "schema_version": "research-agent-completion.v1",
+        "task_id": _COMPLETION_TASK_ID,
+        "worker_instance_id": "worker-a",
+        "lease_epoch": 2,
+        "fencing_token": 4,
+        "execution_key": f"deep-cell:{_COMPLETION_TASK_ID}:2:4",
+        "task_snapshot_digest": "sha256:" + "1" * 64,
+        "termination_reason": "CANDIDATES_PROPOSED",
+        "budget_usage": {
+            "llm_calls": 0, "search_calls": 1, "fetch_calls": 1, "read_calls": 1,
+            "extract_calls": 1, "evidence_cards": len(cells), "candidates_submitted": len(cells),
+        },
+        "telemetry": {"search_hits": 1, "documents": 1, "windows": 1},
+        "trace_digest": "sha256:" + "2" * 64,
+        "evidence": [{
+            "evidence_key": f"evidence-{index}", "window_id": "window-1", "source_id": "source-1",
+            "source_title": "Source", "search_query": "query", "read_focus": "focus",
+            "quote_text": f"exact quote {index}", "claim_text": f"value {index}",
+            "relation_type": "SUPPORTS", "support_score_ppm": 900_000,
+            "conflict_score_ppm": 0, "snapshot_status": "WORKSPACE",
+        } for index in range(len(cells))],
+        "candidates": [{
+            "candidate_key": f"candidate-{index}", "cell_key": cell, "base_cell_version": 0,
+            "candidate_value": f"value {index}", "evidence_keys": [f"evidence-{index}"], "confidence_ppm": 900_000,
+        } for index, cell in enumerate(cells)],
+    })
+    client = JavaResearchAgentTaskClient("http://backend", "token", "worker-a")
+    response = _receipt_response(completion, replay=False)
+    monkeypatch.setattr(client, "_request_serialized", lambda *_args, **_kwargs: {"data": response})
+
+    receipt = client.complete(completion)
+
+    assert receipt.completion_digest == completion.envelope_digest
+    assert [merge["cell_key"] for merge in response["accepted_merges"]] == cells  # type: ignore[index]
+
+
 def test_client_complete_should_retry_same_bytes_after_duplicate_key_receipt_json(monkeypatch) -> None:
     from app.agent_task_client import JavaResearchAgentTaskClient
 

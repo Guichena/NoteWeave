@@ -485,6 +485,8 @@ _RESERVATION_KEYS = {
 _MAX_RECEIPT_COUNTER = 1_000_000
 _MAX_CELL_VERSION = 2_147_483_647
 _MAX_RECEIPT_BYTES = 256 * 1024
+# 每个合并结果对应任务的一个目标单元格，与完成协议的候选上限一致（一个任务最多 6 个单元格）
+_MAX_RECEIPT_MERGES = 6
 _EXTERNAL_ARCHIVE_RECEIPT_FIELDS = {
     "archive_id", "task_id", "window_id", "source_id", "snapshot_status", "snapshot_key",
     "content_sha256", "idempotent_replay",
@@ -525,7 +527,7 @@ def _validated_completion_receipt(payload: dict[str, Any],
         return {key: counter(raw, key) for key in _RESERVATION_KEYS}
 
     def merge_list(raw: object, scope: str) -> list[dict[str, Any]]:
-        if not isinstance(raw, list) or len(raw) > 3:
+        if not isinstance(raw, list) or len(raw) > _MAX_RECEIPT_MERGES:
             raise AgentTaskProtocolError(f"completion response has invalid {scope}")
         result: list[dict[str, Any]] = []
         for item in raw:
