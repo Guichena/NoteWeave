@@ -44,6 +44,22 @@ class ResearchReportCitationsTest {
     }
 
     @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void extendedQuotesAreShownInFullUpToTheWorkerExtensionLimit() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        String list = "Milvus supports the following two reranking strategies: " + "WeightedRanker merges scores. ".repeat(18)
+                + "RRFRanker uses reciprocal rank fusion.";
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("run-1"), eq(A))).thenReturn((List) rows("Rerank", "https://milvus.io/r", list));
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("run-1"), eq(B))).thenReturn((List) rows("Long", "https://e.x", "x".repeat(800)));
+
+        String result = ResearchReportCitations.consolidate(jdbc, "run-1", "Milvus 支持两种重排策略 [" + A + "] [" + B + "]。");
+
+        // 600 字符左右的扩展引用完整显示，列表末项仍在；超过 700 字符才截断
+        assertThat(list.length()).isBetween(300, 700);
+        assertThat(result).contains("RRFRanker uses reciprocal rank fusion.”", "“" + "x".repeat(700) + "…”");
+    }
+
+    @Test
     void templateReportWithoutInlineCitationsOnlyDropsSnapshotLines() {
         String markdown = "## 已验证结论\n\n- Evidence: `" + A + "`\n  - Exact quote: “q”\n  - Snapshot: `research/external/x`\n  - URL: https://e.x\n";
 
