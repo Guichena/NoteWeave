@@ -73,8 +73,8 @@ noteweave:
     wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}
     distributed-replay-observation: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:false}
     agent:
-      # 一个深挖任务最多覆盖同一研究对象的几个普通单元格（检索与阅读共用，抽取逐个进行）
-      max-cells-per-task: ${NOTEWEAVE_RESEARCH_AGENT_MAX_CELLS_PER_TASK:3}
+      # 一个深挖任务最多覆盖同一研究对象的几个普通单元格（检索与阅读共用，抽取逐个进行），取值 1 到 6
+      max-cells-per-task: ${NOTEWEAVE_RESEARCH_AGENT_MAX_CELLS_PER_TASK:6}
       # 高风险单元格的两路独立取证，默认关闭
       high-risk-quorum-enabled: ${NOTEWEAVE_RESEARCH_AGENT_HIGH_RISK_QUORUM_ENABLED:false}
       # 允许宽搜索的规划投入等级，逗号分隔，ANY 表示不限制

@@ -113,7 +113,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
     @Test
     void productionDefaultBundlesCellsOfOneEntityIntoOneTaskWithAPerCellBudget() {
         // 生产默认值：同一研究对象的普通单元格共用一次检索与阅读，模型调用预算按单元格数放大
-        coordinator.setMaxCellsPerTask(3);
+        coordinator.setMaxCellsPerTask(6);
         try {
             ResearchAgentTaskCoordinatorService.CoordinatorReceipt receipt = coordinator.planAndEnqueue(runId);
 

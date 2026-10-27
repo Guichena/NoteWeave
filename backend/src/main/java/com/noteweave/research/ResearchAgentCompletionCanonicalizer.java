@@ -24,8 +24,9 @@ public class ResearchAgentCompletionCanonicalizer {
     public static final String SCHEMA_VERSION = "research-agent-completion.v1";
     public static final String SCHEMA_VERSION_V2 = "research-agent-completion.v2";
     public static final int MAX_CANONICAL_BYTES = 262_144;
-    public static final int MAX_EVIDENCE = 18;
-    public static final int MAX_CANDIDATES = 3;
+    // 一个深挖任务最多 6 个单元格，每个单元格最多 6 条证据、1 个候选；与 Worker 的完成协议一致
+    public static final int MAX_EVIDENCE = 36;
+    public static final int MAX_CANDIDATES = 6;
     public static final Set<String> WORKER_USAGE_KEYS = Set.of(
             "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
             "evidence_cards", "candidates_submitted"

@@ -27,7 +27,9 @@ public class ResearchAgentTaskCoordinatorService {
     // 同一研究对象的普通单元格合并为一个任务，检索、抓取与阅读只做一次。
     // 抽取仍按单元格逐个进行（Worker 每次只给模型一个字段），避免一个显著字段占满
     // 整次抽取、其余单元格拿不到候选。高风险单元格仍单独成任务并做双路取证。
-    private static final int DEFAULT_MAX_CELLS_PER_TASK = 3;
+    // 默认把一个研究对象的全部列（规划通常给 4 到 5 列）放进同一个任务：上限为 3 时拆成两个任务，
+    // 各自抓网页、互相看不到，例如 PostgreSQL 17 的 summarize_wal 写在另一个任务抓到的发布说明里。
+    private static final int DEFAULT_MAX_CELLS_PER_TASK = 6;
     private int maxCellsPerTask = DEFAULT_MAX_CELLS_PER_TASK;
     // Must match deep_cell_executor.MAX_EVIDENCE_CARDS_PER_CELL. The worker
     // deterministically caps admitted evidence before building candidates.

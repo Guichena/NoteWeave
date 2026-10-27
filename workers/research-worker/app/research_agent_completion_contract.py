@@ -337,8 +337,8 @@ class _ResearchAgentCompletionContent(_FrozenStrictContract):
     budget_usage: ResearchAgentBudgetUsage
     telemetry: ResearchAgentCompletionTelemetry
     trace_digest: str = Field(pattern=_DIGEST_PATTERN)
-    evidence: tuple[ResearchAgentCompletionEvidence, ...] = Field(default_factory=tuple, max_length=18)
-    candidates: tuple[ResearchAgentCompletionCandidate, ...] = Field(default_factory=tuple, max_length=3)
+    evidence: tuple[ResearchAgentCompletionEvidence, ...] = Field(default_factory=tuple, max_length=36)
+    candidates: tuple[ResearchAgentCompletionCandidate, ...] = Field(default_factory=tuple, max_length=6)
     role_result: dict[str, object] | None = None
     extraction_diagnostics: ResearchAgentExtractionDiagnostics | None = None
 

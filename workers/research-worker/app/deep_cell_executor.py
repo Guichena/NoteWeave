@@ -87,12 +87,14 @@ from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_truste
 # only the six strongest deterministic cards for a single target cell.
 MAX_EVIDENCE_CARDS_PER_CELL = 6
 # 一次完成最多提交的证据条数，与后端完成协议一致；多单元格任务按单元格平分。
-# 取 3 个单元格各 6 条：上限为 12 时四列任务每列只剩 3 条，排在后面的列举项（如各指标类型）进不了成文
-MAX_EVIDENCE_PER_COMPLETION = 18
-MAX_CANDIDATES_PER_COMPLETION = 3
-# 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大
-BASE_DOCUMENTS_PER_TASK = 4
-MAX_DOCUMENTS_PER_TASK = 10
+# 后端把同一研究对象最多 6 个单元格放进一个任务，取 6 个单元格各 6 条：
+# 上限为 12 时四列任务每列只剩 3 条，排在后面的列举项（如各指标类型）进不了成文
+MAX_EVIDENCE_PER_COMPLETION = 36
+MAX_CANDIDATES_PER_COMPLETION = 6
+# 每个深挖任务抓取的网页数：基数加单元格数，封顶避免抓取与抽取输入过大。
+# 一个对象的各列合在一个任务里共用网页，不再由两个任务各抓一批相互重复的网页
+BASE_DOCUMENTS_PER_TASK = 5
+MAX_DOCUMENTS_PER_TASK = 12
 # 没答到的要求补查一轮：最多几条检索词、读几篇还没读过的网页
 SUPPLEMENT_MAX_QUERIES = 3
 SUPPLEMENT_DOCUMENTS = 4
@@ -1341,9 +1343,9 @@ def _cell_query_context(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan)
     )
 
 
-# 投入等级决定每个深挖任务的基础检索词条数，合并任务按单元格数追加，最多 6 条
+# 投入等级决定每个深挖任务的基础检索词条数，合并任务按单元格数追加，最多 8 条
 _EFFORT_QUERY_COUNTS = {"SIMPLE": 2, "STANDARD": 3, "COMPLEX": 4}
-MAX_QUERIES_PER_TASK = 6
+MAX_QUERIES_PER_TASK = 8
 
 
 def _string_tuple(value: object) -> tuple[str, ...]:
