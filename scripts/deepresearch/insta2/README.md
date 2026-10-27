@@ -36,6 +36,10 @@ Research 质量评测在 insta2 上的独立部署（compose 项目 `nw-research
 | `dump_query_contexts.py <page_evidence 输出> <输出>` | 评测目录的 exp 子目录 | 导出这些题目全部取证任务的检索词规划输入，供 `replay_queries.py` 使用 |
 | `replay_queries.py <输入> <新版 cell_query_planner.py> <输出> [并发]` | Worker 镜像起的临时容器 | 镜像里的版本与新版各规划一次检索词，统计条数、平均词数与超过 10 个词的条数 |
 | `query_gap_ab.py <page_evidence 输出> <replay_queries 输出>` | 评测目录的 exp 子目录，经 `run_with_env.py` 运行 | 两版检索词分开判断有没有一条专门问到缺失要点 |
+| `task_windows.py <标签> <题目> <关键词,逗号分隔>` | 评测目录的 exp 子目录 | 按任务列出存档窗口数与含关键词的窗口，判断答案所在的网页是哪个任务抓到的 |
+| `extract_ab.py <新版 extractor.py> <每版次数> <excerpt_input 输出>...` | Worker 镜像起的临时容器 | 同一列、同一批存档窗口，新旧两版抽取提示各抽几次，统计目标要点的原文是否被抽成证据卡 |
+| `vs_input.py <输出> <point_evidence 输出>:<gather_synth 输出>...` | 评测目录的 exp 子目录 | 取比较题里原文中找不到的缺失要点，连同题目与研究对象名写成 `vs_probe.py` 的输入 |
+| `vs_probe.py <输入> <明细输出> [每题抓取篇数]` | Worker 镜像起的临时容器 | 每题写一条点名全部比较对象的检索词，搜索并抓取前几篇，判断缺失要点能否从中回答 |
 | `[WAIT_FOR=状态文件] [OVERRIDE=覆盖文件] confirm_chain.sh <镜像标签> <轮次后缀>` | 评测目录 | 不构建，在同一镜像上把开发集与留出集再评测一轮，用于确认最终版本；`WAIT_FOR` 先等另一条链路结束，`OVERRIDE` 先用该覆盖文件重新部署（例如同一镜像只改配置开关） |
 | `rerun_dev.sh <镜像标签> <轮次后缀> [等待的状态文件]` | 评测目录 | 等另一条链路结束后只重跑开发集，评分两次并与同一镜像首轮对照 |
 | `[RESUME=1] version_chain.sh <新标签> <上一版标签>` | 评测目录 | 等上一版两路评测跑完后同步 dev2、构建两个镜像，先关闭补查评测开发集与留出集并与上一版对照，把 `:dev` 标签指向新镜像并删掉上一版镜像，再在同一镜像上打开补查评测一轮；中途停下后用 `RESUME=1` 从评测步骤接着跑 |
