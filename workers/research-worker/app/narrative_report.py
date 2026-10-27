@@ -322,11 +322,15 @@ def _normalize_narrative(
             if not evidence_keys:
                 continue
             if not _cited_text_supported(text, bound_cells, evidence_keys, all_cells, trusted_context):
-                # 只去掉通不过核对的句子（写了来源里没有的数字或版本号，或提到的对象与所引证据不符），同段其余
-                # 句子照常保留；一句可用的都不剩时去掉这一段，全部去掉时才退回模板
+                # 只处理通不过核对的句子（写了来源里没有的数字或版本号，或提到的对象与所引证据不符），同段其余
+                # 句子照常保留：这句引用了本段已核验单元格时换成该单元格核验过的结论，否则删掉；
+                # 一句可用的都不剩时去掉这一段，全部去掉时才退回模板
                 dropped_unsupported += 1
-                text = "".join(statement for statement, supported in _checked_statements(
-                    text, bound_cells, evidence_keys, all_cells, trusted_context) if supported).strip()
+                text = "".join(
+                    statement if supported else _verified_restatement(
+                        statement, text, bound_cells, cells, all_cells, trusted_context, chinese)
+                    for statement, supported in _checked_statements(
+                        text, bound_cells, evidence_keys, all_cells, trusted_context)).strip()
                 if inline_keys:
                     text, evidence_keys = _bind_inline_citations(text, allowed_evidence)
                 if not text or not evidence_keys or not _cited_text_supported(
@@ -381,6 +385,33 @@ def _normalize_narrative(
         "comparison_table": comparison_table,
         "limitations": limitations,
     }
+
+
+def _verified_restatement(statement: str, paragraph: str, bound_cells: list[dict[str, object]],
+                          verified: list[dict[str, object]], all_cells: list[dict[str, object]],
+                          trusted_context: str, chinese: bool) -> str:
+    """通不过核对的句子引用了本段某个已核验单元格时，换成该单元格核验过的结论并引用它的证据。
+
+    段落的主题句常因多写了一个版本号被删，剩下的句子用代词承接，读者和评审都看不出在说什么；
+    例如 OIDC 一段删掉主要扩展是 ID Token 这句后，后文的必备声明一句失去了主语，报告里再也没出现 ID Token。
+    换上的句子同样逐句核对，通不过、或者本段已经写过这条结论时仍然删掉。线索不做替换。
+    """
+    cited = set(_INLINE_CITATION.findall(statement))
+    verified_keys = {str(cell["cell_key"]) for cell in verified}
+    lead = statement[:len(statement) - len(statement.lstrip())]
+    for cell in bound_cells:
+        keys = [str(key) for key in cell["evidence_keys"]]  # type: ignore[union-attr]
+        if str(cell["cell_key"]) not in verified_keys or not cited & set(keys):
+            continue
+        value = " ".join(str(cell["candidate_value"]).split()).rstrip("。.；;，, ")
+        if not value or value in " ".join(paragraph.split()):
+            continue
+        for key in sorted(keys, key=lambda item: item not in cited):
+            candidate = f"{lead}{value} [{key}]{'。' if chinese else '.'}"
+            if all(supported for _, supported in _checked_statements(candidate, [cell], [key], all_cells,
+                                                                     trusted_context)):
+                return candidate
+    return ""
 
 
 def _with_cited_cells(cell_keys: list[str], cited: list[str], cells_by_key: dict[str, dict[str, object]]) -> list[str]:

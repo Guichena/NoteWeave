@@ -192,20 +192,36 @@ def test_summary_cannot_keep_a_claim_after_removing_invalid_citations(summary):
 @pytest.mark.parametrize("text,refs", [
     ("PostgreSQL indexes virtual columns [evidence:mysql].", ["evidence:mysql"]),
     ("The supported version is 17 [evidence:mysql].", ["evidence:mysql"]),
-    ("A fabricated finding [evidence:unknown] [evidence:pg].", ["evidence:pg"]),
 ])
 def test_paragraph_cannot_borrow_a_different_entity_or_citations_facts(text, refs):
+    result = _normalize_narrative(_narrative(text, refs), _cells(), [])
+    # 借来的对象或数字不保留，这句换成所引单元格核验过的结论
+    assert result["sections"][0]["paragraphs"][0]["text"] == "Virtual column indexes [evidence:mysql]."
+    assert "PostgreSQL indexes" not in str(result) and "version is 17" not in str(result)
+
+
+def test_paragraph_with_an_unknown_citation_is_not_kept():
     with pytest.raises(ValueError):
-        _normalize_narrative(_narrative(text, refs), _cells(), [])
+        _normalize_narrative(_narrative("A fabricated finding [evidence:unknown] [evidence:pg].", ["evidence:pg"]),
+                             _cells(), [])
 
 
-def test_sentence_borrowing_another_citations_number_is_removed_and_the_rest_kept():
+def test_sentence_borrowing_another_citations_number_is_replaced_by_that_cells_verified_value():
     text = "PostgreSQL 17 uses GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql]."
     result = _normalize_narrative(_narrative(text, ["evidence:pg", "evidence:mysql"]), _cells(), [])
     paragraph = result["sections"][0]["paragraphs"][0]
-    # 17 只在 PostgreSQL 的原文里，MySQL 一句借用了它，只去掉这一句
-    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]."
-    assert paragraph["cell_keys"] == ["pg"] and paragraph["evidence_keys"] == ["evidence:pg"]
+    # 17 只在 PostgreSQL 的原文里，MySQL 一句借用了它；这句换成 MySQL 单元格核验过的结论，其余照常保留
+    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]."
+    assert paragraph["cell_keys"] == ["pg", "mysql"]
+    assert paragraph["evidence_keys"] == ["evidence:pg", "evidence:mysql"]
+
+
+def test_unsupported_sentence_is_dropped_when_its_cells_value_is_already_written():
+    text = ("PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]. "
+            "MySQL supports version 17 [evidence:mysql].")
+    result = _normalize_narrative(_narrative(text, ["evidence:pg", "evidence:mysql"]), _cells(), [])
+    paragraph = result["sections"][0]["paragraphs"][0]
+    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]."
 
 
 def test_missing_body_coverage_is_repaired_with_the_actual_verified_finding():

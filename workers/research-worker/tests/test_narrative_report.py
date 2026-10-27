@@ -439,6 +439,23 @@ def test_only_the_unsupported_sentence_is_removed_from_a_paragraph() -> None:
     assert "3.0" not in result.markdown
 
 
+def test_unsupported_topic_sentence_is_replaced_by_the_cells_verified_value() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 3.0 在单个分区内保证顺序 [evidence:aa01]。其分区可以由多个消费者并行读取。"
+        "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    # 主题句多写了来源里没有的 3.0，换成该单元格核验过的结论，后文的代词仍有所指
+    assert paragraph["text"] == ("Kafka 在单个分区内保证顺序 [evidence:aa01]。其分区可以由多个消费者并行读取。"
+                                 "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。")
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "3.0" not in result.markdown
+
+
 def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None:
     article = json.loads(_inline_article(
         "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
