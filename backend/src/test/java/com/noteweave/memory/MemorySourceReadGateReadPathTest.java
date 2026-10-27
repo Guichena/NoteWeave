@@ -1,6 +1,7 @@
 package com.noteweave.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -111,6 +112,69 @@ class MemorySourceReadGateReadPathTest {
         assertThat(pack.memoryReferences())
                 .extracting(MemoryReferenceResponse::memoryObjectId)
                 .containsExactly("memory-ready");
+    }
+
+    /** MEM-05：被排除的记忆要能说明「为什么召回不到」，而不是静默消失。 */
+    @Test
+    void readGateExclusionsExplainWhyTheMemoryIsNotRecalled() {
+        seedLinkedMemory("memory-ready", "source-ready", "READY");
+        seedLinkedMemory("memory-deleted", "source-deleted", "DELETED");
+
+        List<MemoryReadGateExclusion> exclusions = queryService().readGateExclusions("workspace");
+
+        assertThat(exclusions).singleElement().satisfies(exclusion -> {
+            assertThat(exclusion.memoryItemId()).isEqualTo("memory-deleted");
+            assertThat(exclusion.reasonCode()).isEqualTo(MemorySourceReadGate.REASON_SOURCE_NOT_READY);
+            assertThat(exclusion.reasonText()).contains("暂不可读");
+        });
+    }
+
+    /** MEM-05：Wiki 引用是「暂不支持」，与真实不可读分开报，用户能看出该等还是该修。 */
+    @Test
+    void wikiBoundRevisionIsReportedAsTemporarilyUnsupported() {
+        seedLinkedMemory("memory-wiki", "wiki-page-1", "READY");
+        jdbcTemplate.update("update memory_signal set source_type = 'WIKI' where id = 'signal-memory-wiki'");
+        StaticListableBeanFactory beanFactory = new StaticListableBeanFactory();
+        beanFactory.addBean("eligibilityPort",
+                mock(com.noteweave.source.eligibility.MaterialEligibilityPort.class));
+        MemorySourceReadGate gate = new MemorySourceReadGate(jdbcTemplate, objectMapper,
+                beanFactory.getBeanProvider(com.noteweave.source.eligibility.MaterialEligibilityPort.class));
+
+        Map<String, String> reasons = gate.exclusionReasons("workspace", List.of("revision-memory-wiki"));
+
+        assertThat(reasons).containsEntry("revision-memory-wiki", MemorySourceReadGate.REASON_WIKI_NOT_SUPPORTED);
+        assertThat(MemorySourceReadGate.reasonText(MemorySourceReadGate.REASON_WIKI_NOT_SUPPORTED))
+                .contains("暂不支持")
+                .isNotEqualTo(MemorySourceReadGate.reasonText(MemorySourceReadGate.REASON_SOURCE_NOT_READY));
+    }
+
+    /** MEM-06：keyset 分页按游标推进，不漏不重。 */
+    @Test
+    void pageItemsWalksAllItemsWithKeysetCursor() {
+        seedLinkedMemory("memory-a", "source-a", "READY");
+        seedLinkedMemory("memory-b", "source-b", "READY");
+        seedLinkedMemory("memory-c", "source-c", "READY");
+        MemoryItemQueryService service = queryService();
+
+        MemoryItemPageResponse first = service.pageItems("workspace", null, 2);
+        assertThat(first.items()).hasSize(2);
+        assertThat(first.nextCursor()).isNotNull();
+
+        MemoryItemPageResponse second = service.pageItems("workspace", first.nextCursor(), 2);
+        assertThat(second.items()).hasSize(1);
+        assertThat(second.nextCursor()).isNull();
+
+        assertThat(java.util.stream.Stream.concat(first.items().stream(), second.items().stream())
+                .map(MemoryItemResponse::memoryItemId))
+                .containsExactlyInAnyOrder("memory-a", "memory-b", "memory-c");
+    }
+
+    /** MEM-06：游标非法时明确报错，不能悄悄从第一页重来（否则客户端会重复收到数据）。 */
+    @Test
+    void invalidCursorIsRejected() {
+        assertThatThrownBy(() -> queryService().pageItems("workspace", "not-a-cursor", 10))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("记忆分页游标无效");
     }
 
     private MemoryItemQueryService queryService() {

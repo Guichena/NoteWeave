@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.noteweave.source.eligibility.AllReadableEligibilityStub;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
@@ -17,11 +18,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class KnowledgeCommandServiceTest {
+    private AllReadableEligibilityStub eligibilityStub;
 
     private JdbcTemplate jdbcTemplate;
     private KnowledgeCommandService commandService;
     private WorkspaceQueryPort workspaceQueryPort;
     private ResearchGeneratedSourceReadGate sourceGate;
+    private AuditActorProvider actorProvider;
+    private KnowledgeVersionService versionService;
+    private KnowledgeCitationReadGate citationGate;
 
     @BeforeEach
     void setUp() {
@@ -34,7 +39,7 @@ class KnowledgeCommandServiceTest {
         createSchema();
         workspaceQueryPort = mock(WorkspaceQueryPort.class);
         when(workspaceQueryPort.exists("workspace")).thenReturn(true);
-        AuditActorProvider actorProvider = mock(AuditActorProvider.class);
+        actorProvider = mock(AuditActorProvider.class);
         when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("actor");
         KnowledgeWikiMutationService mutationService =
                 new KnowledgeWikiMutationService(jdbcTemplate);
@@ -42,8 +47,9 @@ class KnowledgeCommandServiceTest {
         when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
                 org.mockito.ArgumentMatchers.anyList()))
                 .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
-        KnowledgeCitationReadGate citationGate = new KnowledgeCitationReadGate(jdbcTemplate, sourceGate);
-        KnowledgeVersionService versionService = new KnowledgeVersionService(
+        eligibilityStub = new AllReadableEligibilityStub();
+        citationGate = new KnowledgeCitationReadGate(jdbcTemplate, eligibilityStub);
+        versionService = new KnowledgeVersionService(
                 jdbcTemplate, actorProvider, mutationService,
                 citationGate);
         commandService = new KnowledgeCommandService(
@@ -105,8 +111,7 @@ class KnowledgeCommandServiceTest {
     @Test
     void revokedMessageCitationMustNotCreateKnowledgeItem() {
         seedAssistantMessageWithCitations();
-        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
-                org.mockito.ArgumentMatchers.anyList())).thenReturn(Set.of());
+        eligibilityStub.revokeAll();
 
         assertThatThrownBy(() -> commandService.createItem("workspace",
                 new KnowledgeItemRequest("WIKI", "Revoked Page", "derived content", "message")))
@@ -187,6 +192,157 @@ class KnowledgeCommandServiceTest {
                 """, Integer.class, target.itemId())).isEqualTo(1);
     }
 
+    @Test
+    void internalIngestShouldNotOverwriteManuallyEditedPage() {
+        // WIKI-03：自动 ingest 命中人工编辑过的页面时只标记待确认，不追加版本、不改正文
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("SYSTEM:KNOWLEDGE");
+        KnowledgeItemResponse created = commandService.upsertWikiSourcePageForInternalExecution(
+                "workspace", "Source Page", "auto content", List.of(), "source-1");
+        assertThat(wikiPageState(created.itemId())).isEqualTo("AUTO");
+
+        // 用户手工编辑：面向用户的版本追加，actor 是真实用户
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("user-1");
+        versionService.appendVersion(created.itemId(),
+                new AppendKnowledgeVersionRequest("manual content", null, List.of()));
+        assertThat(wikiPageState(created.itemId())).isEqualTo("MANUAL");
+
+        // 资料再次变化触发的自动 ingest 必须让路
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("SYSTEM:KNOWLEDGE");
+        commandService.upsertWikiSourcePageForInternalExecution(
+                "workspace", "Source Page", "regenerated content", List.of(), "source-1");
+
+        assertThat(latestContent(created.itemId())).isEqualTo("manual content");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from knowledge_version where item_id = ?",
+                Integer.class, created.itemId())).isEqualTo(2);
+        assertThat(wikiPageState(created.itemId())).isEqualTo("NEEDS_REVIEW");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from wiki_log_entry
+                where item_id = ? and event_type = 'SKIP_MANUAL_EDIT'
+                """, Integer.class, created.itemId())).isEqualTo(1);
+    }
+
+    @Test
+    void needsReviewPageShouldStayProtectedUntilUserEditsAgain() {
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("SYSTEM:KNOWLEDGE");
+        KnowledgeItemResponse created = commandService.upsertWikiSourcePageForInternalExecution(
+                "workspace", "Source Page", "auto content", List.of(), "source-1");
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("user-1");
+        versionService.appendVersion(created.itemId(),
+                new AppendKnowledgeVersionRequest("manual content", null, List.of()));
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("SYSTEM:KNOWLEDGE");
+        commandService.upsertWikiSourcePageForInternalExecution(
+                "workspace", "Source Page", "regenerated content", List.of(), "source-1");
+        assertThat(wikiPageState(created.itemId())).isEqualTo("NEEDS_REVIEW");
+
+        // 用户再次编辑：状态回到 MANUAL，自动更新继续让路
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("user-1");
+        versionService.appendVersion(created.itemId(),
+                new AppendKnowledgeVersionRequest("manual v2", null, List.of()));
+        assertThat(wikiPageState(created.itemId())).isEqualTo("MANUAL");
+
+        when(actorProvider.currentOrSystem("KNOWLEDGE")).thenReturn("SYSTEM:KNOWLEDGE");
+        commandService.upsertWikiSourcePageForInternalExecution(
+                "workspace", "Source Page", "third auto content", List.of(), "source-1");
+        assertThat(latestContent(created.itemId())).isEqualTo("manual v2");
+    }
+
+    private String wikiPageState(String itemId) {
+        return jdbcTemplate.queryForObject(
+                "select wiki_page_state from knowledge_item where id = ?", String.class, itemId);
+    }
+
+    private String latestContent(String itemId) {
+        return jdbcTemplate.queryForObject("""
+                select v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.id = ?
+                """, String.class, itemId);
+    }
+
+    @Test
+    void artifactWritebackShouldBindSourceCitationsAndMarkOrigin() {
+        seedArtifactSource("source-1", "资料一", "snap-1", 1);
+
+        KnowledgeItemResponse item = commandService.createArtifactItem(
+                "workspace", "NOTE", "产物笔记", "产物正文",
+                List.of(new ArtifactSourceCitation(
+                        "source-1", "snap-1", "资料一", "原文引用", "第 2 节")));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select origin from knowledge_item where id = ?", String.class, item.itemId()))
+                .isEqualTo("ARTIFACT_SOURCED");
+        assertThat(item.citationCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForMap("""
+                select c.source_id, c.source_snapshot_id, c.source_chunk_id, c.quote_text
+                from knowledge_version_citation kvc
+                join citation c on c.id = kvc.citation_id
+                where kvc.knowledge_version_id = ?
+                """, item.latestVersionId()))
+                .containsEntry("SOURCE_ID", "source-1")
+                .containsEntry("SOURCE_SNAPSHOT_ID", "snap-1")
+                .containsEntry("SOURCE_CHUNK_ID", null)
+                .containsEntry("QUOTE_TEXT", "原文引用");
+    }
+
+    @Test
+    void artifactWritebackWithoutSourcesShouldStayReadable() {
+        KnowledgeItemResponse item = commandService.createArtifactItem(
+                "workspace", "NOTE", "无来源产物", "正文", List.of());
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select origin from knowledge_item where id = ?", String.class, item.itemId()))
+                .isEqualTo("ARTIFACT_UNSOURCED");
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from knowledge_version_citation where knowledge_version_id = ?
+                """, Integer.class, item.latestVersionId())).isZero();
+    }
+
+    @Test
+    void artifactWritebackWithUnresolvableSourcesShouldFail() {
+        // 引用声明了来源，但来源没有任何快照可绑定：写回必须失败，不留下不可读的知识对象
+        assertThatThrownBy(() -> commandService.createArtifactItem(
+                "workspace", "NOTE", "失血产物", "正文",
+                List.of(new ArtifactSourceCitation("source-missing", null, "缺失来源", "", null))))
+                .hasMessageContaining("来源已不可追溯");
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from knowledge_item where title = '失血产物'
+                """, Integer.class)).isZero();
+    }
+
+    @Test
+    void artifactDerivedVersionWithoutCitationsShouldNotBeReadable() {
+        seedArtifactSource("source-1", "资料一", "snap-1", 1);
+        KnowledgeItemResponse artifactItem = commandService.createArtifactItem(
+                "workspace", "NOTE", "有来源产物", "正文",
+                List.of(new ArtifactSourceCitation("source-1", "snap-1", "资料一", "", null)));
+        // 模拟血缘丢失：引用绑定被清掉后，产物写回的内容不能默认放行
+        jdbcTemplate.update("""
+                delete from knowledge_version_citation where knowledge_version_id = ?
+                """, artifactItem.latestVersionId());
+
+        assertThat(citationGate.readableVersionIds(
+                "workspace", List.of(artifactItem.latestVersionId()))).isEmpty();
+
+        // 人工笔记本来就没有来源依赖，缺引用照常可读
+        KnowledgeItemResponse note = commandService.createItem(
+                "workspace", new KnowledgeItemRequest("NOTE", "手写笔记", "正文", null));
+        assertThat(citationGate.readableVersionIds(
+                "workspace", List.of(note.latestVersionId())))
+                .containsExactly(note.latestVersionId());
+    }
+
+    private void seedArtifactSource(String sourceId, String title, String snapshotId, int versionNo) {
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, title) values (?, 'workspace', ?)
+                """, sourceId, title);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, version_no) values (?, ?, ?)
+                """, snapshotId, sourceId, versionNo);
+    }
+
     private void seedAssistantMessageWithCitations() {
         jdbcTemplate.update("""
                 insert into citation(id, source_id)
@@ -214,6 +370,9 @@ class KnowledgeCommandServiceTest {
                     latest_version_id varchar(36),
                     created_by varchar(80),
                     updated_by varchar(80),
+                    origin_source_id varchar(36),
+                    wiki_page_state varchar(32),
+                    origin varchar(32),
                     updated_at timestamp default current_timestamp
                 )
                 """);
@@ -241,7 +400,27 @@ class KnowledgeCommandServiceTest {
                 create table citation(
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null default 'workspace',
-                    source_id varchar(36) not null
+                    source_id varchar(36) not null,
+                    source_snapshot_id varchar(36),
+                    source_chunk_id varchar(36),
+                    title varchar(300),
+                    quote_text clob,
+                    page_no int,
+                    location_info varchar(300)
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table source(
+                    id varchar(36) primary key,
+                    workspace_id varchar(36) not null,
+                    title varchar(300) not null
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table source_snapshot(
+                    id varchar(36) primary key,
+                    source_id varchar(36) not null,
+                    version_no int not null
                 )
                 """);
         jdbcTemplate.execute("""

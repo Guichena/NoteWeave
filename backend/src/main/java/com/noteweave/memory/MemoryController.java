@@ -110,6 +110,20 @@ public class MemoryController {
         return ApiResponse.success(memoryItemQueryService.listItems(workspaceId));
     }
 
+    /** MEM-05：管理端排查「记忆为什么召回不到」，返回被读路径排除的条目与原因。 */
+    @GetMapping("/read-gate-exclusions")
+    ApiResponse<java.util.List<MemoryReadGateExclusion>> listReadGateExclusions(@PathVariable String workspaceId) {
+        return ApiResponse.success(memoryItemQueryService.readGateExclusions(workspaceId));
+    }
+
+    /** MEM-06：keyset 分页版本，cursor 为空表示第一页，limit 默认 100、上限 500。 */
+    @GetMapping("/items/page")
+    ApiResponse<MemoryItemPageResponse> pageItems(@PathVariable String workspaceId,
+                                                  @RequestParam(required = false) String cursor,
+                                                  @RequestParam(required = false) Integer limit) {
+        return ApiResponse.success(memoryItemQueryService.pageItems(workspaceId, cursor, limit));
+    }
+
     @GetMapping("/review")
     ApiResponse<java.util.List<MemoryRuntimeReviewItemResponse>> listRuntimeReviews(@PathVariable String workspaceId) {
         return ApiResponse.success(canonicalMemoryReviewService.list(workspaceId));

@@ -102,9 +102,11 @@ class TaskStateRepository {
     }
 
     int redrive(String taskId, String targetStatus, String progressMessage, String actor) {
+        // SRC-04：重驱即换代。旧投递（死信、补偿）据此判定过期，不再改写重驱后的资料状态。
         return jdbcTemplate.update("""
                 update task set task_status = ?, progress_phase = 'REDRIVEN',
                     progress_message = ?, error_message = null,
+                    generation = generation + 1,
                     updated_by = ?, updated_at = current_timestamp
                 where id = ? and task_status = 'FAILED'
                 """, targetStatus, progressMessage, actor, taskId);

@@ -37,8 +37,10 @@ class ResearchReportDependencyReadTest {
         ObjectMapper objectMapper = new ObjectMapper();
         WorkspaceService workspaceService = mock(WorkspaceService.class);
         when(workspaceService.exists("workspace-1")).thenReturn(true);
+        // 依赖闭包统一走 C1 端口：使用真实评估器验证状态矩阵与闭包递归
         ResearchGeneratedSourceReadGate gate = new ResearchGeneratedSourceReadGate(
-                jdbc, mock(ResearchContextV2Gate.class), objectMapper);
+                jdbc, mock(ResearchContextV2Gate.class),
+                new com.noteweave.source.eligibility.MaterialEligibilityAssessor(jdbc, objectMapper));
         service = new ResearchArtifactService(
                 jdbc,
                 objectMapper,
@@ -118,7 +120,9 @@ class ResearchReportDependencyReadTest {
     private void assertRevoked(Runnable action) {
         assertThatThrownBy(action::run)
                 .isInstanceOfSatisfying(BusinessException.class, failure -> {
-                    assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_REVOKED");
+                    // 依赖闭包阻断用 RESEARCH_SOURCE_REVOKED，重复保存的来源失效用专用码
+                    assertThat(failure.code()).isIn(
+                            "RESEARCH_SOURCE_REVOKED", "RESEARCH_REPORT_SOURCE_REVOKED");
                     assertThat(failure.getMessage()).contains("已删除");
                 });
     }
@@ -154,6 +158,43 @@ class ResearchReportDependencyReadTest {
                 """, sourceId);
     }
 
+    @Test
+    void duplicateSaveStillChecksCurrentUsabilityOfExistingSource() {
+        insertRun("[\"source-1\"]");
+        insertSource("source-1", "READY");
+        jdbc.update("update research_run set report_source_id = 'report-source' where id = 'run-1'");
+        jdbc.update("""
+                insert into source(id, workspace_id, status, delete_reason, generated_by, generated_ref_id)
+                values ('report-source', 'workspace-1', 'READY', 'USER', 'research_agent', 'run-1')
+                """);
+        // 依赖随后被删除：重复保存不能在依赖检查前直接返回既有来源
+        jdbc.update("update source set status = 'DELETED' where id = 'source-1'");
+        assertRevoked(() -> service.saveReportAsSource("workspace-1", "run-1"));
+        assertThat(jdbc.queryForObject(
+                "select count(*) from source", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void complianceRevokedDependencyBlocksReportBodyDelivery() {
+        insertRun("[]");
+        insertSource("source-1", "DELETED");
+        jdbc.update("update source set delete_reason = 'COMPLIANCE' where id = 'source-1'");
+        insertManifest("source-1");
+        // COMPLIANCE 撤销：详情只保留元数据视图，正文文件信息不再下发
+        ResearchArtifactService.RunArtifactView view = service.loadRunArtifactView("workspace-1", "run-1");
+        assertThat(view.reportFile()).isNull();
+        assertRevoked(() -> service.downloadReportMarkdown("workspace-1", "run-1"));
+    }
+
+    @Test
+    void downloadRequiresReadableDependencies() {
+        insertRun("[]");
+        insertSource("source-1", "READY");
+        insertManifest("source-1");
+        assertThatCode(() -> service.downloadReportMarkdown("workspace-1", "run-1"))
+                .doesNotThrowAnyException();
+    }
+
     private void createSchema() {
         jdbc.execute("""
                 create table research_run(
@@ -164,7 +205,18 @@ class ResearchReportDependencyReadTest {
                     final_report_markdown clob,
                     report_source_id varchar(36),
                     source_scope_json clob,
+                    context_snapshot_id varchar(128),
                     updated_at timestamp default current_timestamp
+                )
+                """);
+        jdbc.execute("""
+                create table run_input_snapshot(
+                    id varchar(36) primary key,
+                    workspace_id varchar(36) not null,
+                    execution_kind varchar(32) not null,
+                    conversation_id varchar(36) not null,
+                    research_run_id varchar(36),
+                    replay_availability varchar(32) not null default 'FULL'
                 )
                 """);
         jdbc.execute("""
@@ -172,8 +224,16 @@ class ResearchReportDependencyReadTest {
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
                     status varchar(32) not null,
+                    delete_reason varchar(16) default 'USER',
                     generated_by varchar(64),
                     generated_ref_id varchar(36)
+                )
+                """);
+        jdbc.execute("""
+                create table source_snapshot(
+                    id varchar(36) primary key,
+                    source_id varchar(36) not null,
+                    version_no int not null
                 )
                 """);
         jdbc.execute("""

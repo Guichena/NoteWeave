@@ -33,7 +33,10 @@ class RetrievalLiveElasticsearchIntegrationTest {
         String noteV1 = RetrievalIndexNames.physical(ProjectionType.NOTE_SOURCE, "live-v1", "embed:3", workspace);
         String qaV2 = RetrievalIndexNames.physical(ProjectionType.QA_CHUNK, "live-v2", "embed:3", workspace);
         String noteV2 = RetrievalIndexNames.physical(ProjectionType.NOTE_SOURCE, "live-v2", "embed:3", workspace);
-        try (RestClient rest = RestClient.builder(new HttpHost("127.0.0.1", 9200, "http")).build();
+        // 默认连隔离测试实例（19200），和 test-es profile 一致；要连别的集群用环境变量显式覆盖
+        String host = System.getenv().getOrDefault("NOTEWEAVE_ES_HOST", "127.0.0.1");
+        int port = Integer.parseInt(System.getenv().getOrDefault("NOTEWEAVE_ES_PORT", "19200"));
+        try (RestClient rest = RestClient.builder(new HttpHost(host, port, "http")).build();
              RestClientTransport transport = new RestClientTransport(rest, new JacksonJsonpMapper())) {
             ElasticsearchClient client = new ElasticsearchClient(transport);
             RetrievalIndexManager manager = RetrievalIndexManager.withClient(client);

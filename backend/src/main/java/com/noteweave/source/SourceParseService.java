@@ -37,6 +37,7 @@ public class SourceParseService implements SourceParsePort {
     private static final String BUCKET_SOURCE = "noteweave-source";
 
     private final JdbcTemplate jdbcTemplate;
+    private com.noteweave.storage.DerivedObjectRegistry derivedObjects;
     private final DocumentChunker documentChunker;
     private final SourceDocumentTextExtractor documentTextExtractor;
     private final ObjectMapper objectMapper;
@@ -51,6 +52,7 @@ public class SourceParseService implements SourceParsePort {
     private final SourceTopicNames topicNames;
     private SourceTranscriptionPort transcriptionPort;
     private SourceTranscriptionSubmissionService transcriptionSubmissions;
+    private com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer;
 
     public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker,
                               SourceDocumentTextExtractor documentTextExtractor, ObjectMapper objectMapper,
@@ -84,6 +86,12 @@ public class SourceParseService implements SourceParsePort {
         this.transcriptionSubmissions = submissions;
     }
 
+    /** 统一入队入口：注入后切片/向量化初始化消息走 C2 语义幂等（B-02）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTaskOutboxEnqueuer(com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer) {
+        this.taskOutboxEnqueuer = taskOutboxEnqueuer;
+    }
+
     @Override
     public void parseAndIndex(String workspaceId, String sourceId, String snapshotId, byte[] bytes) {
         Path original = null;
@@ -109,13 +117,16 @@ public class SourceParseService implements SourceParsePort {
             throw new BusinessException("SOURCE_MEDIA_REQUIRES_ASYNC", "音视频资料需要开启异步处理后才能转写");
         }
         SourceDocumentTextExtractor.ExtractedDocument extracted = extract(workspaceId, sourceId, snapshotId, sourceMeta, original);
+        // B-04：解析结构文档与文字稿的存储写入在数据库事务外准备（prepare），
+        // 不可变对象键按快照身份隔离；提交前短事务重新锁定身份并核对 sha，
+        // 若期间被删除或重新处理，已写文件保持未引用，不复活任何状态。
+        persistParsedDocument(workspaceId, sourceId, snapshotId, sourceMeta.sha256(), extracted);
         // 长时间的解析调用结束后重新锁定身份和状态，只有当前快照可以提交片段。
         transactionTemplate.executeWithoutResult(ignored -> {
             SourceMeta locked = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
             if (!locked.extractable() || !locked.sha256().equals(sourceMeta.sha256())) {
                 throw new SourceParseNoLongerProcessableException(sourceId, snapshotId);
             }
-            persistParsedDocument(workspaceId, sourceId, snapshotId, locked.sha256(), extracted);
             String sourceParseTaskId = findSourceParseTaskId(sourceId);
             if (elasticsearchEnabled && sourceParseTaskId == null) {
                 sourceParseTaskId = taskCommandPort.createTask(
@@ -230,12 +241,31 @@ public class SourceParseService implements SourceParsePort {
             recordStage(sourceParseTaskId, SourcePipelineStages.STAGE_EMBEDDING,
                     "切片完成，共 " + chunks.size() + " 个片段，等待向量化");
         }
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, ?, ?, ?, 'READY')
-                """, projectionOutboxId, sourceParseTaskId,
-                asyncStages ? topicNames.embed() : topicNames.retrievalProjection(),
-                snapshotId, writeJson(projectionPayload));
+        // 统一入队（B-02）：向量化初始化/同步投影消息身份 = workspace/source/snapshot/task/阶段；
+        // 同一任务因消费失败或人工重驱需要再次投递时，以既有投递计数递增 generation，
+        // 旧代次死信不能挡住新的重投，也不静默复活已完成的旧消息
+        String stage = asyncStages ? "EMBED_INIT" : "PROJECTION";
+        String targetTopic = asyncStages ? topicNames.embed() : topicNames.retrievalProjection();
+        String generation = (sourceParseTaskId == null ? "NONE" : sourceParseTaskId)
+                + "#" + (taskOutboxEnqueuer == null ? 0 : taskOutboxEnqueuer.priorDeliveries(targetTopic, snapshotId));
+        if (taskOutboxEnqueuer != null) {
+            com.noteweave.task.TaskOutboxEnqueuer.EnqueueResult enqueued = taskOutboxEnqueuer.enqueue(
+                    new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                            workspaceId, sourceParseTaskId, targetTopic, snapshotId,
+                            asyncStages ? "SOURCE_EMBED" : "SOURCE_PROJECTION", sourceId, snapshotId,
+                            generation, stage, null, 1, projectionPayload));
+            projectionOutboxId = enqueued.outboxId();
+            if (enqueued.deadLettered()) {
+                // 切片被人工重驱后重新执行：旧的向量化初始化消息已死信，按显式重驱换新代次
+                taskOutboxEnqueuer.redriveDeadLettered(enqueued.outboxId(),
+                        "SYSTEM:PIPELINE_RECHUNK", "切片重跑后重驱向量化初始化消息");
+            }
+        } else {
+            jdbcTemplate.update("""
+                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                    values (?, ?, ?, ?, ?, 'READY')
+                    """, projectionOutboxId, sourceParseTaskId, targetTopic, snapshotId, writeJson(projectionPayload));
+        }
         if (!messagingMode.isAsyncEnabled()) {
             eventPublisher.publishEvent(new SynchronousRetrievalProjectionRequested(
                     projectionOutboxId, sourceParseTaskId, workspaceId, sourceId, snapshotId));
@@ -368,11 +398,20 @@ public class SourceParseService implements SourceParsePort {
         return acceptTranscript(workspaceId, sourceId, snapshotId, transcript, durationSeconds, null);
     }
 
+    /**
+     * 接受转写文字稿。
+     *
+     * <p>SRC-02：顺序改成「先抢状态、再落对象」。旧实现先写派生对象再抢快照状态：
+     * 重复投递或迟到回调虽然最终返回 false，但对象已经被覆盖过一次——先到的正文可能被
+     * 后到的那一份替换掉，而切片消息指向的是同一个对象键。现在抢不到状态就直接返回，
+     * 完全不碰对象存储。</p>
+     *
+     * <p>落对象放进同一个事务、紧跟 CAS 之后：写入失败会回滚，快照仍停在转写阶段，
+     * 回调可以重投。对象键按快照确定，重投会覆盖同一个键，不会累积垃圾。</p>
+     */
     public boolean acceptTranscript(String workspaceId, String sourceId, String snapshotId, String transcript,
                                     Double durationSeconds, Integer correctedLineCount) {
         String textKey = SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId);
-        storage.write(SourcePipelineStages.BUCKET_DERIVED, textKey,
-                transcript.getBytes(java.nio.charset.StandardCharsets.UTF_8));
         Boolean queued = transactionTemplate.execute(ignored -> {
             SourceMeta meta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
             if (!meta.processable()) return false;
@@ -381,6 +420,9 @@ public class SourceParseService implements SourceParsePort {
                     where id = ? and parse_status = 'PENDING' and processing_stage = ?
                     """, SourcePipelineStages.STAGE_CHUNKING, snapshotId, SourcePipelineStages.STAGE_TRANSCRIBING);
             if (moved != 1) return false;
+            storage.write(SourcePipelineStages.BUCKET_DERIVED, textKey,
+                    transcript.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            registerDerivedChecked(workspaceId, sourceId, snapshotId, "TRANSCRIPT_TEXT", textKey);
             String duration = durationSeconds == null || durationSeconds <= 0 ? ""
                     : "（时长约 " + Math.max(1, Math.round(durationSeconds / 60)) + " 分钟）";
             return insertChunkOutbox(workspaceId, sourceId, snapshotId, textKey,
@@ -397,6 +439,12 @@ public class SourceParseService implements SourceParsePort {
         return findSourceParseTaskId(sourceId);
     }
 
+    /** 派生对象登记（FB-06.2）：生产装配必然存在；直连构造的测试跳过登记。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDerivedObjects(com.noteweave.storage.DerivedObjectRegistry derivedObjects) {
+        this.derivedObjects = derivedObjects;
+    }
+
     private boolean insertChunkOutbox(String workspaceId, String sourceId, String snapshotId, String textKey,
                                       SourceDocumentTextExtractor.ExtractedDocument extracted, String stageMessage) {
         String taskId = findSourceParseTaskId(sourceId);
@@ -411,10 +459,24 @@ public class SourceParseService implements SourceParsePort {
         payload.put("textObjectKey", textKey);
         payload.put("mimeType", extracted.mimeType());
         payload.put("pageCount", extracted.pageCount());
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, ?, ?, ?, 'READY')
-                """, Ids.newId(), taskId, topicNames.chunk(), snapshotId, writeJson(payload));
+        // SRC-04：切片消息也带代次，旧死信不能把重驱后的资料打回失败
+        if (taskId != null) {
+            Integer taskGeneration = taskGenerationOrNull(taskId);
+            if (taskGeneration != null) payload.put("taskGeneration", taskGeneration);
+        }
+        // 统一入队（B-02）：切片消息身份 = workspace/source/snapshot/task/CHUNK，
+        // 重新处理会生成新 task 自然形成新代次；同任务重复入队幂等返回既有行
+        if (taskOutboxEnqueuer != null) {
+            taskOutboxEnqueuer.enqueue(new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                    workspaceId, taskId, topicNames.chunk(), snapshotId,
+                    "SOURCE_CHUNK", sourceId, snapshotId, taskId == null ? "NONE" : taskId,
+                    "CHUNK", null, 1, payload));
+        } else {
+            jdbcTemplate.update("""
+                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                    values (?, ?, ?, ?, ?, 'READY')
+                    """, Ids.newId(), taskId, topicNames.chunk(), snapshotId, writeJson(payload));
+        }
         sourceCatalogVersionService.bump(workspaceId);
         return true;
     }
@@ -455,6 +517,27 @@ public class SourceParseService implements SourceParsePort {
                 meta.title(), meta.mimeType(), meta.sha256(), 20_000_000), original);
     }
 
+    /**
+     * FB-06.2：派生对象发布前检查来源未删除且快照仍当前；检查失败的对象按孤儿登记
+     * 等待有界清理，不推进数据库阶段（调用方守卫仍然生效）。
+     */
+    private void registerDerivedChecked(String workspaceId, String sourceId, String snapshotId,
+            String objectKind, String objectKey) {
+        if (derivedObjects == null) {
+            return;
+        }
+        if (derivedObjects.targetCurrent(workspaceId, sourceId, snapshotId, null)) {
+            derivedObjects.register(workspaceId, sourceId, snapshotId, null, objectKind,
+                    SourcePipelineStages.BUCKET_DERIVED, objectKey, null);
+        } else {
+            derivedObjects.register(workspaceId, sourceId, snapshotId, null, objectKind,
+                    SourcePipelineStages.BUCKET_DERIVED, objectKey, null);
+            derivedObjects.markOrphan(SourcePipelineStages.BUCKET_DERIVED, objectKey);
+            log.warn("派生对象写入后目标已失效，按孤儿登记: sourceId={}, snapshotId={}, kind={}",
+                    sourceId, snapshotId, objectKind);
+        }
+    }
+
     static String parsedDocumentKey(String workspaceId, String sourceId, String snapshotId) {
         return "workspace/%s/source/%s/snapshot/%s/parsed-document.json".formatted(workspaceId, sourceId, snapshotId);
     }
@@ -471,6 +554,10 @@ public class SourceParseService implements SourceParsePort {
             storage.writeFile(SourcePipelineStages.BUCKET_DERIVED, parsedDocumentKey(workspaceId, sourceId, snapshotId), json);
             storage.writeFile(SourcePipelineStages.BUCKET_DERIVED,
                     SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId), text);
+            registerDerivedChecked(workspaceId, sourceId, snapshotId, "PARSED_DOCUMENT",
+                    parsedDocumentKey(workspaceId, sourceId, snapshotId));
+            registerDerivedChecked(workspaceId, sourceId, snapshotId, "EXTRACTED_TEXT",
+                    SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId));
         } catch (IOException exception) {
             throw new BusinessException("SOURCE_PARSED_DOCUMENT_WRITE_FAILED", "解析结构文档写入失败");
         } finally {
@@ -794,6 +881,15 @@ public class SourceParseService implements SourceParsePort {
 
         private SourceParseNoLongerProcessableException(String sourceId, String snapshotId) {
             super("source/snapshot is no longer processable: sourceId=" + sourceId + ", snapshotId=" + snapshotId);
+        }
+    }
+    /** SRC-04：任务代次。精简测试 schema 可能没有 task 表，取不到就按「不带代次」处理。 */
+    private Integer taskGenerationOrNull(String taskId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "select generation from task where id = ?", Integer.class, taskId);
+        } catch (RuntimeException ex) {
+            return null;
         }
     }
 }

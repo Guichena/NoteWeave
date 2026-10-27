@@ -40,6 +40,7 @@ class WikiIngestFailureTransactionTest {
 
     @BeforeEach
     void setUp() {
+        jdbcTemplate.execute("drop table if exists wiki_workspace_lock");
         jdbcTemplate.execute("drop table if exists task_event");
         jdbcTemplate.execute("drop table if exists task");
         jdbcTemplate.execute("drop table if exists source");
@@ -56,6 +57,7 @@ class WikiIngestFailureTransactionTest {
                 "workspace-1");
         jdbcTemplate.execute("""
                 create table task (
+                    generation int not null default 1,
                     id varchar(64) primary key,
                     workspace_id varchar(64) not null,
                     task_type varchar(64) not null,
@@ -93,10 +95,22 @@ class WikiIngestFailureTransactionTest {
                     status varchar(32)
                 )
                 """);
+        jdbcTemplate.execute("""
+                create table wiki_workspace_lock (
+                    lock_key varchar(120) not null primary key,
+                    locked_until timestamp not null,
+                    owner varchar(120)
+                )
+                """);
     }
 
     @Test
     void ingestRollbackShouldStillPersistFailedTerminalState() {
+        // 重试前会核对来源状态：先落一行 READY 来源，让 ingest 真正进入执行后在事务内失败
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, title, source_type, summary, tags_json, status)
+                values ('missing-source', 'workspace-1', 'Source', 'DOC', '', '[]', 'READY')
+                """);
         String taskId = taskCommandPort.createTask(
                 "workspace-1", "WIKI_INGEST", "SOURCE", "missing-source",
                 "QUEUED", "queued");
@@ -178,6 +192,11 @@ class WikiIngestFailureTransactionTest {
         }
 
         @Bean
+        WikiWorkspaceLock wikiWorkspaceLock(JdbcTemplate jdbcTemplate) {
+            return new WikiWorkspaceLock(jdbcTemplate);
+        }
+
+        @Bean
         WikiIngestService wikiIngestService(
                 JdbcTemplate jdbcTemplate,
                 WorkspaceQueryPort workspaceQueryPort,
@@ -187,7 +206,8 @@ class WikiIngestFailureTransactionTest {
                 TaskCommandPort taskCommandPort,
                 ObjectMapper objectMapper,
                 SourceMessagingMode sourceMessagingMode,
-                WikiIngestTransactionExecutor transactionExecutor
+                WikiIngestTransactionExecutor transactionExecutor,
+                WikiWorkspaceLock wikiWorkspaceLock
         ) {
             return new WikiIngestService(
                     jdbcTemplate,
@@ -198,7 +218,8 @@ class WikiIngestFailureTransactionTest {
                     taskCommandPort,
                     objectMapper,
                     sourceMessagingMode,
-                    transactionExecutor
+                    transactionExecutor,
+                    wikiWorkspaceLock
             );
         }
     }

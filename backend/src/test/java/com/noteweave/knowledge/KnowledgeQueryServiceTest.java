@@ -22,10 +22,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import com.noteweave.source.eligibility.AllReadableEligibilityStub;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 
 class KnowledgeQueryServiceTest {
+    private AllReadableEligibilityStub eligibilityStub;
 
     private EmbeddedDatabase database;
     private JdbcTemplate jdbcTemplate;
@@ -69,7 +71,7 @@ class KnowledgeQueryServiceTest {
                 governanceService,
                 pageVersionCache,
                 new SimpleMeterRegistry(),
-                new KnowledgeCitationReadGate(jdbcTemplate, generatedSourceGate),
+                new KnowledgeCitationReadGate(jdbcTemplate, eligibilityStub = new AllReadableEligibilityStub()),
                 generatedSourceGate);
     }
 
@@ -282,8 +284,7 @@ class KnowledgeQueryServiceTest {
         verify(pageVersionCache).put(eq("workspace"), snapshot.capture());
         when(pageVersionCache.get("workspace", "item-a", "version-a"))
                 .thenReturn(Optional.of(snapshot.getValue()));
-        when(generatedSourceGate.readableSourceIds(eq("workspace"), org.mockito.ArgumentMatchers.anyList()))
-                .thenReturn(Set.of());
+        eligibilityStub.revokeAll();
 
         assertThat(queryService.listItems("workspace", "WIKI"))
                 .extracting(KnowledgeItemResponse::itemId).containsExactly("item-b");
@@ -305,6 +306,30 @@ class KnowledgeQueryServiceTest {
         assertThatThrownBy(() -> queryService.getItemDetail("item-a"))
                 .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("KNOWLEDGE_SOURCE_REVOKED"));
+    }
+
+    @Test
+    void wikiPageStateShouldSurfaceOnListedAndSearchedPages() {
+        // WIKI-03：页面状态要随列表与检索结果一起返回，前端才能提示「来源已更新，待确认」
+        jdbcTemplate.update("""
+                update knowledge_item set wiki_page_state = 'NEEDS_REVIEW' where id = 'item-b'
+                """);
+
+        assertThat(queryService.listItems("workspace", "WIKI"))
+                .filteredOn(page -> "item-b".equals(page.itemId()))
+                .singleElement()
+                .extracting(KnowledgeItemResponse::wikiPageState)
+                .isEqualTo("NEEDS_REVIEW");
+        assertThat(queryService.searchWikiPages("workspace", "alpha"))
+                .filteredOn(page -> "item-b".equals(page.itemId()))
+                .singleElement()
+                .extracting(KnowledgeItemResponse::wikiPageState)
+                .isEqualTo("NEEDS_REVIEW");
+        assertThat(queryService.listItems("workspace", "WIKI"))
+                .filteredOn(page -> "item-a".equals(page.itemId()))
+                .singleElement()
+                .extracting(KnowledgeItemResponse::wikiPageState)
+                .isNull();
     }
 
     @Test
@@ -406,6 +431,8 @@ class KnowledgeQueryServiceTest {
                     title varchar(300) not null,
                     status varchar(32) not null,
                     latest_version_id varchar(36),
+                    wiki_page_state varchar(32),
+                    origin varchar(32),
                     updated_at timestamp not null
                 )
                 """);

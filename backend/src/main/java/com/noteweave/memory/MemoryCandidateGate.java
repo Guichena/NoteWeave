@@ -28,8 +28,9 @@ public class MemoryCandidateGate {
             String scope
     ) {
         String scopeStatus = validScope(signal) ? "VALID" : "INVALID";
-        MemoryEvidence.Posterior prior = MemoryEvidence.prior(
-                MemoryEvidence.bandOf(signal.sourceType(), false));
+        // B-06：使用信号上持久化的 evidence_band；历史行为 NULL 的旧行按 legacy 规则推导。
+        // 不再把隐式反馈在门控里重新归为 EXPLICIT。
+        MemoryEvidence.Posterior prior = MemoryEvidence.prior(signal.persistedBand());
         boolean evidencePass = signal.confidenceScore() >= policy.minimumEvidenceConfidence()
                 && prior.variance() <= policy.maximumPosteriorVariance();
         String evidenceGateStatus = evidencePass ? "PASS" : "NEEDS_REVIEW";

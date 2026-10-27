@@ -114,6 +114,30 @@ class KafkaRetryBackOffTest {
         assertThat(collectDelays(config, 10)).hasSize(NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_ATTEMPTS);
     }
 
+    @Test
+    void parserRetryAfterDrivesTheBackOffInterval() {
+        BackOff backOff = configWith(null).retryBackOffFor(
+                com.noteweave.source.SourceParserUnavailableException.rateLimited(java.time.Duration.ofSeconds(7)));
+        assertThat(collectDelays(backOff, 10)).containsOnly(7_000L);
+    }
+
+    @Test
+    void parserRetryAfterIsCappedByTheConfiguredMaximumBackOff() {
+        NoteWeaveProperties.Kafka kafka = new NoteWeaveProperties.Kafka(true, null, 3, 2_000L);
+        BackOff backOff = configWith(kafka).retryBackOffFor(
+                com.noteweave.source.SourceParserUnavailableException.rateLimited(java.time.Duration.ofMinutes(5)));
+        assertThat(collectDelays(backOff, 10)).containsOnly(2_000L);
+    }
+
+    @Test
+    void parserFailuresWithoutRetryAfterKeepTheExponentialPolicy() {
+        BackOff backOff = configWith(null).retryBackOffFor(
+                com.noteweave.source.SourceParserUnavailableException.rejected(415));
+        List<Long> delays = collectDelays(backOff, 10);
+        assertThat(delays).hasSize(NoteWeaveProperties.Kafka.DEFAULT_RETRY_MAX_ATTEMPTS);
+        assertThat(delays.get(0)).isBetween(1_000L, 1_200L);
+    }
+
     /** 断言第 index 次延迟落在 {@code [base, base + max(1, base/5)]}，base = min(1000 << index, cap)。 */
     private static void assertDelaysWithinJitterOfMonotonicBases(List<Long> delays, long capMillis) {
         assertThat(delays).hasSize(6);

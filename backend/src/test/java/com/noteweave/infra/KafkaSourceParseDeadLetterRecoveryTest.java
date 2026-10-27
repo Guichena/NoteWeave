@@ -13,6 +13,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import com.noteweave.common.FinalizationOutcome;
 import com.noteweave.retrieval.projection.SourceRetrievalProjectionFinalizer;
 import com.noteweave.source.SourceCatalogVersionService;
 import com.noteweave.source.SourceParseFailureFinalizer;
@@ -48,9 +49,39 @@ class KafkaSourceParseDeadLetterRecoveryTest {
                 "SOURCE_PDF_TEXT_EMPTY", "PDF 未提取到可检索文本，请先对扫描件执行 OCR：扫描件.pdf", false);
     }
 
+    /** PARSE-01：解析服务限流（429）是可重试失败，死信收尾要保留可重试标记与限流错误码。 */
     @Test
-    void infrastructureFailureShouldFinalizeAsRetryable() {
+    void parserRateLimitShouldFinalizeAsRetryable() {
         SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
+
+        recovery(finalizer).recover(record("source.parse", PAYLOAD),
+                new IllegalStateException("Kafka source.parse handler failed",
+                        new IllegalStateException("async source parse failed for sourceId=source-parse-1",
+                                com.noteweave.source.SourceParserUnavailableException.rateLimited(
+                                        java.time.Duration.ofSeconds(5)))));
+
+        verify(finalizer).finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_PARSER_RATE_LIMITED", "文档解析服务限流，稍后重试", true);
+    }
+
+    /** PARSE-01：415/422 表示文档本身不被接受，重试没有意义，必须判终态。 */
+    @Test
+    void parserRejectionShouldFinalizeAsTerminal() {
+        SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
+
+        recovery(finalizer).recover(record("source.parse", PAYLOAD),
+                new IllegalStateException("Kafka source.parse handler failed",
+                        new IllegalStateException("async source parse failed for sourceId=source-parse-1",
+                                com.noteweave.source.SourceParserUnavailableException.rejected(422))));
+
+        verify(finalizer).finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_PARSER_REJECTED", "文档解析服务拒绝该资料（HTTP 422）", false);
+    }
+
+    @Test
+    void infrastructureFailureShouldFinalizeAsRetryable() {        SourceParseFailureFinalizer finalizer = mock(SourceParseFailureFinalizer.class);
 
         recovery(finalizer).recover(record("source.parse", PAYLOAD),
                 new IllegalStateException("handler failed", new java.io.UncheckedIOException(new java.io.IOException("minio timeout"))));
@@ -174,6 +205,66 @@ class KafkaSourceParseDeadLetterRecoveryTest {
         verify(catalogVersionService).bump("workspace-1");
     }
 
+    /**
+     * SRC-04：人工重驱复用同一个 task id 并递增代次。
+     * 重驱之前产生的那条死信携带旧代次，收尾时必须无副作用退出，
+     * 不能把刚被重驱（重新变成 RUNNING）的资料重新打成失败。
+     */
+    @Test
+    void staleGenerationDeadLetterMustNotFailTheRedrivenSource() {
+        JdbcTemplate jdbcTemplate = sourceSchema("parse-consumer-stale-generation");
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, status, parse_status, index_status)
+                values ('source-parse-1', 'workspace-1', 'PROCESSING', 'PENDING', 'PENDING')
+                """);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, version_no, parse_status, index_status)
+                values ('snapshot-parse-1', 'source-parse-1', 1, 'PENDING', 'PENDING')
+                """);
+        // 任务已经被重驱过一次，当前代次是 2；这条死信属于代次 1
+        TaskService taskService = taskService("RUNNING", 2);
+        SourceCatalogVersionService catalogVersionService = mock(SourceCatalogVersionService.class);
+        SourceParseFailureFinalizer finalizer = new SourceParseFailureFinalizer(
+                jdbcTemplate, new ObjectMapper(), taskService, catalogVersionService);
+
+        FinalizationOutcome outcome = finalizer.finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_PARSE_FAILED", "boom", true, null, 1);
+
+        assertThat(outcome).isEqualTo(FinalizationOutcome.IGNORED_STALE);
+        assertThat(jdbcTemplate.queryForObject("select parse_status from source_snapshot", String.class))
+                .isEqualTo("PENDING");
+        assertThat(jdbcTemplate.queryForObject("select status from source", String.class))
+                .isEqualTo("PROCESSING");
+        verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
+        verify(catalogVersionService, never()).bump(anyString());
+    }
+
+    /** 代次对得上时照常收尾：围栏只挡过期投递，不影响正常失败。 */
+    @Test
+    void matchingGenerationStillFinalizesTheFailure() {
+        JdbcTemplate jdbcTemplate = sourceSchema("parse-consumer-matching-generation");
+        jdbcTemplate.update("""
+                insert into source(id, workspace_id, status, parse_status, index_status)
+                values ('source-parse-1', 'workspace-1', 'PROCESSING', 'PENDING', 'PENDING')
+                """);
+        jdbcTemplate.update("""
+                insert into source_snapshot(id, source_id, version_no, parse_status, index_status)
+                values ('snapshot-parse-1', 'source-parse-1', 1, 'PENDING', 'PENDING')
+                """);
+        TaskService taskService = taskService("RUNNING", 2);
+        SourceParseFailureFinalizer finalizer = new SourceParseFailureFinalizer(
+                jdbcTemplate, new ObjectMapper(), taskService, mock(SourceCatalogVersionService.class));
+
+        FinalizationOutcome outcome = finalizer.finalizeProcessingFailed(
+                "task-parse-1", "workspace-1", "source-parse-1", "snapshot-parse-1",
+                "SOURCE_PARSE_FAILED", "boom", true, null, 2);
+
+        assertThat(outcome).isEqualTo(FinalizationOutcome.APPLIED);
+        assertThat(jdbcTemplate.queryForObject("select parse_status from source", String.class))
+                .isEqualTo("FAILED");
+    }
+
     @Test
     void repeatedDeadLetterForTerminalTaskShouldBeIgnored() {
         JdbcTemplate jdbcTemplate = sourceSchema("parse-consumer-repeat");
@@ -244,6 +335,15 @@ class KafkaSourceParseDeadLetterRecoveryTest {
         TaskService taskService = mock(TaskService.class);
         TaskService.TaskRef ref = new TaskService.TaskRef(
                 "task-parse-1", "workspace-1", "SOURCE_PARSE", status, "SOURCE", "source-parse-1");
+        when(taskService.getTaskRef("task-parse-1")).thenReturn(ref);
+        when(taskService.lockTaskRef("task-parse-1")).thenReturn(ref);
+        return taskService;
+    }
+
+    private static TaskService taskService(String status, int generation) {
+        TaskService taskService = mock(TaskService.class);
+        TaskService.TaskRef ref = new TaskService.TaskRef(
+                "task-parse-1", "workspace-1", "SOURCE_PARSE", status, "SOURCE", "source-parse-1", generation);
         when(taskService.getTaskRef("task-parse-1")).thenReturn(ref);
         when(taskService.lockTaskRef("task-parse-1")).thenReturn(ref);
         return taskService;

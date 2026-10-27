@@ -121,10 +121,22 @@ public class SourceDocumentTextExtractor {
                 return new ExtractedDocument(parsed.markdown(), parsed.mimeType(), parsed.pageCount(),
                         parsed.elements(), parsed.parser(), parsed.truncated(), parsed.warnings(), null, parsed.pageSources());
             } catch (RuntimeException exception) {
+                if (exception instanceof SourceParserUnavailableException failure && failure.retryable()
+                        && !hasLocalFallback(normalizedMime)) {
+                    // PARSE-01：Office 等格式没有本地兜底。解析服务只是暂时不可用时，
+                    // 不能降级成 SOURCE_DOCUMENT_PARSER_REQUIRED 这种终态错误，
+                    // 否则并发上传期间一次 429 就让资料永久 FAILED。
+                    throw failure;
+                }
                 degradation = exception instanceof BusinessException business ? business.code() : "SOURCE_PARSER_UNAVAILABLE";
             }
         }
         return localExtract(bounded.fileName(), normalizedMime, file, bounded.maxChars(), degradation);
+    }
+
+    /** 解析服务不可用时能否在本地兜底：PDF 走 PDFBox，纯文本类按编码探测读取。 */
+    private static boolean hasLocalFallback(String normalizedMime) {
+        return "application/pdf".equals(normalizedMime) || TEXT_MIME_TYPES.contains(normalizedMime);
     }
 
     private ExtractedDocument localExtract(String fileName, String normalizedMime, Path file, int maxChars, String degradation) {

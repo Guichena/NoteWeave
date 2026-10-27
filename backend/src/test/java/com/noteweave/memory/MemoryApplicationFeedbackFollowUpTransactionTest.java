@@ -537,6 +537,7 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
                 """);
         jdbc.execute("""
                 create table task (
+                    generation int not null default 1,
                     id varchar(36) primary key,
                     task_status varchar(32) not null
                 )

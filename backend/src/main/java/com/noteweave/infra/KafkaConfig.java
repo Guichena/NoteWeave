@@ -42,6 +42,7 @@ import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.kafka.listener.RetryListener;
 import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.BackOffExecution;
+import org.springframework.util.backoff.FixedBackOff;
 
 /**
  * Kafka 基础配置。
@@ -224,6 +225,8 @@ public class KafkaConfig {
         };
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, exponentialJitterBackOff());
         errorHandler.setCommitRecovered(true);
+        // PARSE-01：解析服务给出 Retry-After 时按它退避，别在限流窗口内把重试次数烧光
+        errorHandler.setBackOffFunction((record, exception) -> retryBackOffFor(exception));
         errorHandler.setRetryListeners(new RetryListener() {
             @Override
             public void failedDelivery(ConsumerRecord<?, ?> record, Exception ex, int deliveryAttempt) {
@@ -293,6 +296,30 @@ public class KafkaConfig {
      */
     BackOff exponentialJitterBackOff() {
         return exponentialJitterBackOff(ThreadLocalRandom.current());
+    }
+
+    /**
+     * PARSE-01：单条记录的重试退避。解析服务返回 Retry-After 时按该间隔退避
+     * （仍受 {@code noteweave.kafka.retry-max-backoff-ms} 与最大重试次数约束），
+     * 其它失败沿用指数抖动退避。
+     */
+    BackOff retryBackOffFor(Throwable exception) {
+        com.noteweave.source.SourceParserUnavailableException parserFailure =
+                findCause(exception, com.noteweave.source.SourceParserUnavailableException.class);
+        if (parserFailure != null && parserFailure.retryAfter() != null) {
+            long delay = Math.min(parserFailure.retryAfter().toMillis(), retryMaxBackoffMs());
+            return new FixedBackOff(Math.max(0L, delay), retryMaxAttempts());
+        }
+        return exponentialJitterBackOff();
+    }
+
+    private static <T extends Throwable> T findCause(Throwable failure, Class<T> type) {
+        Throwable current = failure;
+        while (current != null) {
+            if (type.isInstance(current)) return type.cast(current);
+            current = current.getCause();
+        }
+        return null;
     }
 
     /** 可注入随机源的重载：生产路径使用 {@link ThreadLocalRandom}，测试可传入固定种子以获得确定性。 */

@@ -56,12 +56,15 @@ class SourceTranscriptionSubmissionServiceTest {
                     sha256 varchar(64))
                 """);
         jdbc.execute("""
-                create table task(id varchar(36) primary key, workspace_id varchar(36), target_id varchar(36),
+                create table task(id varchar(36) primary key, generation int not null default 1, workspace_id varchar(36), target_id varchar(36),
                     task_type varchar(64), task_status varchar(32), created_at timestamp default current_timestamp)
                 """);
         jdbc.execute("alter table source_snapshot add column index_status varchar(32) default 'PENDING'");
         jdbc.execute("alter table task add column target_type varchar(32) default 'SOURCE'");
-        new ResourceDatabasePopulator(new ClassPathResource("db/migration/V149__source_transcription_submission.sql"))
+        new ResourceDatabasePopulator(
+                new ClassPathResource("db/migration/V149__source_transcription_submission.sql"),
+                new ClassPathResource("db/migration/V214__source_transcription_stage_heartbeat.sql"),
+                new ClassPathResource("db/migration/V218__source_transcription_submission_max_attempts.sql"))
                 .execute(dataSource);
         sha = HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(media));
         jdbc.update("insert into source(id, workspace_id, title, source_type, status) values ('src', 'ws', '音频.mp3', 'AUDIO', 'PROCESSING')");
@@ -302,6 +305,32 @@ class SourceTranscriptionSubmissionServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new SourceTranscriptionSubmissionService(jdbc, storage, port, manager, 4, 180, 180))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void submissionStopsAtTheAttemptCapAndFinalizesTheParseInsteadOfRedownloadingForever() {
+        enqueue();
+        var failures = mock(SourceParseFailureFinalizer.class);
+        service.setFailureFinalizer(failures);
+        jdbc.update("update source_transcription_submission set max_attempts = 2");
+        doThrow(new BusinessException("SOURCE_TRANSCRIPTION_QUEUE_FULL", "队列暂满", HttpStatus.TOO_MANY_REQUESTS))
+                .when(port).submit(any(), any());
+
+        service.dispatchPending();
+        assertThat(status()).isEqualTo("PENDING");
+
+        makeDue();
+        service.dispatchPending();
+        assertThat(status()).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select last_error_code from source_transcription_submission", String.class))
+                .isEqualTo("SOURCE_TRANSCRIPTION_QUEUE_FULL");
+        verify(failures).finalizeProcessingFailed(eq("task"), eq("ws"), eq("src"), eq("snap"),
+                eq("SOURCE_TRANSCRIPTION_SUBMIT_EXHAUSTED"), any(String.class), eq(true));
+
+        // 终态之后不再被扫描：原件不会被反复下载
+        makeDue();
+        service.dispatchPending();
+        verify(port, times(2)).submit(any(), any());
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.noteweave.source;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
+import com.noteweave.common.FinalizationOutcome;
 import com.noteweave.task.TaskService;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -57,12 +58,48 @@ public class SourceParseFailureFinalizer {
     }
 
     /**
-     * 消费者重试耗尽、消息进入死信队列时收尾。解析事务已经回滚，快照仍停在 PENDING，
-     * 这里把快照、当前资料和任务一起标记为失败，并保留原始错误码供前端展示。
-     * 同一条死信被重复处理时，任务已是终态，直接返回。
+     * 投递耗尽收尾的身份化入口（B-01）：补偿执行器不携带全文载荷，
+     * 只传递登记时冻结的业务身份。任务已终态或身份不匹配按过期处理。
      */
     @Transactional
-    public void finalizeProcessingFailed(
+    public void finalizeDeliveryExhausted(
+            String taskId, String workspaceId, String sourceId, String snapshotId) {
+        finalizeDeliveryExhausted(taskId, workspaceId, sourceId, snapshotId, null);
+    }
+
+    /**
+     * 投递耗尽收尾的围栏入口（FB-01）：围栏在锁定任务之后、更新快照/资料之前复核，
+     * 人工重驱已换代的旧代次补偿以 IGNORED_STALE 无副作用退出，不把重驱后的资料再打回失败。
+     */
+    @Transactional
+    public com.noteweave.common.FinalizationOutcome finalizeDeliveryExhausted(
+            String taskId, String workspaceId, String sourceId, String snapshotId,
+            com.noteweave.common.FinalizationFence fence) {
+        TaskService.TaskRef task = taskService.getTaskRef(taskId);
+        if (!eligible(task)) {
+            return com.noteweave.common.FinalizationOutcome.IGNORED_STALE;
+        }
+        return markFailed(
+                task,
+                workspaceId,
+                sourceId,
+                snapshotId,
+                "SYSTEM:SOURCE_PARSE_OUTBOX",
+                "OUTBOX_DEAD_LETTER",
+                "Kafka Source Parse 投递耗尽，资料解析未执行",
+                "OUTBOX_DISPATCH_EXHAUSTED",
+                true,
+                fence
+        );
+    }
+
+    /**
+     * 消费者重试耗尽、消息进入死信队列时收尾。解析事务已经回滚，快照仍停在 PENDING，
+     * 这里把快照、当前资料和任务一起标记为失败，并保留原始错误码供前端展示。
+     * 同一条死信被重复处理时，任务已是终态，按过期跳过（IGNORED_STALE）。
+     */
+    @Transactional
+    public FinalizationOutcome finalizeProcessingFailed(
             String taskId,
             String workspaceId,
             String sourceId,
@@ -71,11 +108,52 @@ public class SourceParseFailureFinalizer {
             String errorMessage,
             boolean retryable
     ) {
+        return finalizeProcessingFailed(taskId, workspaceId, sourceId, snapshotId,
+                errorCode, errorMessage, retryable, null);
+    }
+
+    /**
+     * 消费死信收尾的围栏入口（FB-01）：DLT offset 身份不等于当前投递代次，
+     * 执行器传入「登记时间之后没有同任务 TASK_REDRIVEN 事件」的业务阶段围栏，
+     * 在锁定任务之后、更新业务之前复核；人工重驱后的迟到死信收尾无副作用退出。
+     */
+    @Transactional
+    public FinalizationOutcome finalizeProcessingFailed(
+            String taskId,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String errorCode,
+            String errorMessage,
+            boolean retryable,
+            com.noteweave.common.FinalizationFence fence
+    ) {
+        return finalizeProcessingFailed(taskId, workspaceId, sourceId, snapshotId,
+                errorCode, errorMessage, retryable, fence, null);
+    }
+
+    /**
+     * SRC-04：带任务代次的死信收尾。人工重驱复用同一个 task id 并递增代次，
+     * 旧投递携带的代次与锁内读到的代次不一致时无副作用退出，
+     * 不再把刚被重驱（重新变成 RUNNING）的资料打回失败。
+     */
+    @Transactional
+    public FinalizationOutcome finalizeProcessingFailed(
+            String taskId,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String errorCode,
+            String errorMessage,
+            boolean retryable,
+            com.noteweave.common.FinalizationFence fence,
+            Integer expectedGeneration
+    ) {
         TaskService.TaskRef task = taskService.getTaskRef(taskId);
         if (!eligible(task)) {
-            return;
+            return FinalizationOutcome.IGNORED_STALE;
         }
-        markFailed(
+        return markFailed(
                 task,
                 workspaceId,
                 sourceId,
@@ -84,11 +162,13 @@ public class SourceParseFailureFinalizer {
                 "SOURCE_PARSE_FAILED",
                 "资料解析失败：" + abbreviate(errorMessage),
                 errorCode,
-                retryable
+                retryable,
+                fence,
+                expectedGeneration
         );
     }
 
-    private void markFailed(
+    private com.noteweave.common.FinalizationOutcome markFailed(
             TaskService.TaskRef task,
             String workspaceId,
             String sourceId,
@@ -98,6 +178,39 @@ public class SourceParseFailureFinalizer {
             String message,
             String errorCode,
             boolean retryable
+    ) {
+        return markFailed(task, workspaceId, sourceId, snapshotId, actor, phase, message,
+                errorCode, retryable, null);
+    }
+
+    private com.noteweave.common.FinalizationOutcome markFailed(
+            TaskService.TaskRef task,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String actor,
+            String phase,
+            String message,
+            String errorCode,
+            boolean retryable,
+            com.noteweave.common.FinalizationFence fence
+    ) {
+        return markFailed(task, workspaceId, sourceId, snapshotId, actor, phase, message,
+                errorCode, retryable, fence, null);
+    }
+
+    private com.noteweave.common.FinalizationOutcome markFailed(
+            TaskService.TaskRef task,
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String actor,
+            String phase,
+            String message,
+            String errorCode,
+            boolean retryable,
+            com.noteweave.common.FinalizationFence fence,
+            Integer expectedGeneration
     ) {
         String taskId = task.taskId();
         if (blank(workspaceId) || blank(sourceId) || blank(snapshotId)
@@ -110,13 +223,28 @@ public class SourceParseFailureFinalizer {
         }
         task = taskService.lockTaskRef(taskId);
         if (!eligible(task)) {
-            return;
+            return com.noteweave.common.FinalizationOutcome.IGNORED_STALE;
         }
         if (!workspaceId.equals(task.workspaceId()) || !sourceId.equals(task.targetId())) {
             throw new BusinessException(
                     "SOURCE_PARSE_OUTBOX_IDENTITY_MISMATCH",
                     "Source parse dead-letter identity changed while acquiring the task lock"
             );
+        }
+        // SRC-04：锁内复核任务代次。人工重驱会复用 task id 并递增代次，
+        // 旧投递携带的代次对不上就说明它属于重驱之前的那一次，不能再改写业务状态。
+        if (expectedGeneration != null && task.generation() != expectedGeneration) {
+            log.info("Skip stale source-parse finalization by generation: taskId={}, snapshotId={}, "
+                            + "expectedGeneration={}, currentGeneration={}",
+                    taskId, snapshotId, expectedGeneration, task.generation());
+            return com.noteweave.common.FinalizationOutcome.IGNORED_STALE;
+        }
+        // FB-01 业务代次围栏：在锁内、任何业务写入之前复核。
+        // 失效说明死信登记后发生过人工重驱或换代，本次补偿只能无副作用退出。
+        if (fence != null && !fence.stillCurrent()) {
+            log.info("Skip fenced source-parse finalization: taskId={}, snapshotId={}, superseded by redrive",
+                    taskId, snapshotId);
+            return com.noteweave.common.FinalizationOutcome.IGNORED_STALE;
         }
 
         int snapshotFailed = jdbcTemplate.update("""
@@ -147,6 +275,7 @@ public class SourceParseFailureFinalizer {
                     taskId, sourceId, snapshotId);
         }
         taskService.failTask(taskId, phase, message, errorCode, retryable);
+        return com.noteweave.common.FinalizationOutcome.APPLIED;
     }
 
     // 任务的 error_message 为 varchar(1000)，由错误码和说明拼接而成，这里给说明留出余量。

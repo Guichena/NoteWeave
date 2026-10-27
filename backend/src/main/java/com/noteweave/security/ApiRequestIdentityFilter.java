@@ -28,7 +28,12 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        // NR01：按与 MVC 路由一致的规范化路径判断；/api;x=1/v2/... 等价路径不再绕过认证。
+        // 非法编码（null）返回 false，让本过滤器统一拒绝。
+        String path = ApiPaths.canonicalPath(request);
+        if (path == null) {
+            return false;
+        }
         return !path.startsWith("/api/v2/")
                 || path.equals("/api/v2/auth/register")
                 || path.equals("/api/v2/auth/login")
@@ -38,6 +43,10 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        if (ApiPaths.canonicalPath(request) == null) {
+            reject(response, "REQUEST_PATH_INVALID", "请求路径包含非法编码");
+            return;
+        }
         String authorization = request.getHeader("Authorization");
         String token = authorization != null && authorization.startsWith("Bearer ")
                 ? authorization.substring("Bearer ".length()).trim() : "";

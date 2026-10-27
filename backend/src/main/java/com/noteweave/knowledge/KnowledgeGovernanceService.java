@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -90,10 +91,14 @@ public class KnowledgeGovernanceService {
         Map<String, Integer> pagesByKind = new HashMap<>();
         pages.forEach(page -> pagesByKind.merge(
                 page.pageKind() == null ? "TOPIC" : page.pageKind(), 1, Integer::sum));
-        List<KnowledgeItemResponse> recentUpdates = pages.stream()
+        List<WikiSearchRow> recentPages = pages.stream()
                 .sorted(Comparator.comparing(WikiSearchRow::updatedAt).reversed())
                 .limit(5)
-                .map(WikiSearchRow::toItemResponse)
+                .toList();
+        Map<String, String> recentPageStates = wikiPageStates(
+                recentPages.stream().map(WikiSearchRow::itemId).toList());
+        List<KnowledgeItemResponse> recentUpdates = recentPages.stream()
+                .map(page -> page.toItemResponse(recentPageStates.get(page.itemId())))
                 .toList();
         List<WikiTaskSummaryResponse> recentTasks = listRecentWikiTasks(workspaceId);
         int pendingTaskCount = count("""
@@ -609,6 +614,22 @@ public class KnowledgeGovernanceService {
 
     private Instant toInstant(Timestamp value) {
         return value == null ? Instant.now() : value.toInstant();
+    }
+
+    /** WIKI-03：批量取页面状态，供最近更新卡片带出「待确认」标记。 */
+    private Map<String, String> wikiPageStates(List<String> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", itemIds.stream().map(id -> "?").toList());
+        Map<String, String> states = new HashMap<>();
+        jdbcTemplate.query("""
+                select id, wiki_page_state
+                from knowledge_item
+                where id in (%s)
+                """.formatted(placeholders), (RowCallbackHandler) rs ->
+                states.put(rs.getString(1), rs.getString(2)), itemIds.toArray());
+        return states;
     }
 
     private record WikiPageSnapshot(

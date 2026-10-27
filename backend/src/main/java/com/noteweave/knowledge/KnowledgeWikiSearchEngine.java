@@ -615,10 +615,11 @@ record WikiSearchRow(
         int citationCount,
         int unresolvedCount
 ) {
-    KnowledgeItemResponse toItemResponse() {
+    KnowledgeItemResponse toItemResponse(String wikiPageState) {
         return new KnowledgeItemResponse(
                 itemId, "WIKI", pageKind, title, "ACTIVE", versionId, versionNo,
-                summary, updatedAt, outgoingCount, backlinkCount, citationCount, unresolvedCount);
+                summary, updatedAt, outgoingCount, backlinkCount, citationCount, unresolvedCount,
+                wikiPageState);
     }
 
     KnowledgePageHit toPageHit(int score) {

@@ -127,6 +127,8 @@ public class MemoryConversationExtractionService {
     private final String topic;
     private final boolean enabled;
     private MemoryApplicationFeedbackService applicationFeedback;
+    private MemoryProcessingReceiptService processingReceipts;
+    private com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer;
 
     @Autowired
     public MemoryConversationExtractionService(
@@ -164,6 +166,18 @@ public class MemoryConversationExtractionService {
         this.applicationFeedback = applicationFeedback;
     }
 
+    /** 持久处理回执：注入后抽取/反馈按阶段机推进（B-05）。 */
+    @Autowired(required = false)
+    void setProcessingReceipts(MemoryProcessingReceiptService processingReceipts) {
+        this.processingReceipts = processingReceipts;
+    }
+
+    /** 统一入队入口：注入后记忆抽取消息走 C2 语义幂等（B-02）。 */
+    @Autowired(required = false)
+    void setTaskOutboxEnqueuer(com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer) {
+        this.taskOutboxEnqueuer = taskOutboxEnqueuer;
+    }
+
     /** 在对话轮次提交的事务里调用：消息长度合适时写入提取任务和 outbox 消息，返回是否入队。 */
     public boolean queueForUserMessage(String workspaceId, String conversationId, String messageId,
                                        String actorUserId) {
@@ -177,10 +191,22 @@ public class MemoryConversationExtractionService {
                 """, String.class, messageId, workspaceId, conversationId);
         if (contents.isEmpty() || !shouldExtract(contents.get(0))) return false;
         String content = contents.get(0);
-        Integer queued = jdbcTemplate.queryForObject("""
-                select count(*) from task where task_type = ? and target_type = 'CONVERSATION_MESSAGE' and target_id = ?
-                """, Integer.class, TASK_TYPE, messageId);
-        if (queued != null && queued > 0) return false;
+        // 回执驱动的幂等（B-05）：终态回执不重提；RETRY_WAIT 交给恢复扫描重投，
+        // 旧任务失败不能永远挡住恢复；旧数据没有回执时回退到任务表判定
+        if (processingReceipts != null) {
+            var receipts = processingReceipts.load(workspaceId, messageId);
+            if (!receipts.isEmpty()) {
+                var receipt = receipts.get(0);
+                if (receipt.completed() || receipt.terminalFailure()) return false;
+                if (MemoryProcessingReceiptService.STATUS_RETRY_WAIT.equals(receipt.status())) return false;
+                if (receipt.taskId() != null && !receipt.taskId().isBlank()) return false;
+            }
+        } else {
+            Integer queued = jdbcTemplate.queryForObject("""
+                    select count(*) from task where task_type = ? and target_type = 'CONVERSATION_MESSAGE' and target_id = ?
+                    """, Integer.class, TASK_TYPE, messageId);
+            if (queued != null && queued > 0) return false;
+        }
         String taskId = taskService.createTask(workspaceId, TASK_TYPE, "CONVERSATION_MESSAGE", messageId,
                 "QUEUED", "从对话中提取记忆候选");
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -190,10 +216,22 @@ public class MemoryConversationExtractionService {
         payload.put("message_id", messageId);
         payload.put("user_id", actorUserId);
         payload.put("content", queuedContent(content));
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, ?, ?, ?, 'READY')
-                """, Ids.newId(), taskId, topic, messageId, Json.write(objectMapper, payload));
+        if (processingReceipts != null) {
+            processingReceipts.ensurePending(workspaceId, messageId);
+            processingReceipts.bindTask(workspaceId, messageId, taskId);
+        }
+        if (taskOutboxEnqueuer != null) {
+            // 统一入队（B-02/C2）：记忆抽取消息身份 = workspace/message/MEMORY_EXTRACT，
+            // 恢复扫描重投时按回执 delivery_generation 显式递增
+            taskOutboxEnqueuer.enqueue(new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                    workspaceId, taskId, topic, messageId,
+                    "MEMORY_EXTRACTION", messageId, null, "1", "MEMORY_EXTRACT", null, 1, payload));
+        } else {
+            jdbcTemplate.update("""
+                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                    values (?, ?, ?, ?, ?, 'READY')
+                    """, Ids.newId(), taskId, topic, messageId, Json.write(objectMapper, payload));
+        }
         return true;
     }
 
@@ -217,11 +255,69 @@ public class MemoryConversationExtractionService {
      */
     public ExtractionResult extract(String taskId, String workspaceId, String messageId, String userId,
                                     String content) {
+        if (processingReceipts != null) {
+            return extractWithReceipt(taskId, workspaceId, messageId, userId, content);
+        }
         if (alreadyExtracted(workspaceId, messageId)) {
             return resumeExtractedMessage(taskId, workspaceId, messageId, content);
         }
         Extraction extraction = extractPreferences(content, previousAssistant(workspaceId, messageId));
         return persistExtraction(taskId, workspaceId, messageId, userId, extraction, content);
+    }
+
+    /**
+     * 回执驱动的阶段机（B-05）：EXTRACT 阶段先抽取后写信号并推进到 FEEDBACK；
+     * 已抽取完成（含空候选）的重投只补反馈，不重新抽取、不重复 signal。
+     * 终态回执直接确认重复投递。模型调用都在事务外。
+     */
+    private ExtractionResult extractWithReceipt(String taskId, String workspaceId, String messageId,
+                                                String userId, String content) {
+        var receipts = processingReceipts.load(workspaceId, messageId);
+        var receipt = receipts.isEmpty() ? processingReceipts.ensurePending(workspaceId, messageId) : receipts.get(0);
+        if (taskId != null && !taskId.isBlank() && !taskId.equals(receipt.taskId())) {
+            processingReceipts.bindTask(workspaceId, messageId, taskId);
+        }
+        if (receipt.completed()) {
+            return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
+        }
+        if (receipt.terminalFailure()) {
+            return new ExtractionResult(List.of(), "TERMINAL_FAILURE");
+        }
+        if (MemoryProcessingReceiptService.STAGE_FEEDBACK.equals(receipt.stage())) {
+            return resumeFeedbackStage(taskId, workspaceId, messageId, content);
+        }
+        Extraction extraction = extractPreferences(content, previousAssistant(workspaceId, messageId));
+        MemoryApplicationFeedbackService.FollowUpResult followUp =
+                followUp(workspaceId, messageId, extraction, content);
+        return transactionTemplate.execute(status ->
+                persistWithReceipt(taskId, workspaceId, messageId, userId, extraction, followUp));
+    }
+
+    /** 反馈阶段重投：只补反馈判定，不重新抽取。 */
+    private ExtractionResult resumeFeedbackStage(String taskId, String workspaceId, String messageId,
+                                                 String content) {
+        if (applicationFeedback == null) {
+            transactionTemplate.executeWithoutResult(status ->
+                    processingReceipts.markFeedbackNotApplicable(workspaceId, messageId));
+            transactionTemplate.executeWithoutResult(status ->
+                    completeTask(taskId, "反馈服务不可用，本轮只完成抽取", messageId));
+            return new ExtractionResult(List.of(), METHOD_FEEDBACK_RETRY);
+        }
+        boolean retryable = applicationFeedback.recordFollowUp(workspaceId, messageId, content)
+                == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
+        if (retryable) {
+            transactionTemplate.executeWithoutResult(status -> {
+                processingReceipts.scheduleRetry(workspaceId, messageId,
+                        MemoryProcessingReceiptService.STAGE_FEEDBACK, "MEMORY_FEEDBACK_RETRYABLE");
+                markTaskForRetry(taskId);
+            });
+        } else {
+            transactionTemplate.executeWithoutResult(status -> {
+                processingReceipts.markCompleted(workspaceId, messageId);
+                completeTask(taskId, "偏好已提取，本轮补写跟进反馈", messageId);
+            });
+        }
+        return new ExtractionResult(List.of(), METHOD_FEEDBACK_RETRY);
     }
 
     /**
@@ -295,6 +391,43 @@ public class MemoryConversationExtractionService {
         return existing != null && existing > 0;
     }
 
+    /** 回执版本的持久化（B-05）：写信号后先推进 EXTRACT_DONE（空候选同样算完成），
+     * 再按反馈结果完成或安排分阶段重试；抽取失败保持 EXTRACT 阶段等待重试。 */
+    private ExtractionResult persistWithReceipt(String taskId, String workspaceId, String messageId,
+                                                String userId, Extraction extraction,
+                                                MemoryApplicationFeedbackService.FollowUpResult followUp) {
+        if (extraction.retryable()) {
+            processingReceipts.scheduleRetry(workspaceId, messageId,
+                    MemoryProcessingReceiptService.STAGE_EXTRACT, RETRY_PHASE);
+            markTaskForRetry(taskId);
+            return new ExtractionResult(List.of(), extraction.method());
+        }
+        ExtractionResult result = persist(taskId, workspaceId, messageId, userId, extraction, followUp);
+        if ("DUPLICATE_DELIVERY".equals(result.method())) {
+            processingReceipts.markExtractDone(workspaceId, messageId, extraction.method(), List.of());
+            processingReceipts.markCompleted(workspaceId, messageId);
+            return result;
+        }
+        boolean advanced = processingReceipts.markExtractDone(workspaceId, messageId, extraction.method(),
+                result.candidates().stream().map(ExtractedCandidate::candidateId).toList());
+        if (!advanced) {
+            // MEM-03：另一个投递已经把回执推进到 FEEDBACK 阶段，本轮不再重复安排反馈阶段
+            log.info("Memory receipt already advanced past EXTRACT: workspace={}, message={}",
+                    workspaceId, messageId);
+            return result;
+        }
+        boolean feedbackRetryable = followUp == MemoryApplicationFeedbackService.FollowUpResult.RETRYABLE;
+        if (feedbackRetryable) {
+            processingReceipts.scheduleRetry(workspaceId, messageId,
+                    MemoryProcessingReceiptService.STAGE_FEEDBACK, "MEMORY_FEEDBACK_RETRYABLE");
+        } else if (followUp == MemoryApplicationFeedbackService.FollowUpResult.SKIPPED) {
+            processingReceipts.markFeedbackNotApplicable(workspaceId, messageId);
+        } else {
+            processingReceipts.markCompleted(workspaceId, messageId);
+        }
+        return result;
+    }
+
     private ExtractionResult persist(String taskId, String workspaceId, String messageId, String userId,
                                      Extraction extraction,
                                      MemoryApplicationFeedbackService.FollowUpResult followUp) {
@@ -305,6 +438,7 @@ public class MemoryConversationExtractionService {
         List<KnownMemory> known = knownMemories(workspaceId);
         String sessionKey = sessionKey(workspaceId, messageId);
         List<ExtractedCandidate> produced = new ArrayList<>();
+        boolean duplicateDelivery = false;
         int index = 0;
         for (Preference preference : extraction.preferences()) {
             MemorySlots.Assignment assignment = preference.assignment();
@@ -322,7 +456,13 @@ public class MemoryConversationExtractionService {
             if (contradicting != null) {
                 evidenceService.observe(contradicting.id(), sessionKey, "CONTRADICT", band);
             }
-            String signalId = insertSignal(workspaceId, userId, messageId, index++, preference);
+            String signalId = insertSignal(workspaceId, userId, SOURCE_REF_PREFIX + messageId + ":" + index++,
+                    preference);
+            if (signalId == null) {
+                // 并发的重复投递已经写过这条信号，跳过，避免重复候选与重复记忆
+                duplicateDelivery = true;
+                continue;
+            }
             MemoryCandidateResponse candidate = candidateService.buildCandidates(workspaceId, List.of(signalId)).get(0);
             reviewService.projectCandidate(candidateService.findCandidate(workspaceId, candidate.candidateId()), userId);
             evidenceService.recordOrigin(candidate.candidateId(), sessionKey);
@@ -330,6 +470,11 @@ public class MemoryConversationExtractionService {
                     assignment.slot(), assignment.value(), assignment.polarity()));
             produced.add(new ExtractedCandidate(candidate.candidateId(), preference.statement(),
                     sourceType(preference), candidate.reviewStatus()));
+        }
+        if (duplicateDelivery && produced.isEmpty()) {
+            // 全部信号都已存在：这条消息已经抽取过，按重复投递收尾，不重复写候选
+            completeTask(taskId, "记忆候选已提取", messageId);
+            return new ExtractionResult(List.of(), "DUPLICATE_DELIVERY");
         }
         // 跟进反馈的正/负/中性只由模型判断；模型没给出结论时本轮跳过，并把任务标成可重试
         boolean retryable = extraction.retryable()
@@ -440,7 +585,7 @@ public class MemoryConversationExtractionService {
         return normalized;
     }
 
-    private String insertSignal(String workspaceId, String userId, String messageId, int index,
+    private String insertSignal(String workspaceId, String userId, String sourceRef,
                                 Preference preference) {
         String sourceType = sourceType(preference);
         MemoryEvidence.Band band = evidenceBand(preference);
@@ -453,18 +598,91 @@ public class MemoryConversationExtractionService {
                 "interaction".equals(preference.category()) ? statement : List.of(),
                 List.of());
         MemorySlots.Assignment assignment = preference.assignment();
-        String signalId = Ids.newId();
-        jdbcTemplate.update("""
-                insert into memory_signal(
-                    id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
-                    task_neighborhood, compile_hints_json, confidence_score, policy_version,
-                    slot_key, slot_value, polarity, evidence_band
-                ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?, ?)
-                """, signalId, workspaceId, userId, sourceType, SOURCE_REF_PREFIX + messageId + ":" + index,
-                preference.statement(), Json.write(objectMapper, hints),
-                MemoryEvidence.prior(band).mean(), candidatePolicy.version(),
-                assignment.slot(), assignment.value(), assignment.polarity(), band.name());
+        String signalId = derivedSignalId(sourceRef);
+        try {
+            jdbcTemplate.update("""
+                    insert into memory_signal(
+                        id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
+                        task_neighborhood, compile_hints_json, confidence_score, policy_version,
+                        slot_key, slot_value, polarity, evidence_band
+                    ) values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?, ?)
+                    """, signalId, workspaceId, userId, sourceType, sourceRef,
+                    preference.statement(), Json.write(objectMapper, hints),
+                    MemoryEvidence.prior(band).mean(), candidatePolicy.version(),
+                    assignment.slot(), assignment.value(), assignment.polarity(), band.name());
+        } catch (org.springframework.dao.DuplicateKeyException alreadyWritten) {
+            // 并发/重复投递已经写过这条信号：主键冲突即去重，不再生成候选
+            return null;
+        }
         return signalId;
+    }
+
+    /**
+     * MEM-03：信号主键由业务引用派生。同一 (消息, 序号) 或 (产物编辑事件, 序号) 只能有一条信号，
+     * 并发的重复投递在主键上撞车，不依赖「先 count 再 insert」这种有竞态的写法。
+     */
+    static String derivedSignalId(String sourceRef) {
+        return java.util.UUID.nameUUIDFromBytes(
+                ("memory-signal:" + sourceRef).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+    }
+
+    /**
+     * B-08 产物编辑事件的 candidate 阶段：把模型判定的长期偏好写成信号并交给候选门控，
+     * 走与对话抽取完全相同的 signal→candidate→门控链路；ARTIFACT_FEEDBACK 属隐式证据
+     * （band=INFERRED），未晋升前不参与新答案。按 editEventId 幂等，重复重试不重复建信号。
+     */
+    int persistArtifactEditCandidates(String workspaceId, String userId, String editEventId, Extraction extraction) {
+        String sourcePrefix = "artifact-edit:" + editEventId + ":";
+        Integer existing = jdbcTemplate.queryForObject("""
+                select count(*) from memory_signal where workspace_id = ? and source_id like ?
+                """, Integer.class, workspaceId, sourcePrefix + "%");
+        if (existing != null && existing > 0) {
+            return existing;
+        }
+        int index = 0;
+        int created = 0;
+        for (Preference preference : extraction.preferences()) {
+            MemorySlots.Assignment assignment = preference.assignment();
+            String signalId = insertArtifactEditSignal(workspaceId, userId, sourcePrefix + index++, preference, assignment);
+            if (signalId == null) {
+                // MEM-03：同一编辑事件的同一序号已写过信号（并发或重复重试），不再重复建候选
+                continue;
+            }
+            MemoryCandidateResponse candidate = candidateService.buildCandidates(workspaceId, List.of(signalId)).get(0);
+            reviewService.projectCandidate(candidateService.findCandidate(workspaceId, candidate.candidateId()), userId);
+            created++;
+        }
+        return created;
+    }
+
+    private String insertArtifactEditSignal(String workspaceId, String userId, String sourceId,
+                                            Preference preference, MemorySlots.Assignment assignment) {
+        String signalType = "ARTIFACT_FEEDBACK";
+        MemoryEvidence.Band band = MemoryEvidence.bandOf(signalType, !preference.explicit());
+        List<String> statement = List.of(preference.statement());
+        MemorySignalService.MemoryCompileHints hints = new MemorySignalService.MemoryCompileHints(
+                "style".equals(preference.category()) ? statement : List.of(),
+                "structure".equals(preference.category()) ? statement : List.of(),
+                "terminology".equals(preference.category()) ? statement : List.of(),
+                "forbidden".equals(preference.category()) ? statement : List.of(),
+                "interaction".equals(preference.category()) ? statement : List.of(),
+                List.of());
+        String id = derivedSignalId(sourceId);
+        try {
+            jdbcTemplate.update("""
+                    insert into memory_signal(
+                        id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
+                        task_neighborhood, compile_hints_json, confidence_score, policy_version,
+                        slot_key, slot_value, polarity, evidence_band)
+                    values (?, ?, ?, ?, ?, 'PREFERENCE', ?, 'COMMON', ?, ?, ?, ?, ?, ?, ?)
+                    """, id, workspaceId, userId, signalType, sourceId,
+                    preference.statement(), Json.write(objectMapper, hints),
+                    MemoryEvidence.prior(band).mean(), candidatePolicy.version(),
+                    assignment.slot(), assignment.value(), assignment.polarity(), band.name());
+        } catch (org.springframework.dao.DuplicateKeyException alreadyWritten) {
+            return null;
+        }
+        return id;
     }
 
     private List<KnownMemory> knownMemories(String workspaceId) {

@@ -57,7 +57,8 @@ class SourceServiceCacheTest {
                 mock(com.noteweave.task.TaskCommandPort.class),
                 eventPublisher,
                 mock(com.noteweave.conversation.RunReplayRedactionService.class),
-                researchGate);
+                researchGate,
+                mock(SourceCompliancePurgeService.class));
     }
 
     @Test
@@ -81,12 +82,14 @@ class SourceServiceCacheTest {
                     index_status varchar(32) not null,
                     generated_by varchar(80),
                     generated_ref_id varchar(36),
+                    delete_reason varchar(16) default 'USER',
                     updated_at timestamp not null,
                     metadata_json text
                 )
                 """);
         jdbcTemplate.execute("""
                 create table task(
+                    generation int not null default 1,
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
                     task_type varchar(64) not null,
@@ -168,6 +171,7 @@ class SourceServiceCacheTest {
                     status varchar(32) not null,
                     parse_status varchar(32) not null,
                     index_status varchar(32) not null,
+                    delete_reason varchar(16) default 'USER',
                     updated_by varchar(80),
                     updated_at timestamp
                 )
@@ -184,6 +188,7 @@ class SourceServiceCacheTest {
                 """);
         jdbcTemplate.execute("""
                 create table task(
+                    generation int not null default 1,
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
                     target_type varchar(32),
@@ -196,7 +201,7 @@ class SourceServiceCacheTest {
         jdbcTemplate.update("""
                 insert into source values (
                     'source-1', 'workspace-1', 'file-1', 'Source',
-                    'READY', 'PARSED', 'INDEXED', 'SYSTEM:TEST', current_timestamp)
+                    'READY', 'PARSED', 'INDEXED', 'USER', 'SYSTEM:TEST', current_timestamp)
                 """);
         jdbcTemplate.update("""
                 insert into source_snapshot values (

@@ -336,13 +336,37 @@ class SourceFourStagePipelineContractTest {
         assertThat(jdbc.queryForObject("select task_status from task where id = ?", String.class, failed.taskId()))
                 .isEqualTo("FAILED");
 
-        // 超过时限没有回调的转写按超时失败收尾
-        jdbc.update("update source set updated_at = timestamp '2020-01-01 00:00:00' where id = ?", stale.sourceId());
+        // 超过时限没有回调的转写按超时失败收尾。
+        // 本用例的解析服务是手工装配的（直接用端口提交），没有持久提交记录，
+        // 看门狗因此走兼容口径：用 source.updated_at 当锚点。
+        jdbc.update("update source set updated_at = timestamp '2020-01-01 00:00:00' where id = ?",
+                stale.sourceId());
         transcriptionService.failStaleTranscriptions();
         assertThat(jdbc.queryForObject("select parse_status from source where id = ?", String.class, stale.sourceId()))
                 .isEqualTo("FAILED");
         assertThat(jdbc.queryForObject("select error_message from task where id = ?", String.class, stale.taskId()))
                 .contains("SOURCE_TRANSCRIPTION_TIMEOUT");
+    }
+
+    @Test
+    void duplicateTranscriptDeliveryDoesNotOverwriteTheAcceptedText() throws Exception {
+        Fixture fixture = pendingMediaSource("重复回调.m4a", "audio/mp4",
+                "....ftypM4A ".getBytes(StandardCharsets.ISO_8859_1));
+        Pipeline pipeline = pipeline(fakeEmbeddings());
+        pipeline.parse().setTranscriptionPort((request, file) -> { });
+        assertThat(pipeline.parse().parseAndIndexAsyncIfProcessable(
+                fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId())).isTrue();
+        String textKey = SourcePipelineStages.extractedTextKey(
+                fixture.workspaceId(), fixture.sourceId(), fixture.snapshotId());
+
+        assertThat(pipeline.parse().acceptTranscript(fixture.workspaceId(), fixture.sourceId(),
+                fixture.snapshotId(), "第一份稿子", 120.0, 0)).isTrue();
+        // 重复投递：抢不到快照状态就返回 false，而且不能再覆盖已经接受的那份正文
+        assertThat(pipeline.parse().acceptTranscript(fixture.workspaceId(), fixture.sourceId(),
+                fixture.snapshotId(), "第二份稿子", 120.0, 0)).isFalse();
+
+        assertThat(new String(storage.read(SourcePipelineStages.BUCKET_DERIVED, textKey),
+                StandardCharsets.UTF_8)).isEqualTo("第一份稿子");
     }
 
     private org.springframework.test.web.servlet.ResultActions callback(Fixture fixture, Map<String, Object> body)

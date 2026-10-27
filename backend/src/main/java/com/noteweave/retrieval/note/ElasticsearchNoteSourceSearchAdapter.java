@@ -9,6 +9,7 @@ import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import com.noteweave.retrieval.RetrievalChannels;
+import com.noteweave.retrieval.index.RetrievalEmbeddingVersionSource;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
@@ -23,9 +24,20 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "noteweave.elasticsearch.enabled", havingValue = "true", matchIfMissing = true)
 public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPort {
     private final ElasticsearchClient client;
+    private final RetrievalEmbeddingVersionSource embeddingVersions;
 
+    /** 无版本过滤，仅供不涉及向量版本的单元测试；生产装配使用两参构造器。 */
     public ElasticsearchNoteSourceSearchAdapter(ElasticsearchClient client) {
+        this(client, () -> "");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ElasticsearchNoteSourceSearchAdapter(
+            ElasticsearchClient client,
+            RetrievalEmbeddingVersionSource embeddingVersions
+    ) {
         this.client = client;
+        this.embeddingVersions = embeddingVersions;
     }
 
     @Override
@@ -40,7 +52,8 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
                 .queryVector(queryEmbedding)
                 .k(topK)
                 .numCandidates(Math.max(100, topK * 5))
-                .filter(scope(workspaceId))
+                .filter(vectorScope(workspaceId,
+                        embeddingVersions == null ? "" : embeddingVersions.currentEmbeddingVersion()))
                 .build();
         return search(new SearchRequest.Builder()
                 .index(RetrievalIndexNames.alias(ProjectionType.NOTE_SOURCE, workspaceId))
@@ -94,6 +107,21 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
                     .fields(List.of(fields))
                     .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)));
         }
+    }
+
+    /**
+     * IDX-02：向量召回必须限定当前向量版本，换模型后旧向量不参与相似度计算；
+     * 词法召回不加这个过滤，文本匹配与向量版本无关。
+     */
+    Query vectorScope(String workspaceId, String embeddingVersion) {
+        List<Query> filters = new ArrayList<>();
+        filters.add(scope(workspaceId));
+        if (embeddingVersion != null && !embeddingVersion.isBlank()) {
+            filters.add(Query.of(query -> query.term(term -> term
+                    .field("embedding_version")
+                    .value(embeddingVersion))));
+        }
+        return Query.of(query -> query.bool(bool -> bool.filter(filters)));
     }
 
     private Query scope(String workspaceId) {

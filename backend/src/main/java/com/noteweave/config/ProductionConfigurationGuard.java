@@ -79,7 +79,7 @@ public class ProductionConfigurationGuard {
     }
 
     @PostConstruct
-    void validateProductionConfiguration() {
+    public void validateProductionConfiguration() {
         validateEnvironmentAlignment(environment, activeProfiles);
         if (isProduction(environment)) {
             validateKafkaEnabled(kafkaEnabled);
@@ -90,6 +90,16 @@ public class ProductionConfigurationGuard {
                     quotaLocalFallbackEnabled, llmTemplateFallbackEnabled, artifactWorkerBaseUrl,
                     kafkaSecurityProtocol, redisPassword, elasticPassword, kafkaSaslPassword,
                     minioAccessKey, minioEndpoint, elasticScheme);
+            return;
+        }
+        if (isSharedDeployment(environment)) {
+            // SEC-04：staging 也是共享部署，开发默认值与本地降级开关同样不能带上去。
+            // 只跳过证书/HTTPS 这类由接入层终结的传输要求（staging 常把 TLS 放在反代上）。
+            validateKafkaEnabled(kafkaEnabled);
+            validateResearchRateLimitLocalFallback(researchRateLimitLocalFallbackEnabled);
+            validateValues(internalAuthToken, datasourcePassword, minioSecretKey,
+                    artifactCallbackSecret, localUserFallback,
+                    quotaLocalFallbackEnabled, llmTemplateFallbackEnabled);
         }
     }
 
@@ -97,6 +107,13 @@ public class ProductionConfigurationGuard {
         return environment != null
                 && ("production".equalsIgnoreCase(environment.trim())
                 || "prod".equalsIgnoreCase(environment.trim()));
+    }
+
+    /** SEC-04：staging 属于共享部署，加固检查必须生效；只有 local/development/test 才是显式降级。 */
+    public static boolean isSharedDeployment(String environment) {
+        return environment != null
+                && ("staging".equalsIgnoreCase(environment.trim())
+                || "stage".equalsIgnoreCase(environment.trim()));
     }
 
     public static void validateEnvironmentAlignment(String environment, String... activeProfiles) {

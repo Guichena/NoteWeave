@@ -283,6 +283,23 @@ public class ChatService {
                 Instant.now()
         );
         AnswerModeStrategy strategy = answerModeStrategyRegistry.require(mode);
+        // NR21：REPORT/WEB 渠道当前没有实现检索通道——接受后按默认工作台检索是
+        // 静默回退。未实现组合明确拒绝（HTTP 409），支持组合（NONE / WORKSPACE）
+        // 按声明执行；WEB 唯一入口是 AUTO 且不得携带 groundingRefs，同样拒绝。
+        if (retrievalConfig.channels().contains("REPORT") || retrievalConfig.channels().contains("WEB")) {
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "REPORT/WEB 检索通道尚未开放：请使用默认工作台检索（AUTO+WORKSPACE）"
+                            + "或显式 NONE 关闭检索",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        if (!retrievalConfig.groundingRefs().isEmpty()) {
+            // groundingRefs 依赖 REPORT 通道；上一分支已拒绝 REPORT，这里兜底显式报错
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "groundingRefs 依赖尚未开放的 REPORT 检索通道",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
         RetrievalPlan strategyPlan = strategy.plan(context);
         RetrievalPlan plan = "NONE".equals(retrievalConfig.strategy())
                 ? new RetrievalPlan("none-v1", mode, List.of(), strategyPlan.budget())
@@ -299,6 +316,8 @@ public class ChatService {
                     Map.of("retrieval_disabled", "true")
             );
         } else {
+            // NR21：显式声明的来源范围（sourceScope）已进入 AnswerContext.evidenceScope，
+            // 检索计划必须遵守声明范围——旧 sourceScope 兼容路径不得绕过（见 buildAnswerDraft）
             strategyContractValidator.validatePlan(mode, context, plan);
             bundle = unifiedRetrievalOrchestrator.execute(context, plan);
         }

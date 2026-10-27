@@ -28,7 +28,12 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String path = request.getRequestURI();
+        // NR01：与认证过滤器共用规范化路径；分号矩阵参数/编码变体不再能避开授权正则
+        String path = ApiPaths.canonicalPath(request);
+        if (path == null) {
+            throw new com.noteweave.common.BusinessException(
+                    "REQUEST_PATH_INVALID", "请求路径包含非法编码", org.springframework.http.HttpStatus.BAD_REQUEST);
+        }
         String method = request.getMethod();
         Matcher matcher = WORKSPACE_PATH.matcher(path);
         if (matcher.matches()) {
@@ -51,8 +56,30 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
             guard.requireUploadPermission(matcher.group(1), WorkspacePermission.SOURCE_WRITE);
         } else if ((matcher = CHAT_REQUEST_PATH.matcher(path)).matches()) {
             guard.requireChatRequestPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);
+        } else if (!explicitlyPublic(path, method)) {
+            // NR01：默认拒绝。受保护前缀下未登记授权规则的路由不再静默放行；
+            // 新路由必须在上面显式登记资源授权，或确认属于公共端点后加入白名单。
+            throw new com.noteweave.common.BusinessException(
+                    "WORKSPACE_ROUTE_UNAUTHORIZED",
+                    "该接口未登记工作台资源授权，已按默认拒绝处理",
+                    org.springframework.http.HttpStatus.FORBIDDEN);
         }
         return true;
+    }
+
+    /** 显式公共端点：认证入口、工作台创建/列出（任意已认证用户）、只读技能目录、上传格式清单。 */
+    private boolean explicitlyPublic(String path, String method) {
+        boolean read = HttpMethod.GET.matches(method) || HttpMethod.HEAD.matches(method);
+        if (path.startsWith("/api/v2/auth/")) {
+            return true;
+        }
+        if (path.equals("/api/v2/workspaces")) {
+            return read || HttpMethod.POST.matches(method);
+        }
+        if (path.equals("/api/v2/skills")) {
+            return read;
+        }
+        return path.equals("/api/v2/uploads/formats") && read;
     }
 
     private WorkspacePermission workspacePermission(String path, String method) {
@@ -82,6 +109,11 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
         }
         if (path.contains("/memory/signals")) {
             return WorkspacePermission.ANSWER_RUN;
+        }
+        // SEC-05：记忆路由显式登记。此前除 promotions/signals 之外的记忆写接口
+        // 都落到最后的 WORKSPACE_ADMIN 兜底，编辑者按服务层权限能做、按路由权限却被拦。
+        if (path.contains("/memory/")) {
+            return WorkspacePermission.MEMORY_REVIEW;
         }
         if (path.contains("/research-runs") || path.contains("/artifact-jobs")
                 || path.contains("/video-learning-bundles")) {

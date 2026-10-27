@@ -171,6 +171,11 @@ public class QaHybridRetriever {
         List<RetrievedChunk> selected = safeProfile.usesTokenBudget()
                 ? selectWithinTokenBudget(owned, safeProfile)
                 : selectLegacyBundle(owned);
+        // RET-01：门控丢掉候选时必须留下降级信号。否则回答看起来完整、实际少了一批资料，
+        // 用户和前端都无从判断。主链路 QaPassageRetriever 已有同类信号（qa_primary_ownership_rejected）。
+        if (ownershipRejected > 0) {
+            pipelineDegradations.add("qa_hybrid_ownership_rejected");
+        }
         Map<String, Long> measurements = new LinkedHashMap<>();
         measurements.put("vector_candidate_count", (long) vectorHits.size());
         measurements.put("keyword_candidate_count", (long) keywordHits.size());
@@ -181,7 +186,11 @@ public class QaHybridRetriever {
         if (safeProfile.usesTokenBudget()) {
             measurements.put("evidence_token_budget", (long) safeProfile.evidenceTokenBudget());
             measurements.put("selected_token_estimate", selected.stream()
-                    .mapToLong(chunk -> ContextTokenEstimator.estimate(chunk.content())).sum());
+                    .mapToLong(chunk -> com.noteweave.conversation.TokenCounter
+                            .estimate(chunk.content(), null).count())
+                    .sum());
+            // 估算口径经 TokenCounter 统一入口（method/tokenizerVersion 见 TokenEstimate）
+
         }
         measurements.put("mysql_fallback_used", 0L);
         measurements.put("query_expansion_count", (long) expansions.size());
@@ -215,7 +224,8 @@ public class QaHybridRetriever {
                 item -> item.hit().chunkId(),
                 item -> item.hit().content(),
                 item -> item.ranked().rerankScore(),
-                item -> ContextTokenEstimator.estimate(trimmedEnrich(item, Set.of())),
+                item -> com.noteweave.conversation.TokenCounter
+                        .estimate(trimmedEnrich(item, Set.of()), null).count(),
                 profile.evidenceTokenBudget(),
                 profile.maxEvidence());
         Set<String> pickedIds = picked.stream().map(item -> item.hit().chunkId())

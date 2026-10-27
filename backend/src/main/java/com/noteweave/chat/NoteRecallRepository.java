@@ -283,9 +283,11 @@ public class NoteRecallRepository {
         if (generatedSourceGate == null) {
             return sources;
         }
+        // NR03：Note 召回候选与 QA 取证同一 C1 批量资格规则（传递依赖闭包 + 合规撤销）
+        java.util.Set<String> readable = generatedSourceGate.readableSourceIds(
+                workspaceId, sources.stream().map(CandidateSource::sourceId).toList());
         return sources.stream()
-                .filter(source -> generatedSourceGate.visible(
-                        workspaceId, source.generatedBy(), source.generatedRefId()))
+                .filter(source -> readable.contains(source.sourceId()))
                 .toList();
     }
 

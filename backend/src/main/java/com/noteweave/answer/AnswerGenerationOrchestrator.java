@@ -144,23 +144,47 @@ public class AnswerGenerationOrchestrator {
             return;
         }
 
-        answerRunService.advanceEventSequence(
-                run.workspaceId(), run.runId(), runEventMux.currentSequence(run.runId()));
-        answerRunService.persistCitationEvents(run.workspaceId(), run.runId(), material.citationLines());
-        AnswerRunService.CompletionOutcome completionOutcome = answerRunService.complete(
-                run.workspaceId(), run.runId(), streamOwner, streamed == null ? "" : streamed, null);
-        if (completionOutcome == AnswerRunService.CompletionOutcome.CANCELLED) {
-            persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
-            return;
+        try {
+            answerRunService.advanceEventSequence(
+                    run.workspaceId(), run.runId(), runEventMux.currentSequence(run.runId()));
+            answerRunService.persistCitationEvents(run.workspaceId(), run.runId(), material.citationLines());
+            AnswerRunService.CompletionOutcome completionOutcome = answerRunService.complete(
+                    run.workspaceId(), run.runId(), streamOwner, streamed == null ? "" : streamed, null);
+            if (completionOutcome == AnswerRunService.CompletionOutcome.SUPERSEDED) {
+                // 租约已被别的流接管：收尾归当前持有者，本流转去跟随，不写任何状态
+                followExistingGeneration(material, run, consumer);
+                return;
+            }
+            if (completionOutcome == AnswerRunService.CompletionOutcome.CANCELLED) {
+                persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
+                return;
+            }
+            if (completionOutcome == AnswerRunService.CompletionOutcome.FAILED) {
+                AnswerLiveEvent failed = publishTerminal(run, "answer.failed", "FAILED");
+                emitTerminal(consumer, fallbackSequence, failed, "answer.failed", "回答生成失败");
+                return;
+            }
+            cancellationRegistry.clear(run.runId());
+            AnswerLiveEvent terminal = publishTerminal(run, "answer.completed", material.messageId());
+            emitTerminal(consumer, fallbackSequence, terminal, "answer.completed", material.messageId());
+        } catch (RuntimeException ex) {
+            // ANS-01：收尾失败必须显式落 FAILED 并发出终态事件，
+            // 不能让运行停在 GENERATING、把客户端晾在打开的流上。
+            failFinalization(run, streamOwner, ex);
+            AnswerLiveEvent failed = publishTerminal(run, "answer.failed", "ANSWER_FINALIZE_FAILED");
+            emitTerminal(consumer, fallbackSequence, failed, "answer.failed",
+                    "回答收尾失败：" + (ex.getMessage() == null ? "" : ex.getMessage()));
         }
-        if (completionOutcome == AnswerRunService.CompletionOutcome.FAILED) {
-            AnswerLiveEvent terminal = publishTerminal(run, "answer.failed", "FAILED");
-            emitTerminal(consumer, fallbackSequence, terminal, "answer.failed", "回答生成失败");
-            return;
+    }
+
+    /** 收尾异常落库；运行已经是终态时以既有状态为准，不覆盖也不上抛。 */
+    private void failFinalization(AnswerRunRef run, String streamOwner, RuntimeException failure) {
+        try {
+            answerRunService.fail(run.workspaceId(), run.runId(), streamOwner,
+                    "ANSWER_FINALIZE_FAILED", failure.getMessage());
+        } catch (RuntimeException ignored) {
+            log.warn("回答收尾失败时无法标记运行失败: run={}, cause={}", run.runId(), failure.toString());
         }
-        cancellationRegistry.clear(run.runId());
-        AnswerLiveEvent terminal = publishTerminal(run, "answer.completed", material.messageId());
-        emitTerminal(consumer, fallbackSequence, terminal, "answer.completed", material.messageId());
     }
 
     public void streamRun(String workspaceId, String runId, Consumer<AnswerDeliveryEvent> consumer) {

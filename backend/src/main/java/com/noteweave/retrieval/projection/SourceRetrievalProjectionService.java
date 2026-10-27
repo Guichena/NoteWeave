@@ -313,7 +313,24 @@ public class SourceRetrievalProjectionService {
                 RetrievalIndexNames.physical(ProjectionType.QA_CHUNK, QA_SCHEMA_VERSION, version, workspaceId));
         String noteIndex = indexManager.resolveWriteIndex(RetrievalIndexNames.alias(ProjectionType.NOTE_SOURCE, workspaceId),
                 RetrievalIndexNames.physical(ProjectionType.NOTE_SOURCE, NOTE_SCHEMA_VERSION, version, workspaceId));
+        // 别名仍指向旧版本索引时拒绝写入：把新版本向量写进旧索引会让同一索引混两个向量空间。
+        requireIndexVersion(qaIndex, version);
+        requireIndexVersion(noteIndex, version);
         return projectSnapshotBatches(workspaceId, sourceId, snapshotId, batches, qaIndex, noteIndex);
+    }
+
+    /**
+     * IDX-02：写入前校验目标索引承载的向量版本。别名仍指向旧版本索引时，
+     * 把新版本向量写进去会让同一个索引里混两个空间，kNN 结果无法解释；
+     * 这里直接拒绝，由重建流程创建新索引并切换别名。
+     */
+    static void requireIndexVersion(String indexName, String embeddingVersion) {
+        if (RetrievalIndexNames.matchesEmbeddingVersion(indexName, embeddingVersion)) {
+            return;
+        }
+        throw new BusinessException("RETRIEVAL_INDEX_VERSION_MISMATCH",
+                "目标索引 " + indexName + " 与当前向量版本 " + embeddingVersion
+                        + " 不一致，请先重建索引并切换别名");
     }
 
     /** 重建目标由调用方指定，仍沿用同样的批次资格与完整性检查。 */

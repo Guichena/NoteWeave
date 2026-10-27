@@ -158,6 +158,7 @@ class SourceParseProjectionDisabledTest {
                 """);
         jdbcTemplate.execute("""
                 create table task (
+                    generation int not null default 1,
                     id varchar(64) primary key,
                     task_type varchar(64) not null,
                     target_id varchar(64),

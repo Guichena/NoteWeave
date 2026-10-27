@@ -168,6 +168,8 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
                 builder.append("（引用的来源暂不可用，笔记内容仅供参考）");
             } else if ("stale-source-updated".equals(freshnessStatus)) {
                 builder.append("（来源已更新，以当前原文为准）");
+            } else if ("source-compliance-revoked".equals(freshnessStatus)) {
+                builder.append("（引用的来源因合规要求已撤销，不可引用）");
             }
             builder.append("\n");
         }

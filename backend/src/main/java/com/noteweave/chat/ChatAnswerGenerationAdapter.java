@@ -127,7 +127,7 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
         String streamed = sessionId == null
                 ? chatLlmClient.streamChat(systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken)
                 : chatLlmClient.streamChatInSession(
-                        sessionId, systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken);
+                        sessionId, workspaceId, systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken);
         String generated = streamed == null || streamed.isEmpty() ? streamedBuffer[0] : streamed;
         if (generated == null || generated.isBlank()) {
             throw new BusinessException(
@@ -167,9 +167,23 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
 
     @Override
     public void persistContent(String workspaceId, String messageId, String content) {
+        // NR02：生成完成写回不得复活已删除消息——删除后消息正文保持清空，晚到结果只进 revision 审计
+        // CHAT-01：正文与 content_hash 必须同时写。此前只改正文，
+        // 消息带着草稿的哈希进入上下文投影与摘要，正文与哈希从此对不上。
         jdbcTemplate.update("""
-                update conversation_message set content = ? where workspace_id = ? and id = ?
-                """, content, workspaceId, messageId);
+                update conversation_message set content = ?, content_hash = ?
+                where workspace_id = ? and id = ? and context_status <> 'DELETED'
+                """, content, sha256(content), workspaceId, messageId);
+    }
+
+    /** 与 ConversationTurnModule、ConversationResearchProjectionService 使用同一套哈希。 */
+    private String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest((value == null ? "" : value).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     @Override
@@ -181,21 +195,30 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     }
 
     private List<String> citationLines(String workspaceId, String messageId) {
-        return jdbcTemplate.query("""
+        List<String[]> rows = jdbcTemplate.query("""
                 select c.title, c.quote_text, coalesce(s.generated_by, '') as generated_by,
-                       coalesce(s.generated_ref_id, '') as generated_ref_id
+                       coalesce(s.generated_ref_id, '') as generated_ref_id, c.source_id
                 from message_citation mc
                 join citation c on c.id = mc.citation_id
                 left join source s on s.id = c.source_id
                 where c.workspace_id = ? and mc.message_id = ?
                 order by mc.sort_order asc
-                """, (rs, rowNum) -> {
-            String generatedBy = rs.getString("generated_by");
-            String generatedRefId = rs.getString("generated_ref_id");
-            generatedSourceGate.requireReadable(workspaceId, generatedBy, generatedRefId);
-            return displayTitle(rs.getString("title"), generatedBy, generatedRefId)
-                    + " | " + rs.getString("quote_text");
+                """, (rs, rowNum) -> new String[] {
+                rs.getString("title"), rs.getString("quote_text"),
+                rs.getString("generated_by"), rs.getString("generated_ref_id"),
+                rs.getString("source_id")
         }, workspaceId, messageId);
+        if (rows.isEmpty()) {
+            return List.of();
+        }
+        // NR03：最终取证遵守与检索补全同一 C1 批量资格规则；撤销来源的引用行不进入生成上下文
+        java.util.Set<String> readable = generatedSourceGate == null ? null : generatedSourceGate.readableSourceIds(
+                workspaceId, rows.stream().map(row -> row[4]).filter(id -> id != null && !id.isBlank()).toList());
+        return rows.stream()
+                .filter(row -> readable == null || row[4] == null || row[4].isBlank()
+                        || readable.contains(row[4]))
+                .map(row -> displayTitle(row[0], row[2], row[3]) + " | " + row[1])
+                .toList();
     }
 
     private String displayTitle(String title, String generatedBy, String generatedRefId) {

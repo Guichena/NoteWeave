@@ -96,13 +96,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
 
         recovery.recover(record, failure);
 
-        verify(finalizer).finalizeFailed(
-                "workspace-1",
-                "source-1",
-                "snapshot-1",
-                "task-1",
-                "EMBEDDING_PROVIDER_DISABLED"
-        );
+        verify(finalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"), org.mockito.ArgumentMatchers.eq("source-1"),
+                org.mockito.ArgumentMatchers.eq("snapshot-1"), org.mockito.ArgumentMatchers.eq("task-1"),
+                org.mockito.ArgumentMatchers.eq("EMBEDDING_PROVIDER_DISABLED"), org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -431,8 +427,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
         listener.onRequested(new SynchronousRetrievalProjectionRequested(
                 "outbox-1", "task-1", "workspace-1", "source-1", "snapshot-1"));
 
-        verify(finalizer).finalizeFailed(
-                "workspace-1", "source-1", "snapshot-1", "task-1", "RETRIEVAL_PROJECTION_FAILED");
+        // 同步投影监听走无围栏的立即收尾入口（五参重载，内部以 null fence 委托）
+        verify(finalizer).finalizeFailed("workspace-1", "source-1",
+                "snapshot-1", "task-1", "RETRIEVAL_PROJECTION_FAILED");
         verify(jdbcTemplate).update(
                 anyString(),
                 eq("RETRIEVAL_PROJECTION_FAILED"),

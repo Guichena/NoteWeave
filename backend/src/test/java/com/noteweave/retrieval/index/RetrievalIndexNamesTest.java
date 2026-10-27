@@ -30,4 +30,20 @@ class RetrievalIndexNamesTest {
                 .isNotEqualTo(RetrievalIndexNames.physical(
                         ProjectionType.QA_CHUNK, "qa-v1", "embed-model:1024", "workspace"));
     }
+
+    @Test
+    void recognizesTheEmbeddingVersionCarriedByAnIndexName() {
+        String current = RetrievalIndexNames.physical(
+                ProjectionType.QA_CHUNK, "qa-v1", "embed-model:1024", "workspace");
+
+        assertThat(RetrievalIndexNames.matchesEmbeddingVersion(current, "embed-model:1024")).isTrue();
+        // 同一来源换了模型后，别名指向的旧索引不再承载当前版本
+        assertThat(RetrievalIndexNames.matchesEmbeddingVersion(current, "embed-model:1536")).isFalse();
+        // 前缀相同不算匹配：_e 段后必须紧跟版本分隔符
+        assertThat(RetrievalIndexNames.matchesEmbeddingVersion(current, "embed-model:10")).isFalse();
+        // 旧命名没有版本段，保持兼容
+        assertThat(RetrievalIndexNames.matchesEmbeddingVersion(
+                RetrievalIndexNames.physical(ProjectionType.QA_CHUNK, "1.0", "workspace"), "any"))
+                .isTrue();
+    }
 }

@@ -29,6 +29,16 @@ public class SourceTranscriptionSubmissionService {
     private final TransactionTemplate transactions;
     private final int batchSize;
     private final long leaseSeconds;
+    private SourceParseFailureFinalizer failureFinalizer;
+
+    /**
+     * TR-02：提交连续失败到上限时要把解析任务一起收尾，否则资料会一直停在转写中，
+     * 直到看门狗按 480 分钟超时才结束。生产装配必然存在；直连构造的测试可跳过。
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setFailureFinalizer(SourceParseFailureFinalizer failureFinalizer) {
+        this.failureFinalizer = failureFinalizer;
+    }
 
     public SourceTranscriptionSubmissionService(JdbcTemplate jdbc, ObjectStorage storage,
             SourceTranscriptionPort port, PlatformTransactionManager transactionManager,
@@ -54,8 +64,9 @@ public class SourceTranscriptionSubmissionService {
         }
         jdbc.update("""
                 insert into source_transcription_submission(snapshot_id, task_id, workspace_id, source_id,
-                    object_key, sha256, file_name, mime_type, status, next_retry_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)
+                    object_key, sha256, file_name, mime_type, status, next_retry_at,
+                    stage_started_at, heartbeat_at)
+                values (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, current_timestamp, current_timestamp)
                 """, request.snapshotId(), request.taskId(), request.workspaceId(), request.sourceId(),
                 objectKey, sha256, request.fileName(), request.mimeType(), Timestamp.from(Instant.now().minusSeconds(1)));
     }
@@ -83,7 +94,8 @@ public class SourceTranscriptionSubmissionService {
                 rs.getString("source_id"), rs.getString("snapshot_id"), rs.getString("file_name"),
                 rs.getString("mime_type"), rs.getString("task_id")), rs.getString("object_key"),
                 rs.getString("sha256"), rs.getInt("attempt_count"), rs.getString("status"),
-                rs.getTimestamp("next_retry_at"), rs.getTimestamp("lease_until"), null),
+                rs.getTimestamp("next_retry_at"), rs.getTimestamp("lease_until"), null,
+                rs.getInt("max_attempts")),
                 key.snapshotId(), key.taskId());
         if (rows.isEmpty()) return null;
         Submission row = rows.get(0);
@@ -106,7 +118,7 @@ public class SourceTranscriptionSubmissionService {
                 where snapshot_id = ? and task_id = ?
                 """, token, Timestamp.from(now.plusSeconds(leaseSeconds)), key.snapshotId(), key.taskId());
         return new Submission(row.request(), row.objectKey(), row.sha256(), row.attempts() + 1,
-                "SUBMITTING", row.nextRetryAt(), row.leaseUntil(), token);
+                "SUBMITTING", row.nextRetryAt(), row.leaseUntil(), token, row.maxAttempts());
     }
 
     private boolean current(Submission row) {
@@ -150,6 +162,14 @@ public class SourceTranscriptionSubmissionService {
         } catch (Exception exception) {
             String code = exception instanceof BusinessException business ? business.code()
                     : "SOURCE_TRANSCRIPTION_SUBMIT_FAILED";
+            if (row.attempts() >= attemptCap(row)) {
+                // TR-02：到上限就进终态，不再按退避节奏反复下载原件
+                finish(row, "FAILED", code, 0);
+                log.error("转写提交连续失败，已转入终态：snapshotId={}, attempts={}, code={}",
+                        row.request().snapshotId(), row.attempts(), code);
+                failExhausted(row, code);
+                return;
+            }
             long delay = Math.min(300L, 5L << Math.min(6, Math.max(0, row.attempts() - 1)));
             // 队列和临时故障都使用有限退避；整体等待仍受既有转写超时检查限制。
             delay = Math.min(300L, delay + ThreadLocalRandom.current().nextLong(Math.max(1, delay / 5)));
@@ -159,6 +179,24 @@ public class SourceTranscriptionSubmissionService {
             if (file != null) {
                 try { Files.deleteIfExists(file); } catch (java.io.IOException ignored) { }
             }
+        }
+    }
+
+    /** 单条提交允许的尝试次数；历史行或没有该列时退回默认值。 */
+    private int attemptCap(Submission row) {
+        return row.maxAttempts() > 0 ? row.maxAttempts() : 8;
+    }
+
+    /** 提交已经放弃：把解析任务一起收尾，别让资料停到看门狗超时才结束。 */
+    private void failExhausted(Submission row, String code) {
+        if (failureFinalizer == null) return;
+        try {
+            failureFinalizer.finalizeProcessingFailed(row.request().taskId(), row.request().workspaceId(),
+                    row.request().sourceId(), row.request().snapshotId(),
+                    "SOURCE_TRANSCRIPTION_SUBMIT_EXHAUSTED",
+                    "转写提交连续失败 " + row.attempts() + " 次，已停止重试（" + code + "）", true);
+        } catch (RuntimeException exception) {
+            log.warn("转写提交终态收尾失败：snapshotId={}", row.request().snapshotId(), exception);
         }
     }
 
@@ -197,5 +235,6 @@ public class SourceTranscriptionSubmissionService {
 
     private record Key(String snapshotId, String taskId) { }
     private record Submission(SourceTranscriptionPort.Request request, String objectKey, String sha256,
-            int attempts, String status, Timestamp nextRetryAt, Timestamp leaseUntil, String token) { }
+            int attempts, String status, Timestamp nextRetryAt, Timestamp leaseUntil, String token,
+            int maxAttempts) { }
 }

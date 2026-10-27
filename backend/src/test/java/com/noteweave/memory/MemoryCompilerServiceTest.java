@@ -297,7 +297,9 @@ class MemoryCompilerServiceTest {
                     display_text clob not null,
                     status varchar(32) not null,
                     valid_from timestamp not null,
-                    valid_until timestamp
+                    valid_until timestamp,
+                    provenance_type varchar(64),
+                    provenance_ref varchar(190)
                 )
                 """);
     }

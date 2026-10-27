@@ -211,6 +211,58 @@ class KafkaTaskConsumerTest {
                                 && request.contentHash().matches("[0-9a-f]{64}")));
     }
 
+    @Test
+    void wikiIngestMissingFieldsShouldRejectInsteadOfSilentAck() {
+        // AU-008：缺字段载荷必须外抛走重试/DLT，不允许静默确认后消息消失
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.wiki.ingest", 0, 11L, "task-1",
+                "{\"taskId\":\"task-1\",\"workspaceId\":\"workspace-1\"}"
+        );
+
+        assertThatThrownBy(() -> consumer.onWikiIngest(record))
+                .isInstanceOf(IllegalStateException.class)
+                .hasRootCauseInstanceOf(IllegalArgumentException.class)
+                .hasRootCauseMessage("kafka payload missing sourceId");
+    }
+
+    @Test
+    void artifactEditFragmentsAreExtractedAsReadableTextWithoutDigestNoise() {
+        // AU-002：Fragment 对象列表只取 before/afterExcerpt，不带 SHA-256 摘要与标志噪声
+        com.noteweave.memory.MemoryArtifactEditService editService =
+                mock(com.noteweave.memory.MemoryArtifactEditService.class);
+        KafkaTaskConsumer editConsumer = new KafkaTaskConsumer(
+                sourceParseService, wikiIngestService, taskService, new ObjectMapper());
+        editConsumer.setArtifactEditService(editService);
+        ConsumerRecord<String, String> record = new ConsumerRecord<>(
+                "noteweave.artifact.edit", 0, 12L, "workspace-1", """
+                {"editEventId":"evt-1","workspaceId":"workspace-1",
+                 "artifactVersionId":"v-2","baseVersionId":"v-1","originTaskId":"t-1",
+                 "beforeDigest":"d1","afterDigest":"d2","actingUserId":"u-1","schemaVersion":2,
+                 "changedSectionIds":["s-1"],
+                 "diffStats":{"changedChars":3,"totalChars":10,"algorithm":"line-diff-v2"},
+                 "changedFragments":[
+                   {"sectionId":"s-1","beforeExcerpt":"旧正文摘录","afterExcerpt":"新正文摘录",
+                    "beforeDigest":"aaaa1111","afterDigest":"bbbb2222",
+                    "beforeTruncated":false,"afterTruncated":true,
+                    "beforeChars":20,"afterChars":8}]}
+                """);
+
+        editConsumer.onArtifactEdit(record);
+
+        ArgumentCaptor<com.noteweave.memory.MemoryArtifactEditService.EditEvent> captured =
+                ArgumentCaptor.forClass(com.noteweave.memory.MemoryArtifactEditService.EditEvent.class);
+        verify(editService).handleArtifactEdit(captured.capture());
+        java.util.List<String> fragments = captured.getValue().diffFragments();
+        org.assertj.core.api.Assertions.assertThat(fragments).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(fragments.get(0))
+                .contains("[s-1]")
+                .contains("旧正文摘录")
+                .contains("新正文摘录")
+                .doesNotContain("aaaa1111")
+                .doesNotContain("bbbb2222")
+                .doesNotContain("Truncated");
+    }
+
     private ConsumerRecord<String, String> sourceParseRecord(String taskId) {
         String taskJson = taskId == null ? "null" : "\"" + taskId + "\"";
         return new ConsumerRecord<>(

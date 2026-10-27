@@ -88,6 +88,25 @@ class InternalServiceAuthContractTest {
     }
 
     @Test
+    void encodedOrMatrixInternalPathsShouldNotBypassAuthFilter() throws Exception {
+        // 编码变体：/%69nternal 与 /internal 等价，不能跳过内部鉴权
+        mockMvc.perform(get(java.net.URI.create("/%69nternal/worker/artifact-outbox/metrics")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INTERNAL_AUTH_REQUIRED"));
+
+        // 矩阵参数变体：/internal;scope=worker 等价于 /internal
+        mockMvc.perform(get(java.net.URI.create("/internal;scope=worker/worker/artifact-outbox/metrics")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("INTERNAL_AUTH_REQUIRED"));
+
+        // 携带正确 token 时按规范化路径正常路由
+        mockMvc.perform(get(java.net.URI.create("/internal;scope=worker/worker/artifact-outbox/metrics"))
+                        .header(InternalServiceAuthFilter.HEADER_NAME, "test-internal-secret"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
     void suppliedCorrelationIdShouldBePreservedAcrossResponseAndApiEnvelope() throws Exception {
         mockMvc.perform(get("/api/v2/skills").header("X-Correlation-ID", "contract-correlation-1"))
                 .andExpect(status().isOk())

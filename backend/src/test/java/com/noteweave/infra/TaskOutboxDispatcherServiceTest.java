@@ -46,7 +46,17 @@ class TaskOutboxDispatcherServiceTest {
                     message_key varchar(160) not null, payload_json clob not null, status varchar(32) not null,
                     attempt_count int not null default 0, last_error varchar(1000), claimed_at timestamp,
                     next_attempt_at timestamp, lease_owner varchar(128), lease_until timestamp,
-                    dead_lettered_at timestamp, sent_at timestamp, created_at timestamp default current_timestamp
+                    dead_lettered_at timestamp, sent_at timestamp, created_at timestamp default current_timestamp,
+                    semantic_key varchar(64), delivery_generation int not null default 1, payload_digest varchar(64)
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table task_outbox_redrive_audit (
+                    id varchar(36) primary key, outbox_id varchar(36) not null, workspace_id varchar(36),
+                    actor varchar(128) not null, reason varchar(500),
+                    old_delivery_generation int not null, new_delivery_generation int not null,
+                    result varchar(32) not null, detail varchar(500),
+                    created_at timestamp default current_timestamp
                 )
                 """);
         jdbcTemplate.execute("""
@@ -68,7 +78,8 @@ class TaskOutboxDispatcherServiceTest {
                 create table source_embedding_batch (
                     id varchar(36) primary key, source_snapshot_id varchar(36) not null, task_id varchar(36),
                     batch_no int not null default 0, status varchar(32) not null,
-                    lease_token varchar(64), lease_until timestamp, updated_at timestamp
+                    lease_token varchar(64), lease_until timestamp, updated_at timestamp,
+                    batch_version varchar(64)
                 )
                 """);
         kafkaTemplate = mock(KafkaTemplate.class);
@@ -129,8 +140,11 @@ class TaskOutboxDispatcherServiceTest {
         dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
 
         assertThat(status("outbox-embed")).isEqualTo("DEAD_LETTER");
-        verify(projectionFinalizer).finalizeFailed(
-                "workspace-1", "source-1", "snapshot-1", "task-embed", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-embed"),
+                org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
         verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
     }
 
@@ -147,8 +161,11 @@ class TaskOutboxDispatcherServiceTest {
         dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
 
         assertThat(status("outbox-index")).isEqualTo("DEAD_LETTER");
-        verify(projectionFinalizer).finalizeFailed(
-                "workspace-1", "source-1", "snapshot-1", "task-index", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-index"),
+                org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
         verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
     }
 
@@ -157,7 +174,8 @@ class TaskOutboxDispatcherServiceTest {
         TaskService taskService = mock(TaskService.class);
         SourceRetrievalProjectionFinalizer projectionFinalizer = mock(SourceRetrievalProjectionFinalizer.class);
         doThrow(new IllegalStateException("snapshot is not awaiting failure finalization")).when(projectionFinalizer)
-                .finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+                .finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any());
         insertOutbox("outbox-embed", "task-embed", 4, SourcePipelineStages.TOPIC_EMBED, embedPayload());
         failEverySend();
 
@@ -182,8 +200,11 @@ class TaskOutboxDispatcherServiceTest {
         dispatcher(new SimpleMeterRegistry(), taskService, projectionFinalizer).dispatchReadyMessages();
 
         assertThat(status("outbox-custom-embed")).isEqualTo("DEAD_LETTER");
-        verify(projectionFinalizer).finalizeFailed(
-                "workspace-1", "source-1", "snapshot-1", "task-embed", "OUTBOX_DISPATCH_EXHAUSTED");
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-embed"),
+                org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
         verify(taskService, never()).failTask(anyString(), anyString(), anyString(), anyString(), anyBoolean());
     }
 
@@ -232,7 +253,8 @@ class TaskOutboxDispatcherServiceTest {
         assertThat(status("outbox-wiki")).isEqualTo("DEAD_LETTER");
         verify(taskService).failTask("task-wiki", "OUTBOX_DEAD_LETTER",
                 "Kafka Outbox 投递耗尽，已进入死信", "OUTBOX_DISPATCH_EXHAUSTED", true);
-        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -345,9 +367,11 @@ class TaskOutboxDispatcherServiceTest {
         seedSnapshot("snapshot-1", "PARSED", "INDEXED", SourcePipelineStages.STAGE_READY, 0, false);
         TaskService taskService = mock(TaskService.class);
 
-        redrive("outbox-parse-stale", taskService);
-
-        assertThat(status("outbox-parse-stale")).isEqualTo("READY");
+        // B-03：非失败态资料的重驱被明确拒绝，死信与状态保留，不静默复位
+        assertThatCode(() -> redrive("outbox-parse-stale", taskService))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("不能重驱");
+        assertThat(status("outbox-parse-stale")).isEqualTo("DEAD_LETTER");
         java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
         assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
         assertThat(snapshot.get("index_status")).isEqualTo("INDEXED");
@@ -356,7 +380,7 @@ class TaskOutboxDispatcherServiceTest {
         assertThat(source.get("status")).isEqualTo("READY");
         assertThat(source.get("parse_status")).isEqualTo("PARSED");
         assertThat(source.get("index_status")).isEqualTo("INDEXED");
-        verify(taskService).redriveTask("task-1", false);
+        verify(taskService, never()).redriveTask("task-1", false);
     }
 
     /** 切片死信重驱同理：快照已经切片完成（PARSED）时不再复位到 CHUNKING。 */
@@ -369,7 +393,10 @@ class TaskOutboxDispatcherServiceTest {
         seedSnapshot("snapshot-1", "PARSED", "INDEXED", SourcePipelineStages.STAGE_READY, 0, false);
         TaskService taskService = mock(TaskService.class);
 
-        redrive("outbox-chunk-stale", taskService);
+        assertThatCode(() -> redrive("outbox-chunk-stale", taskService))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("不能重驱");
+        assertThat(status("outbox-chunk-stale")).isEqualTo("DEAD_LETTER");
 
         java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
         assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
@@ -390,9 +417,10 @@ class TaskOutboxDispatcherServiceTest {
         seedBatch("batch-1", "COMPLETED", "lease-1");
         TaskService taskService = mock(TaskService.class);
 
-        redrive("outbox-index-stale", taskService);
-
-        assertThat(status("outbox-index-stale")).isEqualTo("READY");
+        assertThatCode(() -> redrive("outbox-index-stale", taskService))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("不能重驱");
+        assertThat(status("outbox-index-stale")).isEqualTo("DEAD_LETTER");
         java.util.Map<String, Object> snapshot = snapshot("snapshot-1");
         assertThat(snapshot.get("parse_status")).isEqualTo("PARSED");
         assertThat(snapshot.get("index_status")).isEqualTo("INDEXED");
@@ -403,7 +431,7 @@ class TaskOutboxDispatcherServiceTest {
         java.util.Map<String, Object> batch = batch("batch-1");
         assertThat(batch.get("status")).isEqualTo("COMPLETED");
         assertThat(batch.get("lease_token")).isEqualTo("lease-1");
-        verify(taskService).redriveTask("task-1", false);
+        verify(taskService, never()).redriveTask("task-1", false);
     }
 
     @Test
@@ -427,10 +455,55 @@ class TaskOutboxDispatcherServiceTest {
         seedSnapshot("snapshot-1", "DELETED", "DELETED", null, 0, false);
         TaskService taskService = mock(TaskService.class);
 
-        redrive("outbox-deleted", taskService);
-
+        // B-03：资料已删除，重驱按过期拒绝，死信保留
+        assertThatCode(() -> redrive("outbox-deleted", taskService))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("已删除");
+        assertThat(status("outbox-deleted")).isEqualTo("DEAD_LETTER");
         assertThat(snapshot("snapshot-1").get("parse_status")).isEqualTo("DELETED");
         assertThat(source().get("status")).isEqualTo("DELETED");
+    }
+
+    /** FB-01 v2：系统中流重驱不做失败态前置校验、不复位任务/流水线（切片重跑场景）。 */
+    @Test
+    void systemMessageRedriveSucceedsWhilePipelineIsMidFlight() {
+        insertDeadLetter("outbox-mid", "task-1", SourcePipelineStages.TOPIC_EMBED, """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","sourceSnapshotId":"snapshot-1"}
+                """);
+        seedSource("PROCESSING", "PENDING", "PENDING");
+        seedSnapshot("snapshot-1", "PENDING", "PENDING", SourcePipelineStages.STAGE_CHUNKING, 0, false);
+        TaskService taskService = mock(TaskService.class);
+
+        var outcome = new TaskOutboxDispatcherService(jdbcTemplate, kafkaTemplate, properties, taskService)
+                .redriveMessage("outbox-mid", "SYSTEM:PIPELINE_RECHUNK", "切片重跑后重驱向量化初始化消息");
+
+        assertThat(status("outbox-mid")).isEqualTo("READY");
+        assertThat(jdbcTemplate.queryForObject(
+                "select delivery_generation from task_outbox where id = 'outbox-mid'",
+                Integer.class)).isEqualTo(outcome.newDeliveryGeneration());
+        // 中流重驱只换消息代次：不复位任务、不改快照阶段
+        verify(taskService, never()).redriveTask(anyString(), anyBoolean());
+        assertThat(snapshot("snapshot-1").get("processing_stage")).isEqualTo(SourcePipelineStages.STAGE_CHUNKING);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from task_outbox_redrive_audit where outbox_id = 'outbox-mid'",
+                Integer.class)).isEqualTo(1);
+    }
+
+    /** 对照：人工重驱在同一中流状态下仍被失败态前置拒绝。 */
+    @Test
+    void adminRedriveStillRequiresFailedPipelineState() {
+        insertDeadLetter("outbox-mid2", "task-1", SourcePipelineStages.TOPIC_EMBED, """
+                {"taskId":"task-1","workspaceId":"workspace-1","sourceId":"source-1","sourceSnapshotId":"snapshot-1"}
+                """);
+        seedSource("PROCESSING", "PENDING", "PENDING");
+        seedSnapshot("snapshot-1", "PENDING", "PENDING", SourcePipelineStages.STAGE_CHUNKING, 0, false);
+        TaskService taskService = mock(TaskService.class);
+
+        assertThatCode(() -> new TaskOutboxDispatcherService(jdbcTemplate, kafkaTemplate, properties, taskService)
+                .redrive("outbox-mid2", "ops-1", "manual retry"))
+                .isInstanceOf(com.noteweave.common.BusinessException.class)
+                .hasMessageContaining("不能重驱");
+        assertThat(status("outbox-mid2")).isEqualTo("DEAD_LETTER");
     }
 
     private void redrive(String outboxId, TaskService taskService) {
@@ -459,8 +532,8 @@ class TaskOutboxDispatcherServiceTest {
     private void seedBatch(String batchId, String batchStatus, String leaseToken) {
         jdbcTemplate.update("""
                 insert into source_embedding_batch(id, source_snapshot_id, task_id, batch_no, status, lease_token,
-                    lease_until, updated_at)
-                values (?, 'snapshot-1', 'task-1', 0, ?, ?, current_timestamp, current_timestamp)
+                    lease_until, updated_at, batch_version)
+                values (?, 'snapshot-1', 'task-1', 0, ?, ?, current_timestamp, current_timestamp, 'batch-version-1')
                 """, batchId, batchStatus, leaseToken);
     }
 

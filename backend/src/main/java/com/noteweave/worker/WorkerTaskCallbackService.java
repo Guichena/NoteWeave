@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.HttpStatus;
 
 @Service
@@ -33,6 +34,13 @@ public class WorkerTaskCallbackService {
     private final JdbcTemplate jdbcTemplate;
     private final DurableOutboxDispatcher outboxDispatcher;
     private final ObjectMapper objectMapper;
+    /** 提交段短事务模板；无事务管理器的测试构造下为空，内联执行同段逻辑。 */
+    private TransactionTemplate transactionTemplate;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTransactionTemplate(TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
+    }
 
     public WorkerTaskCallbackService(
             TaskService taskService,
@@ -168,12 +176,12 @@ public class WorkerTaskCallbackService {
         return complete(taskId, request, "");
     }
 
-    @Transactional
+    // complete 路径不加方法级事务：下载/PDF 校验/staged 写入必须在数据库事务外执行，
+    // 认领与提交各自使用短事务（见 completeInternal）。
     public WorkerAckResponse complete(String taskId, WorkerCompleteRequest request, String idempotencyKey) {
         return completeInternal(taskId, request, idempotencyKey, "", false);
     }
 
-    @Transactional
     public WorkerAckResponse completeFromDelivery(
             String taskId,
             WorkerCompleteRequest request,
@@ -204,28 +212,62 @@ public class WorkerTaskCallbackService {
         if (requireDelivery) {
             requireTerminalIdempotencyKey(idempotencyKey);
         }
-        lockTask(taskId);
-        task = taskService.getTaskRef(taskId);
-        if (isTerminalStatus(task.taskStatus())) {
-            validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
-            artifactJobService.validateCandidateReplay(taskId, request);
-            return terminalAck(taskId, task.taskStatus());
+        // 认领短事务：锁任务、复核所有权与终态、登记幂等回执；不执行任何远程 IO
+        WorkerAckResponse claimed = inShortTransaction(() -> {
+            lockTask(taskId);
+            TaskService.TaskRef locked = taskService.getTaskRef(taskId);
+            if (isTerminalStatus(locked.taskStatus())) {
+                return new WorkerAckResponse(taskId, "__TERMINAL__" + locked.taskStatus(), "");
+            }
+            validateCallbackOwnership(locked);
+            WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "COMPLETE", request, true);
+            if (duplicate != null) return duplicate;
+            if ("PENDING".equals(locked.taskStatus())) {
+                taskService.startTask(taskId);
+            }
+            return null;
+        });
+        if (claimed != null) {
+            if (claimed.status().startsWith("__TERMINAL__")) {
+                TaskService.TaskRef terminal = taskService.getTaskRef(taskId);
+                validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
+                artifactJobService.validateCandidateReplay(taskId, request);
+                return terminalAck(taskId, terminal.taskStatus());
+            }
+            return claimed;
         }
-        validateCallbackOwnership(task);
-        WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "COMPLETE", request);
-        if (duplicate != null) return duplicate;
-        if ("PENDING".equals(task.taskStatus())) {
-            taskService.startTask(taskId);
-            task = taskService.getTaskRef(taskId);
-        }
+        // 准备段：下载、PDF 校验与 staged 写入都在数据库事务外；失败时 staged 对象
+        // 由 cleanupOrphanedStagedFiles 按无引用规则回收，不删除可能被并发准备共享的键
         List<ArtifactExportService.PreparedFile> preparedFiles =
                 artifactExportService.prepareForCompletion(taskId, request);
-        CompletionOutcome outcome = artifactJobService.completeFromWorker(taskId, request);
-        artifactExportService.publishPreparedFiles(outcome.resultRef(), preparedFiles);
-        taskService.completeTask(taskId, outcome.phase(), outcome.message(), outcome.resultRef());
-        acknowledgeDelivery(taskId, deliveryToken, requireDelivery);
-        completeCallbackReceipt(taskId, idempotencyKey, outcome.resultRef());
-        return new WorkerAckResponse(taskId, "COMPLETED", outcome.resultRef());
+        // ART-01：文件校验与 staged 写入同样在事务外完成，提交事务里只剩元数据写入
+        List<ArtifactExportService.StagedFile> stagedFiles =
+                artifactExportService.prepareCompletionStagedFiles(taskId, preparedFiles);
+        // 提交短事务：重新锁任务、复核所有权/终态/候选，版本、文件元数据、任务与回执同提交
+        return inShortTransaction(() -> {
+            lockTask(taskId);
+            TaskService.TaskRef locked = taskService.getTaskRef(taskId);
+            if (isTerminalStatus(locked.taskStatus())) {
+                validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
+                artifactJobService.validateCandidateReplay(taskId, request);
+                return terminalAck(taskId, locked.taskStatus());
+            }
+            validateCallbackOwnership(locked);
+            CompletionOutcome outcome = artifactJobService.completeFromWorker(taskId, request);
+            artifactExportService.commitStagedFiles(outcome.resultRef(), stagedFiles);
+            taskService.completeTask(taskId, outcome.phase(), outcome.message(), outcome.resultRef());
+            acknowledgeDelivery(taskId, deliveryToken, requireDelivery);
+            completeCallbackReceipt(taskId, idempotencyKey, outcome.resultRef());
+            return new WorkerAckResponse(taskId, "COMPLETED", outcome.resultRef());
+        });
+    }
+
+    /** 短事务执行；无事务管理器的测试构造下内联执行同段逻辑。 */
+    private <T> T inShortTransaction(java.util.function.Supplier<T> work) {
+        if (transactionTemplate == null) {
+            return work.get();
+        }
+        return transactionTemplate.execute(status -> work.get());
     }
 
     @Transactional
@@ -371,13 +413,29 @@ public class WorkerTaskCallbackService {
             String callbackType,
             Object request
     ) {
+        return claimCallback(taskId, idempotencyKey, callbackType, request, false);
+    }
+
+    /**
+     * 登记或复核幂等回执。proceedWhenUnfinished=true 时，回执存在且摘要一致但尚未写入
+     * 结果（认领后准备失败的重试路径）则返回 null 继续执行，不误报 DUPLICATE。
+     */
+    private WorkerAckResponse claimCallback(
+            String taskId,
+            String idempotencyKey,
+            String callbackType,
+            Object request,
+            boolean proceedWhenUnfinished
+    ) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return null;
         }
         String normalizedKey = idempotencyKey.trim();
         String payloadDigest = callbackDigest(request);
         CallbackReceipt existing = findCallbackReceipt(taskId, normalizedKey);
-        if (existing != null) return replayOrConflict(taskId, callbackType, payloadDigest, existing);
+        if (existing != null) {
+            return replayOrConflict(taskId, callbackType, payloadDigest, existing, proceedWhenUnfinished);
+        }
         try {
             jdbcTemplate.update(
                     """
@@ -391,7 +449,7 @@ public class WorkerTaskCallbackService {
         } catch (DataIntegrityViolationException duplicate) {
             CallbackReceipt raced = findCallbackReceipt(taskId, normalizedKey);
             if (raced == null) throw duplicate;
-            return replayOrConflict(taskId, callbackType, payloadDigest, raced);
+            return replayOrConflict(taskId, callbackType, payloadDigest, raced, proceedWhenUnfinished);
         }
     }
 
@@ -418,12 +476,26 @@ public class WorkerTaskCallbackService {
             String payloadDigest,
             CallbackReceipt receipt
     ) {
+        return replayOrConflict(taskId, callbackType, payloadDigest, receipt, false);
+    }
+
+    private WorkerAckResponse replayOrConflict(
+            String taskId,
+            String callbackType,
+            String payloadDigest,
+            CallbackReceipt receipt,
+            boolean proceedWhenUnfinished
+    ) {
         if (!callbackType.equals(receipt.callbackType()) || receipt.payloadDigest() == null
                 || !payloadDigest.equals(receipt.payloadDigest())) {
             throw new BusinessException(
                     "WORKER_CALLBACK_IDEMPOTENCY_CONFLICT",
                     "Callback idempotency key is bound to different content",
                     HttpStatus.CONFLICT);
+        }
+        if (proceedWhenUnfinished && receipt.resultRef() == null) {
+            // 认领后尚未写入结果的回执：摘要一致，继续执行准备与提交
+            return null;
         }
         String resultRef = receipt.resultRef();
         if (resultRef == null) resultRef = taskService.getTask(taskId).resultRef();

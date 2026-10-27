@@ -2,7 +2,7 @@ package com.noteweave.source;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.noteweave.config.NoteWeaveProperties;
-import com.noteweave.conversation.ContextTokenEstimator;
+import com.noteweave.conversation.TokenCounter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -771,7 +771,8 @@ public class DocumentChunker {
     // ---------- 工具 ----------
 
     static int tokens(String text) {
-        return ContextTokenEstimator.estimate(text);
+        // C5 统一估算端口（FB-07）：与旧 ContextTokenEstimator 字符折算等价，margin 保持不变
+        return TokenCounter.estimate(text, "noteweave-embedding").count();
     }
 
     /** 标题文字去掉 Markdown 强调符号和多余空白。 */

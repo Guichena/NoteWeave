@@ -540,14 +540,24 @@ public class TaskService implements TaskCommandPort {
         return progressPayload;
     }
 
+    /**
+     * 任务引用。{@code generation} 是人工重驱的代次（SRC-04）：重驱复用同一个 task id，
+     * 旧投递必须能据此判断自己已过期，不能把刚重驱的资料再打回失败。
+     */
     public record TaskRef(
             String taskId,
             String workspaceId,
             String taskType,
             String taskStatus,
             String targetType,
-            String targetId
+            String targetId,
+            int generation
     ) {
+        /** 兼容不关心代次的调用方（只读展示与既有测试）：按第一代处理。 */
+        public TaskRef(String taskId, String workspaceId, String taskType, String taskStatus,
+                       String targetType, String targetId) {
+            this(taskId, workspaceId, taskType, taskStatus, targetType, targetId, 1);
+        }
     }
 
     public record TaskStreamPoll(List<TaskEventResponse> events, String currentStatus) {

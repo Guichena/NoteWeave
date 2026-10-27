@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.source.SourcePipelineStages;
+import com.noteweave.common.FinalizationOutcome;
 import com.noteweave.source.SourceTopicNames;
 import com.noteweave.source.SourceTopicNamesFixture;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,12 +68,14 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         assertThat(customFinalizer.handles(SourcePipelineStages.TOPIC_EMBED)).isFalse();
         assertThat(customFinalizer.handles(SourcePipelineStages.TOPIC_INDEX)).isFalse();
 
-        boolean finalized = customFinalizer.finalizeFailure("acme.embed", EMBED_PAYLOAD,
+        FinalizationOutcome finalized = customFinalizer.finalizeFailure("acme.embed", EMBED_PAYLOAD,
                 RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
 
-        assertThat(finalized).isTrue();
-        verify(projectionFinalizer).finalizeFailed("workspace-1", "source-1", "snapshot-1", "task-1",
-                "OUTBOX_DISPATCH_EXHAUSTED");
+        assertThat(finalized).isEqualTo(FinalizationOutcome.APPLIED);
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-1"), org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -80,12 +83,14 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         when(embeddingBatches.acceptsFailure(
                 "workspace-1", "source-1", "snapshot-1", "task-1", 0, VERSION)).thenReturn(true);
 
-        boolean finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
+        FinalizationOutcome finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
                 RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
 
-        assertThat(finalized).isTrue();
-        verify(projectionFinalizer).finalizeFailed("workspace-1", "source-1", "snapshot-1", "task-1",
-                "OUTBOX_DISPATCH_EXHAUSTED");
+        assertThat(finalized).isEqualTo(FinalizationOutcome.APPLIED);
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-1"), org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -93,12 +98,14 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         when(embeddingBatches.current(
                 "workspace-1", "source-1", "snapshot-1", "task-1", "INDEXING")).thenReturn(true);
 
-        boolean finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_INDEX, INDEX_PAYLOAD,
+        FinalizationOutcome finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_INDEX, INDEX_PAYLOAD,
                 RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
 
-        assertThat(finalized).isTrue();
-        verify(projectionFinalizer).finalizeFailed("workspace-1", "source-1", "snapshot-1", "task-1",
-                "OUTBOX_DISPATCH_EXHAUSTED");
+        assertThat(finalized).isEqualTo(FinalizationOutcome.APPLIED);
+        verify(projectionFinalizer).finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                org.mockito.ArgumentMatchers.eq("task-1"), org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                org.mockito.ArgumentMatchers.isNull());
     }
 
     @Test
@@ -106,11 +113,12 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         when(embeddingBatches.acceptsFailure(
                 "workspace-1", "source-1", "snapshot-1", "task-1", 0, VERSION)).thenReturn(false);
 
-        boolean finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
+        FinalizationOutcome finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
                 RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
 
-        assertThat(finalized).isFalse();
-        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+        assertThat(finalized).isEqualTo(FinalizationOutcome.IGNORED_STALE);
+        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(),
+                anyString(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -118,22 +126,27 @@ class RetrievalProjectionDeadLetterFinalizerTest {
         when(embeddingBatches.acceptsFailure(
                 "workspace-1", "source-1", "snapshot-1", "task-1", 0, VERSION)).thenReturn(true);
         doThrow(new IllegalStateException("task already locked")).when(projectionFinalizer)
-                .finalizeFailed("workspace-1", "source-1", "snapshot-1", "task-1", "OUTBOX_DISPATCH_EXHAUSTED");
+                .finalizeFailed(org.mockito.ArgumentMatchers.eq("workspace-1"),
+                        org.mockito.ArgumentMatchers.eq("source-1"), org.mockito.ArgumentMatchers.eq("snapshot-1"),
+                        org.mockito.ArgumentMatchers.eq("task-1"),
+                        org.mockito.ArgumentMatchers.eq("OUTBOX_DISPATCH_EXHAUSTED"),
+                        org.mockito.ArgumentMatchers.isNull());
 
-        boolean finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
+        FinalizationOutcome finalized = finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, EMBED_PAYLOAD,
                 RetrievalProjectionDeadLetterFinalizer.DELIVERY_EXHAUSTED_ERROR_CODE);
 
-        assertThat(finalized).isFalse();
+        assertThat(finalized).isEqualTo(FinalizationOutcome.RETRYABLE_FAILURE);
     }
 
     @Test
     void unusablePayloadShouldBeIgnored() {
         assertThat(finalizer.finalizeFailure(SourcePipelineStages.TOPIC_EMBED, "not-json", "OUTBOX_DISPATCH_EXHAUSTED"))
-                .isFalse();
+                .isEqualTo(FinalizationOutcome.IGNORED_STALE);
         assertThat(finalizer.finalizeFailure(SourcePipelineStages.TOPIC_INDEX,
                 """
                 {"workspaceId":"workspace-1","taskId":"task-1"}
-                """, "OUTBOX_DISPATCH_EXHAUSTED")).isFalse();
-        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(), anyString());
+                """, "OUTBOX_DISPATCH_EXHAUSTED")).isEqualTo(FinalizationOutcome.IGNORED_STALE);
+        verify(projectionFinalizer, never()).finalizeFailed(anyString(), anyString(), anyString(), anyString(),
+                anyString(), org.mockito.ArgumentMatchers.any());
     }
 }

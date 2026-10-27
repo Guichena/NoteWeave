@@ -1,6 +1,7 @@
 package com.noteweave.memory;
 
 import com.noteweave.common.BusinessException;
+import com.noteweave.common.Ids;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import java.sql.Timestamp;
@@ -60,6 +61,8 @@ public class MemoryOutcomeService {
             ObjectState state = lockItem(workspaceId, application.memoryItemId());
             MemoryOutcomePolicy.Decision decision = outcomePolicy.evaluate(
                     state.toPolicyState(), request.outcomeType(), request.editMagnitude());
+            // MEM-07：先留等价事件（before/delta）再改计数，两条路径共用一份事件日志。
+            recordOutcomeEvent(workspaceId, request, application, state, decision);
             int usageUpdated = jdbcTemplate.update("""
                     update memory_usage_log
                     set outcome_type = ?, outcome_score = ?, edit_magnitude = ?,
@@ -145,6 +148,52 @@ public class MemoryOutcomeService {
                 outcomePolicy.version(),
                 List.copyOf(outcomes)
         );
+    }
+
+    /**
+     * MEM-07：旧接口也写一条等价事件（before/delta），与事件式反馈共用 memory_application_outcome。
+     * <p>
+     * 此前只有事件式路径留痕：旧接口写的 outcome 既无法审计，也无法被撤销路径计入——
+     * 之后任何一次撤销都会按旧快照恢复计数，把这次 outcome 抹掉。两条路径现在都是
+     * 「一条事件 + 一次绝对写入」，撤销时按事件里的 before/delta 反推，互相不再覆盖。
+     */
+    private void recordOutcomeEvent(String workspaceId, CreateMemoryOutcomeRequest request,
+                                    ApplicationRow application, ObjectState before,
+                                    MemoryOutcomePolicy.Decision decision) {
+        jdbcTemplate.update("""
+                insert into memory_application_outcome(
+                    id, workspace_id, usage_log_id, memory_item_id, memory_revision_id,
+                    target_type, target_id, signal_kind, outcome_type, outcome_score, weight,
+                    beta_weight, aspect, feedback_note, degradation_reason, source_ref, edit_magnitude,
+                    utility_before, utility_delta, application_count_before, application_delta,
+                    positive_count_before, positive_delta, negative_count_before, negative_delta,
+                    edit_count_before, edit_delta, retry_count_before, retry_delta,
+                    status_before, review_before, row_no
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                Ids.newId(), workspaceId, application.applicationId(), application.memoryItemId(),
+                application.memoryRevisionId(), request.targetType(), request.targetId(),
+                "LEGACY_OUTCOME", decision.outcomeType(), decision.outcomeScore(), 1.0,
+                0.0, "UNKNOWN", request.feedbackNote(), null,
+                "memory-outcome:" + application.applicationId(), request.editMagnitude(),
+                before.utilityScore(), round4(decision.utilityScore() - before.utilityScore()),
+                before.applicationCount(), decision.applicationCount() - before.applicationCount(),
+                before.positiveOutcomeCount(), decision.positiveOutcomeCount() - before.positiveOutcomeCount(),
+                before.negativeOutcomeCount(), decision.negativeOutcomeCount() - before.negativeOutcomeCount(),
+                before.editOutcomeCount(), decision.editOutcomeCount() - before.editOutcomeCount(),
+                before.retryOutcomeCount(), decision.retryOutcomeCount() - before.retryOutcomeCount(),
+                before.status(), before.reviewStatus(), nextRowNo(application.memoryItemId()));
+    }
+
+    private long nextRowNo(String memoryItemId) {
+        Long current = jdbcTemplate.queryForObject("""
+                select coalesce(max(row_no), 0) from memory_application_outcome where memory_item_id = ?
+                """, Long.class, memoryItemId);
+        return (current == null ? 0 : current) + 1;
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10000d) / 10000d;
     }
 
     private ObjectState lockItem(String workspaceId, String memoryItemId) {

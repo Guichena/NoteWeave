@@ -88,7 +88,8 @@ public record NoteWeaveProperties(
                 "noteweave.memory.extraction",
                 "noteweave.source.chunk",
                 "noteweave.source.embed",
-                "noteweave.source.index");
+                "noteweave.source.index",
+                "noteweave.artifact.edit");
     }
 
     public record Storage(String backend, Path localRoot, Minio minio) {
@@ -157,7 +158,8 @@ public record NoteWeaveProperties(
             String memoryExtraction,
             String sourceChunk,
             String sourceEmbed,
-            String sourceIndex
+            String sourceIndex,
+            String artifactEdit
     ) {
         @ConstructorBinding
         public Topics {
@@ -165,19 +167,30 @@ public record NoteWeaveProperties(
             sourceChunk = defaultTopic(sourceChunk, "noteweave.source.chunk");
             sourceEmbed = defaultTopic(sourceEmbed, "noteweave.source.embed");
             sourceIndex = defaultTopic(sourceIndex, "noteweave.source.index");
+            // C4 编辑事件专用 topic（FB-03）：由 ArtifactEditOutboxDispatcher 与
+            // artifact-edit 消费者共同引用；不进入 all()——task 投递器要求 task 外键，
+            // 编辑事件不是任务（N-05 裁决）。
+            artifactEdit = defaultTopic(artifactEdit, "noteweave.artifact.edit");
+        }
+
+        public Topics(String sourceParse, String retrievalProjection, String wikiIngest,
+                      String wikiRetract, String conversationSummary,
+                      String memoryExtraction, String sourceChunk, String sourceEmbed, String sourceIndex) {
+            this(sourceParse, retrievalProjection, wikiIngest, wikiRetract, conversationSummary,
+                    memoryExtraction, sourceChunk, sourceEmbed, sourceIndex, null);
         }
 
         public Topics(String sourceParse, String retrievalProjection, String wikiIngest,
                       String wikiRetract, String conversationSummary) {
             this(sourceParse, retrievalProjection, wikiIngest, wikiRetract, conversationSummary,
-                    null, null, null, null);
+                    null, null, null, null, null);
         }
 
         private static String defaultTopic(String value, String fallback) {
             return value == null || value.isBlank() ? fallback : value;
         }
 
-        /** 由任务 outbox 投递的全部主题。 */
+        /** 由任务 outbox 投递的全部主题；编辑事件 topic 不在此列（非任务投递）。 */
         public java.util.List<String> all() {
             return java.util.List.of(sourceParse, retrievalProjection, wikiIngest, wikiRetract,
                     conversationSummary, memoryExtraction, sourceChunk, sourceEmbed, sourceIndex);

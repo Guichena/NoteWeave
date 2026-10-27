@@ -79,7 +79,8 @@ public class QaRerankService {
                 unscored++;
                 ranked.add(new RankedHit(candidate, score, ranked.size() + 1, true));
             }
-            return new RerankOutcome(ranked, false, List.of(), result.model());
+            // 部分评分观测：记录供应商实际返回分数的数量与未评分数量，尾部候选保留
+            return new RerankOutcome(ranked, false, List.of(), result.model(), ranked.size() - unscored, unscored);
         } catch (RuntimeException ex) {
             return degraded(safeCandidates, topN, "QA_RERANK_UNAVAILABLE");
         }
@@ -171,12 +172,20 @@ public class QaRerankService {
             List<RankedHit> hits,
             boolean degraded,
             List<String> degradationReasons,
-            String model
+            String model,
+            int scoredCount,
+            int unscoredCount
     ) {
         public RerankOutcome {
             hits = hits == null ? List.of() : List.copyOf(hits);
             degradationReasons = degradationReasons == null ? List.of() : List.copyOf(degradationReasons);
             model = model == null ? "" : model;
+        }
+
+        /** 兼容旧构造：不区分部分评分覆盖。 */
+        public RerankOutcome(List<RankedHit> hits, boolean degraded,
+                             List<String> degradationReasons, String model) {
+            this(hits, degraded, degradationReasons, model, 0, 0);
         }
     }
 }

@@ -105,12 +105,12 @@ class ChatAnswerGenerationAdapterTest {
         ResearchGeneratedSourceReadGate gate = mock(ResearchGeneratedSourceReadGate.class);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
                 jdbc, mock(ChatLlmClient.class), gate, true);
+        // NR03：资格批量判定为可读 → 引用行进入生成材料
+        when(gate.readableSourceIds("workspace", List.of("source"))).thenReturn(java.util.Set.of("source"));
         assertThat(adapter.load("request").citationLines()).singleElement().asString()
                 .contains("secret quote");
-        doThrow(new BusinessException("RESEARCH_SOURCE_CONTEXT_REDACTED", "revoked", HttpStatus.CONFLICT))
-                .when(gate).requireReadable("workspace", "research_agent", "run");
-        assertThatThrownBy(() -> adapter.load("request"))
-                .isInstanceOfSatisfying(BusinessException.class,
-                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_SOURCE_CONTEXT_REDACTED"));
+        // 撤销（含传递依赖撤销）后批量判定不可读 → 引用行被剔除，回答生成不再失败也不带出撤销内容
+        when(gate.readableSourceIds("workspace", List.of("source"))).thenReturn(java.util.Set.of());
+        assertThat(adapter.load("request").citationLines()).isEmpty();
     }
 }

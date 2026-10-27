@@ -24,6 +24,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -176,13 +177,18 @@ class WorkspaceAccessContractTest {
                 "select source_type, source_id from memory_signal where id = ?", signalId))
                 .containsEntry("SOURCE_TYPE", "USER_FEEDBACK")
                 .containsEntry("SOURCE_ID", "memory-signal:" + signalId);
-        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/promotions", workspaceId)
+        // SEC-05：编辑者现在拥有 MEMORY_REVIEW，记忆审核不再被路由层拦成 403；
+        // 业务层是否接受这次晋升由记忆规则决定，这里只校验不再因权限被拒。
+        MvcResult promotion = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/promotions", workspaceId)
                         .header("Authorization", "Bearer " + outsiderToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(java.util.Map.of(
                                 "signal_ids", java.util.List.of(signalId)))))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("WORKSPACE_ACCESS_DENIED"));
+                .andReturn();
+        assertThat(promotion.getResponse().getStatus())
+                .as("编辑者不应再因路由权限被拒：%s", promotion.getResponse().getContentAsString())
+                .isNotEqualTo(403);
+        assertThat(promotion.getResponse().getContentAsString()).doesNotContain("WORKSPACE_ACCESS_DENIED");
     }
 
     @Test
@@ -225,6 +231,21 @@ class WorkspaceAccessContractTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"wiki_enabled\":false}"))
                 .andExpect(status().isForbidden());
+
+        // MEM-05：记忆读路径排除清单同属 MEMORY_REVIEW 能力，只读成员看不到
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/read-gate-exclusions", workspaceId)
+                        .header("Authorization", "Bearer " + viewer.token()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/read-gate-exclusions", workspaceId)
+                        .header("Authorization", "Bearer " + editor.token()))
+                .andExpect(status().isOk());
+        // MEM-06：分页接口已登记路由，第一页没有游标
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/items/page", workspaceId)
+                        .header("Authorization", "Bearer " + editor.token())
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items").isArray())
+                .andExpect(jsonPath("$.data.next_cursor").isEmpty());
 
         mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
                         .header("Authorization", "Bearer " + ownerToken)

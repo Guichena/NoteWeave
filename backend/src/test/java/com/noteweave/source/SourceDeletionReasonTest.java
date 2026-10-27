@@ -3,7 +3,10 @@ package com.noteweave.source;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -13,6 +16,7 @@ import com.noteweave.conversation.RunReplayRedactionService;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
+import com.noteweave.security.WorkspacePermission;
 import com.noteweave.task.TaskCommandPort;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,13 +25,17 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** 资料删除原因对笔记可用性的影响。 */
 class SourceDeletionReasonTest {
 
     private JdbcTemplate jdbcTemplate;
     private SourceService service;
+    private SourceCompliancePurgeService compliancePurgeService;
+    private WorkspaceAccessGuard workspaceAccessGuard;
     private SourceWikiCommandPort wikiCommandPort;
     private ApplicationEventPublisher eventPublisher;
 
@@ -61,6 +69,8 @@ class SourceDeletionReasonTest {
                     parse_status varchar(32) not null,
                     index_status varchar(32) not null,
                     delete_reason varchar(16) not null default 'USER',
+                    summary varchar(1000),
+                    metadata_json longtext,
                     updated_by varchar(80),
                     updated_at timestamp
                 )
@@ -77,6 +87,7 @@ class SourceDeletionReasonTest {
                 """);
         jdbcTemplate.execute("""
                 create table task(
+                    generation int not null default 1,
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
                     target_type varchar(32),
@@ -95,6 +106,7 @@ class SourceDeletionReasonTest {
                     latest_version_id varchar(36),
                     created_by varchar(80),
                     updated_by varchar(80),
+                    origin varchar(32),
                     updated_at timestamp
                 )
                 """);
@@ -111,7 +123,28 @@ class SourceDeletionReasonTest {
                 create table citation(
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
-                    source_id varchar(36) not null
+                    source_id varchar(36) not null,
+                    source_chunk_id varchar(36),
+                    quote_text longtext not null default ''
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table source_chunk(
+                    id varchar(36) primary key,
+                    workspace_id varchar(36) not null,
+                    source_id varchar(36) not null,
+                    content longtext not null,
+                    heading varchar(300),
+                    context_text longtext,
+                    structure_metadata_json longtext,
+                    projection_status varchar(32) not null default 'PENDING'
+                )
+                """);
+        jdbcTemplate.execute("""
+                create table source_window(
+                    id varchar(36) primary key,
+                    source_chunk_id varchar(36) not null,
+                    content longtext not null
                 )
                 """);
         jdbcTemplate.execute("""
@@ -149,6 +182,37 @@ class SourceDeletionReasonTest {
         jdbcTemplate.update("""
                 insert into citation(id, workspace_id, source_id)
                 values ('citation-1', 'workspace-1', 'source-1')
+                """);
+        // 分块：chunk-1 被引用，chunk-2 未被引用；窗口与引用摘录都带正文
+        jdbcTemplate.update("""
+                insert into source_chunk(
+                    id, workspace_id, source_id, content, heading, context_text,
+                    structure_metadata_json, projection_status
+                ) values (
+                    'chunk-1', 'workspace-1', 'source-1', '资料一正文片段一', '小节标题',
+                    '上下文补全', '{}', 'READY'
+                )
+                """);
+        jdbcTemplate.update("""
+                insert into source_chunk(
+                    id, workspace_id, source_id, content, heading, context_text,
+                    structure_metadata_json, projection_status
+                ) values (
+                    'chunk-2', 'workspace-1', 'source-1', '资料一正文片段二', null,
+                    null, null, 'READY'
+                )
+                """);
+        jdbcTemplate.update("""
+                insert into source_window(id, source_chunk_id, content)
+                values ('window-1', 'chunk-1', '窗口正文')
+                """);
+        jdbcTemplate.update("""
+                update citation set source_chunk_id = 'chunk-1', quote_text = '引用摘录'
+                where id = 'citation-1'
+                """);
+        jdbcTemplate.update("""
+                update source set summary = '资料摘要', metadata_json = '{"outline":"目录"}'
+                where id = 'source-1'
                 """);
         jdbcTemplate.update("""
                 insert into knowledge_item(
@@ -189,9 +253,14 @@ class SourceDeletionReasonTest {
         when(auditActorProvider.currentOrSystem("SOURCE")).thenReturn("USER:TEST");
         ResearchGeneratedSourceReadGate researchGate = mock(ResearchGeneratedSourceReadGate.class);
         when(researchGate.visible(anyString(), anyString(), anyString())).thenReturn(true);
+        compliancePurgeService = new SourceCompliancePurgeService(
+                jdbcTemplate,
+                new SimpleMeterRegistry(),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        workspaceAccessGuard = mock(WorkspaceAccessGuard.class);
         service = new SourceService(
                 jdbcTemplate,
-                mock(WorkspaceAccessGuard.class),
+                workspaceAccessGuard,
                 wikiCommandPort,
                 auditActorProvider,
                 mock(SourceCatalogCache.class),
@@ -200,7 +269,8 @@ class SourceDeletionReasonTest {
                 mock(TaskCommandPort.class),
                 eventPublisher,
                 mock(RunReplayRedactionService.class),
-                researchGate);
+                researchGate,
+                compliancePurgeService);
     }
 
     @Test
@@ -248,8 +318,100 @@ class SourceDeletionReasonTest {
     }
 
     @Test
-    void invalidDeletionReasonShouldBeRejectedWithBadRequest() {
-        assertThatThrownBy(() -> service.deleteSource("workspace-1", "source-1", "SENSITIVE"))
+    void complianceDeletionShouldPurgeChunkContentAndRedactCitations() {
+        service.deleteSource("workspace-1", "source-1", "COMPLIANCE");
+
+        // 未被引用的分块物理删除，被引用的分块保留空壳
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_chunk where id = 'chunk-2'", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select content from source_chunk where id = 'chunk-1'", String.class)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select heading from source_chunk where id = 'chunk-1'", String.class)).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_window", Integer.class)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select quote_text from citation where id = 'citation-1'", String.class)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select summary from source where id = 'source-1'", String.class)).isNull();
+        assertThat(jdbcTemplate.queryForObject(
+                "select metadata_json from source where id = 'source-1'", String.class)).isNull();
+    }
+
+    @Test
+    void userDeletionShouldKeepChunkContentForNoteHistory() {
+        service.deleteSource("workspace-1", "source-1", "USER");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select content from source_chunk where id = 'chunk-1'", String.class))
+                .isEqualTo("资料一正文片段一");
+        assertThat(jdbcTemplate.queryForObject(
+                "select quote_text from citation where id = 'citation-1'", String.class))
+                .isEqualTo("引用摘录");
+    }
+
+    @Test
+    void compliancePurgeShouldBeRerunnableForHistoricalResidue() {
+        service.deleteSource("workspace-1", "source-1", "COMPLIANCE");
+        // 模拟修复前已删除的历史资料：正文仍在库里
+        jdbcTemplate.update("""
+                insert into source_chunk(
+                    id, workspace_id, source_id, content, heading, context_text,
+                    structure_metadata_json, projection_status
+                ) values ('chunk-legacy', 'workspace-1', 'source-1', '历史残留正文', null, null, null, 'READY')
+                """);
+        jdbcTemplate.update("""
+                update source set summary = '历史摘要' where id = 'source-1'
+                """);
+
+        assertThat(compliancePurgeService.findResidual(10)).hasSize(1);
+        // dry-run 不写库
+        assertThat(compliancePurgeService.purgeResidual(true, 10)).isEqualTo(1);
+        assertThat(compliancePurgeService.findResidual(10)).hasSize(1);
+
+        assertThat(compliancePurgeService.purgeResidual(false, 10)).isEqualTo(1);
+        assertThat(compliancePurgeService.findResidual(10)).isEmpty();
+        // 重复执行没有副作用
+        assertThat(compliancePurgeService.purgeResidual(false, 10)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_chunk where content <> ''", Integer.class)).isZero();
+    }
+
+    @Test
+    void complianceDeletionShouldRequireOwnerPermission() {
+        service.deleteSource("workspace-1", "source-1", "COMPLIANCE");
+
+        verify(workspaceAccessGuard).requireOwner("workspace-1");
+        verify(workspaceAccessGuard, never()).requirePermission(eq("workspace-1"), eq(WorkspacePermission.SOURCE_WRITE));
+    }
+
+    @Test
+    void editorWithoutOwnerRoleShouldNotComplianceDelete() {
+        // EDITOR 具备 SOURCE_WRITE，但合规删除会清空正文并撤销笔记，必须 OWNER
+        doThrow(new BusinessException("WORKSPACE_ACCESS_DENIED", "无权执行该工作台操作",
+                HttpStatus.FORBIDDEN))
+                .when(workspaceAccessGuard).requireOwner("workspace-1");
+
+        assertThatThrownBy(() -> service.deleteSource("workspace-1", "source-1", "COMPLIANCE"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.code()).isEqualTo("WORKSPACE_ACCESS_DENIED"));
+
+        assertThat(sourceColumn("status")).isEqualTo("READY");
+        assertThat(jdbcTemplate.queryForObject(
+                "select content from source_chunk where id = 'chunk-1'", String.class))
+                .isEqualTo("资料一正文片段一");
+    }
+
+    @Test
+    void userDeletionShouldStillUseSourceWritePermission() {
+        service.deleteSource("workspace-1", "source-1", "USER");
+
+        verify(workspaceAccessGuard).requirePermission("workspace-1", WorkspacePermission.SOURCE_WRITE);
+        verify(workspaceAccessGuard, never()).requireOwner(anyString());
+    }
+
+    @Test
+    void invalidDeletionReasonShouldBeRejectedWithBadRequest() {        assertThatThrownBy(() -> service.deleteSource("workspace-1", "source-1", "SENSITIVE"))
                 .isInstanceOfSatisfying(BusinessException.class, exception -> {
                     assertThat(exception.code()).isEqualTo("SOURCE_DELETE_REASON_INVALID");
                     assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST);

@@ -43,7 +43,7 @@ class ContextWindowPlannerV2Test {
     }
 
     @Test
-    void missingCurrentSummaryExpandsRawAndFailsExplicitlyIfControlDoesNotFit() {
+    void missingCurrentSummaryExpandsRawAndTrimsTheOldestWhenTheBudgetIsTight() {
         List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 10)
                 .mapToObj(seq -> message(seq, "long message " + seq)).toList();
         var segment = segment("A1", "A", 1, 10, "CONFIDENT");
@@ -53,11 +53,52 @@ class ContextWindowPlannerV2Test {
         ContextProjectionV2 result = planner.compile(input);
         assertThat(result.rawTail()).hasSize(10);
         assertThat(result.degradationReasons()).contains("CURRENT_SUMMARY_NOT_READY_RAW_EXPANDED");
-        assertThatThrownBy(() -> planner.compile(new ContextWindowPlannerV2.Input(
+
+        // CTX-01：预算不够时裁掉最旧的原文并标降级，而不是整段展开后直接失败
+        ContextProjectionV2 trimmed = planner.compile(new ContextWindowPlannerV2.Input(
                 "workspace", "actor", "conversation", 10, "current question", "QA", 20,
+                messages, List.of(segment), List.of(), List.of(), List.of()));
+        assertThat(trimmed.rawTail()).isNotEmpty();
+        assertThat(trimmed.rawTail().get(trimmed.rawTail().size() - 1).seq()).isEqualTo(10);
+        assertThat(trimmed.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactlyElementsOf(java.util.stream.IntStream
+                        .rangeClosed(11 - trimmed.rawTail().size(), 10).boxed().toList());
+        assertThat(trimmed.selectedTokens()).isLessThanOrEqualTo(trimmed.tokenBudget());
+        assertThat(trimmed.degradationReasons()).contains("RAW_TRIMMED_BY_TOKEN_BUDGET");
+        assertThat(trimmed.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("message-1");
+            assertThat(decision.action()).isEqualTo("EXCLUDE");
+            assertThat(decision.reason()).isEqualTo("RAW_OUTSIDE_CONTEXT_WINDOW");
+        });
+
+        // 只有连必带信息本身都放不下时才显式失败
+        assertThatThrownBy(() -> planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 10, "current question", "QA", 1,
                 messages, List.of(segment), List.of(), List.of(), List.of())))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("mandatory control and raw context exceed budget");
+    }
+
+    /** CTX-01 验收：摘要严重滞后、未摘要消息远超上限时，仍要给出连续的最新原文窗口而不是 409/503。 */
+    @Test
+    void heavilyLaggingSummaryStillAnswersWithTheNewestContiguousWindow() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 257)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var active = segment("A1", "A", 1, 257, "CONFIDENT");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 257, "question", "QA", 12_000,
+                messages, List.of(active), List.of(), List.of(), List.of()));
+
+        assertThat(result.rawTail()).hasSize(ContextWindowPlannerV2.MAX_UNSUMMARIZED_MESSAGES);
+        assertThat(result.rawTail().get(result.rawTail().size() - 1).seq()).isEqualTo(257);
+        assertThat(result.degradationReasons())
+                .contains("CURRENT_SUMMARY_NOT_READY_RAW_EXPANDED", "UNSUMMARIZED_RAW_TRIMMED_BY_COUNT");
+        assertThat(result.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("message-1");
+            assertThat(decision.action()).isEqualTo("EXCLUDE");
+            assertThat(decision.reason()).isEqualTo("RAW_OUTSIDE_CONTEXT_WINDOW");
+        });
+        assertThat(result.selectedTokens()).isLessThanOrEqualTo(result.tokenBudget());
     }
 
     @Test

@@ -80,6 +80,12 @@ public class ResearchRunService {
         return artifactService.evidenceManifest(workspaceId, researchRunId);
     }
 
+    /** 报告 Markdown 正式下载；权限与依赖闭包校验都在服务内完成。 */
+    public ResearchArtifactService.ResearchReportDownload downloadReportMarkdown(
+            String workspaceId, String researchRunId) {
+        return artifactService.downloadReportMarkdown(workspaceId, researchRunId);
+    }
+
     @Transactional
     public void setAgentExecutionMode(String researchRunId, String mode) {
         commandService.setAgentExecutionMode(researchRunId, mode);

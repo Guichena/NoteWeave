@@ -1,5 +1,9 @@
 server:
   port: ${SERVER_PORT:8081}
+  # SEC-02：部署在反向代理后时打开，让 Spring 用 X-Forwarded-For 改写 remoteAddr；
+  # 否则登录/注册限流的 IP 维度会把所有用户算成代理机同一个 IP，一个攻击者就能锁死全部人。
+  # 默认 none：直连部署下不信任任何转发头，避免客户端伪造 IP 绕过限流。
+  forward-headers-strategy: ${SERVER_FORWARD_HEADERS_STRATEGY:none}
 
 logging:
   pattern:
@@ -49,6 +53,14 @@ spring:
       acks: all
 
 noteweave:
+  # B-01 死信补偿执行器（OutboxFinalizationExecutor）
+  outbox:
+    finalization:
+      scan-delay-ms: 5000        # 补偿扫描间隔，合法区间 1000-60000
+      batch-size: 20             # 单次认领上限，合法区间 1-200
+      lease-seconds: 120         # 补偿执行租约，合法区间 5-3600
+      max-backoff-seconds: 300   # 重试退避上限，合法区间 5-3600
+
   context:
     v2:  # 话题感知上下文窗口默认开启；与 docker-compose.yml / .env.example 保持一致
       shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:true}
@@ -124,6 +136,9 @@ noteweave:
   upload:
     cleanup-delay-ms: ${NOTEWEAVE_UPLOAD_CLEANUP_DELAY_MS:60000}
     cleanup-stale-after-seconds: ${NOTEWEAVE_UPLOAD_CLEANUP_STALE_AFTER_SECONDS:86400}
+  generated-source:
+    # SRC-01 回滚开关：false 时生成来源回到事务内同步解析
+    async-parse-enabled: ${NOTEWEAVE_GENERATED_SOURCE_ASYNC_PARSE_ENABLED:true}
   worker:
     artifact-callback-secret: ${NOTEWEAVE_ARTIFACT_CALLBACK_SECRET:}
     artifact-base-url: ${NOTEWEAVE_WORKER_ARTIFACT_BASE_URL:http://localhost:18092}
@@ -215,6 +230,10 @@ noteweave:
   pipeline:
     embedding-lease-seconds: ${NOTEWEAVE_EMBEDDING_LEASE_SECONDS:7200}
   source:
+    # TR-01：转写看门狗时限。计时锚点是提交记录的 stage_started_at/heartbeat_at，
+    # 与资料本身的 updated_at 无关；默认 480 分钟覆盖 4 小时录音在 CPU 上的转写时间。
+    transcription-timeout-minutes: ${NOTEWEAVE_TRANSCRIPTION_TIMEOUT_MINUTES:480}
+    transcription-watchdog-ms: ${NOTEWEAVE_TRANSCRIPTION_WATCHDOG_MS:300000}
     transcription-submission-delay-ms: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_DELAY_MS:5000}
     transcription-submission-batch-size: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_BATCH_SIZE:4}
     transcription-submission-lease-seconds: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_LEASE_SECONDS:300}
@@ -236,8 +255,23 @@ noteweave:
       conversation-summary: ${NOTEWEAVE_KAFKA_TOPIC_CONVERSATION_SUMMARY:noteweave.conversation.summary}
       memory-extraction: ${NOTEWEAVE_KAFKA_TOPIC_MEMORY_EXTRACTION:noteweave.memory.extraction}
       research-agent-command: ${NOTEWEAVE_KAFKA_RESEARCH_AGENT_TOPIC:noteweave.research.agent.command}
+      # C4 编辑事件专用 topic（FB-03）：ArtifactEditOutboxDispatcher 与 artifact-edit 消费者同源引用
+      artifact-edit: ${NOTEWEAVE_KAFKA_TOPIC_ARTIFACT_EDIT:noteweave.artifact.edit}
     artifact-dlq-topic: ${NOTEWEAVE_KAFKA_ARTIFACT_DLQ_TOPIC:noteweave.artifact.job.dlq}
+  artifact-edit:
+    # FB-03：编辑事件持久投递（事件表由 A 在版本事务内写入，本侧只投递）
+    outbox-enabled: ${NOTEWEAVE_ARTIFACT_EDIT_OUTBOX_ENABLED:true}
+    dispatch-delay-ms: ${NOTEWEAVE_ARTIFACT_EDIT_DISPATCH_DELAY_MS:5000}
+    dispatch-batch-size: ${NOTEWEAVE_ARTIFACT_EDIT_DISPATCH_BATCH_SIZE:20}
+    dispatch-lease-seconds: ${NOTEWEAVE_ARTIFACT_EDIT_DISPATCH_LEASE_SECONDS:120}
+    dispatch-max-attempts: ${NOTEWEAVE_ARTIFACT_EDIT_DISPATCH_MAX_ATTEMPTS:10}
+    dispatch-max-backoff-seconds: ${NOTEWEAVE_ARTIFACT_EDIT_DISPATCH_MAX_BACKOFF_SECONDS:300}
   memory:
+    receipt-scan-delay-ms: 30000        # 记忆处理回执恢复扫描间隔（B-05）
+    receipt-scan-batch-size: 50         # 单次认领回执上限
+    receipt-retry-backoff-seconds: 120  # 分阶段重试退避
+    receipt-max-redeliveries: ${NOTEWEAVE_MEMORY_RECEIPT_MAX_REDELIVERIES:5}  # 单条回执重投失败上限，达到后转终态（MEM-02）
+    artifact-edit-enabled: ${NOTEWEAVE_ARTIFACT_EDIT_ENABLED:false}      # B-08 产物编辑事件消费（独立开关，等 A 的 C4 接线后开启；MEM-04 起可用环境变量打开）
     index-name: ${NOTEWEAVE_MEMORY_INDEX_NAME:noteweave-memory}
     index-dispatch-delay-ms: ${NOTEWEAVE_MEMORY_INDEX_DISPATCH_DELAY_MS:30000}
     slot-backfill-enabled: ${NOTEWEAVE_MEMORY_SLOT_BACKFILL_ENABLED:false}
@@ -254,6 +288,16 @@ noteweave:
       review-required-risk: ${NOTEWEAVE_MEMORY_REVIEW_RISK:0.70}
       maximum-posterior-variance: ${NOTEWEAVE_MEMORY_MAX_POSTERIOR_VARIANCE:0.04}
   knowledge:
+    ingest-policy-version: 1   # READY 摄取意图的策略版本（B-02/C3）
+    # FB-02：READY 意图唯一调度循环（B 独占）。enabled=false 是暂时暂停：意图保持
+    # PENDING 不被消费；业务不需要由处理器 IGNORED_STALE 终态化，二者语义不同。
+    ready-dispatch-enabled: ${NOTEWEAVE_READY_INTENT_DISPATCH_ENABLED:true}
+    ready-dispatch-delay-ms: ${NOTEWEAVE_READY_INTENT_DISPATCH_DELAY_MS:30000}
+    ready-dispatch-batch-size: ${NOTEWEAVE_READY_INTENT_DISPATCH_BATCH_SIZE:20}
+    ready-dispatch-lease-seconds: ${NOTEWEAVE_READY_INTENT_DISPATCH_LEASE_SECONDS:120}
+    ready-dispatch-max-backoff-seconds: ${NOTEWEAVE_READY_INTENT_DISPATCH_MAX_BACKOFF_SECONDS:600}
+    ready-backfill-delay-ms: ${NOTEWEAVE_READY_INTENT_BACKFILL_DELAY_MS:300000}
+    ready-backfill-page-size: ${NOTEWEAVE_READY_INTENT_BACKFILL_PAGE_SIZE:200}
     wiki-index-name: ${NOTEWEAVE_WIKI_INDEX_NAME:noteweave-wiki}
     wiki-index-dispatch-delay-ms: ${NOTEWEAVE_WIKI_INDEX_DISPATCH_DELAY_MS:30000}
   elasticsearch:
@@ -264,6 +308,9 @@ noteweave:
     index-prefix: ${NOTEWEAVE_ES_INDEX_PREFIX:noteweave_chunk}
     username: ${NOTEWEAVE_ES_USERNAME:}
     password: ${NOTEWEAVE_ES_PASSWORD:}
+    # 有界超时：集群卡住时让调用快速失败，而不是把请求线程挂死
+    connect-timeout-ms: ${NOTEWEAVE_ES_CONNECT_TIMEOUT_MS:3000}
+    socket-timeout-ms: ${NOTEWEAVE_ES_SOCKET_TIMEOUT_MS:30000}
   embedding:
     enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:true}
     endpoint: ${NOTEWEAVE_EMBEDDING_ENDPOINT:http://localhost:11434/v1/embeddings}

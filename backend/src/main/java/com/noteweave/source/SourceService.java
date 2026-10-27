@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -43,6 +44,26 @@ public class SourceService {
     private final ApplicationEventPublisher eventPublisher;
     private final RunReplayRedactionService runReplayRedactionService;
     private final ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate;
+    private final SourceCompliancePurgeService compliancePurgeService;
+
+    /** 文件对象生命周期网关；未注入时保留既有内联引用 SQL（legacy 路径）。 */
+    private com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setFileObjectLifecycle(com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle) {
+        this.fileObjectLifecycle = fileObjectLifecycle;
+    }
+
+    /**
+     * 派生对象生命周期设施（B 侧，AU-001 接线）：删除事务内登记派生清理意图。
+     * 未注入时（直连构造的测试）跳过——过期登记对账与孤儿清理仍兜底可见性。
+     */
+    private com.noteweave.storage.FileObjectLifecycleService derivedObjectLifecycle;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDerivedObjectLifecycle(com.noteweave.storage.FileObjectLifecycleService derivedObjectLifecycle) {
+        this.derivedObjectLifecycle = derivedObjectLifecycle;
+    }
 
     public SourceService(
             JdbcTemplate jdbcTemplate,
@@ -55,7 +76,8 @@ public class SourceService {
             TaskCommandPort taskCommandPort,
             ApplicationEventPublisher eventPublisher,
             RunReplayRedactionService runReplayRedactionService,
-            ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate
+            ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate,
+            SourceCompliancePurgeService compliancePurgeService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
@@ -68,6 +90,7 @@ public class SourceService {
         this.eventPublisher = eventPublisher;
         this.runReplayRedactionService = runReplayRedactionService;
         this.researchGeneratedSourceReadGate = researchGeneratedSourceReadGate;
+        this.compliancePurgeService = compliancePurgeService;
     }
 
     public List<SourceResponse> listSources(String workspaceId) {
@@ -186,34 +209,78 @@ public class SourceService {
     }
 
     /**
-     * 删除资料并记录删除原因。
+     * 删除资料并记录删除原因，幂等且允许原因单向升级。
      *
      * <p>USER 表示用户主动删除，历史笔记继续保留；COMPLIANCE 表示合规删除，
-     * 引用该资料的笔记会退出可用状态，但笔记内容和审计信息不做物理删除。</p>
+     * 引用该资料的笔记会退出可用状态，但笔记内容和审计信息不做物理删除。
+     * 重复删除返回既有删除事实，不再释放引用或重复安排清理；
+     * USER 删除后可以升级为 COMPLIANCE，COMPLIANCE 不能降级回 USER。</p>
      */
     @Transactional
     public DeleteSourceResponse deleteSource(String workspaceId, String sourceId, String reason) {
         String deleteReason = parseDeleteReason(reason);
-        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
-        String actor = auditActorProvider.currentOrSystem("SOURCE");
-        SourceRef source = loadSource(workspaceId, sourceId);
-        LinkedHashSet<String> cleanupObjectKeys = new LinkedHashSet<>(loadSnapshotObjectKeys(sourceId));
         if (DELETE_REASON_COMPLIANCE.equals(deleteReason)) {
-            // 合规删除显式写入原因；USER 使用字段默认值，历史删除记录同样按 USER 解释
-            jdbcTemplate.update("""
-                    update source
-                    set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
-                        delete_reason = ?, updated_by = ?, updated_at = current_timestamp
-                    where workspace_id = ? and id = ?
-                    """, deleteReason, actor, workspaceId, sourceId);
+            // 合规删除会清除正文并撤销笔记，破坏性远高于普通删除：只允许 OWNER 执行
+            workspaceAccessGuard.requireOwner(workspaceId);
         } else {
-            jdbcTemplate.update("""
-                    update source
-                    set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
-                        updated_by = ?, updated_at = current_timestamp
-                    where workspace_id = ? and id = ?
-                    """, actor, workspaceId, sourceId);
+            workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.SOURCE_WRITE);
         }
+        String actor = auditActorProvider.currentOrSystem("SOURCE");
+        // FOR UPDATE 锁定后读取：并发相反原因的删除由行锁串行化，后到者看到前者的终态
+        SourceRef source = loadSourceForDeletion(workspaceId, sourceId);
+        DeleteTransitionDecision transition = DeleteTransitionDecision.decide(
+                source.status(), source.deleteReason(), deleteReason);
+        switch (transition.kind()) {
+            case ALREADY_DELETED -> {
+                // 幂等回执：不重复释放引用、不重建 Wiki 撤回任务、不重复安排清理
+                recordDeleteOutcome(transition, "idempotent");
+                return new DeleteSourceResponse(sourceId, "DELETED", "",
+                        transition.kind().name(), transition.effectiveReason());
+            }
+            case UPGRADE_TO_COMPLIANCE -> {
+                jdbcTemplate.update("""
+                        update source
+                        set delete_reason = 'COMPLIANCE', updated_by = ?, updated_at = current_timestamp
+                        where workspace_id = ? and id = ? and status = 'DELETED'
+                        """, actor, workspaceId, sourceId);
+                revokeNotesReferencingSource(workspaceId, sourceId, actor);
+                // 由 USER 升级为 COMPLIANCE 时正文同样必须清除（此前只改原因，正文永久残留）
+                compliancePurgeService.purge(workspaceId, sourceId);
+                sourceCatalogVersionService.bump(workspaceId);
+                // 升级不重复减引用，但补登记可能缺失的物理清理意图（NOT EXISTS 幂等）
+                List<String> upgradeCleanupKeys = new java.util.ArrayList<>(loadSnapshotObjectKeys(sourceId));
+                if (source.objectKey() != null && !source.objectKey().isBlank()) {
+                    upgradeCleanupKeys.add(source.objectKey());
+                }
+                eventPublisher.publishEvent(SourceDeletedEvent.upgradeToCompliance(
+                        workspaceId, sourceId, upgradeCleanupKeys));
+                recordDeleteOutcome(transition, "upgraded");
+                return new DeleteSourceResponse(sourceId, "DELETED", "",
+                        transition.kind().name(), transition.effectiveReason());
+            }
+            case FIRST_DELETE -> {
+                return deleteFirstTime(workspaceId, sourceId, actor, source, transition);
+            }
+            default -> throw new IllegalStateException("Unknown delete transition: " + transition.kind());
+        }
+    }
+
+    /** 首次删除：一次性释放原件引用并安排清理，事件携带 transition 供监听器幂等。 */
+    private DeleteSourceResponse deleteFirstTime(
+            String workspaceId,
+            String sourceId,
+            String actor,
+            SourceRef source,
+            DeleteTransitionDecision transition
+    ) {
+        String deleteReason = transition.effectiveReason();
+        LinkedHashSet<String> cleanupObjectKeys = new LinkedHashSet<>(loadSnapshotObjectKeys(sourceId));
+        jdbcTemplate.update("""
+                update source
+                set status = 'DELETED', parse_status = 'DELETED', index_status = 'DELETED',
+                    delete_reason = ?, updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ?
+                """, deleteReason, actor, workspaceId, sourceId);
         jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'DELETED', index_status = 'DELETED'
@@ -221,15 +288,39 @@ public class SourceService {
                 """, sourceId);
         if (DELETE_REASON_COMPLIANCE.equals(deleteReason)) {
             revokeNotesReferencingSource(workspaceId, sourceId, actor);
+            // 合规删除承诺正文不再残留：同事务清空分块正文、窗口、引用摘录与摘要元数据
+            compliancePurgeService.purge(workspaceId, sourceId);
         }
         runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         cancelPendingSourceTasks(workspaceId, sourceId);
-        if (releaseFileObject(source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
+        // AU-001 / RB-008：派生对象（解析文档/提取正文/转写/向量批次）清理意图与删除同事务
+        // 登记 RELEASED；物理删除由 B 的孤儿对账按登记执行，共享对象不受影响
+        if (derivedObjectLifecycle != null) {
+            int releasedDerived = derivedObjectLifecycle
+                    .releaseDerivedForSource(workspaceId, sourceId, null).size();
+            if (releasedDerived > 0) {
+                meterRegistry.counter("noteweave.source.delete.derived_cleanup_registered").increment();
+            }
+        }
+        // 引用只在首次删除释放一次：重复/升级路径不会再进入这里
+        if (releaseFileObject(workspaceId, source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
         sourceCatalogVersionService.bump(workspaceId);
         String wikiTaskId = wikiCommandPort.requestSourceRetract(workspaceId, sourceId, source.title());
         eventPublisher.publishEvent(new SourceDeletedEvent(
-                workspaceId, sourceId, List.copyOf(cleanupObjectKeys), deleteReason));
-        return new DeleteSourceResponse(sourceId, "DELETED", wikiTaskId);
+                workspaceId, sourceId, List.copyOf(cleanupObjectKeys), deleteReason,
+                SourceDeletedEvent.TRANSITION_FIRST_DELETE));
+        recordDeleteOutcome(transition, "deleted");
+        return new DeleteSourceResponse(sourceId, "DELETED", wikiTaskId,
+                transition.kind().name(), deleteReason);
+    }
+
+    /** 删除结果按 transition/reason/outcome 聚合；sourceId 只进结构化日志，避免高基数指标。 */
+    private void recordDeleteOutcome(DeleteTransitionDecision transition, String outcome) {
+        meterRegistry.counter("noteweave.source.delete",
+                        "transition", transition.kind().name().toLowerCase(Locale.ROOT),
+                        "reason", transition.effectiveReason().toLowerCase(Locale.ROOT),
+                        "outcome", outcome)
+                .increment();
     }
 
     /** 合规删除时让引用该资料的笔记退出可用状态，笔记内容与审计信息保留。 */
@@ -265,7 +356,15 @@ public class SourceService {
         return normalized;
     }
 
-    private boolean releaseFileObject(String fileObjectId) {
+    /** 引用释放与删除事务同提交；网关未接线时执行既有内联 SQL。 */
+    private boolean releaseFileObject(String workspaceId, String fileObjectId) {
+        long remaining = fileObjectLifecycle != null
+                ? fileObjectLifecycle.release(workspaceId, fileObjectId)
+                : legacyReleaseFileObject(fileObjectId);
+        return remaining == 0;
+    }
+
+    private long legacyReleaseFileObject(String fileObjectId) {
         jdbcTemplate.update("""
                 update file_object
                 set ref_count = case when ref_count > 0 then ref_count - 1 else 0 end
@@ -273,7 +372,7 @@ public class SourceService {
                 """, fileObjectId);
         Integer remaining = jdbcTemplate.queryForObject(
                 "select ref_count from file_object where id = ?", Integer.class, fileObjectId);
-        return remaining != null && remaining == 0;
+        return remaining == null ? -1 : remaining;
     }
 
     private List<String> loadSnapshotObjectKeys(String sourceId) {
@@ -302,24 +401,29 @@ public class SourceService {
         }
     }
 
-    private SourceRef loadSource(String workspaceId, String sourceId) {
+    /**
+     * 删除路径专用加载：FOR UPDATE 锁定，允许返回 DELETED 行及其删除原因。
+     * 查询始终 workspace 限定；不存在的资料不暴露其他工作台的任何信息。
+     */
+    private SourceRef loadSourceForDeletion(String workspaceId, String sourceId) {
         return jdbcTemplate.query("""
-                select s.id, s.title, s.status, s.file_object_id, f.object_key
+                select s.id, s.title, s.status, coalesce(s.delete_reason, 'USER') as delete_reason,
+                       s.file_object_id, f.object_key
                 from source s
                 join file_object f on f.id = s.file_object_id
                 where s.workspace_id = ? and s.id = ?
+                    for update
                 """, rs -> {
             if (!rs.next()) {
                 throw new BusinessException("SOURCE_NOT_FOUND", "资料不存在");
-            }
-            if ("DELETED".equals(rs.getString("status"))) {
-                throw new BusinessException("SOURCE_ALREADY_DELETED", "资料已经删除");
             }
             return new SourceRef(
                     rs.getString("id"),
                     rs.getString("title"),
                     rs.getString("file_object_id"),
-                    rs.getString("object_key"));
+                    rs.getString("object_key"),
+                    rs.getString("status"),
+                    rs.getString("delete_reason"));
         }, workspaceId, sourceId);
     }
 
@@ -327,6 +431,13 @@ public class SourceService {
         return value == null ? Instant.now() : value.toInstant();
     }
 
-    private record SourceRef(String sourceId, String title, String fileObjectId, String objectKey) {
+    private record SourceRef(
+            String sourceId,
+            String title,
+            String fileObjectId,
+            String objectKey,
+            String status,
+            String deleteReason
+    ) {
     }
 }

@@ -1491,6 +1491,9 @@ void artifactCallbacksShouldBeIdempotentAfterTaskReachesTerminalState() throws E
                 String.class, versionId)).isEqualTo("DEGRADED");
 
         jdbcTemplate.update("update artifact_file set status = 'READY' where artifact_version_id = ?", versionId);
+        // ART-02：补偿失败会退避，这里把下一次尝试时间清空以立即重试（验证的是元数据齐备后才放行）
+        jdbcTemplate.update(
+                "update artifact_version set reconcile_next_attempt_at = null where id = ?", versionId);
         artifactExportService.reconcileDegradedFiles();
         assertThat(jdbcTemplate.queryForObject("select delivery_status from artifact_version where id = ?",
                 String.class, versionId)).isEqualTo("READY");
@@ -1750,12 +1753,13 @@ void completedArtifactVersionShouldWriteBackToNoteAndWikiThroughJavaHost() throw
         byte[] previewBytes = previewOutput.toByteArray();
         String previewDigest = java.util.HexFormat.of().formatHex(
                 java.security.MessageDigest.getInstance("SHA-256").digest(previewBytes));
+        var previewStaged = artifactExportService.prepareStagedFilesForVersion(firstVersionId, List.of(
+                new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 1,
+                        "slide-1.png", "image/png", previewBytes, previewDigest),
+                new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 2,
+                        "slide-2.png", "image/png", previewBytes, previewDigest)));
         new org.springframework.transaction.support.TransactionTemplate(transactionManager).execute(status -> {
-            artifactExportService.publishPreparedFiles(firstVersionId, List.of(
-                    new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 1,
-                            "slide-1.png", "image/png", previewBytes, previewDigest),
-                    new ArtifactExportService.PreparedFile("PNG", "SLIDE_PREVIEW", "original", 2,
-                            "slide-2.png", "image/png", previewBytes, previewDigest)));
+            artifactExportService.commitStagedFiles(firstVersionId, previewStaged);
             return null;
         });
 

@@ -39,6 +39,17 @@ public interface ChatLlmClient {
         return streamChat(systemPrompt, userPrompt, maximumOutputTokens, onToken);
     }
 
+    /**
+     * USAGE-01：带工作区归属的会话调用。sessionId 是摘要值，反推不出工作区；
+     * 真实 usage 只有显式带上 workspaceId 才能落到工作台，否则对账时看不到。
+     */
+    default String streamChatInSession(
+            String sessionId, String workspaceId, String systemPrompt, String userPrompt,
+            int maximumOutputTokens, Consumer<String> onToken
+    ) {
+        return streamChatInSession(sessionId, systemPrompt, userPrompt, maximumOutputTokens, onToken);
+    }
+
     static String routingSessionId(String kind, String workspaceId, String stableId) {
         if (workspaceId == null || workspaceId.isBlank() || stableId == null || stableId.isBlank()) {
             return null;

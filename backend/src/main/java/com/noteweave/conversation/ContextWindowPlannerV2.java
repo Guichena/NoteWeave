@@ -19,7 +19,7 @@ public final class ContextWindowPlannerV2 {
     static final int RAW_TAIL_TOKEN_TARGET = 6_000;
     /** 原文窗口最多占总预算的比例，给摘要、约束和记忆留出空间。 */
     private static final double RAW_TAIL_BUDGET_SHARE = 0.5d;
-    private static final int MAX_UNSUMMARIZED_MESSAGES = 256;
+    static final int MAX_UNSUMMARIZED_MESSAGES = 256;
     /** 摘要异步生成，通常比原文窗口落后一两轮；落后不超过这个条数时用原文补齐，不整段展开。 */
     private static final int MAX_SUMMARY_LAG_MESSAGES = 8;
 
@@ -98,14 +98,40 @@ public final class ContextWindowPlannerV2 {
                 degradation.add("CURRENT_SUMMARY_NOT_READY_RAW_EXPANDED");
             }
         }
-        if (raw.size() > MAX_UNSUMMARIZED_MESSAGES) {
-            throw budgetExceeded("unsummarized raw message limit exceeded");
+        // CTX-01：摘要滞后时不再整段展开后直接失败。先按条数上限裁掉最旧的原文，
+        // 再按 token 预算从最旧往前裁，始终保留连续的最新尾部；被裁掉的部分只记降级，不阻断回答。
+        int droppedByCount = 0;
+        while (raw.size() > MAX_UNSUMMARIZED_MESSAGES) {
+            raw = raw.subList(1, raw.size());
+            droppedByCount++;
+        }
+        if (droppedByCount > 0) {
+            degradation.add("UNSUMMARIZED_RAW_TRIMMED_BY_COUNT");
         }
         int used = tokens(input.currentInput());
         for (ContextProjectionV2.UserConstraint item : constraints) used += tokens(item.text());
         for (ContextProjectionV2.MemoryRevision item : memories) used += tokens(item.text());
         for (ContextProjectionV2.RawMessage item : raw) used += tokens(item.text());
+        int droppedByBudget = 0;
+        while (used > input.tokenBudget() && raw.size() > 1) {
+            used -= tokens(raw.get(0).text());
+            raw = raw.subList(1, raw.size());
+            droppedByBudget++;
+        }
+        if (droppedByBudget > 0) {
+            degradation.add("RAW_TRIMMED_BY_TOKEN_BUDGET");
+        }
+        // 只有连最新一条原文都放不下、必带的控制信息本身超预算时，才是真的超预算
         if (used > input.tokenBudget()) throw budgetExceeded("mandatory control and raw context exceed budget");
+        int rawStartSeq = raw.isEmpty() ? input.cutoffSeq() + 1 : raw.get(0).seq();
+        if (droppedByCount + droppedByBudget > 0) {
+            for (ContextProjectionV2.RawMessage item : messages) {
+                if (item.seq() < rawStartSeq) {
+                    decisions.add(new ContextProjectionV2.Decision("MESSAGE", item.messageId(),
+                            "EXCLUDE", "RAW_OUTSIDE_CONTEXT_WINDOW"));
+                }
+            }
+        }
         for (ContextProjectionV2.RawMessage item : raw) {
             decisions.add(new ContextProjectionV2.Decision("MESSAGE", item.messageId(),
                     "INCLUDE", "CONTIGUOUS_RAW_TAIL"));
@@ -170,9 +196,16 @@ public final class ContextWindowPlannerV2 {
         return count;
     }
 
-    /** 预算单位是估算的 token 数，估算规则见 ContextTokenEstimator。 */
+    /** 预算单位是估算的 token 数；经 TokenCounter 统一入口，估算方式与版本见 TokenEstimate。 */
     private static int tokens(String value) {
-        return ContextTokenEstimator.estimate(value);
+        return com.noteweave.conversation.TokenCounter.estimate(value, null).count();
+    }
+
+    /** 当前预算估算口径（方式/分词器版本）；供诊断与合同说明。 */
+    public static String estimateMethod() {
+        com.noteweave.conversation.TokenEstimate estimate =
+                com.noteweave.conversation.TokenCounter.estimate("sample", null);
+        return estimate.method() + "/" + estimate.tokenizerVersion();
     }
 
     private static boolean applies(ContextProjectionV2.UserConstraint constraint, String taskPurpose,

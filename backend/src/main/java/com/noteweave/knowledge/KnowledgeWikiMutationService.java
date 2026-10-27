@@ -62,6 +62,20 @@ public class KnowledgeWikiMutationService {
         return "TOPIC";
     }
 
+    /**
+     * NR19：按稳定来源身份定位自动资料页——同名不同资料各有独立页面，
+     * 同一资料重处理更新原页；人工页/概念页不绑定来源（origin_source_id 为 NULL）。
+     */
+    public String findWikiItemIdBySource(String workspaceId, String sourceId) {
+        List<String> ids = jdbcTemplate.queryForList("""
+                select id from knowledge_item
+                where workspace_id = ? and item_type = 'WIKI'
+                  and origin_source_id = ? and status = 'ACTIVE'
+                limit 1
+                """, String.class, workspaceId, sourceId);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
     public String findWikiItemIdByTitle(String workspaceId, String title) {
         List<String> ids = jdbcTemplate.queryForList("""
                 select id from knowledge_item

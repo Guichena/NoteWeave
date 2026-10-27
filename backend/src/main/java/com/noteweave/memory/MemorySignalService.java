@@ -117,7 +117,7 @@ public class MemorySignalService {
             SignalRow row = jdbcTemplate.query("""
                     select id, workspace_id, user_id, source_type, source_id, signal_type, signal_text,
                            task_neighborhood, compile_hints_json, confidence_score, policy_version,
-                           slot_key, slot_value, polarity
+                           slot_key, slot_value, polarity, evidence_band
                     from memory_signal
                     where workspace_id = ? and id = ?
                     """, rs -> {
@@ -138,7 +138,8 @@ public class MemorySignalService {
                         rs.getString("policy_version"),
                         rs.getString("slot_key"),
                         rs.getString("slot_value"),
-                        rs.getString("polarity")
+                        rs.getString("polarity"),
+                        rs.getString("evidence_band")
                 );
             }, workspaceId, signalId);
             if (row == null) {
@@ -210,7 +211,29 @@ public class MemorySignalService {
             String policyVersion,
             String slotKey,
             String slotValue,
-            String polarity
+            String polarity,
+            String evidenceBand
     ) {
+        /** 兼容旧构造：无持久 band 的历史行按 legacy 规则推导。 */
+        SignalRow(String signalId, String workspaceId, String userId, String sourceType,
+                String sourceId, String signalType, String signalText, String taskNeighborhood,
+                MemoryCompileHints compileHints, double confidenceScore, String policyVersion,
+                String slotKey, String slotValue, String polarity) {
+            this(signalId, workspaceId, userId, sourceType, sourceId, signalType, signalText,
+                    taskNeighborhood, compileHints, confidenceScore, policyVersion,
+                    slotKey, slotValue, polarity, null);
+        }
+
+        /** 持久化证据分层；历史行为 NULL 时按 legacy 规则由调用方解释。 */
+        public MemoryEvidence.Band persistedBand() {
+            if (evidenceBand != null && !evidenceBand.isBlank()) {
+                try {
+                    return MemoryEvidence.Band.valueOf(evidenceBand.trim().toUpperCase(java.util.Locale.ROOT));
+                } catch (IllegalArgumentException ignored) {
+                    // 未知取值按 legacy 规则处理，不静默放行为更强分层
+                }
+            }
+            return MemoryEvidence.bandOf(sourceType, false);
+        }
     }
 }

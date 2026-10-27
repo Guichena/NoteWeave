@@ -1,5 +1,6 @@
 package com.noteweave;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.hamcrest.Matchers.closeTo;
@@ -476,6 +477,20 @@ class MemoryRuntimeContractTest {
                         .value(proposal.memoryItemId()))
                 .andExpect(jsonPath("$.data.outcomes[0].memory_version_id")
                         .value(proposal.revisionId()));
+
+        // MEM-07：旧接口也留一条等价事件（before/delta），撤销时才不会抹掉这次 outcome
+        java.util.Map<String, Object> event = jdbcTemplate.queryForMap("""
+                select signal_kind, outcome_type, positive_count_before, positive_delta
+                from memory_application_outcome
+                where workspace_id = ? and memory_item_id = ?
+                """, workspaceId, proposal.memoryItemId());
+        assertThat(event).containsEntry("SIGNAL_KIND", "LEGACY_OUTCOME")
+                .containsEntry("OUTCOME_TYPE", "POSITIVE");
+        int expectedPositive = ((Number) event.get("POSITIVE_COUNT_BEFORE")).intValue()
+                + ((Number) event.get("POSITIVE_DELTA")).intValue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select positive_outcome_count from memory_item where id = ?", Integer.class,
+                proposal.memoryItemId())).isEqualTo(expectedPositive);
     }
 
     @Test

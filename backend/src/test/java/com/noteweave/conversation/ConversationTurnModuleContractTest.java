@@ -1605,6 +1605,8 @@ class ConversationTurnModuleContractTest {
                 set status = 'PREPARING', updated_at = dateadd('SECOND', -120, current_timestamp)
                 where id = ?
                 """, submissionId);
+        int attemptsBefore = jdbcTemplate.queryForObject(
+                "select preparation_attempt from turn_submission where id = ?", Integer.class, submissionId);
 
         java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
         java.util.concurrent.CountDownLatch ready = new java.util.concurrent.CountDownLatch(2);
@@ -1623,8 +1625,18 @@ class ConversationTurnModuleContractTest {
             int firstStatus = first.get(20, java.util.concurrent.TimeUnit.SECONDS).getResponse().getStatus();
             int secondStatus = second.get(20, java.util.concurrent.TimeUnit.SECONDS).getResponse().getStatus();
 
-            assertThat(java.util.List.of(firstStatus, secondStatus))
-                    .containsExactlyInAnyOrder(400, 409);
+            // 不变量：认领是条件 UPDATE（CAS），重叠窗口内绝不允许两个请求都成功认领。
+            // 输家在窗口内被拒 → 409；输家晚于赢家失败复位后才开始 → 对 FAILED 的合法
+            // 顺序再恢复 → 同样 400。用 preparation_attempt 精确核账：每个 400 对应恰好
+            // 一次认领递增，409 不认领——既证明无并发双认领，也接受合法的串行再恢复。
+            java.util.List<Integer> statuses = java.util.List.of(firstStatus, secondStatus);
+            assertThat(statuses).isSubsetOf(400, 409);
+            assertThat(statuses.stream().filter(status -> status == 409).count()).isLessThanOrEqualTo(1);
+            int claims = statuses.stream().filter(status -> status == 400).toList().size();
+            int attemptsAfter = jdbcTemplate.queryForObject(
+                    "select preparation_attempt from turn_submission where id = ?", Integer.class, submissionId);
+            assertThat(attemptsAfter - attemptsBefore).isEqualTo(claims);
+            assertThat(attemptsAfter - attemptsBefore).isLessThanOrEqualTo(2);
         } finally {
             executor.shutdownNow();
         }

@@ -10,6 +10,16 @@ interface WikiPageIndex {
 
     boolean delete(String workspaceId, String itemId);
 
+    /** 带单调版本的写入（B-07）：external version 拒绝迟到的旧 UPSERT。 */
+    default boolean upsert(Document document, long version) {
+        return upsert(document);
+    }
+
+    /** 带版本的删除：写入持久墓碑文档而非物理删除，检索过滤墓碑。 */
+    default boolean delete(String workspaceId, String itemId, long version) {
+        return delete(workspaceId, itemId);
+    }
+
     SearchResult keywordSearch(String workspaceId, String query, WikiLexicalBoost boost, int limit);
 
     SearchResult vectorSearch(String workspaceId, List<Float> vector, int limit);

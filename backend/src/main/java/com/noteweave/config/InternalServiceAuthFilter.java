@@ -1,6 +1,7 @@
 package com.noteweave.config;
 
 import com.noteweave.common.RequestContext;
+import com.noteweave.security.ApiPaths;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -71,8 +72,15 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        // 过滤器只在 /internal/* 上生效
-        return !request.getRequestURI().startsWith("/internal/");
+        // 与授权拦截器共用 ApiPaths 规范化路径（解码 %XX、剥离矩阵参数、去掉 contextPath）。
+        // 直接用原始 getRequestURI() 判断时，/%69nternal/... 这类等价编码不会命中
+        // 前缀检查，请求会跳过本过滤器直达内部路由。
+        String path = ApiPaths.canonicalPath(request);
+        if (path == null) {
+            // 非法百分号编码：无法判定归属，进入 doFilterInternal 统一拒绝
+            return false;
+        }
+        return !isInternalPath(path);
     }
 
     @Override
@@ -81,7 +89,18 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        String expectedToken = expectedToken(request.getRequestURI());
+        String path = ApiPaths.canonicalPath(request);
+        if (path == null) {
+            reject(response, HttpServletResponse.SC_BAD_REQUEST, "REQUEST_PATH_INVALID",
+                    "请求路径包含非法编码");
+            return;
+        }
+        if (!isInternalPath(path)) {
+            // 与 shouldNotFilter 使用同一判定，避免两处口径不一致
+            filterChain.doFilter(request, response);
+            return;
+        }
+        String expectedToken = expectedToken(path);
         if (!expectedToken.isBlank()) {
             // 生产 / 配置生效：必须 header 匹配
             String supplied = request.getHeader(HEADER_NAME);
@@ -136,12 +155,21 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
                 || path.equals("/internal/worker/artifact-callbacks/acquisition/ack");
     }
 
+    /** 内部接口前缀；{@code /internal} 本身也属于内部命名空间。 */
+    private static boolean isInternalPath(String path) {
+        return path.equals("/internal") || path.startsWith("/internal/");
+    }
+
     private static String trimmed(String value) {
         return value == null ? "" : value.trim();
     }
 
     private void reject(HttpServletResponse response, String code, String message) throws IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        reject(response, HttpServletResponse.SC_UNAUTHORIZED, code, message);
+    }
+
+    private void reject(HttpServletResponse response, int status, String code, String message) throws IOException {
+        response.setStatus(status);
         response.setContentType("application/json;charset=UTF-8");
         // 极简 JSON，避开对 ObjectMapper 的依赖
         response.getWriter().write(

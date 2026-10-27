@@ -22,6 +22,18 @@ import org.springframework.stereotype.Service;
 @Service
 public class WikiIngestService {
 
+    /** C2 入队端口；未接线时保留既有内联 task_outbox INSERT 与 LIKE 去重（legacy 路径）。 */
+    private WikiIngestTaskEnqueuerPort wikiIngestEnqueuer;
+
+    /** 摄取策略版本；与 B 侧配置共同决定语义身份，未配置时按 v1。 */
+    @org.springframework.beans.factory.annotation.Value("${noteweave.wiki.ingest-policy-version:v1}")
+    private String ingestPolicyVersion = "v1";
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setWikiIngestEnqueuer(WikiIngestTaskEnqueuerPort wikiIngestEnqueuer) {
+        this.wikiIngestEnqueuer = wikiIngestEnqueuer;
+    }
+
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceQueryPort workspaceQueryPort;
     private final KnowledgeQueryService knowledgeQueryService;
@@ -31,8 +43,11 @@ public class WikiIngestService {
     private final ObjectMapper objectMapper;
     private final SourceMessagingMode messagingMode;
     private final WikiIngestTransactionExecutor transactionExecutor;
+    private final WikiWorkspaceLock workspaceLock;
 
     private static final Duration ORPHANED_PENDING_TASK_AGE = Duration.ofMinutes(10);
+    /** 工作台写入租约：远大于单次 ingest，进程崩溃后自动失效。 */
+    private static final Duration WORKSPACE_LOCK_TTL = Duration.ofMinutes(15);
     /** 自动概念页正文里的固定说明，用来区分自动生成的概念页和用户手工创建的页面。 */
     static final String CONCEPT_PAGE_MARKER = "该概念页由工作台级 Wiki ingest 自动汇聚";
     /** 资料页构建说明里的固定文字，用来识别自动生成的资料页。 */
@@ -67,7 +82,8 @@ public class WikiIngestService {
             TaskCommandPort taskCommandPort,
             ObjectMapper objectMapper,
             SourceMessagingMode messagingMode,
-            WikiIngestTransactionExecutor transactionExecutor
+            WikiIngestTransactionExecutor transactionExecutor,
+            WikiWorkspaceLock workspaceLock
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceQueryPort = workspaceQueryPort;
@@ -78,6 +94,7 @@ public class WikiIngestService {
         this.objectMapper = objectMapper;
         this.messagingMode = messagingMode;
         this.transactionExecutor = transactionExecutor;
+        this.workspaceLock = workspaceLock;
     }
 
     public String enqueueAndRunSourceIngestIfEnabled(String workspaceId, String sourceId) {
@@ -98,6 +115,69 @@ public class WikiIngestService {
     }
 
     /**
+     * 消费 B 的持久 READY 摄取意图：短事务内核对当前快照与来源资格后入队。
+     *
+     * <p>同快照同策略只产生一个有效任务：在途任务命中相同快照身份时直接复用。
+     * 快照被新代次取代返回 IGNORED_STALE；来源已删除同样忽略；
+     * 来源仍在处理中返回 RETRYABLE_FAILURE 等待重投；
+     * Wiki 功能关闭返回 PARKED 停放（AU-003：暂停不是丢弃，重开后积压继续）。</p>
+     */
+    public WikiIngestIntentOutcome enqueueSourceIngestForReadySnapshot(WikiReadySourceIntent intent) {
+        if (intent == null || !intent.isValid()) {
+            return WikiIngestIntentOutcome.IGNORED_STALE;
+        }
+        if (!isWikiEnabledForInternalExecution(intent.workspaceId())) {
+            // AU-003：功能关闭是可逆的部署状态，意图停放等待重新启用，不终态化
+            return WikiIngestIntentOutcome.PARKED;
+        }
+        SourceDispatchState dispatchState = loadSourceDispatchState(
+                intent.workspaceId(), intent.sourceId());
+        if (dispatchState == SourceDispatchState.DELETED) {
+            return WikiIngestIntentOutcome.IGNORED_STALE;
+        }
+        if (dispatchState == SourceDispatchState.NOT_READY) {
+            return WikiIngestIntentOutcome.RETRYABLE_FAILURE;
+        }
+        if (!isSnapshotCurrent(intent.sourceId(), intent.snapshotId())) {
+            // 旧快照的晚到意图：不复活旧内容，也不阻塞新代次
+            return WikiIngestIntentOutcome.IGNORED_STALE;
+        }
+        String taskId = transactionExecutor.execute(() -> enqueueSourceIngest(
+                intent.workspaceId(), intent.sourceId(), intent.snapshotId(),
+                "ingest", "资料 READY 意图确认，已进入 Wiki ingest 队列"));
+        if (!messagingMode.isAsyncEnabled()) {
+            runSourceIngestNow(taskId, intent.workspaceId(), intent.sourceId());
+            markOutboxSent(taskId);
+        }
+        return WikiIngestIntentOutcome.APPLIED;
+    }
+
+    private enum SourceDispatchState { READY, NOT_READY, DELETED }
+
+    private SourceDispatchState loadSourceDispatchState(String workspaceId, String sourceId) {
+        List<String> statuses = jdbcTemplate.queryForList("""
+                select status from source where workspace_id = ? and id = ?
+                """, String.class, workspaceId, sourceId);
+        if (statuses.isEmpty()) {
+            return SourceDispatchState.DELETED;
+        }
+        String status = statuses.get(0);
+        if ("DELETED".equals(status)) {
+            return SourceDispatchState.DELETED;
+        }
+        return "READY".equals(status) ? SourceDispatchState.READY : SourceDispatchState.NOT_READY;
+    }
+
+    private boolean isSnapshotCurrent(String sourceId, String snapshotId) {
+        Integer current = jdbcTemplate.queryForObject("""
+                select count(*) from source_snapshot ss
+                where ss.source_id = ? and ss.id = ?
+                  and ss.version_no = (select max(x.version_no) from source_snapshot x where x.source_id = ss.source_id)
+                """, Integer.class, sourceId, snapshotId);
+        return current != null && current > 0;
+    }
+
+    /**
      * Kafka 消费者回调入口：直接执行 source ingest。
      */
     public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {
@@ -105,9 +185,27 @@ public class WikiIngestService {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", sourceId);
             return;
         }
+        // 重试前确认资料仍 READY 且代次有效：删除后晚到的 ingest 不能重新生成可见页面
+        SourceDispatchState dispatchState = loadSourceDispatchState(workspaceId, sourceId);
+        if (dispatchState == SourceDispatchState.DELETED) {
+            taskCommandPort.cancelTask(taskId, "SOURCE_DELETED", "资料已删除，跳过 Wiki ingest", sourceId);
+            return;
+        }
+        if (dispatchState == SourceDispatchState.NOT_READY) {
+            // 资料仍在处理中：等待来源而不是把暂不可用当成永久失败
+            taskCommandPort.failTask(taskId, "SOURCE_NOT_READY",
+                    "资料尚未 READY，等待来源处理完成后重试", "WIKI_INGEST_WAIT_SOURCE", true);
+            return;
+        }
         cancelSupersededPendingTasks(
                 taskId, workspaceId, sourceId, "WIKI_INGEST", "ingest");
         taskCommandPort.startTask(taskId);
+        String lockKey = workspaceLock.keyForWorkspace(workspaceId);
+        if (!workspaceLock.tryAcquire(lockKey, taskId, WORKSPACE_LOCK_TTL)) {
+            taskCommandPort.failTask(taskId, "WIKI_WORKSPACE_BUSY",
+                    "同一工作台已有 Wiki 任务在写入，本次 ingest 稍后重试", "WIKI_WORKSPACE_BUSY", true);
+            return;
+        }
         try {
             transactionExecutor.execute(() -> {
                 KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
@@ -119,11 +217,17 @@ public class WikiIngestService {
             taskCommandPort.failTask(taskId, "WIKI_INDEXED_FAILED",
                     "Wiki ingest 失败：" + failureMessage(ex), "WIKI_INGEST_FAILED", true);
             // Do not rethrow: task is already FAILED; Kafka redelivery would only create noise.
+        } finally {
+            workspaceLock.release(lockKey, taskId);
         }
     }
 
     /**
      * Kafka 消费者回调入口：直接执行 source retract。
+     *
+     * <p>WIKI-02：retract 不能是一个覆盖全工作台的长事务。删除来源页必须立刻落地，
+     * 后续重灌其他来源属于可重算的刷新，逐来源独立短事务执行，单个来源失败既不回滚删除，
+     * 也不阻塞其余来源。这样即使工作台有几十个来源，事务也只持有单次页面写入的时间。</p>
      */
     public void runSourceRetractNow(String taskId, String workspaceId, String sourceId) {
         if (!isWikiEnabledForInternalExecution(workspaceId)) {
@@ -133,29 +237,72 @@ public class WikiIngestService {
         cancelSupersededPendingTasks(
                 taskId, workspaceId, sourceId, "WIKI_RETRACT", "retract");
         taskCommandPort.startTask(taskId);
+        String lockKey = workspaceLock.keyForWorkspace(workspaceId);
+        if (!workspaceLock.tryAcquire(lockKey, taskId, WORKSPACE_LOCK_TTL)) {
+            taskCommandPort.failTask(taskId, "WIKI_WORKSPACE_BUSY",
+                    "同一工作台已有 Wiki 任务在写入，本次 retract 稍后重试", "WIKI_WORKSPACE_BUSY", true);
+            return;
+        }
         try {
-            transactionExecutor.execute(() -> {
+            // 第一段：只做删除，短事务提交。删除结果不依赖后面的重灌是否成功。
+            int deletedItems = transactionExecutor.execute(() -> {
                 List<String> itemIds = knowledgeQueryService.findSourceBackedWikiItemIds(
                         workspaceId, sourceId);
                 for (String itemId : itemIds) {
-                    knowledgeCommandService.deleteItem(itemId);
+                    knowledgeCommandService.deleteItemForInternalExecution(workspaceId, itemId);
                 }
-                List<String> remainingSourceIds = readySourceIds(workspaceId);
-                if (!remainingSourceIds.isEmpty()) {
-                    for (String remainingSourceId : remainingSourceIds) {
+                return itemIds.size();
+            });
+            // 第二段：其余来源逐个重灌，每个来源一个独立事务。
+            List<String> remainingSourceIds = readySourceIds(workspaceId);
+            int refreshedSources = 0;
+            int failedSources = 0;
+            for (String remainingSourceId : remainingSourceIds) {
+                try {
+                    transactionExecutor.execute(() -> {
                         ingestSource(workspaceId, remainingSourceId);
+                        return null;
+                    });
+                    refreshedSources++;
+                } catch (RuntimeException ex) {
+                    failedSources++;
+                    log.warn("Wiki retract re-ingest failed: workspaceId={}, sourceId={}, reason={}",
+                            workspaceId, remainingSourceId, failureMessage(ex));
+                }
+            }
+            // 第三段：短事务收尾，刷新目录页并结束任务。
+            int finalRefreshed = refreshedSources;
+            int finalFailed = failedSources;
+            transactionExecutor.execute(() -> {
+                if (!remainingSourceIds.isEmpty()) {
+                    // 目录页是派生页面：刷新失败不应把已经落地的删除与重灌判为失败
+                    try {
+                        refreshWorkspaceIndexPage(workspaceId, "source_retract");
+                    } catch (RuntimeException ex) {
+                        log.warn("Wiki index refresh after retract failed: workspaceId={}, reason={}",
+                                workspaceId, failureMessage(ex));
                     }
-                    refreshWorkspaceIndexPage(workspaceId, "source_retract");
                 }
                 taskCommandPort.completeTask(taskId, "WIKI_RETRACTED",
-                        "Wiki retract 已清理资料删除影响的页面：" + itemIds.size() + " 个", sourceId);
+                        retractMessage(deletedItems, finalRefreshed, finalFailed), sourceId);
                 return null;
             });
         } catch (RuntimeException ex) {
             taskCommandPort.failTask(taskId, "WIKI_RETRACTED_FAILED",
                     "Wiki retract 失败：" + failureMessage(ex), "WIKI_RETRACT_FAILED", true);
             // Do not rethrow: task is already FAILED; Kafka redelivery would only create noise.
+        } finally {
+            workspaceLock.release(lockKey, taskId);
         }
+    }
+
+    private String retractMessage(int deletedItems, int refreshedSources, int failedSources) {
+        String message = "Wiki retract 已清理资料删除影响的页面：" + deletedItems + " 个";
+        if (failedSources > 0) {
+            return message + "；重灌 " + refreshedSources + " 个来源，另有 " + failedSources
+                    + " 个来源重灌失败，可重建工作台 Wiki 修复";
+        }
+        return message;
     }
 
     public WikiRebuildResponse enqueueAndRunWorkspaceIngestIfEnabled(String workspaceId, String trigger) {
@@ -176,25 +323,75 @@ public class WikiIngestService {
     public int reconcileOrphanedPendingWikiTasks() {
         Timestamp cutoff = Timestamp.from(
                 Instant.now().minus(ORPHANED_PENDING_TASK_AGE));
-        List<String> orphanedTaskIds = jdbcTemplate.queryForList("""
-                select distinct t.id
+        List<OrphanedTask> orphans = jdbcTemplate.query("""
+                select t.id, t.workspace_id, t.target_id, t.task_type
                 from task t
-                join task_outbox o on o.task_id = t.id
                 where t.task_type in ('WIKI_INGEST', 'WIKI_RETRACT')
                   and t.task_status = 'PENDING'
-                  and o.status = 'SENT'
                   and t.updated_at < ?
+                  and exists (select 1 from task_outbox o where o.task_id = t.id and o.status = 'SENT')
                 order by t.id asc
                 limit 100
-                """, String.class, cutoff);
-        for (String taskId : orphanedTaskIds) {
+                """, (rs, rowNum) -> new OrphanedTask(
+                rs.getString("id"), rs.getString("workspace_id"),
+                rs.getString("target_id"), rs.getString("task_type")), cutoff);
+        for (OrphanedTask orphan : orphans) {
+            boolean requeueable = "WIKI_INGEST".equals(orphan.taskType());
             taskCommandPort.cancelTask(
-                    taskId,
+                    orphan.taskId(),
                     "WIKI_DELIVERY_ORPHANED",
-                    "Wiki 消息已发送但消费者长时间未接管，任务已安全取消，可通过资料重建重新执行",
+                    requeueable
+                            ? "Wiki 消息已发送但消费者长时间未接管，任务已取消，快照仍然有效时已重新入队"
+                            : "Wiki 消息已发送但消费者长时间未接管，任务已安全取消，可通过资料重建重新执行",
                     "");
+            if (requeueable) {
+                // WIKI-04：取消前比较快照代次——消息丢了但意图仍然有效时重新入队，
+                // 不把这次编译静默丢掉；快照已被新代次取代才算真正过期
+                requeueOrphanedIngestIfSnapshotCurrent(orphan);
+            }
         }
-        return orphanedTaskIds.size();
+        return orphans.size();
+    }
+
+    /**
+     * 投递中断的 ingest 任务：快照仍是该来源当前代次时重新入队，否则只取消不重投。
+     */
+    private void requeueOrphanedIngestIfSnapshotCurrent(OrphanedTask orphan) {
+        String snapshotId = snapshotIdOfTask(orphan.taskId());
+        if (snapshotId == null || !isSnapshotCurrent(orphan.targetId(), snapshotId)) {
+            return;
+        }
+        try {
+            transactionExecutor.execute(() -> enqueueSourceIngest(
+                    orphan.workspaceId(), orphan.targetId(), snapshotId,
+                    "ingest", "Wiki 消息投递中断，快照仍然有效，已重新入队"));
+        } catch (RuntimeException ex) {
+            log.warn("Wiki orphaned ingest requeue failed: taskId={}, sourceId={}, reason={}",
+                    orphan.taskId(), orphan.targetId(), failureMessage(ex));
+        }
+    }
+
+    /** 从任务的 outbox 载荷里取快照身份；C2 载荷写 sourceSnapshotId，旧载荷写 snapshotId。 */
+    private String snapshotIdOfTask(String taskId) {
+        List<String> payloads = jdbcTemplate.queryForList("""
+                select payload_json from task_outbox
+                where task_id = ? and payload_json is not null
+                """, String.class, taskId);
+        for (String payload : payloads) {
+            try {
+                var node = objectMapper.readTree(payload);
+                String snapshotId = node.path("sourceSnapshotId").asText(node.path("snapshotId").asText(""));
+                if (!snapshotId.isBlank()) {
+                    return snapshotId;
+                }
+            } catch (Exception ignored) {
+                // 载荷不是合法 JSON：当作没有快照身份，只取消不重投
+            }
+        }
+        return null;
+    }
+
+    record OrphanedTask(String taskId, String workspaceId, String targetId, String taskType) {
     }
 
     public String enqueueAndRunSourceRetractIfEnabled(String workspaceId, String sourceId, String sourceTitle) {
@@ -221,19 +418,64 @@ public class WikiIngestService {
         return taskId;
     }
 
+    /** 旧入口：不携带快照身份，行为与既有版本一致。 */
     private String enqueueSourceIngest(String workspaceId, String sourceId, String operation, String message) {
+        return enqueueSourceIngest(workspaceId, sourceId, null, operation, message);
+    }
+
+    /**
+     * 按快照身份入队：同一来源同一快照的在途任务直接复用 taskId，
+     * 不再每次创建新任务后靠对账去重。
+     */
+    private String enqueueSourceIngest(
+            String workspaceId, String sourceId, String snapshotId, String operation, String message) {
+        if (wikiIngestEnqueuer != null && snapshotId != null && !snapshotId.isBlank()) {
+            // C2 端口：先按语义身份（workspace/source/snapshot/策略版本/阶段）唯一认领，
+            // 再由端口创建 task 与 outbox 行；命中既有记录时复用任务，无孤立 task、无 LIKE 去重
+            WikiIngestTaskEnqueuerPort.EnqueueOutcome outcome = wikiIngestEnqueuer.enqueueIngest(
+                    new WikiIngestTaskEnqueuerPort.IngestCommand(
+                            workspaceId, sourceId, snapshotId, ingestPolicyVersion,
+                            operation, message));
+            return outcome.taskId();
+        }
+        // legacy 路径：端口未接线或旧入口（无快照身份）时保持既有行为
+        if (snapshotId != null && !snapshotId.isBlank()) {
+            String existingTaskId = findInFlightIngestTask(workspaceId, sourceId, snapshotId);
+            if (existingTaskId != null) {
+                return existingTaskId;
+            }
+        }
         String taskId = taskCommandPort.createTask(workspaceId, "WIKI_INGEST", "SOURCE", sourceId, "QUEUED", message);
-        Map<String, Object> payload = Map.of(
-                "taskId", taskId,
-                "sourceId", sourceId,
-                "workspaceId", workspaceId,
-                "operation", operation
-        );
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("taskId", taskId);
+        payload.put("sourceId", sourceId);
+        payload.put("workspaceId", workspaceId);
+        payload.put("operation", operation);
+        if (snapshotId != null && !snapshotId.isBlank()) {
+            payload.put("snapshotId", snapshotId);
+        }
         jdbcTemplate.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, 'noteweave.wiki.ingest', ?, ?, 'READY')
                 """, Ids.newId(), taskId, sourceId, Json.write(objectMapper, payload));
         return taskId;
+    }
+
+    /** 查找同来源同快照的在途 ingest 任务；复用业务身份避免重复任务。 */
+    private String findInFlightIngestTask(String workspaceId, String sourceId, String snapshotId) {
+        List<String> taskIds = jdbcTemplate.queryForList("""
+                select t.id
+                from task t
+                join task_outbox o on o.task_id = t.id
+                where t.workspace_id = ? and t.target_type = 'SOURCE' and t.target_id = ?
+                  and t.task_type = 'WIKI_INGEST'
+                  and t.task_status in ('PENDING', 'RUNNING', 'WAITING')
+                  and o.status in ('READY', 'PROCESSING')
+                  and o.payload_json like concat('%"snapshotId":"', ?, '"%')
+                order by t.created_at desc, t.id desc
+                limit 1
+                """, String.class, workspaceId, sourceId, snapshotId);
+        return taskIds.isEmpty() ? null : taskIds.get(0);
     }
 
     private String enqueueSourceRetract(String workspaceId, String sourceId) {
@@ -323,12 +565,14 @@ public class WikiIngestService {
         // 在写入资料页之前清理旧概念页，写入时的自动链接就不会再指向即将删除的页面
         pruneOrphanedConceptPages(workspaceId, source.title(), concepts);
         List<String> citationIds = createCitations(workspaceId, chunks, 3);
-        KnowledgeItemResponse sourcePage = knowledgeCommandService.upsertWikiPageForInternalExecution(
-                workspaceId,
-                source.title(),
-                buildSourcePageContent(source, chunks, concepts, fingerprint),
-                citationIds
-        );
+        KnowledgeItemResponse sourcePage = knowledgeCommandService
+                .upsertWikiSourcePageForInternalExecution(
+                        workspaceId,
+                        source.title(),
+                        buildSourcePageContent(source, chunks, concepts, fingerprint),
+                        citationIds,
+                        source.sourceId()
+                );
         for (String concept : concepts) {
             List<SourceForWiki> relatedSources = loadRelatedSourcesForConcept(workspaceId, concept, 4);
             if (relatedSources.isEmpty()) {
@@ -391,12 +635,19 @@ public class WikiIngestService {
                   and i.item_type = 'WIKI'
                   and i.status = 'ACTIVE'
                   and i.updated_by like 'SYSTEM:%'
+                  -- WIKI-03：人工编辑过或待确认的页面一律保留，不参与自动清理
+                  and coalesce(i.wiki_page_state, 'AUTO') = 'AUTO'
+                  -- WIKI-06：只清理自动概念页。目录页会把各页摘要抄进正文，
+                  -- 光看正文标记会把 Wiki Index 和资料页一起删掉，所以按来源身份排除资料页，
+                  -- 再按标题排除目录页（目录页标题是固定常量，类型判断也先看标题）
+                  and i.origin_source_id is null
+                  and lower(i.title) <> 'wiki index'
                   and v.content like ?
                 """, rs -> {
             if (!selected.contains(rs.getString("title"))) orphanIds.add(rs.getString("id"));
         }, workspaceId, "%" + CONCEPT_PAGE_MARKER + "%");
         for (String itemId : orphanIds) {
-            knowledgeCommandService.deleteItem(itemId);
+            knowledgeCommandService.deleteItemForInternalExecution(workspaceId, itemId);
         }
         if (!orphanIds.isEmpty()) {
             log.info("Pruned {} orphaned Wiki concept pages in workspace {}", orphanIds.size(), workspaceId);

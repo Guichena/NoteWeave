@@ -45,6 +45,7 @@ public class ResearchRunQueryService {
     private final ResearchReportReadModelAssembler researchReportReadModelAssembler;
     private final ResearchRunQueryPayloadReader payloadReader;
     private final ResearchContextV2Gate contextGate;
+    private final ResearchGeneratedSourceReadGate reportDependencyGate;
 
     public ResearchRunQueryService(
             JdbcTemplate jdbcTemplate,
@@ -85,6 +86,7 @@ public class ResearchRunQueryService {
         this.researchReportReadModelAssembler = new ResearchReportReadModelAssembler(objectMapper);
         this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
         this.contextGate = null;
+        this.reportDependencyGate = null;
     }
 
     @Autowired
@@ -107,7 +109,8 @@ public class ResearchRunQueryService {
             ResearchClosedLoopStateAssembler researchClosedLoopStateAssembler,
             ResearchCheckpointProcessAssembler researchCheckpointProcessAssembler,
             ResearchReportReadModelAssembler researchReportReadModelAssembler,
-            ResearchContextV2Gate contextGate
+            ResearchContextV2Gate contextGate,
+            ResearchGeneratedSourceReadGate reportDependencyGate
     ) {
         this.workspaceService = workspaceService;
         this.taskService = taskService;
@@ -127,6 +130,7 @@ public class ResearchRunQueryService {
         this.researchReportReadModelAssembler = researchReportReadModelAssembler;
         this.payloadReader = new ResearchRunQueryPayloadReader(objectMapper);
         this.contextGate = contextGate;
+        this.reportDependencyGate = reportDependencyGate;
     }
 
     public List<ResearchRunSummaryResponse> listRuns(String workspaceId) {
@@ -166,11 +170,13 @@ public class ResearchRunQueryService {
             ResearchRecoveryTargetsResponse recoveryTargets = buildRecoveryTargets(reportStructure, closedLoopState);
             int sourceScopeCount = sourceScopeLoader.count(row.sourceScopeJson());
             SaveResearchReportSourceResponse savedReportSource = readModel.savedReportSource(row.reportSourceId());
-            ResearchReportFileResponse reportFile = researchArtifactService.buildReportFileResponse(
-                    workspaceId,
-                    researchRunId,
-                    row.finalReportMarkdown()
-            );
+            // 与详情共享同一正文可见性决策：正文不可下发时，对象键与摘要等派生元数据一并隐藏
+            ResearchReportFileResponse reportFile = reportBodyAllowed(workspaceId, researchRunId)
+                    ? researchArtifactService.buildReportFileResponse(
+                            workspaceId,
+                            researchRunId,
+                            row.finalReportMarkdown())
+                    : null;
             ResearchRunArtifactResponse researchArtifact = researchArtifactService.buildResearchArtifact(
                     researchRunId,
                     row.finalReportTitle(),
@@ -350,11 +356,14 @@ public class ResearchRunQueryService {
             throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究任务不存在");
         }
         SaveResearchReportSourceResponse savedReportSource = readModel.savedReportSource(sourceRun.reportSourceId());
-        ResearchReportFileResponse reportFile = researchArtifactService.buildReportFileResponse(
-                sourceRun.workspaceId(),
-                sourceRun.researchRunId(),
-                sourceRun.finalReportMarkdown()
-        );
+        // 恢复检查点装配与详情/列表共享正文可见性决策
+        ResearchReportFileResponse reportFile = reportBodyAllowed(
+                sourceRun.workspaceId(), sourceRun.researchRunId())
+                ? researchArtifactService.buildReportFileResponse(
+                        sourceRun.workspaceId(),
+                        sourceRun.researchRunId(),
+                        sourceRun.finalReportMarkdown())
+                : null;
         ResearchRunArtifactResponse researchArtifact = researchArtifactService.buildResearchArtifact(
                 sourceRun.researchRunId(),
                 sourceRun.finalReportTitle(),
@@ -415,11 +424,14 @@ public class ResearchRunQueryService {
         SaveResearchReportSourceResponse savedReportSource = blankToNull(row.reportSourceId()) != null
                 ? researchArtifactService.loadSavedReportSource(row.workspaceId(), row.reportSourceId())
                 : null;
-        ResearchReportFileResponse reportFile = researchArtifactService.buildReportFileResponse(
-                row.workspaceId(),
-                row.researchRunId(),
-                row.finalReportMarkdown()
-        );
+        // 一次请求的共享可见性决策：同时驱动正文、文件元数据与下载能力
+        boolean detailBodyAllowed = reportBodyAllowed(row.workspaceId(), row.researchRunId());
+        ResearchReportFileResponse reportFile = detailBodyAllowed
+                ? researchArtifactService.buildReportFileResponse(
+                        row.workspaceId(),
+                        row.researchRunId(),
+                        row.finalReportMarkdown())
+                : null;
         ResearchRunArtifactResponse researchArtifact = researchArtifactService.buildResearchArtifact(
                 row.researchRunId(),
                 row.finalReportTitle(),
@@ -439,7 +451,8 @@ public class ResearchRunQueryService {
                 row.status(),
                 blankIfNull(row.completionTerminalState()),
                 blankIfNull(row.finalReportTitle()),
-                blankIfNull(row.finalReportMarkdown()),
+                detailBodyAllowed
+                        ? blankIfNull(row.finalReportMarkdown()) : null,
                 reportStructure,
                 buildCounterfactualSummary(reportStructure, closedLoopState),
                 researchArtifactCandidate,
@@ -556,6 +569,12 @@ public class ResearchRunQueryService {
                 recoveryTargets,
                 checkpointRow.createdAt()
         );
+    }
+
+    /** 报告正文下发门控：COMPLIANCE/USER 删除等失效依赖时只保留元数据（保守默认）。 */
+    private boolean reportBodyAllowed(String workspaceId, String researchRunId) {
+        return reportDependencyGate == null
+                || reportDependencyGate.reportBodyAllowed(workspaceId, researchRunId);
     }
 
     private void requireResearchRun(String workspaceId, String researchRunId) {

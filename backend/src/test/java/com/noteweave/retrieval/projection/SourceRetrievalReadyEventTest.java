@@ -39,7 +39,7 @@ class SourceRetrievalReadyEventTest {
     }
 
     @Test
-    void wikiListenerQueuesIngestForTheReadySource() {
+    void wikiListenerKeepsDirectEnqueueWithoutTheIntentChannel() {
         WikiIngestService wikiIngestService = mock(WikiIngestService.class);
 
         new WikiSourceReadyListener(wikiIngestService)

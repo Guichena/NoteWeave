@@ -28,6 +28,7 @@ class WikiIngestServiceTest {
     private final TaskCommandPort taskCommandPort = mock(TaskCommandPort.class);
     private final SourceMessagingMode messagingMode = mock(SourceMessagingMode.class);
     private final WikiIngestTransactionExecutor transactionExecutor = mock(WikiIngestTransactionExecutor.class);
+    private final WikiWorkspaceLock workspaceLock = mock(WikiWorkspaceLock.class);
     private final WikiIngestService service = new WikiIngestService(
             jdbcTemplate,
             workspaceQueryPort,
@@ -37,8 +38,15 @@ class WikiIngestServiceTest {
             taskCommandPort,
             new ObjectMapper(),
             messagingMode,
-            transactionExecutor
+            transactionExecutor,
+            workspaceLock
     );
+
+    @org.junit.jupiter.api.BeforeEach
+    void grantWorkspaceLockByDefault() {
+        when(workspaceLock.keyForWorkspace(anyString())).thenReturn("wiki:workspace:workspace-1");
+        when(workspaceLock.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+    }
 
     @Test
     void selectedConceptsShouldOnlyReadTheRelatedConceptSection() {
@@ -103,6 +111,10 @@ class WikiIngestServiceTest {
     void failedIngestShouldRecordFailedTerminalStateWithoutKafkaRedelivery() {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
                 .thenReturn(1);
+        // 重试前会核对来源状态：资料仍 READY 才继续 ingest
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("workspace-1"), eq("source-1")))
+                .thenReturn(List.of("READY"));
         when(transactionExecutor.execute(any()))
                 .thenThrow(new IllegalStateException("source unavailable"));
 
@@ -145,6 +157,9 @@ class WikiIngestServiceTest {
     void newerIngestShouldCancelSupersededPendingTaskBeforeStarting() {
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
                 .thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("workspace-1"), eq("source-1")))
+                .thenReturn(List.of("READY"));
         when(jdbcTemplate.queryForList(
                 anyString(),
                 eq(String.class),
@@ -167,10 +182,35 @@ class WikiIngestServiceTest {
     }
 
     @Test
+    void retractShouldDeletePagesThroughInternalEntryWithoutUserSession() {
+        // Kafka 消费线程没有 HTTP 用户；删除必须走内部执行入口，否则会抛 AUTHENTICATION_REQUIRED
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("task-2"), eq("workspace-1"), eq("source-1"), eq("WIKI_RETRACT")))
+                .thenReturn(List.of());
+        when(knowledgeQueryService.findSourceBackedWikiItemIds("workspace-1", "source-1"))
+                .thenReturn(List.of("page-a", "page-b"));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("workspace-1")))
+                .thenReturn(List.of());
+        when(transactionExecutor.execute(any())).thenAnswer(invocation ->
+                ((java.util.function.Supplier<?>) invocation.getArgument(0)).get());
+
+        service.runSourceRetractNow("task-2", "workspace-1", "source-1");
+
+        verify(knowledgeCommandService).deleteItemForInternalExecution("workspace-1", "page-a");
+        verify(knowledgeCommandService).deleteItemForInternalExecution("workspace-1", "page-b");
+        verify(knowledgeCommandService, never()).deleteItem(anyString());
+        verify(taskCommandPort).completeTask(
+                eq("task-2"), eq("WIKI_RETRACTED"), anyString(), eq("source-1"));
+    }
+
+    @Test
     void orphanedSentWikiTaskShouldBeCancelledByBackgroundReconciliation() {
-        when(jdbcTemplate.queryForList(
-                anyString(), eq(String.class), any(Timestamp.class)))
-                .thenReturn(List.of("task-orphaned"));
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class),
+                any(Timestamp.class)))
+                .thenReturn(List.of(new WikiIngestService.OrphanedTask(
+                        "task-orphaned", "workspace-1", "source-1", "WIKI_RETRACT")));
 
         int reconciled = service.reconcileOrphanedPendingWikiTasks();
 
@@ -180,5 +220,108 @@ class WikiIngestServiceTest {
                 "WIKI_DELIVERY_ORPHANED",
                 "Wiki 消息已发送但消费者长时间未接管，任务已安全取消，可通过资料重建重新执行",
                 "");
+    }
+
+    @Test
+    void orphanedIngestIsRequeuedWhenItsSnapshotIsStillCurrent() {
+        // WIKI-04：消息丢了但快照仍然有效时重新入队，不把这次编译静默丢掉
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class),
+                any(Timestamp.class)))
+                .thenReturn(List.of(new WikiIngestService.OrphanedTask(
+                        "task-orphaned", "workspace-1", "source-1", "WIKI_INGEST")));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("task-orphaned")))
+                .thenReturn(List.of("{\"sourceSnapshotId\":\"snapshot-1\"}"));
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class),
+                eq("source-1"), eq("snapshot-1")))
+                .thenReturn(1);
+        when(transactionExecutor.execute(any())).thenAnswer(invocation -> {
+            java.util.function.Supplier<?> supplier = invocation.getArgument(0);
+            return supplier.get();
+        });
+
+        service.reconcileOrphanedPendingWikiTasks();
+
+        verify(taskCommandPort).cancelTask(
+                "task-orphaned",
+                "WIKI_DELIVERY_ORPHANED",
+                "Wiki 消息已发送但消费者长时间未接管，任务已取消，快照仍然有效时已重新入队",
+                "");
+        verify(taskCommandPort).createTask(
+                "workspace-1", "WIKI_INGEST", "SOURCE", "source-1",
+                "QUEUED", "Wiki 消息投递中断，快照仍然有效，已重新入队");
+    }
+
+    @Test
+    void orphanedIngestForAStaleSnapshotIsOnlyCancelled() {
+        when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class),
+                any(Timestamp.class)))
+                .thenReturn(List.of(new WikiIngestService.OrphanedTask(
+                        "task-orphaned", "workspace-1", "source-1", "WIKI_INGEST")));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("task-orphaned")))
+                .thenReturn(List.of("{\"sourceSnapshotId\":\"snapshot-old\"}"));
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class),
+                eq("source-1"), eq("snapshot-old")))
+                .thenReturn(0);
+
+        service.reconcileOrphanedPendingWikiTasks();
+
+        verify(taskCommandPort).cancelTask(
+                "task-orphaned",
+                "WIKI_DELIVERY_ORPHANED",
+                "Wiki 消息已发送但消费者长时间未接管，任务已取消，快照仍然有效时已重新入队",
+                "");
+        verify(taskCommandPort, never()).createTask(
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void busyWorkspaceShouldFailIngestTaskWithoutStartingWork() {
+        // WIKI-02：同一工作台已有 Wiki 任务在写入时，新任务必须让路，不能并发重灌
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("workspace-1"), eq("source-1")))
+                .thenReturn(List.of("READY"));
+        when(workspaceLock.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
+
+        service.runSourceIngestNow("task-3", "workspace-1", "source-1");
+
+        verify(taskCommandPort).failTask(
+                "task-3", "WIKI_WORKSPACE_BUSY",
+                "同一工作台已有 Wiki 任务在写入，本次 ingest 稍后重试", "WIKI_WORKSPACE_BUSY", true);
+        verify(transactionExecutor, never()).execute(any());
+        verify(workspaceLock, never()).release(anyString(), anyString());
+    }
+
+    @Test
+    void retractShouldKeepDeletionsWhenReingestOfOtherSourcesFails() {
+        // WIKI-02：删除落地后，其余来源重灌失败不得回滚删除，也不得把任务判为失败
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("task-4"), eq("workspace-1"), eq("source-1"), eq("WIKI_RETRACT")))
+                .thenReturn(List.of());
+        when(knowledgeQueryService.findSourceBackedWikiItemIds("workspace-1", "source-1"))
+                .thenReturn(List.of("page-a"));
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class), eq("workspace-1")))
+                .thenReturn(List.of("source-2", "source-3"));
+        when(transactionExecutor.execute(any())).thenAnswer(invocation ->
+                ((java.util.function.Supplier<?>) invocation.getArgument(0)).get());
+
+        service.runSourceRetractNow("task-4", "workspace-1", "source-1");
+
+        verify(knowledgeCommandService).deleteItemForInternalExecution("workspace-1", "page-a");
+        verify(taskCommandPort, never()).failTask(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean());
+        verify(taskCommandPort).completeTask(
+                eq("task-4"),
+                eq("WIKI_RETRACTED"),
+                org.mockito.ArgumentMatchers.contains("2 个来源重灌失败"),
+                eq("source-1"));
+        verify(workspaceLock).release("wiki:workspace:workspace-1", "task-4");
     }
 }

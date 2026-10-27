@@ -36,6 +36,21 @@ public final class RetrievalIndexNames {
         return prefix(type) + "_" + component(workspaceId);
     }
 
+    /**
+     * 索引名是否承载指定向量版本（IDX-02）。旧命名没有 {@code _e} 版本段时返回 true，
+     * 保持兼容；有版本段但与当前版本不符时返回 false，调用方必须拒绝写入或查询。
+     */
+    public static boolean matchesEmbeddingVersion(String indexName, String embeddingVersion) {
+        if (indexName == null || embeddingVersion == null || embeddingVersion.isBlank()) {
+            return true;
+        }
+        String normalized = indexName.toLowerCase(Locale.ROOT);
+        if (!normalized.contains("_e")) {
+            return true;
+        }
+        return normalized.contains("_e" + component(embeddingVersion) + "_");
+    }
+
     private static String prefix(ProjectionType type) {
         return switch (type) {
             case QA_CHUNK -> "noteweave_qa_chunk";

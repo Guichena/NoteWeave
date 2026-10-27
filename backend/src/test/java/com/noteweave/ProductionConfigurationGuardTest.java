@@ -87,9 +87,59 @@ class ProductionConfigurationGuardTest {
                 .hasMessageContaining("Unknown NOTEWEAVE_ENVIRONMENT");
     }
 
+    /** SEC-04：staging 属于共享部署，不能和 local/development 一样跳过加固检查。 */
     @Test
-    void productionMustRejectResearchRateLimitLocalFallback() {
-        assertThatThrownBy(() -> ProductionConfigurationGuard.validateResearchRateLimitLocalFallback(true))
+    void stagingIsTreatedAsSharedDeployment() {
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("staging")).isTrue();
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("stage")).isTrue();
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("production")).isFalse();
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("development")).isFalse();
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("local")).isFalse();
+        assertThat(ProductionConfigurationGuard.isSharedDeployment("test")).isFalse();
+    }
+
+    @Test
+    void stagingDeploymentMustRejectDevelopmentDefaults() {
+        assertThatThrownBy(() -> guard("staging", false, false, true).validateProductionConfiguration())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_INTERNAL_AUTH_TOKEN");
+        assertThatThrownBy(() -> guard("staging", true, true, true).validateProductionConfiguration())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_QUOTA_LOCAL_FALLBACK_ENABLED");
+        assertThatThrownBy(() -> guard("staging", true, false, false).validateProductionConfiguration())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("NOTEWEAVE_KAFKA_ENABLED=true");
+        assertThatCode(() -> guard("staging", true, false, true).validateProductionConfiguration())
+                .doesNotThrowAnyException();
+    }
+
+    /** 只有显式声明 local/development 才是降级：默认部署不再静默跳过加固检查。 */
+    @Test
+    void explicitDevelopmentEnvironmentSkipsHardeningChecks() {
+        assertThatCode(() -> guard("development", false, true, false).validateProductionConfiguration())
+                .doesNotThrowAnyException();
+        assertThatCode(() -> guard("local", false, true, false).validateProductionConfiguration())
+                .doesNotThrowAnyException();
+    }
+
+    /** 用开发默认值与开启的本地降级开关构造守卫，便于验证「哪个环境会触发检查」。 */
+    private static ProductionConfigurationGuard guard(
+            String environment, boolean strongSecrets, boolean quotaFallback, boolean kafkaEnabled) {
+        String token = strongSecrets ? "internal-token-with-entropy" : "noteweave-internal-dev";
+        String database = strongSecrets ? "database-secret-2026" : "noteweave123";
+        String minio = strongSecrets ? "minio-secret-2026" : "minioadmin";
+        String callback = strongSecrets
+                ? "artifact-callback-secret-with-entropy" : "noteweave-artifact-callback-dev";
+        return new ProductionConfigurationGuard(environment, token, token, token,
+                database, minio, callback,
+                false, quotaFallback, false, false,
+                "https://artifact-worker.internal", "SASL_SSL", kafkaEnabled,
+                null, null, null, null, null, null,
+                new org.springframework.mock.env.MockEnvironment());
+    }
+
+    @Test
+    void productionMustRejectResearchRateLimitLocalFallback() {        assertThatThrownBy(() -> ProductionConfigurationGuard.validateResearchRateLimitLocalFallback(true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK");
     }

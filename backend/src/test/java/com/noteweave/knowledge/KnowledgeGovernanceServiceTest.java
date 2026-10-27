@@ -6,6 +6,7 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.noteweave.source.eligibility.AllReadableEligibilityStub;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.workspace.WorkspaceQueryPort;
@@ -45,7 +46,7 @@ class KnowledgeGovernanceServiceTest {
         when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
                 org.mockito.ArgumentMatchers.anyList()))
                 .thenAnswer(invocation -> Set.copyOf(invocation.getArgument(1)));
-        KnowledgeCitationReadGate citationGate = new KnowledgeCitationReadGate(jdbcTemplate, sourceGate);
+        KnowledgeCitationReadGate citationGate = new KnowledgeCitationReadGate(jdbcTemplate, new AllReadableEligibilityStub());
         KnowledgeVersionService versionService = new KnowledgeVersionService(
                 jdbcTemplate, actorProvider, mutationService,
                 citationGate);
@@ -255,6 +256,9 @@ class KnowledgeGovernanceServiceTest {
                     latest_version_id varchar(36),
                     created_by varchar(80),
                     updated_by varchar(80),
+                    origin_source_id varchar(36),
+                    wiki_page_state varchar(32),
+                    origin varchar(32),
                     updated_at timestamp default current_timestamp
                 )
                 """);
@@ -326,6 +330,7 @@ class KnowledgeGovernanceServiceTest {
                 """);
         jdbcTemplate.execute("""
                 create table task(
+                    generation int not null default 1,
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null,
                     task_type varchar(64),

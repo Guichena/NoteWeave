@@ -102,4 +102,28 @@ public class ResearchRunController {
     ) {
         return ApiResponse.success(researchRunService.saveReportAsSource(workspaceId, researchRunId));
     }
+
+    /**
+     * 报告 Markdown 正式下载：服务端执行依赖闭包校验后下发字节，
+     * 前端不再从缓存正文生成正式导出。文件名做安全转义并声明附件语义。
+     */
+    @GetMapping("/{researchRunId}/report/markdown")
+    org.springframework.http.ResponseEntity<byte[]> downloadReportMarkdown(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        ResearchArtifactService.ResearchReportDownload download =
+                researchRunService.downloadReportMarkdown(workspaceId, researchRunId);
+        String safeFileName = download.fileName()
+                .replace("\r", "_").replace("\n", "_").replace("\"", "_").replace("'", "_");
+        return org.springframework.http.ResponseEntity.ok()
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        org.springframework.http.ContentDisposition.attachment()
+                                .filename(safeFileName, java.nio.charset.StandardCharsets.UTF_8)
+                                .build()
+                                .toString())
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                .contentType(org.springframework.http.MediaType.parseMediaType(download.contentType()))
+                .body(download.content());
+    }
 }

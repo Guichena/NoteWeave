@@ -359,11 +359,16 @@ public class ConversationTurnModule {
                 material
         );
         recordRegeneratedFrom(prepared.workspaceId(), command);
+        // CHAT-01：哈希取自真正落库的正文。此前固定取 material.answer()，
+        // 正文一旦在别处被改写（流式写回、润色），正文与哈希就会长期对不上。
+        String storedAnswer = jdbcTemplate.queryForObject(
+                "select content from conversation_message where id = ?",
+                String.class, prepared.receipt().assistantMessageId());
         jdbcTemplate.update("""
                 update conversation_message
                 set content_hash = ?, context_status = 'CURRENT'
                 where id = ? and context_status = 'PENDING'
-                """, sha256(material.answer()), prepared.receipt().assistantMessageId());
+                """, sha256(storedAnswer), prepared.receipt().assistantMessageId());
         conversationSegmentBuildService.queueBuildForActivePrefix(prepared.workspaceId(), command.conversationId());
         if (memoryExtractionService != null) {
             memoryExtractionService.queueForUserMessage(prepared.workspaceId(), command.conversationId(),

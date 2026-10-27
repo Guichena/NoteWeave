@@ -31,7 +31,7 @@ class RetrievalReleaseGateServiceTest {
         when(jdbc.queryForObject(anyString(), eq(Long.class), eq("workspace"))).thenReturn(0L);
         when(backfill.status("workspace")).thenReturn(new RetrievalStatus(
                 "workspace", new Coverage(3, 3, 3, 3),
-                List.of(build(ProjectionType.QA_CHUNK), build(ProjectionType.NOTE_SOURCE)), List.of()));
+                List.of(build(ProjectionType.QA_CHUNK), build(ProjectionType.NOTE_SOURCE)), List.of(), null));
         when(receipts.latestFinalPlanReceipts("workspace")).thenReturn(List.of(
                 receipt("qa-weknora-hybrid-v1"), receipt("note-marginalia-funnel-v1")));
 
@@ -53,7 +53,7 @@ class RetrievalReleaseGateServiceTest {
         when(rerank.isEnabled()).thenReturn(true);
         when(jdbc.queryForObject(anyString(), eq(Long.class), eq("workspace"))).thenReturn(2L);
         when(backfill.status("workspace")).thenReturn(new RetrievalStatus(
-                "workspace", new Coverage(3, 2, 2, 1), List.of(), List.of()));
+                "workspace", new Coverage(3, 2, 2, 1), List.of(), List.of(), null));
 
         when(receipts.latestFinalPlanReceipts("workspace")).thenReturn(List.of());
         var result = new RetrievalReleaseGateService(jdbc, backfill, embedding, rerank, receipts)
@@ -84,7 +84,7 @@ class RetrievalReleaseGateServiceTest {
         when(jdbc.queryForObject(anyString(), eq(Long.class), eq("workspace"))).thenReturn(0L);
         when(backfill.status("workspace")).thenReturn(new RetrievalStatus(
                 "workspace", new Coverage(3, 3, 3, 3),
-                List.of(build(ProjectionType.QA_CHUNK), build(ProjectionType.NOTE_SOURCE)), List.of()));
+                List.of(build(ProjectionType.QA_CHUNK), build(ProjectionType.NOTE_SOURCE)), List.of(), null));
         when(receipts.latestFinalPlanReceipts("workspace")).thenReturn(List.of(
                 receipt("qa-weknora-hybrid-v1"), receipt("note-marginalia-funnel-v1")));
 

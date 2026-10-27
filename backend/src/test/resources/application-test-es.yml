@@ -1,12 +1,19 @@
 noteweave:
   elasticsearch:
     enabled: true
+    # 测试 profile 必须连隔离测试实例（免鉴权），不能连业务集群：
+    # 业务集群开了鉴权，测试客户端没有可用凭据，连上去只会整片 401，
+    # 于是所有走检索的契约用例变成假失败，掩盖真正的回归。
     host: ${NOTEWEAVE_ES_HOST:127.0.0.1}
-    port: ${NOTEWEAVE_ES_PORT:9200}
-    username: ${NOTEWEAVE_ES_USERNAME:elastic}
+    port: ${NOTEWEAVE_ES_PORT:19200}
+    # 隔离测试实例不开鉴权，默认不配用户名；连别的集群时用环境变量显式覆盖
+    username: ${NOTEWEAVE_ES_USERNAME:}
     password: ${NOTEWEAVE_ES_PASSWORD:}
     # 测试用单节点 ES 无法分配副本分片，副本数固定为 0，避免索引长期处于 yellow 状态并堆积未分配分片
     replicas: 0
+    # 测试集群一旦卡住（分片分配不了、磁盘水位超限）要尽快失败，不能把整个测试套挂死
+    connect-timeout-ms: 2000
+    socket-timeout-ms: 15000
   embedding:
     enabled: true
     model: stub-embedding

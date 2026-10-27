@@ -26,7 +26,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <p>查询全部按批处理：revision、candidate、signal、source 各一次，不按条目逐条查询。
  * 读路径只排除不可读条目，不修改数据库记录。
  */
-final class MemorySourceReadGate {
+@org.springframework.stereotype.Component
+class MemorySourceReadGate {
 
     private static final Logger log = LoggerFactory.getLogger(MemorySourceReadGate.class);
 
@@ -37,34 +38,84 @@ final class MemorySourceReadGate {
      */
     private static final Set<String> MATERIAL_SOURCE_TYPES = Set.of("SOURCE", "WIKI");
 
+    /** MEM-06：单批判定的 revision id 上限，避免超长 IN 列表。 */
+    private static final int REVISION_BATCH_SIZE = 500;
+
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
-    private volatile boolean schemaUnavailable;
+    private final org.springframework.beans.factory.ObjectProvider<
+            com.noteweave.source.eligibility.MaterialEligibilityPort> eligibilityPort;
 
+    /** 直连构造（测试/过渡）：无 C1 端口时使用本类内置的来源状态查询。 */
     MemorySourceReadGate(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, null);
+    }
+
+    /** 生产装配：C1 端口由 A 的评估器实现；判据以端口为准，不再各查一套。 */
+    @org.springframework.beans.factory.annotation.Autowired
+    MemorySourceReadGate(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            org.springframework.beans.factory.ObjectProvider<
+                    com.noteweave.source.eligibility.MaterialEligibilityPort> eligibilityPort) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.eligibilityPort = eligibilityPort;
     }
 
     /**
-     * 返回因为来源不可读而需要从读路径排除的 revision id。
-     * 没有来源绑定的 revision 不在结果里。
+     * MEM-05：排除原因码。把「暂不支持」与「不可读」分开，用户/管理端能看出为什么召回不到：
+     * Wiki 引用是功能尚未接通（会随 C1 端口补齐而消失），来源未就绪/不可作依据是真实状态。
      */
-    Set<String> staleRevisionIds(String workspaceId, Collection<String> revisionIds) {
-        if (schemaUnavailable || revisionIds == null || revisionIds.isEmpty()) {
-            return Set.of();
+    static final String REASON_WIKI_NOT_SUPPORTED = "WIKI_SOURCE_NOT_SUPPORTED";
+    static final String REASON_SOURCE_NOT_READY = "SOURCE_NOT_READY";
+    static final String REASON_SOURCE_NOT_ELIGIBLE = "SOURCE_NOT_ELIGIBLE";
+
+    static String reasonText(String reasonCode) {
+        if (reasonCode == null) {
+            return "记忆暂不可召回";
         }
+        return switch (reasonCode) {
+            case REASON_WIKI_NOT_SUPPORTED -> "记忆引用的是 Wiki 页面，知识项读取语义尚未接通，暂不支持召回";
+            case REASON_SOURCE_NOT_READY -> "记忆引用的资料已删除或尚未解析就绪，暂不可读";
+            case REASON_SOURCE_NOT_ELIGIBLE -> "记忆引用的资料当前不可作为事实依据，暂不可读";
+            default -> "记忆暂不可召回";
+        };
+    }
+
+    /** 返回因为来源不可读而需要从读路径排除的 revision id。 */
+    Set<String> staleRevisionIds(String workspaceId, Collection<String> revisionIds) {
+        return exclusionReasons(workspaceId, revisionIds).keySet();
+    }
+
+    /**
+     * 返回「需要从读路径排除的 revision id → 原因码」。没有来源绑定的 revision 不在结果里。
+     *
+     * <p>B-06：删除了「一次 SQL 语法异常后全实例永久放行」的绕过。查询失败按
+     * 明确的服务不可用向上抛出，由调用方决定降级展示；纯用户偏好（无来源绑定）
+     * 不经过这里，不受影响。测试库缺少来源绑定表时应使用专用 fixture/stub。
+     */
+    Map<String, String> exclusionReasons(String workspaceId, Collection<String> revisionIds) {
+        if (revisionIds == null || revisionIds.isEmpty()) {
+            return Map.of();
+        }
+        // MEM-06：分批判定，避免一次传入上万 revision id 生成超长 IN 列表。
+        List<String> ids = new ArrayList<>(new LinkedHashSet<>(revisionIds));
+        Map<String, String> reasons = new LinkedHashMap<>();
         try {
-            return loadStaleRevisionIds(workspaceId, new LinkedHashSet<>(revisionIds));
-        } catch (BadSqlGrammarException exception) {
-            // 精简测试库或旧库可能还没有来源绑定表；此时没有来源可校验，保持原有读取行为。
-            schemaUnavailable = true;
-            log.warn("Memory 来源读时校验已禁用：缺少来源绑定表或列：{}", exception.getMessage());
-            return Set.of();
+            for (int start = 0; start < ids.size(); start += REVISION_BATCH_SIZE) {
+                List<String> chunk = ids.subList(start, Math.min(ids.size(), start + REVISION_BATCH_SIZE));
+                reasons.putAll(loadExclusionReasons(workspaceId, new LinkedHashSet<>(chunk)));
+            }
+            return reasons;
+        } catch (BadSqlGrammarException | IllegalStateException exception) {
+            // 一次失败不能让整个实例永久跳过来源校验；明确失败并保留原始异常。
+            // C1 端口故障同样按服务不可用上抛，不降级放行（FB-05）。
+            throw new IllegalStateException("MEMORY_SOURCE_GATE_UNAVAILABLE", exception);
         }
     }
 
-    private Set<String> loadStaleRevisionIds(String workspaceId, Set<String> revisionIds) {
+    private Map<String, String> loadExclusionReasons(String workspaceId, Set<String> revisionIds) {
         List<RevisionRef> revisions = jdbcTemplate.query("""
                 select r.id as revision_id, r.memory_item_id,
                        r.provenance_type, r.provenance_ref
@@ -80,6 +131,7 @@ final class MemorySourceReadGate {
                 parameters(workspaceId, revisionIds));
 
         Map<String, Set<String>> sourceIdsByRevision = new LinkedHashMap<>();
+        Map<String, String> sourceKinds = new HashMap<>();
         Set<String> candidateIds = new LinkedHashSet<>();
         Set<String> legacyVersionIds = new LinkedHashSet<>();
         for (RevisionRef revision : revisions) {
@@ -91,6 +143,7 @@ final class MemorySourceReadGate {
                 sourceIdsByRevision
                         .computeIfAbsent(revision.revisionId(), ignored -> new LinkedHashSet<>())
                         .add(reference);
+                sourceKinds.putIfAbsent(reference, provenanceType);
             }
             if (reference == null || reference.isBlank()) {
                 continue;
@@ -131,6 +184,7 @@ final class MemorySourceReadGate {
                                         .computeIfAbsent(revision.revisionId(),
                                                 ignored -> new LinkedHashSet<>())
                                         .add(source.sourceId());
+                                sourceKinds.putIfAbsent(source.sourceId(), source.sourceType());
                             }
                         }
                     }
@@ -138,25 +192,97 @@ final class MemorySourceReadGate {
             }
         }
         if (sourceIdsByRevision.isEmpty()) {
-            return Set.of();
+            return Map.of();
         }
 
+        com.noteweave.source.eligibility.MaterialEligibilityPort port =
+                eligibilityPort == null ? null : eligibilityPort.getIfAvailable();
+        if (port != null) {
+            return judgeByEligibilityPort(workspaceId, sourceIdsByRevision, sourceKinds, port);
+        }
         Set<String> allSourceIds = new LinkedHashSet<>();
         sourceIdsByRevision.values().forEach(allSourceIds::addAll);
         Map<String, String> statusBySource = loadSourceStatuses(workspaceId, allSourceIds);
-        Set<String> staleRevisionIds = new LinkedHashSet<>();
+        Map<String, String> exclusionReasons = new LinkedHashMap<>();
         for (Map.Entry<String, Set<String>> entry : sourceIdsByRevision.entrySet()) {
-            // 全部来源都不在 source 表时按外部来源处理，避免把 web-... 这类引用误判为已删除
-            boolean hasKnownSource = entry.getValue().stream()
-                    .anyMatch(statusBySource::containsKey);
-            boolean readable = entry.getValue().stream()
-                    .filter(statusBySource::containsKey)
+            // B-06：进入本集合的来源全部来自内部来源绑定（SOURCE/WIKI 类型信号或 provenance）。
+            // 内部来源在 source 表中不存在属于缺失内部来源（MISSING_INTERNAL），不能按外部来源放行；
+            // 只有全部来源都存在且为 READY 才可读。
+            boolean readable = !entry.getValue().isEmpty() && entry.getValue().stream()
                     .allMatch(sourceId -> "READY".equals(statusBySource.get(sourceId)));
-            if (hasKnownSource && !readable) {
-                staleRevisionIds.add(entry.getKey());
+            if (!readable) {
+                exclusionReasons.put(entry.getKey(), REASON_SOURCE_NOT_READY);
             }
         }
-        return staleRevisionIds;
+        return exclusionReasons;
+    }
+
+    /**
+     * FB-05 / C1：判据经 MaterialEligibilityPort（A 的评估器）批量评估，用途
+     * CURRENT_EVIDENCE，不在 Memory 侧保留另一套生产判定。生成来源的传递依赖
+     * 由 A 的评估器闭包处理；端口故障按服务不可用上抛（fail-closed）。
+     * WIKI 型 provenance 引用暂按不可读排除（保守）：C1 端口尚未表达知识项
+     * 治理语义，已向 A 提交扩展请求；只读诊断 SQL 见交接包 findings-disposition。
+     * MEM-05：这类排除带 {@link #REASON_WIKI_NOT_SUPPORTED}，与真实不可读区分开。
+     */
+    private Map<String, String> judgeByEligibilityPort(
+            String workspaceId,
+            Map<String, Set<String>> sourceIdsByRevision,
+            Map<String, String> sourceKinds,
+            com.noteweave.source.eligibility.MaterialEligibilityPort port) {
+        List<com.noteweave.source.eligibility.OriginRef> origins = new ArrayList<>();
+        Map<String, String> kinds = sourceKinds == null ? Map.of() : sourceKinds;
+        Set<String> wikiRefs = new LinkedHashSet<>();
+        for (Set<String> ids : sourceIdsByRevision.values()) {
+            for (String id : ids) {
+                if ("WIKI".equals(kinds.get(id))) {
+                    wikiRefs.add(id);
+                } else {
+                    origins.add(com.noteweave.source.eligibility.OriginRef.internalSource(id));
+                }
+            }
+        }
+        Map<String, com.noteweave.source.eligibility.EligibilityDecision> decisions = new HashMap<>();
+        try {
+            for (int start = 0; start < origins.size();
+                    start += com.noteweave.source.eligibility.MaterialEligibilityPort.MAX_ORIGINS_PER_ASSESS) {
+                int end = Math.min(origins.size(),
+                        start + com.noteweave.source.eligibility.MaterialEligibilityPort.MAX_ORIGINS_PER_ASSESS);
+                decisions.putAll(port.assess(workspaceId, origins.subList(start, end),
+                        com.noteweave.source.eligibility.AccessPurpose.CURRENT_EVIDENCE));
+            }
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException("MEMORY_SOURCE_GATE_PORT_FAILED", failure);
+        }
+        Map<String, String> exclusionReasons = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> entry : sourceIdsByRevision.entrySet()) {
+            boolean hasWikiRef = false;
+            boolean ineligible = entry.getValue().isEmpty();
+            for (String sourceId : entry.getValue()) {
+                if ("WIKI".equals(kinds.get(sourceId))) {
+                    hasWikiRef = true;
+                    continue;
+                }
+                com.noteweave.source.eligibility.EligibilityDecision decision =
+                        decisions.get(com.noteweave.source.eligibility.OriginRef.internalSource(sourceId).originKey());
+                if (decision == null
+                        || !decision.allowed(com.noteweave.source.eligibility.AccessPurpose.CURRENT_EVIDENCE)) {
+                    ineligible = true;
+                }
+            }
+            // MEM-05：真实不可用优先于「暂不支持」。一条 revision 同时引用不可用资料与 Wiki 页面时，
+            // 报 SOURCE_NOT_ELIGIBLE——那是用户现在就该处理的；Wiki 语义接通后这条也会自动恢复。
+            if (ineligible) {
+                exclusionReasons.put(entry.getKey(), REASON_SOURCE_NOT_ELIGIBLE);
+            } else if (hasWikiRef) {
+                exclusionReasons.put(entry.getKey(), REASON_WIKI_NOT_SUPPORTED);
+            }
+        }
+        if (!wikiRefs.isEmpty()) {
+            log.warn("Memory 读路径存在 WIKI 型来源绑定，当前按保守排除（等待 C1 端口知识项语义）: count={}",
+                    wikiRefs.size());
+        }
+        return exclusionReasons;
     }
 
     private Map<String, String> loadLegacyCandidateIds(String workspaceId, Set<String> versionIds) {

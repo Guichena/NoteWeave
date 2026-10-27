@@ -16,7 +16,8 @@ import org.mockito.InOrder;
 class ArtifactRollbackGateTest {
     private final ArtifactJobService jobs = mock(ArtifactJobService.class);
     private final ArtifactExportService exports = mock(ArtifactExportService.class);
-    private final ArtifactJobController controller = new ArtifactJobController(jobs, exports);
+    private final ArtifactEditService edits = mock(ArtifactEditService.class);
+    private final ArtifactJobController controller = new ArtifactJobController(jobs, exports, edits);
     private final ArtifactVersionDetailResponse source = version("source", 1);
     private final ArtifactVersionDetailResponse copy = version("copy", 2);
 
@@ -29,7 +30,10 @@ class ArtifactRollbackGateTest {
         assertThatThrownBy(() -> controller.rollbackArtifactVersion("workspace", "job", 1, null))
                 .isInstanceOf(BusinessException.class);
 
-        verify(jobs, never()).rollbackVersion("workspace", "job", 1, null);
+        verify(jobs, never()).rollbackVersion(
+                org.mockito.ArgumentMatchers.eq("workspace"), org.mockito.ArgumentMatchers.eq("job"),
+                org.mockito.ArgumentMatchers.eq(1), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.anyList());
     }
 
     @Test
@@ -40,14 +44,16 @@ class ArtifactRollbackGateTest {
         when(jobs.getVersionDetail("workspace", "job", 1)).thenReturn(source);
         when(jobs.getVersionDetail("workspace", "job", 2)).thenReturn(copy);
         when(exports.prepareRollbackFiles("source")).thenReturn(prepared);
-        when(jobs.rollbackVersion("workspace", "job", 1, null)).thenReturn(copy);
+        when(jobs.rollbackVersion("workspace", "job", 1, null, prepared)).thenReturn(copy);
 
         controller.rollbackArtifactVersion("workspace", "job", 1, null);
 
         InOrder order = inOrder(exports, jobs);
         order.verify(exports).prepareRollbackFiles("source");
-        order.verify(jobs).rollbackVersion("workspace", "job", 1, null);
-        order.verify(exports).publishPreparedFiles("copy", prepared);
+        // staged 文件随版本提交一起进入服务层短事务，控制器不再单独发布
+        order.verify(jobs).rollbackVersion("workspace", "job", 1, null, prepared);
+        verify(exports, never()).commitStagedFiles(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyList());
     }
 
     private ArtifactVersionDetailResponse version(String id, int number) {

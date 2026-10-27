@@ -141,7 +141,8 @@ public class MemoryCompilerPolicy {
         if (value == null || value.isBlank()) {
             return 0;
         }
-        return com.noteweave.conversation.ContextTokenEstimator.estimate(value.strip()) + 1;
+        // C5 统一估算端口（FB-07）：与旧 ContextTokenEstimator 等价，每条 +1 分隔开销保持
+        return com.noteweave.conversation.TokenCounter.estimate(value.strip(), "noteweave-chat").count() + 1;
     }
 
     private int tokenSum(List<String> values) {

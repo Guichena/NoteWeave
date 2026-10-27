@@ -49,6 +49,7 @@ public class KafkaTaskConsumer {
     private final ConversationTopicSummaryV2Service topicSummaryV2Service;
     private ConversationSummaryGenerator summaryGenerator = ConversationSummaryGenerator.extractiveOnly();
     private com.noteweave.memory.MemoryConversationExtractionService memoryExtractionService;
+    private com.noteweave.memory.MemoryArtifactEditService artifactEditService;
 
     public KafkaTaskConsumer(SourceParseService sourceParseService,
                              WikiIngestService wikiIngestService,
@@ -100,6 +101,11 @@ public class KafkaTaskConsumer {
     @Autowired(required = false)
     void setMemoryExtractionService(com.noteweave.memory.MemoryConversationExtractionService service) {
         this.memoryExtractionService = service;
+    }
+
+    @Autowired(required = false)
+    void setArtifactEditService(com.noteweave.memory.MemoryArtifactEditService service) {
+        this.artifactEditService = service;
     }
 
     @KafkaListener(id = "source-parse", topics = "${noteweave.kafka.topics.source-parse}",
@@ -233,9 +239,11 @@ public class KafkaTaskConsumer {
             String taskId = (String) payload.get("taskId");
             String sourceId = (String) payload.get("sourceId");
             String workspaceId = (String) payload.get("workspaceId");
-            if (sourceId != null && workspaceId != null && taskId != null) {
-                wikiIngestService.runSourceIngestNow(taskId, workspaceId, sourceId);
-            }
+            // AU-008：缺字段载荷按可重试异常外抛（重试/DLT 可见），不静默确认丢消息
+            requirePayloadValue(taskId, "taskId");
+            requirePayloadValue(sourceId, "sourceId");
+            requirePayloadValue(workspaceId, "workspaceId");
+            wikiIngestService.runSourceIngestNow(taskId, workspaceId, sourceId);
         });
     }
 
@@ -247,9 +255,11 @@ public class KafkaTaskConsumer {
             String taskId = (String) payload.get("taskId");
             String sourceId = (String) payload.get("sourceId");
             String workspaceId = (String) payload.get("workspaceId");
-            if (sourceId != null && workspaceId != null && taskId != null) {
-                wikiIngestService.runSourceRetractNow(taskId, workspaceId, sourceId);
-            }
+            // AU-008：与 ingest 一致，缺字段不静默确认
+            requirePayloadValue(taskId, "taskId");
+            requirePayloadValue(sourceId, "sourceId");
+            requirePayloadValue(workspaceId, "workspaceId");
+            wikiIngestService.runSourceRetractNow(taskId, workspaceId, sourceId);
         });
     }
 
@@ -314,17 +324,113 @@ public class KafkaTaskConsumer {
             if (memoryExtractionService == null) {
                 throw new IllegalStateException("memory extraction service is unavailable");
             }
+            // B-05：可重试失败已经持久登记（回执 RETRY_WAIT + 恢复扫描重投），正常返回确认消息；
+            // 未持久记录的未知异常不吞掉，向外抛出走 Kafka 重试与 DLT，
+            // 由消费死信补偿按回执安排有界重试，不再把所有异常都静默终态化。
+            memoryExtractionService.extract(taskId, workspaceId, messageId, userId,
+                    text(payload.get("content")));
+        });
+    }
+
+    /**
+     * B-08 / FB-03：消费 A 的 C4 v2 产物编辑事件。
+     * 处理按 workspace+editEventId 幂等；两阶段回执失败独立重试。
+     * C4 v2 差异合同：diffStats（可信统计）与 diffFragments（受限正文差异片段）
+     * 必须随事件投递，changedSections 仅是章节标识（N-04）。
+     * 同 eventId 不同载荷的 IDEMPOTENCY_CONFLICT 是可观察冲突：结构化告警后确认，
+     * 保留既有回执，不让同一条消息无限重试；其余未持久记录的异常向外抛出走 Kafka 重试。
+     */
+    @KafkaListener(id = "artifact-edit",
+                   topics = "${noteweave.kafka.topics.artifact-edit:noteweave.artifact.edit}",
+                   groupId = "${spring.kafka.consumer.group-id}",
+                   containerFactory = "kafkaListenerContainerFactory")
+    public void onArtifactEdit(ConsumerRecord<String, String> record) {
+        handle("artifact.edit", record, payload -> {
+            if (artifactEditService == null) {
+                throw new IllegalStateException("artifact edit service is unavailable");
+            }
+            // 兼容两套 v2 字段名：A 合同 changedSectionIds/changedFragments 与早期 changedSections/diffFragments
+            java.util.List<String> sections = stringList(payload, "changedSectionIds", "changedSections");
+            java.util.List<String> fragments = fragmentTexts(payload, "changedFragments", "diffFragments");
+            java.util.Map<String, Object> diffStats =
+                    payload.get("diffStats") instanceof Map<?, ?> stats
+                            ? stats.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                                    entry -> String.valueOf(entry.getKey()),
+                                    entry -> java.util.Objects.requireNonNullElse(entry.getValue(), "")))
+                            : java.util.Map.of();
+            int schemaVersion = payload.get("schemaVersion") instanceof Number number
+                    ? number.intValue() : 1;
             try {
-                memoryExtractionService.extract(taskId, workspaceId, messageId, userId,
-                        text(payload.get("content")));
-            } catch (RuntimeException ex) {
-                log.warn("Memory extraction failed for message {}: {}", messageId, ex.getMessage());
-                if (taskId != null) {
-                    taskService.failTask(taskId, "MEMORY_EXTRACTION_FAILED", "记忆候选提取失败",
-                            "MEMORY_EXTRACTION_FAILED", false);
+                artifactEditService.handleArtifactEdit(
+                        new com.noteweave.memory.MemoryArtifactEditService.EditEvent(
+                                text(payload.get("editEventId")),
+                                text(payload.get("workspaceId")),
+                                text(payload.get("artifactVersionId")),
+                                text(payload.get("baseVersionId")),
+                                text(payload.get("originTaskId")),
+                                text(payload.get("beforeDigest")),
+                                text(payload.get("afterDigest")),
+                                sections,
+                                text(payload.get("actingUserId")),
+                                schemaVersion,
+                                diffStats,
+                                fragments));
+            } catch (com.noteweave.common.BusinessException conflict) {
+                if ("IDEMPOTENCY_CONFLICT".equals(conflict.code())) {
+                    // 载荷冲突保留既有回执并确认：重投同一冲突不会变好，靠告警与人工处置
+                    org.slf4j.LoggerFactory.getLogger(KafkaTaskConsumer.class).error(
+                            "Artifact edit event payload conflict: editEventId={}, topic={}, offset={}",
+                            text(payload.get("editEventId")), record.topic(), record.offset());
+                    return;
                 }
+                throw conflict;
             }
         });
+    }
+
+    private static java.util.List<String> stringList(Map<String, Object> payload, String... keys) {
+        for (String key : keys) {
+            if (payload.get(key) instanceof List<?> list) {
+                return list.stream().map(String::valueOf).toList();
+            }
+        }
+        return List.of();
+    }
+
+    /**
+     * C4 v2 差异片段抽取（AU-002）：A 侧事件是 Fragment 对象列表
+     * （sectionId/beforeExcerpt/afterExcerpt/…），直接 String.valueOf 会把 SHA-256
+     * 摘要与截断标志等包装噪声混入偏好抽取输入。这里只取受限摘录组装为
+     * 旧→新 可读文本；纯字符串元素（历史/测试路径）原样保留。
+     */
+    static java.util.List<String> fragmentTexts(Map<String, Object> payload, String... keys) {
+        for (String key : keys) {
+            if (payload.get(key) instanceof List<?> list) {
+                java.util.List<String> texts = new java.util.ArrayList<>(list.size());
+                for (Object element : list) {
+                    if (element instanceof Map<?, ?> fragment) {
+                        String section = str(fragment.get("sectionId"));
+                        String before = str(fragment.get("beforeExcerpt"));
+                        String after = str(fragment.get("afterExcerpt"));
+                        StringBuilder line = new StringBuilder();
+                        if (section != null && !section.isBlank()) {
+                            line.append("[").append(section).append("] ");
+                        }
+                        line.append("旧: ").append(before == null ? "" : before)
+                                .append(" -> 新: ").append(after == null ? "" : after);
+                        texts.add(line.toString());
+                    } else if (element != null) {
+                        texts.add(String.valueOf(element));
+                    }
+                }
+                return texts;
+            }
+        }
+        return List.of();
+    }
+
+    private static String str(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     private String sha256(String value) {
@@ -418,7 +524,7 @@ public class KafkaTaskConsumer {
 
     private void requirePayloadValue(String value, String field) {
         if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException("source.parse payload missing " + field);
+            throw new IllegalArgumentException("kafka payload missing " + field);
         }
     }
 

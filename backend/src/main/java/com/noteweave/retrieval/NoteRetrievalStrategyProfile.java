@@ -23,6 +23,10 @@ public final class NoteRetrievalStrategyProfile {
     public static final int ANCHOR_LIMIT = 8;
     public static final int RELATION_HOP_LIMIT = 40;
     public static final int NEIGHBOR_LIMIT = 80;
+    /** Note 阅读窗口数据库加载上限：单来源条数、全局条数与总字节数，超出部分不再从数据库读出。 */
+    public static final int WINDOW_CANDIDATES_PER_SOURCE = 16;
+    public static final int WINDOW_CANDIDATES_TOTAL = 384;
+    public static final int WINDOW_BYTES_MAX = 2_000_000;
 
     public static final double VECTOR_WEIGHT = 1.0d;
     public static final double METADATA_WEIGHT = 0.8d;

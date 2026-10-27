@@ -108,6 +108,15 @@ public class TaskController {
         long pollDelayMillis = 500;
         long nextHeartbeat = System.nanoTime() + Duration.ofSeconds(15).toNanos();
         try {
+            // NR25：带 cursor 的重连在任务已终态时——历史事件已消费，直接发
+            // 权威终态快照并关闭。此前这种重连拿到空流立即关闭，前端每次连接成功
+            // 又取消 HTTP 兜底刷新，形成快速重连循环且界面长期停在处理中。
+            // 初次连接（无 cursor）仍走正常回放路径，保留完整历史事件。
+            if (terminal && initialCursor != null && !initialCursor.isBlank()) {
+                sendTerminalSnapshot(emitter, initialStatus);
+                emitter.complete();
+                return;
+            }
             while (open.get() && System.nanoTime() < deadline) {
                 TaskService.TaskStreamPoll poll = taskService.pollAuthorizedStream(taskId, cursor);
                 List<TaskEventResponse> events = poll.events();

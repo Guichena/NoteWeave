@@ -22,7 +22,7 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
     private final JdbcTemplate jdbcTemplate;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCompilerPolicy compilerPolicy;
-    private final MemorySourceReadGate sourceReadGate;
+    private MemorySourceReadGate sourceReadGate;
 
     public CanonicalMemoryRuntime(
             JdbcTemplate jdbcTemplate,
@@ -167,5 +167,11 @@ public class CanonicalMemoryRuntime implements MemoryRuntime {
             String ownerUserId,
             Instant updatedAt
     ) {
+    }
+
+    /** FB-05/C1：注入共享读门实例（携带 MaterialEligibilityPort）；直连构造回退内置实现。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSourceReadGate(MemorySourceReadGate sourceReadGate) {
+        this.sourceReadGate = sourceReadGate;
     }
 }

@@ -15,6 +15,8 @@ public record KnowledgeItemResponse(
         int outgoingCount,
         int backlinkCount,
         int citationCount,
-        int unresolvedCount
+        int unresolvedCount,
+        /** Wiki 页面内容来源状态（WIKI-03）：AUTO / MANUAL / NEEDS_REVIEW；Note 为 null。 */
+        String wikiPageState
 ) {
 }

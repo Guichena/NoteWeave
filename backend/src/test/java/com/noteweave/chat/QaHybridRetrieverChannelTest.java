@@ -140,7 +140,23 @@ class QaHybridRetrieverChannelTest {
                 .isSameAs(failure);
     }
 
+    @Test
+    void ownershipRejectionMarksRetrievalDegradedInsteadOfSilentlyDropping() {
+        // RET-01：候选被归属门控全部丢掉时，结果必须标降级并带上原因，不能只是计数
+        Harness harness = harness(Map.of());
+        var result = harness.retriever().retrieve("workspace", "query", Set.of());
+
+        assertThat(result.chunks()).isEmpty();
+        assertThat(result.degraded()).isTrue();
+        assertThat(result.degradationReasons()).containsExactly("qa_hybrid_ownership_rejected");
+        assertThat(result.measurements().get("ownership_rejected_count")).isPositive();
+    }
+
     private Harness harness() {
+        return harness(Map.of("only", new PassageOwnership("only", "source-only", "snapshot-only", "", "")));
+    }
+
+    private Harness harness(Map<String, PassageOwnership> ownership) {
         EmbeddingClient embedding = mock(EmbeddingClient.class);
         when(embedding.isEnabled()).thenReturn(true);
         when(embedding.embedQuery(any())).thenReturn(new EmbeddingClient.EmbeddingResult(
@@ -149,8 +165,7 @@ class QaHybridRetrieverChannelTest {
         when(search.vectorRetrieve(any())).thenReturn(List.of(hit("only")));
         when(search.keywordRetrieve(any())).thenReturn(List.of());
         RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
-        when(hydrator.hydratePassageOwnership(eq("workspace"), any())).thenReturn(Map.of(
-                "only", new PassageOwnership("only", "source-only", "snapshot-only", "", "")));
+        when(hydrator.hydratePassageOwnership(eq("workspace"), any())).thenReturn(ownership);
         when(hydrator.hydrateAdjacentPassages(eq("workspace"), any())).thenReturn(Map.of());
         RerankClient rerank = mock(RerankClient.class);
         when(rerank.isEnabled()).thenReturn(true);

@@ -1,37 +1,48 @@
 package com.noteweave.research;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
-import java.util.Collections;
+import com.noteweave.source.eligibility.AccessPurpose;
+import com.noteweave.source.eligibility.EligibilityDecision;
+import com.noteweave.source.eligibility.EligibilityStatus;
+import com.noteweave.source.eligibility.GeneratedDependencyAssessment;
+import com.noteweave.source.eligibility.MaterialEligibilityPort;
+import com.noteweave.source.eligibility.OriginRef;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.StringJoiner;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-/** Validates the originating Research Run before exposing a generated Source. */
+/**
+ * Validates the originating Research Run before exposing a generated Source.
+ *
+ * <p>来源事实与依赖闭包统一委托 C1 MaterialEligibilityPort；本类只保留 Research
+ * 特有的来源有效性检查（origin run 存在、上下文快照未被完全脱敏）。
+ * 空 context snapshot 只说明运行较旧，依赖有效性由闭包评估单独保证，不再直接视为通过。</p>
+ */
 @Service
 public class ResearchGeneratedSourceReadGate {
     private final JdbcTemplate jdbc;
     private final ResearchContextV2Gate contextGate;
-    private final ObjectMapper objectMapper;
+    private final MaterialEligibilityPort eligibilityPort;
 
-    public ResearchGeneratedSourceReadGate(JdbcTemplate jdbc, ResearchContextV2Gate contextGate) {
-        this(jdbc, contextGate, new ObjectMapper());
+    public ResearchGeneratedSourceReadGate(JdbcTemplate jdbc,
+                                           ResearchContextV2Gate contextGate) {
+        this(jdbc, contextGate, null);
     }
 
     @Autowired
-    public ResearchGeneratedSourceReadGate(JdbcTemplate jdbc, ResearchContextV2Gate contextGate,
-                                           ObjectMapper objectMapper) {
+    public ResearchGeneratedSourceReadGate(JdbcTemplate jdbc,
+                                           ResearchContextV2Gate contextGate,
+                                           MaterialEligibilityPort eligibilityPort) {
         this.jdbc = jdbc;
         this.contextGate = contextGate;
-        this.objectMapper = objectMapper;
+        this.eligibilityPort = eligibilityPort;
     }
 
     public boolean visible(String workspaceId, String generatedBy, String generatedRefId) {
@@ -66,123 +77,136 @@ public class ResearchGeneratedSourceReadGate {
         }
     }
 
+    /**
+     * 批量判定来源可读性：经 C1 端口取得状态与生成依赖闭包，
+     * READY 且闭包内全部依赖满足当前证据用途才算可读。
+     */
     public Set<String> readableSourceIds(String workspaceId, List<String> sourceIds) {
         List<String> ids = sourceIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
         if (ids.isEmpty()) return Set.of();
-        Object[] parameters = new Object[ids.size() + 1];
-        parameters[0] = workspaceId;
-        for (int i = 0; i < ids.size(); i++) parameters[i + 1] = ids.get(i);
-        List<SourceOrigin> sources = jdbc.query("""
-                select id, coalesce(generated_by, '') as generated_by,
-                       coalesce(generated_ref_id, '') as generated_ref_id
-                from source where workspace_id = ? and status = 'READY' and id in (%s)
-                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
-                (rs, rowNum) -> new SourceOrigin(rs.getString(1), rs.getString(2), rs.getString(3)),
-                parameters);
+        if (eligibilityPort == null) {
+            // 兼容无端口的旧测试构造：仅保留行级 READY 判断
+            return Set.copyOf(ids);
+        }
+        Map<String, EligibilityDecision> decisions = eligibilityPort.assess(
+                workspaceId,
+                ids.stream().map(OriginRef::internalSource).toList(),
+                AccessPurpose.CURRENT_EVIDENCE);
+        Map<String, String[]> origins = loadOrigins(workspaceId, ids);
         LinkedHashSet<String> readable = new LinkedHashSet<>();
-        for (SourceOrigin source : sources) {
-            if (visible(workspaceId, source.generatedBy(), source.generatedRefId())) {
-                readable.add(source.sourceId());
+        for (String id : ids) {
+            EligibilityDecision decision = decisions.get(OriginRef.internalSource(id).originKey());
+            String[] origin = origins.get(id);
+            if (decision == null || origin == null || !decision.evidenceEligible()) {
+                continue;
+            }
+            // NR03：批量读路径不因单个 origin 缺失中断整次取证——按不可读排除。
+            // 但快照损坏/上下文校验失败（SNAPSHOT_MISMATCH 等）是数据完整性问题，
+            // 不能与「来源已撤销」混淆后静默过滤：向上传播让调用方明确失败。
+            try {
+                if (visible(workspaceId, origin[0], origin[1])) {
+                    readable.add(id);
+                }
+            } catch (BusinessException integrityFailure) {
+                if ("RESEARCH_SOURCE_ORIGIN_INVALID".equals(integrityFailure.code())) {
+                    continue;
+                }
+                throw integrityFailure;
             }
         }
         return Set.copyOf(readable);
     }
 
+    private Map<String, String[]> loadOrigins(String workspaceId, List<String> sourceIds) {
+        String placeholders = String.join(",", java.util.Collections.nCopies(sourceIds.size(), "?"));
+        Object[] parameters = new Object[sourceIds.size() + 1];
+        parameters[0] = workspaceId;
+        for (int i = 0; i < sourceIds.size(); i++) {
+            parameters[i + 1] = sourceIds.get(i);
+        }
+        Map<String, String[]> origins = new LinkedHashMap<>();
+        jdbc.query("""
+                select id, coalesce(generated_by, '') as generated_by,
+                       coalesce(generated_ref_id, '') as generated_ref_id
+                from source where workspace_id = ? and id in (%s)
+                """.formatted(placeholders), rs -> {
+            origins.put(rs.getString("id"),
+                    new String[] {rs.getString("generated_by"), rs.getString("generated_ref_id")});
+        }, parameters);
+        return origins;
+    }
+
     /**
-     * 保存或导出研究报告前，校验报告依赖的来源仍然可读。
+     * 保存或导出研究报告前，经 C1 闭包评估校验报告依赖的来源。
      *
-     * <p>依赖清单来自两处稳定记录：research_run.source_scope_json 是运行时绑定的来源范围，
-     * research_evidence_manifest_item 和 source_evidence 是报告实际引用的证据来源。
-     * 外网证据的 source_id 形如 web-... 或 external:...，不在 source 表里，不作为删除判断对象。</p>
+     * <p>声明范围（source_scope_json）与实际引用（evidence manifest、source_evidence）
+     * 都进入闭包；内部来源要求当前可读，生成来源递归校验，采集器外部证据按归档身份放行。
+     * 失败时返回逐项结构化原因，不再只抛一个笼统的已删除异常。</p>
      */
     public void requireReportDependenciesReadable(String workspaceId, String researchRunId) {
         if (workspaceId == null || workspaceId.isBlank()
                 || researchRunId == null || researchRunId.isBlank()) {
             return;
         }
-        LinkedHashSet<String> declared = new LinkedHashSet<>(
-                readSourceScopeIds(workspaceId, researchRunId));
-        LinkedHashSet<String> cited = new LinkedHashSet<>(
-                readCitedSourceIds(workspaceId, researchRunId));
-        LinkedHashSet<String> candidates = new LinkedHashSet<>(declared);
-        candidates.addAll(cited);
-        if (candidates.isEmpty()) {
+        if (eligibilityPort == null) {
             return;
         }
-        Map<String, String> statuses = loadSourceStatuses(workspaceId, candidates);
-        Set<String> readable = declared.isEmpty()
-                ? Set.of()
-                : readableSourceIds(workspaceId, List.copyOf(declared));
-        for (String sourceId : declared) {
-            if (!"READY".equals(statuses.get(sourceId)) || !readable.contains(sourceId)) {
-                throw revoked();
+        GeneratedDependencyAssessment assessment = eligibilityPort.assessGeneratedDependenciesDetailed(
+                workspaceId, "research_agent", researchRunId, AccessPurpose.REPUBLISH);
+        Map<String, String> failures = new LinkedHashMap<>();
+        if (!assessment.resolved()) {
+            for (String reason : assessment.blockingReasons()) {
+                failures.put(reason, "UNRESOLVED");
             }
         }
-        for (String sourceId : cited) {
-            String status = statuses.get(sourceId);
-            // 外网证据没有 source 行，status 为 null 时不能当成已删除
-            if (status != null && !"READY".equals(status)) {
-                throw revoked();
+        assessment.dependencies().forEach((dependencyId, decision) -> {
+            if (!decision.allowed(AccessPurpose.REPUBLISH)) {
+                failures.put(dependencyId, decision.status().name() + "/" + decision.reasonCode());
             }
+        });
+        if (!failures.isEmpty()) {
+            StringJoiner detail = new StringJoiner("; ");
+            failures.entrySet().stream().limit(5)
+                    .forEach(entry -> detail.add(entry.getKey() + ":" + entry.getValue()));
+            throw new BusinessException("RESEARCH_SOURCE_REVOKED",
+                    "研究报告依赖的来源已删除或不可读，无法保存或导出（" + detail + "）",
+                    HttpStatus.CONFLICT);
         }
     }
 
-    private BusinessException revoked() {
-        return new BusinessException("RESEARCH_SOURCE_REVOKED",
-                "研究报告依赖的来源已删除或不可读，无法保存或导出", HttpStatus.CONFLICT);
-    }
-
-    private List<String> readSourceScopeIds(String workspaceId, String researchRunId) {
-        String json = jdbc.query("""
-                select source_scope_json from research_run
-                where id = ? and workspace_id = ?
-                """, rs -> rs.next() ? rs.getString(1) : null, researchRunId, workspaceId);
-        if (json == null || json.isBlank()) {
-            return List.of();
+    /** 单个已生成报告来源的再发布资格校验；供重复保存路径复用。 */
+    public void requireSourceRepublishable(String workspaceId, String sourceId) {
+        if (eligibilityPort == null || sourceId == null || sourceId.isBlank()) {
+            return;
         }
-        try {
-            List<String> ids = objectMapper.readValue(json, new TypeReference<>() {});
-            if (ids == null) return List.of();
-            return ids.stream().filter(id -> id != null && !id.isBlank()).toList();
-        } catch (JsonProcessingException ex) {
-            throw new BusinessException("RESEARCH_SOURCE_SCOPE_PARSE_FAILED",
-                    "研究资料范围解析失败", HttpStatus.CONFLICT);
+        EligibilityDecision decision = eligibilityPort.assessOne(
+                workspaceId, OriginRef.internalSource(sourceId), AccessPurpose.REPUBLISH);
+        if (!decision.allowed(AccessPurpose.REPUBLISH)) {
+            throw new BusinessException("RESEARCH_REPORT_SOURCE_REVOKED",
+                    "研究报告来源已删除或依赖失效：" + decision.status() + "/" + decision.reasonCode(),
+                    HttpStatus.CONFLICT);
         }
     }
 
-    private List<String> readCitedSourceIds(String workspaceId, String researchRunId) {
-        List<String> manifestIds = jdbc.query("""
-                select distinct item.source_id
-                from research_evidence_manifest m
-                join research_evidence_manifest_item item on item.manifest_id = m.id
-                where m.workspace_id = ? and m.research_run_id = ?
-                  and item.source_id is not null and item.source_id <> ''
-                """, (rs, rowNum) -> rs.getString(1), workspaceId, researchRunId);
-        List<String> evidenceIds = jdbc.query("""
-                select distinct source_id from source_evidence
-                where research_run_id = ? and source_id is not null and source_id <> ''
-                """, (rs, rowNum) -> rs.getString(1), researchRunId);
-        LinkedHashSet<String> ids = new LinkedHashSet<>(manifestIds);
-        ids.addAll(evidenceIds);
-        return List.copyOf(ids);
-    }
-
-    private Map<String, String> loadSourceStatuses(String workspaceId, Set<String> sourceIds) {
-        List<String> ids = List.copyOf(sourceIds);
-        Object[] parameters = new Object[ids.size() + 1];
-        parameters[0] = workspaceId;
-        for (int i = 0; i < ids.size(); i++) parameters[i + 1] = ids.get(i);
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-                select id, status from source
-                where workspace_id = ? and id in (%s)
-                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))), parameters);
-        Map<String, String> statuses = new LinkedHashMap<>();
-        for (Map<String, Object> row : rows) {
-            statuses.put(String.valueOf(row.get("id")), String.valueOf(row.get("status")));
+    /**
+     * 报告正文是否可以继续下发：依赖关系无法解析（范围损坏/运行缺失）直接阻断；
+     * COMPLIANCE 撤销、内部缺失、跨工作台、USER 删除的依赖都阻断正文
+     * （USER 删除后的正文保留政策未确认，按总计划保守默认处理）；
+     * 暂不可用/快照过期的依赖只影响再发布，不影响历史正文展示；
+     * 生成来源依赖自身的传递撤销由 C1 闭包在 HISTORY 用途下同样阻断。
+     */
+    public boolean reportBodyAllowed(String workspaceId, String researchRunId) {
+        if (eligibilityPort == null || researchRunId == null || researchRunId.isBlank()) {
+            return true;
         }
-        return statuses;
+        GeneratedDependencyAssessment assessment = eligibilityPort.assessGeneratedDependenciesDetailed(
+                workspaceId, "research_agent", researchRunId, AccessPurpose.HISTORY_DISPLAY);
+        if (!assessment.resolved()) {
+            return false;
+        }
+        return assessment.dependencies().values().stream().allMatch(decision ->
+                decision.historyReadable() && decision.status() != EligibilityStatus.USER_DELETED);
     }
 
     private record Origin(String snapshotId, String replayAvailability) {}
-    private record SourceOrigin(String sourceId, String generatedBy, String generatedRefId) {}
 }

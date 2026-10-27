@@ -48,6 +48,21 @@ class WikiIndexOutboxTest {
         assertThat(count("page-a", "DELETE", "PENDING")).isEqualTo(1);
     }
 
+    /** V199 旧行（v2）：条目 0 代 + 行 desired 默认 1 不判陈旧，写版本按下限 1。 */
+    @Test
+    void legacyZeroGenerationIsWrittenAsVersionOneNotSuperseded() {
+        insertPage("page-legacy", "version-legacy", "Legacy", "content");
+        outbox.enqueueDelete("ws", "page-legacy");
+        // 模拟 V199 前的旧行：入队时未递增条目代次，条目仍为 0
+        jdbcTemplate.update("update knowledge_item set index_generation = 0 where id = 'page-legacy'");
+
+        outbox.dispatchPending();
+
+        assertThat(index.deletes).contains("ws:page-legacy");
+        assertThat(index.lastDeleteVersion).isEqualTo(1L);
+        assertThat(count("page-legacy", "DELETE", "SENT")).isEqualTo(1);
+    }
+
     @Test
     void dispatchUpsertsCurrentCountsAndDeletesMissingPages() {
         insertPage("page-a", "version-a", "Title A", "content a");
@@ -103,14 +118,18 @@ class WikiIndexOutboxTest {
         index.accept = false;
         jdbcTemplate.update("""
                 insert into wiki_index_outbox(
-                    id, workspace_id, item_id, operation, status, attempts
-                ) values ('fail', 'ws', 'page-a', 'DELETE', 'PENDING', 0)
+                    id, workspace_id, item_id, operation, status, attempts, desired_generation
+                ) values ('fail', 'ws', 'page-a', 'DELETE', 'PENDING', 0,
+                    (select index_generation from knowledge_item where id = 'page-a'))
                 """);
+        // B-07：失败后按 next_attempt_at 退避重试，测试把到期时间清空以模拟退避结束
         for (int attempt = 0; attempt < 4; attempt++) {
+            jdbcTemplate.update("update wiki_index_outbox set next_attempt_at = null where id = 'fail'");
             outbox.dispatchPending();
         }
         assertThat(jdbcTemplate.queryForObject(
                 "select attempts from wiki_index_outbox where id = 'fail'", Integer.class)).isEqualTo(4);
+        jdbcTemplate.update("update wiki_index_outbox set next_attempt_at = null where id = 'fail'");
         outbox.dispatchPending();
         assertThat(jdbcTemplate.queryForObject(
                 "select status from wiki_index_outbox where id = 'fail'", String.class)).isEqualTo("FAILED");
@@ -158,6 +177,108 @@ class WikiIndexOutboxTest {
         outbox.dispatchPending();
         assertThat(index.upserts.get(index.upserts.size() - 1).versionId()).isEqualTo("version-a2");
         assertThat(count("page-a", "UPSERT", "PENDING")).isZero();
+    }
+
+    /** IDX-01：永久失败的页不再每轮重入队，也不再占满批次把后面的缺页挡在外面。 */
+    @Test
+    void permanentlyFailedPagesAreNotReEnqueuedAndDoNotStarveTheBackfill() {
+        // 20 个永久失败页按 id 排在前面，正好是一轮 backfill 的批大小
+        for (int i = 0; i < 20; i++) {
+            String itemId = String.format("page-f%02d", i);
+            insertPage(itemId, "version-" + itemId, "Title " + itemId, "content " + itemId);
+            jdbcTemplate.update("""
+                    insert into wiki_index_outbox(
+                        id, workspace_id, item_id, version_id, operation, status, attempts, desired_generation
+                    ) values (?, 'ws', ?, ?, 'UPSERT', 'FAILED', 5,
+                        (select index_generation from knowledge_item where id = ?))
+                    """, "failed-" + itemId, itemId, "version-" + itemId, itemId);
+        }
+        insertPage("page-missing", "version-missing", "Missing", "content missing");
+
+        outbox.dispatchPending();
+
+        for (int i = 0; i < 20; i++) {
+            String itemId = String.format("page-f%02d", i);
+            assertThat(count(itemId, "UPSERT", "FAILED")).isEqualTo(1);
+            assertThat(count(itemId, "UPSERT", "PENDING")).isZero();
+        }
+        assertThat(count("page-missing", "UPSERT", "PENDING")).isEqualTo(1);
+    }
+
+    /** IDX-01：在飞行中与超租约的行都算已存在，由 dispatchPending 续租重试，不再多插一行。 */
+    @Test
+    void inFlightAndExpiredLeaseRowsAreNotDuplicatedByBackfill() {
+        insertPage("page-a", "version-a", "Title A", "content a");
+        jdbcTemplate.update("""
+                insert into wiki_index_outbox(
+                    id, workspace_id, item_id, version_id, operation, status, attempts,
+                    desired_generation, lease_owner, lease_until
+                ) values ('live', 'ws', 'page-a', 'version-a', 'UPSERT', 'PROCESSING', 1, 1, 'other-instance',
+                    timestampadd(second, 60, current_timestamp))
+                """);
+
+        outbox.dispatchPending();
+        assertThat(count("page-a", "UPSERT", "PENDING")).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_index_outbox where item_id = 'page-a'", Integer.class)).isEqualTo(1);
+
+        // 租约过期：同一行被续租重试并投递成功，仍然只有一行
+        jdbcTemplate.update("""
+                update wiki_index_outbox set lease_until = timestampadd(second, -60, current_timestamp)
+                where id = 'live'
+                """);
+        outbox.dispatchPending();
+
+        assertThat(index.upserts).extracting(WikiPageIndex.Document::itemId).containsExactly("page-a");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_index_outbox where item_id = 'page-a'", Integer.class)).isEqualTo(1);
+        assertThat(status("page-a", "UPSERT")).isEqualTo("SENT");
+    }
+
+    /** IDX-01：去重按目标版本而不是按条目，新版本不必等下一轮 backfill 才补上。 */
+    @Test
+    void enqueueDeduplicatesPerTargetVersionNotPerItem() {
+        insertPage("page-a", "version-a", "Title A", "content a");
+        outbox.enqueueUpsert("ws", "page-a");
+        jdbcTemplate.update("update wiki_index_outbox set status = 'PROCESSING' where item_id = 'page-a'");
+        outbox.enqueueUpsert("ws", "page-a");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_index_outbox where item_id = 'page-a'", Integer.class)).isEqualTo(1);
+
+        jdbcTemplate.update("""
+                insert into knowledge_version(id, item_id, version_no, content, summary)
+                values ('version-a2', 'page-a', 2, 'content a2', '')
+                """);
+        jdbcTemplate.update("update knowledge_item set latest_version_id = 'version-a2' where id = 'page-a'");
+        outbox.enqueueUpsert("ws", "page-a");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from wiki_index_outbox where item_id = 'page-a'", Integer.class)).isEqualTo(2);
+    }
+
+    /** IDX-01：代次没变但版本已过期的 FAILED 行不许重驱，否则会把旧版本写回去。 */
+    @Test
+    void redriveRejectsFailedRowThatNoLongerPointsAtTheLatestVersion() {
+        insertPage("page-a", "version-a", "Title A", "content a");
+        jdbcTemplate.update("""
+                insert into wiki_index_outbox(
+                    id, workspace_id, item_id, version_id, operation, status, attempts, desired_generation
+                ) values ('stale', 'ws', 'page-a', 'version-a', 'UPSERT', 'FAILED', 5,
+                    (select index_generation from knowledge_item where id = 'page-a'))
+                """);
+        jdbcTemplate.update("""
+                insert into knowledge_version(id, item_id, version_no, content, summary)
+                values ('version-a2', 'page-a', 2, 'content a2', '')
+                """);
+        jdbcTemplate.update("update knowledge_item set latest_version_id = 'version-a2' where id = 'page-a'");
+
+        assertThat(outbox.redriveFailed("stale", "ops", "retry")).isFalse();
+
+        jdbcTemplate.update("update wiki_index_outbox set version_id = 'version-a2' where id = 'stale'");
+        assertThat(outbox.redriveFailed("stale", "ops", "retry")).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from wiki_index_outbox where id = 'stale'", String.class)).isEqualTo("PENDING");
     }
 
     @Test
@@ -265,7 +386,10 @@ class WikiIndexOutboxTest {
                     latest_version_id varchar(36),
                     created_by varchar(80),
                     updated_by varchar(80),
-                    updated_at timestamp default current_timestamp
+                    wiki_page_state varchar(32),
+                    origin varchar(32),
+                    updated_at timestamp default current_timestamp,
+                    index_generation bigint not null default 0
                 )
                 """);
         jdbcTemplate.execute("""
@@ -319,7 +443,11 @@ class WikiIndexOutboxTest {
                     attempts int not null default 0,
                     last_error varchar(500) null,
                     created_at timestamp not null default current_timestamp,
-                    updated_at timestamp not null default current_timestamp
+                    updated_at timestamp not null default current_timestamp,
+                    desired_generation bigint not null default 1,
+                    lease_owner varchar(128) null,
+                    lease_until timestamp null,
+                    next_attempt_at timestamp null
                 )
                 """);
     }
@@ -327,8 +455,22 @@ class WikiIndexOutboxTest {
     private static final class RecordingIndex implements WikiPageIndex {
         private final List<Document> upserts = new ArrayList<>();
         private final List<String> deletes = new ArrayList<>();
+        private Long lastUpsertVersion;
+        private Long lastDeleteVersion;
         private boolean available = true;
         private boolean accept = true;
+
+        @Override
+        public boolean upsert(Document document, long version) {
+            this.lastUpsertVersion = version;
+            return upsert(document);
+        }
+
+        @Override
+        public boolean delete(String workspaceId, String itemId, long version) {
+            this.lastDeleteVersion = version;
+            return delete(workspaceId, itemId);
+        }
 
         @Override
         public boolean available() {

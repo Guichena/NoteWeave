@@ -25,9 +25,12 @@ public class SourceEmbeddingBatchRepository {
     public static final int BATCH_SIZE = 64;
     private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     private final JdbcTemplate jdbc;
+    private static final String DERIVED_BUCKET = com.noteweave.source.SourcePipelineStages.BUCKET_DERIVED;
+    private com.noteweave.storage.DerivedObjectRegistry derivedObjects;
     private final TransactionTemplate transactions;
     private final SourceTopicNames topicNames;
     private final int leaseSeconds;
+    private com.noteweave.task.TaskOutboxEnqueuer enqueuer;
 
     public SourceEmbeddingBatchRepository(JdbcTemplate jdbc, PlatformTransactionManager manager,
             SourceTopicNames topicNames) {
@@ -52,6 +55,12 @@ public class SourceEmbeddingBatchRepository {
         this.topicNames = java.util.Objects.requireNonNull(topicNames, "topicNames");
         if (leaseSeconds < 1 || leaseSeconds > 86400) throw new IllegalArgumentException("批次租约必须在 1 至 86400 秒之间");
         this.leaseSeconds = leaseSeconds;
+    }
+
+    /** 统一入队入口：注入后批次/索引消息走 C2 语义幂等（B-02）。 */
+    @Autowired(required = false)
+    void setTaskOutboxEnqueuer(com.noteweave.task.TaskOutboxEnqueuer enqueuer) {
+        this.enqueuer = enqueuer;
     }
 
     /** 初始化消息只冻结批次并投递，重复消息不会重复投递同一任务的批次。 */
@@ -184,10 +193,20 @@ public class SourceEmbeddingBatchRepository {
         return jdbc.queryForObject("select current_timestamp", Timestamp.class).toInstant();
     }
 
-    /** 派生文件已经持久化后提交指针，最后完成者在同一资料行锁内独占索引投递。 */
+    /**
+     * 派生文件已经持久化后提交指针（B-04 两阶段）：短事务一 CAS 提交批次结果；
+     * 清单写入（远程存储）在事务外执行；最后由 queueIndexIfComplete 在第二个短事务里
+     * 重新校验版本与批次摘要后发布索引消息，数据库锁不被存储 IO 长时间持有。
+     */
+    /** 派生对象登记（FB-06.2）：生产装配必然存在；直连构造的测试跳过登记。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setDerivedObjects(com.noteweave.storage.DerivedObjectRegistry derivedObjects) {
+        this.derivedObjects = derivedObjects;
+    }
+
     public boolean complete(Batch claimed, String objectKey, String sha256,
             java.util.function.Function<List<Batch>, String> saveManifest) {
-        return Boolean.TRUE.equals(transactions.execute(status -> {
+        transactions.executeWithoutResult(status -> {
             requireOwned(claimed);
             if (!claimed.chunkDigest().equals(currentChunkDigest(claimed))) throw new IllegalStateException("批次片段已变化");
             int completed = jdbc.update("""
@@ -196,20 +215,48 @@ public class SourceEmbeddingBatchRepository {
                     where id = ? and status = 'RUNNING' and lease_token = ? and lease_until > current_timestamp
                     """, objectKey, sha256, claimed.id(), claimed.leaseToken());
             if (completed != 1) throw new IllegalStateException("SOURCE_EMBEDDING_BATCH_LEASE_LOST");
-            return queueIndexIfComplete(claimed.workspaceId(), claimed.sourceId(), claimed.snapshotId(),
-                    claimed.taskId(), claimed.batchVersion(), saveManifest);
-        }));
+        });
+        // FB-06.2：批次向量对象登记（发布检查失败由清单发布的版本校验兜底，对象可被对账）
+        if (derivedObjects != null) {
+            derivedObjects.register(claimed.workspaceId(), claimed.sourceId(), claimed.snapshotId(),
+                    claimed.batchVersion(), "EMBEDDING_BATCH", DERIVED_BUCKET, objectKey, sha256);
+        }
+        return queueIndexIfComplete(claimed.workspaceId(), claimed.sourceId(), claimed.snapshotId(),
+                claimed.taskId(), claimed.batchVersion(), saveManifest);
     }
 
     public boolean queueIndexIfComplete(String workspace, String source, String snapshot, String task, String version,
             java.util.function.Function<List<Batch>, String> saveManifest) {
+        // 短事务一：确认完整批次并冻结清单草稿（摘要），不持有锁做远程 IO
+        List<Batch> draft = transactions.execute(status -> {
+            if (!lockCurrent(workspace, source, snapshot, task, "EMBEDDING")) return null;
+            if (!activeVersion(snapshot, version)) return null;
+            List<Batch> batches = list(workspace, source, snapshot, version);
+            if (batches.isEmpty() || batches.size() != batches.get(0).totalBatches()
+                    || batches.stream().anyMatch(batch -> !"COMPLETED".equals(batch.status()))) return null;
+            return batches;
+        });
+        if (draft == null) return false;
+        // 事务外写入不可变清单：相同草稿重复写入复用相同对象键（键含 batchVersion），
+        // 不同摘要必然对应不同版本，绝不覆盖同键
+        String manifest = saveManifest.apply(draft);
+        // FB-06.2：批次清单登记；短事务二发布拒绝时清单保持未引用，可被对账清理
+        if (derivedObjects != null) {
+            derivedObjects.register(workspace, source, snapshot, version, "EMBEDDING_MANIFEST",
+                    DERIVED_BUCKET, manifest, null);
+        }
+        // 短事务二：重新校验当前版本与全部批次状态，CAS 发布 INDEXING 与索引消息；
+        // 期间发生重处理/删除时发布拒绝，清单文件保持未引用
         return Boolean.TRUE.equals(transactions.execute(status -> {
             if (!lockCurrent(workspace, source, snapshot, task, "EMBEDDING")) return false;
             if (!activeVersion(snapshot, version)) return false;
             List<Batch> batches = list(workspace, source, snapshot, version);
             if (batches.isEmpty() || batches.size() != batches.get(0).totalBatches()
                     || batches.stream().anyMatch(batch -> !"COMPLETED".equals(batch.status()))) return false;
-            String manifest = saveManifest.apply(batches);
+            for (int i = 0; i < batches.size(); i++) {
+                if (!draft.get(i).objectKey().equals(batches.get(i).objectKey())
+                        || !draft.get(i).sha256().equals(batches.get(i).sha256())) return false;
+            }
             int moved = jdbc.update("""
                     update source_snapshot set processing_stage = 'INDEXING'
                     where id = ? and source_id = ? and processing_stage = 'EMBEDDING'
@@ -219,10 +266,21 @@ public class SourceEmbeddingBatchRepository {
             Map<String, Object> payload = identity(workspace, source, snapshot, task);
             payload.put("batchVersion", version);
             payload.put("embeddingsObjectKey", manifest);
-            jdbc.update("""
-                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                    values (?, ?, ?, ?, ?, 'READY')
-                    """, Ids.newId(), task, topicNames.index(), snapshot, Json.write(MAPPER, payload));
+            if (enqueuer != null) {
+                // 统一入队（B-02）：索引消息身份 = workspace/source/snapshot/INDEX，
+                // generation = task:batchVersion#已落定投递数——全部批次完成才会到达这里，
+                // 同一计划重复触发幂等返回既有行；重新处理（新任务或新计划）自然形成新代次
+                String generation = task + ":" + version + "#"
+                        + enqueuer.priorDeliveries(topicNames.index(), snapshot);
+                enqueuer.enqueue(new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                        workspace, task, topicNames.index(), snapshot,
+                        "SOURCE_INDEX", source, snapshot, generation, "INDEX", null, 1, payload));
+            } else {
+                jdbc.update("""
+                        insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                        values (?, ?, ?, ?, ?, 'READY')
+                        """, Ids.newId(), task, topicNames.index(), snapshot, Json.write(MAPPER, payload));
+            }
             return true;
         }));
     }
@@ -379,6 +437,21 @@ public class SourceEmbeddingBatchRepository {
                 update source_embedding_batch set next_recovery_at = timestampadd(second, 300, current_timestamp)
                 where source_snapshot_id = ? and batch_version = ? and batch_no = ? and task_id = ?
                 """, snapshot, version, batch, task);
+        Map<String, Object> payload = identity(workspace, source, snapshot, task);
+        payload.put("batchNo", batch); payload.put("batchVersion", version);
+        if (enqueuer != null) {
+            // 统一入队（B-02/C2）：批次消息身份 = workspace/source/snapshot/EMBED_BATCH/batchNo，
+            // generation = task:batchVersion#已落定投递数——同一任务同一计划重复唤醒幂等返回既有行；
+            // 换任务接管或计划版本变化自然形成新代次；消息已消费（SENT）但批次未完成时，
+            // 恢复扫描以更高落定计数重投新消息（不静默复活旧行）；死信行不自动复活，由人工重驱换代
+            String partitionKey = snapshot + ":" + batch;
+            String generation = task + ":" + version + "#"
+                    + enqueuer.priorDeliveries(topicNames.embed(), partitionKey);
+            enqueuer.enqueue(new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                    workspace, task, topicNames.embed(), partitionKey,
+                    "SOURCE_EMBED", source, snapshot, generation, "EMBED_BATCH", batch, 1, payload));
+            return;
+        }
         // Kafka 分区键保持稳定；防重另核对版本，不能让旧版本在途消息挡住新计划。
         List<String> inFlight = jdbc.queryForList("""
                 select payload_json from task_outbox where task_id = ? and topic = ? and message_key = ?
@@ -398,8 +471,6 @@ public class SourceEmbeddingBatchRepository {
                 // 无效载荷不能证明已有同一批次消息，交由既有死信处理。
             }
         }
-        Map<String, Object> payload = identity(workspace, source, snapshot, task);
-        payload.put("batchNo", batch); payload.put("batchVersion", version);
         jdbc.update("""
                 insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                 values (?, ?, ?, ?, ?, 'READY')

@@ -31,6 +31,8 @@ public class SourceDeletionCleanupListener {
     private static final int MAX_ATTEMPTS = 5;
     /** 死信计数器，Prometheus 导出为 noteweave_source_cleanup_dead_letter_total。 */
     private static final String DEAD_LETTER_METRIC = "noteweave.source.cleanup.dead_letter";
+    /** DATA-02：归属不明、无法安全回收的对象键计数，按清理类型打标签。 */
+    private static final String UNTRACKED_OBJECT_METRIC = "noteweave.source.cleanup.untracked_object";
     private static final String EXPIRED_LEASE_ERROR = "cleanup lease expired after maximum attempts";
 
     private final JdbcTemplate jdbcTemplate;
@@ -39,6 +41,14 @@ public class SourceDeletionCleanupListener {
     private final String sourceBucket;
     private final boolean elasticsearchEnabled;
     private final MeterRegistry meterRegistry;
+
+    /** 文件对象生命周期网关；未注入时保留既有引用检查（legacy 检查-删除竞态）。 */
+    private com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setFileObjectLifecycle(com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle) {
+        this.fileObjectLifecycle = fileObjectLifecycle;
+    }
 
     /** 兼容没有指标注册表的调用方，此时只保留结构化日志。 */
     public SourceDeletionCleanupListener(
@@ -68,13 +78,24 @@ public class SourceDeletionCleanupListener {
 
     @TransactionalEventListener(phase = TransactionPhase.BEFORE_COMMIT)
     public void prepareCleanup(SourceDeletedEvent event) {
-        if (elasticsearchEnabled) {
+        // 投影清理任务在首次删除时已按业务身份登记；升级只补登记缺失的对象键清理意图
+        if (event.isUpgrade() && event.objectKeys().isEmpty()) {
+            return;
+        }
+        if (!event.isUpgrade() && elasticsearchEnabled) {
             for (ProjectionType type : ProjectionType.values()) {
                 jdbcTemplate.update("""
                         insert into source_cleanup_task(
                             id, workspace_id, source_id, cleanup_type, projection_type, status, next_attempt_at
-                        ) values (?, ?, ?, 'RETRIEVAL_PROJECTION', ?, 'READY', current_timestamp)
-                        """, Ids.newId(), event.workspaceId(), event.sourceId(), type.name());
+                        )
+                        select ?, ?, ?, 'RETRIEVAL_PROJECTION', ?, 'READY', current_timestamp
+                        where not exists (
+                            select 1 from source_cleanup_task
+                            where source_id = ? and cleanup_type = 'RETRIEVAL_PROJECTION'
+                              and projection_type = ?
+                        )
+                        """, Ids.newId(), event.workspaceId(), event.sourceId(), type.name(),
+                        event.sourceId(), type.name());
             }
         }
         for (String objectKey : event.objectKeys()) {
@@ -82,9 +103,15 @@ public class SourceDeletionCleanupListener {
                     insert into source_cleanup_task(
                         id, workspace_id, source_id, cleanup_type, bucket_name, object_key,
                         object_key_sha256, status, next_attempt_at
-                    ) values (?, ?, ?, 'SOURCE_OBJECT', ?, ?, ?, 'READY', current_timestamp)
+                    )
+                    select ?, ?, ?, 'SOURCE_OBJECT', ?, ?, ?, 'READY', current_timestamp
+                    where not exists (
+                        select 1 from source_cleanup_task
+                        where source_id = ? and cleanup_type = 'SOURCE_OBJECT'
+                          and bucket_name = ? and object_key = ?
+                    )
                     """, Ids.newId(), event.workspaceId(), event.sourceId(), sourceBucket, objectKey,
-                    sha256(objectKey));
+                    sha256(objectKey), event.sourceId(), sourceBucket, objectKey);
         }
     }
 
@@ -217,10 +244,81 @@ public class SourceDeletionCleanupListener {
             return;
         }
         if ("SOURCE_OBJECT".equals(task.cleanupType())) {
-            objectStorage.delete(task.bucketName(), task.objectKey());
+            // 零引用删除先取得绑定对象键与代次的删除票据；共享原件仍被引用时跳过。
+            // 网关未接线时退回既有按 object_key 的引用检查（检查-删除竞态，保持旧行为）。
+            // object_key 全局含 workspace 前缀，按键定位文件对象行；端口认领再带 workspace 判定
+            java.util.List<String> fileObjectIds = jdbcTemplate.queryForList(
+                    "select id from file_object where object_key = ? limit 1",
+                    String.class, task.objectKey());
+            String fileObjectId = fileObjectIds.isEmpty() ? null : fileObjectIds.get(0);
+            if (fileObjectLifecycle != null && fileObjectId == null) {
+                // NR14：快照独占原件（上传/生成/研究报告为 source_snapshot 复制的独立副本）
+                // 没有 file_object 行——以 DB 快照登记为归属证明：该来源的快照行登记此 key
+                // 且无其他来源共享时直接物理回收；此前被当未知对象跳过后任务标 COMPLETED，
+                // 普通与 COMPLIANCE 删除都永久遗留原件
+                Integer ownedSnapshots = jdbcTemplate.queryForObject("""
+                        select count(*) from source_snapshot ss
+                        where ss.object_key = ? and ss.source_id = ?
+                        """, Integer.class, task.objectKey(), task.sourceId());
+                Integer sharedSnapshots = jdbcTemplate.queryForObject("""
+                        select count(*) from source_snapshot ss
+                        where ss.object_key = ? and ss.source_id <> ?
+                        """, Integer.class, task.objectKey(), task.sourceId());
+                if (ownedSnapshots != null && ownedSnapshots > 0
+                        && (sharedSnapshots == null || sharedSnapshots == 0)) {
+                    objectStorage.delete(task.bucketName(), task.objectKey());
+                    return;
+                }
+                // DATA-02：归属不明不能当「清理完成」。此前这里直接 return，
+                // 任务照样标 COMPLETED，对象却永久留在库里，COMPLIANCE 删除等于没删。
+                // 抛出让任务按重试计数走死信，停在 DEAD_LETTER 等人工核对，并单独计数。
+                if (meterRegistry != null) {
+                    meterRegistry.counter(UNTRACKED_OBJECT_METRIC, "cleanup_type", task.cleanupType())
+                            .increment();
+                }
+                log.error("Source cleanup found untracked object key, dead-lettering for manual review: "
+                                + "sourceId={}, objectKey={}", task.sourceId(), task.objectKey());
+                throw new IllegalStateException(
+                        "untracked object key, needs manual review: " + task.objectKey());
+            }
+            java.util.Optional<com.noteweave.source.storage.FileObjectLifecyclePort.DeletionTicket> ticket =
+                    fileObjectLifecycle != null
+                            ? fileObjectLifecycle.claimZeroReferenceDeletion(
+                                    task.workspaceId(), fileObjectId, task.bucketName(), task.objectKey())
+                            : legacyClaimByObjectKey(task.objectKey());
+            if (ticket.isEmpty()) {
+                // AU-005：区分「票据已认领（对账器负责物理删除）」与「仍被引用（共享对象不得删）」，
+                // 前者多发生在本任务早前一次认领后物理删除失败的重试
+                if (fileObjectLifecycle != null) {
+                    java.util.List<String> statuses = jdbcTemplate.queryForList(
+                            "select status from file_object where id = ?", String.class, fileObjectId);
+                    String rowStatus = statuses.isEmpty() ? null : statuses.get(0);
+                    if ("DELETE_CLAIMED".equals(rowStatus) || "DELETED".equals(rowStatus)) {
+                        log.info("Source cleanup: deletion ticket already claimed, physical delete owned by ticket reconciler: sourceId={}, objectKey={}",
+                                task.sourceId(), task.objectKey());
+                        return;
+                    }
+                }
+                log.info("Source cleanup skipped object still referenced: sourceId={}, objectKey={}",
+                        task.sourceId(), task.objectKey());
+                return;
+            }
+            objectStorage.delete(task.bucketName(), ticket.get().objectKey());
             return;
         }
         throw new IllegalStateException("Unknown source cleanup type: " + task.cleanupType());
+    }
+
+    /** legacy 路径：沿用改造前的按 object_key 引用检查。 */
+    private java.util.Optional<com.noteweave.source.storage.FileObjectLifecyclePort.DeletionTicket> legacyClaimByObjectKey(String objectKey) {
+        Integer activeReferences = jdbcTemplate.queryForObject(
+                "select count(*) from file_object where object_key = ? and ref_count > 0",
+                Integer.class, objectKey);
+        if (activeReferences != null && activeReferences > 0) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new com.noteweave.source.storage.FileObjectLifecyclePort.DeletionTicket(
+                null, null, objectKey, 0L));
     }
 
     private void fail(CleanupTask task, String leaseOwner, int attempt, RuntimeException exception) {

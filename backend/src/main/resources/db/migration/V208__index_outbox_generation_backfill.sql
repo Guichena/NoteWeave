@@ -1,0 +1,9 @@
+-- M-INDEX-BACKFILL（FB-08.3，v2 修订为说明性空迁移）。
+-- 原计划把在途行 desired_generation 回填为条目当前代次；交付后复审发现两处错误：
+--   1) 条目代次已推进的行：回填会把「正确的 SUPERSEDED 跳过」变成「版本冲突反复重试至
+--      FAILED」，制造永久失败噪音；
+--   2) 条目仍为 0 的旧行：问题真实出在投递侧会把 0 当 ES external version 写入，
+--      回填到 1 并不能修正写版本。
+-- 最终方案（代码侧，见 MemoryIndexOutbox / WikiIndexOutbox dispatch）：
+--   仅当 current > desired 时按 SUPERSEDED 跳过；写版本一律 max(1, current)。
+-- 无需数据回填，本迁移保留编号占位与决策记录。

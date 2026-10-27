@@ -26,8 +26,14 @@ class NoteReadingRetrieverTest {
                 org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.eq(1)))
                 .thenReturn(new RerankClient.RerankResult(List.of(), "rerank-v1"));
-        when(hydrator.hydrateNoteWindows("workspace", List.of("source-a")))
-                .thenReturn(Map.of("source-a", List.of(window("chunk-a"))));
+        when(hydrator.loadWindowIndex(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyList(),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.WindowIndexResult(
+                        List.of(identity("chunk-a", 1, 1)), 0, 0, 1));
+        when(hydrator.hydrateWindowBodies(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.BodyLoadResult(Map.of("chunk-a", "Content")));
 
         NoteReadingRetriever retriever = new NoteReadingRetriever(
                 hydrator, new NoteReadingPlanner(), null, null, rerankClient);
@@ -51,8 +57,14 @@ class NoteReadingRetrieverTest {
                 org.mockito.ArgumentMatchers.eq(1)))
                 .thenReturn(new RerankClient.RerankResult(
                         List.of(new RerankClient.Hit(99, 0.9, 1)), "rerank-v1"));
-        when(hydrator.hydrateNoteWindows("workspace", List.of("source-a")))
-                .thenReturn(Map.of("source-a", List.of(window("chunk-a"))));
+        when(hydrator.loadWindowIndex(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyList(),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.WindowIndexResult(
+                        List.of(identity("chunk-a", 1, 1)), 0, 0, 1));
+        when(hydrator.hydrateWindowBodies(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.BodyLoadResult(Map.of("chunk-a", "Content")));
 
         NoteReadingRetriever retriever = new NoteReadingRetriever(
                 hydrator, new NoteReadingPlanner(), null, null, rerankClient);
@@ -76,10 +88,16 @@ class NoteReadingRetrieverTest {
         when(chunkSearch.vectorRetrieve(org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of(new QaSearchHit(
                         "chunk-vector", "source-a", "snapshot-a", 2, "Source", "h", "PDF", "other", 0.9d)));
-        when(hydrator.hydrateNoteWindows("workspace", List.of("source-a")))
-                .thenReturn(Map.of("source-a", List.of(
-                        window("chunk-lexical", 0, 1, "target"),
-                        window("chunk-vector", 2, 0, "other"))));
+        when(hydrator.loadWindowIndex(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyList(),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.WindowIndexResult(
+                        List.of(identity("chunk-lexical", 0, 1), identity("chunk-vector", 2, 0)),
+                        1, 0, 1));
+        when(hydrator.hydrateWindowBodies(org.mockito.ArgumentMatchers.eq("workspace"),
+                        org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.BodyLoadResult(
+                        Map.of("chunk-lexical", "target", "chunk-vector", "other")));
         NoteReadingRetriever retriever = new NoteReadingRetriever(
                 hydrator, new NoteReadingPlanner(), embeddingClient, chunkSearch, null);
 
@@ -94,6 +112,11 @@ class NoteReadingRetrieverTest {
     private CandidateSource source(String id) {
         return new CandidateSource(id, "Source", "PDF", 1, 1, "", "", "summary",
                 "[]", "{}", "sample", 1, "", List.of(), List.of(), 0, 0, "", "");
+    }
+
+    private RetrievalHydrator.WindowIdentity identity(String chunkId, int chunkNo, int windowNo) {
+        return new RetrievalHydrator.WindowIdentity(chunkId, "source-a", "snapshot-a", chunkId, chunkNo,
+                "Heading", "Source", "", "", windowNo, "location", "head-fallback");
     }
 
     private ReadingWindow window(String chunkId) {

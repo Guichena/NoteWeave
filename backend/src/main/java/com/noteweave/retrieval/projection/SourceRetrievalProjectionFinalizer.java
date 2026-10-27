@@ -20,6 +20,8 @@ public class SourceRetrievalProjectionFinalizer {
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final TaskService taskService;
     private final ApplicationEventPublisher eventPublisher;
+    private SourceReadyIntentRepository readyIntents;
+    private String ingestPolicyVersion = "1";
 
     public SourceRetrievalProjectionFinalizer(
             JdbcTemplate jdbcTemplate,
@@ -114,6 +116,11 @@ public class SourceRetrievalProjectionFinalizer {
         for (StaleSnapshot stale : staleSnapshots) {
             projectionRepository.markSnapshotStale(stale.sourceSnapshotId());
         }
+        // READY 持久摄取意图（B-02/C3）：与 READY 状态变更同一事务写入，
+        // 同一快照同政策幂等；AFTER_COMMIT 事件只是唤醒提示，不是唯一交付
+        if (readyIntents != null) {
+            readyIntents.recordIfAbsent(workspaceId, sourceId, snapshotId, ingestPolicyVersion);
+        }
         sourceCatalogVersionService.bump(workspaceId);
         // 下游（Wiki 编译）在本事务提交后开始，此时资料已可读
         eventPublisher.publishEvent(new SourceRetrievalReadyEvent(workspaceId, sourceId));
@@ -139,6 +146,22 @@ public class SourceRetrievalProjectionFinalizer {
             String taskId,
             String errorCode
     ) {
+        finalizeFailed(workspaceId, sourceId, snapshotId, taskId, errorCode, null);
+    }
+
+    /**
+     * 检索投影失败收尾的围栏入口（FB-01）：围栏在锁定快照之后、任何业务写入之前复核，
+     * 人工重驱已换代的旧代次补偿直接返回，不把重驱后的流水线再打回失败。
+     */
+    @Transactional
+    public void finalizeFailed(
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            String taskId,
+            String errorCode,
+            com.noteweave.common.FinalizationFence fence
+    ) {
         String normalizedErrorCode = normalizeErrorCode(errorCode);
         CurrentSnapshot current = lockCurrentSnapshot(workspaceId, sourceId, snapshotId);
         TaskService.TaskRef task = lockMatchingTask(taskId, workspaceId, sourceId);
@@ -150,6 +173,10 @@ public class SourceRetrievalProjectionFinalizer {
         }
         if (current.current() && !current.acceptsFailedTransition() && !current.failed()) {
             throw new IllegalStateException("Source is not awaiting retrieval projection failure finalization");
+        }
+        if (fence != null && !fence.stillCurrent()) {
+            // 死信登记之后发生过人工重驱或换代：本条补偿按过期事实退出，无业务副作用
+            return;
         }
         // 可重试的失败按 1、2、4 分钟退避自动重试，最多 3 次；配置类错误重试也不会成功，直接停下
         Integer attempts = jdbcTemplate.query(
@@ -202,6 +229,20 @@ public class SourceRetrievalProjectionFinalizer {
                     autoRetry
             );
         }
+    }
+
+    /**
+     * 阶段变化时刷新资料列表缓存，前端轮询时能看到当前阶段。
+     * FB-02：意图仓储是常规 @Repository，生产装配必然存在；不再 required=false，
+     * 缺 bean 直接启动失败，杜绝 READY 提交静默丢失持久意图。
+     */
+    @Autowired
+    void setReadyIntents(SourceReadyIntentRepository readyIntents,
+            @org.springframework.beans.factory.annotation.Value(
+                    "${noteweave.knowledge.ingest-policy-version:1}") String ingestPolicyVersion) {
+        this.readyIntents = readyIntents;
+        this.ingestPolicyVersion = ingestPolicyVersion == null || ingestPolicyVersion.isBlank()
+                ? "1" : ingestPolicyVersion;
     }
 
     private TaskService.TaskRef lockMatchingTask(

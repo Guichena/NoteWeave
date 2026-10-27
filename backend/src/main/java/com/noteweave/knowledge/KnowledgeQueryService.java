@@ -2,6 +2,7 @@ package com.noteweave.knowledge;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
+import com.noteweave.source.eligibility.AccessPurpose;
 import com.noteweave.workspace.WorkspaceQueryPort;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -181,16 +182,21 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
 
     public List<KnowledgeItemResponse> listItems(String workspaceId, String itemType) {
         if ("WIKI".equalsIgnoreCase(itemType)) {
-            return readableWikiRows(workspaceId, wikiSearchEngine.loadRows(workspaceId)).stream()
+            List<WikiSearchRow> rows = readableWikiRows(workspaceId, wikiSearchEngine.loadRows(workspaceId)).stream()
                     .sorted(Comparator.comparing(WikiSearchRow::updatedAt).reversed())
-                    .map(WikiSearchRow::toItemResponse)
+                    .toList();
+            // WIKI-03：列表要带出页面状态，前端据此提示「来源已更新，待确认」
+            Map<String, String> pageStates = wikiPageStates(workspaceId, rows);
+            return rows.stream()
+                    .map(row -> row.toItemResponse(pageStates.get(row.itemId())))
                     .toList();
         }
         return jdbcTemplate.query("""
                 select i.id, i.item_type, coalesce(i.page_kind, '') as page_kind,
                        i.title, i.status, i.latest_version_id, i.updated_at,
                        coalesce(v.version_no, 0) as version_no,
-                       coalesce(v.summary, '') as summary
+                       coalesce(v.summary, '') as summary,
+                       i.wiki_page_state
                 from knowledge_item i
                 left join knowledge_version v on v.id = i.latest_version_id
                 where i.workspace_id = ? and i.item_type = ? and i.status = 'ACTIVE'
@@ -205,8 +211,30 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 rs.getInt("version_no"),
                 rs.getString("summary"),
                 toInstant(rs.getTimestamp("updated_at")),
-                0, 0, 0, 0
+                0, 0, 0, 0,
+                rs.getString("wiki_page_state")
         ), workspaceId, itemType);
+    }
+
+    /** 批量取页面状态，避免列表逐页查询。 */
+    private Map<String, String> wikiPageStates(String workspaceId, List<WikiSearchRow> rows) {
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", rows.stream().map(row -> "?").toList());
+        Object[] args = new Object[rows.size() + 1];
+        args[0] = workspaceId;
+        for (int index = 0; index < rows.size(); index++) {
+            args[index + 1] = rows.get(index).itemId();
+        }
+        Map<String, String> states = new HashMap<>();
+        jdbcTemplate.query("""
+                select id, wiki_page_state
+                from knowledge_item
+                where workspace_id = ? and id in (%s)
+                """.formatted(placeholders), (RowCallbackHandler) rs ->
+                states.put(rs.getString(1), rs.getString(2)), args);
+        return states;
     }
 
     public KnowledgeItemDetailResponse getItemDetail(String itemId) {
@@ -221,7 +249,9 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                         item.workspaceId(), item.itemId(), item.latestVersionId())
                         .orElseGet(() -> loadVersionSnapshot(item, true))
                 : loadVersionSnapshot(item, false);
-        citationReadGate.requireReadable(item.workspaceId(), snapshot.versionId());
+        // Note 按历史政策展示（USER 删除/暂不可用仍可读正文）；Wiki 正文要求当前依赖可用
+        AccessPurpose purpose = wiki ? AccessPurpose.CURRENT_EVIDENCE : AccessPurpose.HISTORY_DISPLAY;
+        citationReadGate.requireReadable(item.workspaceId(), snapshot.versionId(), purpose);
         return new KnowledgeItemDetailResponse(
                 item.itemId(),
                 item.itemType(),
@@ -237,7 +267,23 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 wiki ? listOutgoingLinks(item.workspaceId(), item.itemId()) : List.of(),
                 wiki ? listBacklinks(item.workspaceId(), item.itemId()) : List.of(),
                 snapshot.createdAt(),
-                item.updatedAt());
+                item.updatedAt(),
+                sourceAvailability(item.workspaceId(), snapshot.versionId()));
+    }
+
+    /** 版本引用来源的可用性说明；COMPLIANCE 撤销等原因据此对用户可见。 */
+    private List<KnowledgeSourceAvailabilityResponse> sourceAvailability(String workspaceId, String versionId) {
+        return citationReadGate.versionSourceAvailability(workspaceId, List.of(versionId))
+                .getOrDefault(versionId, List.of()).stream()
+                .map(decision -> new KnowledgeSourceAvailabilityResponse(
+                        decision.originKey().startsWith("source:") ? decision.originKey().substring(7) : decision.originKey(),
+                        decision.status().name(),
+                        decision.reasonCode(),
+                        decision.historyReadable(),
+                        decision.evidenceEligible(),
+                        decision.republishAllowed(),
+                        decision.dependencySummary()))
+                .toList();
     }
 
     private ItemState loadItemState(String itemId) {
@@ -326,8 +372,11 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
 
     public List<KnowledgeItemResponse> searchWikiPages(String workspaceId, String query) {
         try {
-            return readableWikiRows(workspaceId, wikiSearchEngine.search(workspaceId, query)).stream()
-                    .map(WikiSearchRow::toItemResponse)
+            List<WikiSearchRow> rows = readableWikiRows(
+                    workspaceId, wikiSearchEngine.search(workspaceId, query));
+            Map<String, String> pageStates = wikiPageStates(workspaceId, rows);
+            return rows.stream()
+                    .map(row -> row.toItemResponse(pageStates.get(row.itemId())))
                     .toList();
         } finally {
             rememberWikiDegradation();

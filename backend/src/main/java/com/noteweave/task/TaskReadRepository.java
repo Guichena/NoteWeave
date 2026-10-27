@@ -44,7 +44,7 @@ class TaskReadRepository {
 
     TaskService.TaskRef loadTaskRef(String taskId, boolean forUpdate) {
         String sql = """
-                select id, workspace_id, task_type, task_status, target_type, target_id
+                select id, workspace_id, task_type, task_status, target_type, target_id, generation
                 from task where id = ?
                 """ + (forUpdate ? " for update" : "");
         return jdbcTemplate.query(sql, rs -> {
@@ -57,7 +57,8 @@ class TaskReadRepository {
                     rs.getString("task_type"),
                     rs.getString("task_status"),
                     rs.getString("target_type"),
-                    rs.getString("target_id")
+                    rs.getString("target_id"),
+                    rs.getInt("generation")
             );
         }, taskId);
     }

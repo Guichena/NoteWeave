@@ -58,7 +58,7 @@ class SourceStructuredParsingTest {
                     text_origin varchar(16), ocr_confidence double);
                 create table source_window(id varchar(64) primary key, source_chunk_id varchar(64), window_no int,
                     content clob, location_info varchar(300));
-                create table task(id varchar(64) primary key, task_type varchar(64), target_id varchar(64), created_at timestamp);
+                create table task(id varchar(64) primary key, generation int not null default 1, task_type varchar(64), target_id varchar(64), created_at timestamp);
                 create table task_outbox(id varchar(64) primary key, task_id varchar(64), topic varchar(160),
                     message_key varchar(160), payload_json clob, status varchar(32));
                 """);

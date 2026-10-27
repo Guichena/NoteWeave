@@ -73,11 +73,22 @@ public class NoteReadingRetriever {
                     "note_window_rerank_count", 0L
             ));
         }
-        Map<String, List<ReadingWindow>> windows = hydrator.hydrateNoteWindows(
-                workspaceId, sources.stream().map(CandidateSource::sourceId).toList());
+        List<String> sourceIds = sources.stream().map(CandidateSource::sourceId).toList();
+        // 语义命中先于装载：命中 chunk 集合驱动窗口身份选择，文末窗口可进入候选池
         SemanticScoreResult semantic = semanticChunkScores(
                 workspaceId, sources, safeChannels.vectorQuery());
         Map<String, Double> semanticByChunk = semantic.scores();
+        Set<String> lexicalTerms = LexicalTerms.queryTerms(safeChannels.lexicalQuery());
+        RetrievalHydrator.WindowIndexResult index = hydrator.loadWindowIndex(
+                workspaceId, sourceIds, List.copyOf(semanticByChunk.keySet()),
+                List.copyOf(lexicalTerms), RetrievalHydrator.WindowIndexBudget.defaults());
+        RetrievalHydrator.BodyLoadResult bodies = hydrator.hydrateWindowBodies(
+                workspaceId, index.windows(), RetrievalHydrator.WindowBodyBudget.defaults());
+        Map<String, List<ReadingWindow>> windows = new LinkedHashMap<>();
+        for (RetrievalHydrator.WindowIdentity identity : index.windows()) {
+            windows.computeIfAbsent(identity.sourceId(), ignored -> new ArrayList<>())
+                    .add(identity.toReadingWindow(bodies.contentById().getOrDefault(identity.id(), "")));
+        }
         List<ReadingWindow> selected = new ArrayList<>();
         for (CandidateSource source : sources) {
             List<ReadingWindow> sourceWindows = windows.getOrDefault(source.sourceId(), List.of());
@@ -94,15 +105,38 @@ public class NoteReadingRetriever {
         LinkedHashSet<String> degradationReasons = new LinkedHashSet<>();
         degradationReasons.addAll(semantic.degradationReasons());
         degradationReasons.addAll(reranked.degradationReasons());
+        RetrievalHydrator.WindowLoadUsage windowUsage = hydrator.lastWindowLoadUsage();
+        if (windowUsage != null && windowUsage.byteTruncated()) {
+            degradationReasons.add("NOTE_WINDOW_BYTE_BUDGET_EXCEEDED");
+        }
+        if (windowUsage != null && windowUsage.droppedOversized() > 0) {
+            degradationReasons.add("NOTE_WINDOW_OVERSIZED_DROPPED");
+        }
+        Map<String, Long> measurements = new LinkedHashMap<>();
+        measurements.put("note_window_candidate_count", (long) candidates.size());
+        measurements.put("note_window_semantic_hit_count", (long) semanticByChunk.size());
+        measurements.put("note_window_rerank_count", (long) reranked.rerankCount());
+        // 部分评分观测：记录打分数量与未打分数量，未评分候选保留在尾部而不是被丢弃
+        measurements.put("note_window_rerank_scored_count", (long) reranked.scoredCount());
+        measurements.put("note_window_rerank_unscored_count",
+                (long) Math.max(0, candidates.size() - reranked.scoredCount()));
+        measurements.put("note_window_loaded_bytes",
+                windowUsage == null ? 0L : windowUsage.loadedBytes());
+        // 命中与装载口径：身份各通道计数、装载/丢弃数量；只输出计数，不携带 sourceId
+        measurements.put("note_window_identity_semantic", (long) index.semanticAnchorCount());
+        measurements.put("note_window_identity_lexical", (long) index.lexicalAnchorCount());
+        measurements.put("note_window_identity_head_fallback", (long) index.headFallbackCount());
+        measurements.put("note_window_loaded_windows",
+                windowUsage == null ? 0L : windowUsage.loadedWindows());
+        measurements.put("note_window_dropped_by_budget",
+                windowUsage == null ? 0L : windowUsage.droppedByBudget());
+        measurements.put("note_window_dropped_oversized",
+                windowUsage == null ? 0L : windowUsage.droppedOversized());
         return new ReadingResult(
                 reranked.windows(),
                 !degradationReasons.isEmpty(),
                 List.copyOf(degradationReasons),
-                Map.of(
-                        "note_window_candidate_count", (long) candidates.size(),
-                        "note_window_semantic_hit_count", (long) semanticByChunk.size(),
-                        "note_window_rerank_count", (long) reranked.rerankCount()
-                )
+                Map.copyOf(measurements)
         );
     }
 
@@ -199,7 +233,7 @@ public class NoteReadingRetriever {
     }
 
     private WindowRerankResult rerankWindows(String query, List<ReadingWindow> candidates, int limit) {
-        if (candidates.isEmpty()) return new WindowRerankResult(List.of(), List.of(), 0);
+        if (candidates.isEmpty()) return new WindowRerankResult(List.of(), List.of(), 0, 0);
         if (rerankClient == null || !rerankClient.isEnabled()) {
             return WindowRerankResult.unavailable(candidates, limit);
         }
@@ -220,7 +254,7 @@ public class NoteReadingRetriever {
             List<ReadingWindow> reranked = result.hits().stream()
                     .map(hit -> candidates.get(hit.documentIndex()).withRerankScore(hit.score()))
                     .toList();
-            return new WindowRerankResult(reranked, List.of(), reranked.size());
+            return new WindowRerankResult(reranked, List.of(), reranked.size(), reranked.size());
         } catch (RuntimeException ex) {
             return WindowRerankResult.unavailable(candidates, limit);
         }
@@ -243,12 +277,14 @@ public class NoteReadingRetriever {
     private record WindowRerankResult(
             List<ReadingWindow> windows,
             List<String> degradationReasons,
-            int rerankCount
+            int rerankCount,
+            int scoredCount
     ) {
         private static WindowRerankResult unavailable(List<ReadingWindow> candidates, int limit) {
             return new WindowRerankResult(
                     candidates.stream().limit(limit).toList(),
                     List.of("NOTE_WINDOW_RERANK_UNAVAILABLE"),
+                    0,
                     0
             );
         }

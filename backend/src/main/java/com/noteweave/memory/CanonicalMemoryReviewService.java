@@ -278,11 +278,24 @@ public class CanonicalMemoryReviewService {
     ) {
         if ("REJECT".equals(request.decision())) {
             jdbcTemplate.update("update memory_runtime_revision set status = 'REJECTED' where id = ?", row.revisionId());
-            jdbcTemplate.update("""
-                    update memory_item set status = 'DELETED', review_status = 'REJECTED',
-                        lock_version = lock_version + 1, updated_at = current_timestamp
-                    where id = ?
-                    """, row.itemId());
+            // NR10：拒绝一个 proposal 只拒绝该修订，绝不删除整个 memory_item——
+            // 已有 ACTIVE 生效头或其他待审提案必须保留。仅空项（无生效头且无其他
+            // 待审提案）才整体回收，避免留下不可见死项
+            Integer activeHeads = jdbcTemplate.queryForObject("""
+                    select count(*) from memory_runtime_revision
+                    where memory_item_id = ? and id <> ? and status = 'ACTIVE'
+                    """, Integer.class, row.itemId(), row.revisionId());
+            Integer otherProposals = jdbcTemplate.queryForObject("""
+                    select count(*) from memory_runtime_revision
+                    where memory_item_id = ? and id <> ? and status = 'PROPOSED'
+                    """, Integer.class, row.itemId(), row.revisionId());
+            if ((activeHeads == null || activeHeads == 0) && (otherProposals == null || otherProposals == 0)) {
+                jdbcTemplate.update("""
+                        update memory_item set status = 'DELETED', review_status = 'REJECTED',
+                            lock_version = lock_version + 1, updated_at = current_timestamp
+                        where id = ?
+                        """, row.itemId());
+            }
             updateCandidateStatus(row, "REJECTED");
             writeEvent(row.itemId(), "REVISION_REJECTED", row.revisionId(), decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "REJECTED", List.of());

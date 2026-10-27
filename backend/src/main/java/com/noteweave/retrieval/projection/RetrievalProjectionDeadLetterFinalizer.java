@@ -2,6 +2,7 @@ package com.noteweave.retrieval.projection;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.common.FinalizationOutcome;
 import com.noteweave.source.SourceTopicNames;
 import java.io.IOException;
 import java.util.Map;
@@ -16,7 +17,11 @@ import org.slf4j.LoggerFactory;
  * 把快照、当前资料和任务一起标记为失败，资料才能被重新处理或被重试调度器接手，
  * 而不是一直停在 PROCESSING / EMBEDDING / INDEXING。
  * 失败收尾后 {@link com.noteweave.source.SourceReprocessService} 在重新处理时会清空批次租约，
- * 所以残留的向量批次不会继续占着租约。收尾异常只记录日志，不能打断消费或投递循环。
+ * 所以残留的向量批次不会继续占着租约。
+ * <p>
+ * 收尾结果带语义（B-01）：APPLIED 表示失败收尾已提交；目标不存在、批次或任务代次已过时
+ * 返回 IGNORED_STALE（无副作用）；数据库暂时错误等可重试异常返回 RETRYABLE_FAILURE，
+ * 由补偿执行器退避后重试，不再把一切失败混成 boolean。
  */
 public class RetrievalProjectionDeadLetterFinalizer {
     private static final Logger log = LoggerFactory.getLogger(RetrievalProjectionDeadLetterFinalizer.class);
@@ -53,23 +58,49 @@ public class RetrievalProjectionDeadLetterFinalizer {
     }
 
     /**
-     * 收尾一条无法完成的检索投影消息。返回 true 表示已经完成失败收尾；
-     * 载荷无法识别、批次已过时或收尾抛异常时返回 false，且不会向调用方抛出。
+     * 收尾一条无法完成的检索投影消息（载荷版本）。返回结果带语义；
+     * 载荷无法识别按 IGNORED_STALE 处理，收尾抛异常按 RETRYABLE_FAILURE 处理，
+     * 都不会向调用方抛出。
      */
-    public boolean finalizeFailure(String topic, String payloadJson, String errorCode) {
+    public FinalizationOutcome finalizeFailure(String topic, String payloadJson, String errorCode) {
+        return finalizeFailure(topic, payloadJson, errorCode, null);
+    }
+
+    public FinalizationOutcome finalizeFailure(String topic, String payloadJson, String errorCode,
+            com.noteweave.common.FinalizationFence fence) {
+        Map<String, Object> payload = readPayload(topic, payloadJson);
+        if (payload == null) {
+            return FinalizationOutcome.IGNORED_STALE;
+        }
+        return finalizeFailureIdentity(topic, payload, errorCode, fence);
+    }
+
+    /**
+     * 收尾的身份化入口（B-01）：补偿执行器只携带登记时冻结的业务身份，
+     * 不复制全文载荷。identity 至少包含 workspaceId/sourceId/sourceSnapshotId(或 snapshotId)，
+     * 向量化阶段消息还可携带 taskId/batchNo/batchVersion 参加批次代次核对。
+     */
+    public FinalizationOutcome finalizeFailureIdentity(String topic, Map<String, Object> identity, String errorCode) {
+        return finalizeFailureIdentity(topic, identity, errorCode, null);
+    }
+
+    /**
+     * 收尾的围栏入口（FB-01）：fence 在 finalizeFailed 事务内、锁定快照之后复核；
+     * 人工重驱已换代时本次收尾无副作用跳过。
+     */
+    public FinalizationOutcome finalizeFailureIdentity(String topic, Map<String, Object> identity, String errorCode,
+            com.noteweave.common.FinalizationFence fence) {
         try {
-            return finalizeUnchecked(topic, payloadJson, errorCode);
+            return finalizeIdentityUnchecked(topic, identity, errorCode, fence);
         } catch (RuntimeException failure) {
-            log.warn("检索索引投递耗尽收尾失败: topic={}", topic, failure);
-            return false;
+            // 数据库暂时错误、锁竞争等可重试异常：交给补偿执行器退避重试
+            log.warn("检索索引死信收尾暂时失败: topic={}", topic, failure);
+            return FinalizationOutcome.RETRYABLE_FAILURE;
         }
     }
 
-    private boolean finalizeUnchecked(String topic, String payloadJson, String errorCode) {
-        Map<String, Object> payload = readPayload(topic, payloadJson);
-        if (payload == null) {
-            return false;
-        }
+    private FinalizationOutcome finalizeIdentityUnchecked(String topic, Map<String, Object> payload,
+            String errorCode, com.noteweave.common.FinalizationFence fence) {
         String workspaceId = text(payload.get("workspaceId"));
         String sourceId = text(payload.get("sourceId"));
         String snapshotId = text(payload.get("sourceSnapshotId"));
@@ -78,19 +109,20 @@ public class RetrievalProjectionDeadLetterFinalizer {
         }
         String taskId = text(payload.get("taskId"));
         if (isBlank(workspaceId) || isBlank(sourceId) || isBlank(snapshotId)) {
-            log.warn("检索投影消息缺少身份信息，跳过收尾: topic={}, payload={}", topic, payloadJson);
-            return false;
+            log.warn("检索投影消息缺少身份信息，按过期跳过收尾: topic={}, identity={}", topic, payload.keySet());
+            return FinalizationOutcome.IGNORED_STALE;
         }
         if (embeddingBatches != null && topicNames.embed().equals(topic)
                 && !embedBatchAcceptsFailure(workspaceId, sourceId, snapshotId, taskId, payload)) {
-            return false;
+            // 完成批次的晚到失败、租约仍有效的批次、旧批次版本：过期事实，无副作用跳过
+            return FinalizationOutcome.IGNORED_STALE;
         }
         if (embeddingBatches != null && topicNames.index().equals(topic)
                 && !embeddingBatches.current(workspaceId, sourceId, snapshotId, taskId, "INDEXING")) {
-            return false;
+            return FinalizationOutcome.IGNORED_STALE;
         }
-        projectionFinalizer.finalizeFailed(workspaceId, sourceId, snapshotId, taskId, errorCode);
-        return true;
+        projectionFinalizer.finalizeFailed(workspaceId, sourceId, snapshotId, taskId, errorCode, fence);
+        return FinalizationOutcome.APPLIED;
     }
 
     /** 完成批次的晚到失败、租约仍有效的批次都不能被收尾覆盖。 */

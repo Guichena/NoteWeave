@@ -181,6 +181,22 @@ class ArtifactJobWriteRepository {
         return (latestVersionNo == null ? 0 : latestVersionNo) + 1;
     }
 
+    /**
+     * NR15：Job 当前登记任务是否仍在活动（任务表状态判定，而非仅 Job 镜像状态）。
+     * 必须在 lockNextVersionNo 的行锁事务内调用，避免检查与覆盖之间的竞态。
+     * 返回活动 taskId；无活动任务返回 null。
+     */
+    String activeTaskId(String workspaceId, String artifactJobId) {
+        java.util.List<String> ids = jdbcTemplate.queryForList("""
+                select j.task_id from artifact_job j
+                join task t on t.id = j.task_id
+                where j.id = ? and j.workspace_id = ? and j.task_id is not null
+                  and (t.task_status in ('QUEUED', 'PENDING', 'RUNNING')
+                       or t.task_status like 'WAITING%')
+                """, String.class, artifactJobId, workspaceId);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
     void appendRollbackVersion(
             String versionId,
             String artifactJobId,
@@ -214,6 +230,47 @@ class ArtifactJobWriteRepository {
         jdbcTemplate.update("""
                 update artifact_job
                 set latest_version_no = ?, result_title = ?, status = 'COMPLETED', updated_at = current_timestamp
+                where id = ? and workspace_id = ?
+                """, versionNo, title, artifactJobId, workspaceId);
+    }
+
+    /**
+     * 追加用户编辑版本：与回滚同构，但保留原 originTaskId 并由调用方在
+     * payload 里写入编辑元数据（edit_request_id、edit_event_id、摘要与章节差异）。
+     */
+    void appendEditVersion(
+            String versionId,
+            String artifactJobId,
+            String skillKey,
+            int versionNo,
+            String title,
+            String contentMarkdown,
+            String resultPayloadJson,
+            String traceSummary,
+            String citationsJson,
+            String originTaskId,
+            String workspaceId
+    ) {
+        jdbcTemplate.update("""
+                insert into artifact_version(
+                    id, artifact_job_id, skill_key, version_no, title, content_markdown,
+                    result_payload_json, trace_summary, citations_json, origin_task_id
+                ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                versionId,
+                artifactJobId,
+                skillKey,
+                versionNo,
+                title,
+                contentMarkdown,
+                resultPayloadJson,
+                traceSummary,
+                citationsJson,
+                originTaskId
+        );
+        jdbcTemplate.update("""
+                update artifact_job
+                set latest_version_no = ?, result_title = ?, updated_at = current_timestamp
                 where id = ? and workspace_id = ?
                 """, versionNo, title, artifactJobId, workspaceId);
     }

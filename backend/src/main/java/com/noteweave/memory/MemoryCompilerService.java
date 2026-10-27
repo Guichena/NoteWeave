@@ -29,7 +29,7 @@ public class MemoryCompilerService {
 
     private final JdbcTemplate jdbcTemplate;
     private final MemoryCompilerReadRepository readRepository;
-    private final MemorySourceReadGate sourceReadGate;
+    private MemorySourceReadGate sourceReadGate;
     private final ObjectProvider<CapabilityCatalogPort> capabilityCatalogProvider;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCompilerPolicy compilerPolicy;
@@ -573,5 +573,11 @@ public class MemoryCompilerService {
         private double density() {
             return value / Math.max(tokens, 1);
         }
+    }
+
+    /** FB-05/C1：注入共享读门实例（携带 MaterialEligibilityPort）；直连构造回退内置实现。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSourceReadGate(MemorySourceReadGate sourceReadGate) {
+        this.sourceReadGate = sourceReadGate;
     }
 }

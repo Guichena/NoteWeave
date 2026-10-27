@@ -374,6 +374,37 @@ public class MemoryApplicationFeedbackService {
                 magnitude, 1.0, null, null, null, "edit:" + normalizedType + ":" + normalizedId, false);
     }
 
+    /**
+     * B-08 产物编辑事件的 outcome 阶段入口：编辑幅度由事件 changedSections 计算（B 侧有界差异），
+     * 不再依赖完整 before/after 正文；其余语义与 {@link #recordArtifactEdit} 完全一致
+     * （EDIT 替换语义、usage 按 targetType/targetId 加载、比例为 0 或无 usage 不写库）。
+     */
+    @Transactional
+    public int recordArtifactEditMagnitude(
+            String workspaceId,
+            String targetType,
+            String targetId,
+            double magnitude
+    ) {
+        if (!enabled || targetType == null || targetType.isBlank() || targetId == null || targetId.isBlank()
+                || magnitude <= 0) {
+            return 0;
+        }
+        String normalizedType = targetType.trim();
+        String normalizedId = targetId.trim();
+        List<UsageRow> usages = loadUsages(workspaceId, normalizedType, normalizedId);
+        if (usages.isEmpty()) {
+            return 0;
+        }
+        List<EventRow> active = loadActive(workspaceId, normalizedType, normalizedId, SIGNAL_EDIT);
+        if (sameMagnitude(active, usages, magnitude)) {
+            return countItems(active);
+        }
+        reverse(active);
+        return apply(workspaceId, normalizedType, normalizedId, SIGNAL_EDIT, usages, "EDITED",
+                magnitude, 1.0, null, null, null, "edit:" + normalizedType + ":" + normalizedId, false);
+    }
+
     private int apply(
             String workspaceId,
             String targetType,

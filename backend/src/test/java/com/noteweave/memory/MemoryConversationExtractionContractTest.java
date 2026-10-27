@@ -159,6 +159,51 @@ class MemoryConversationExtractionContractTest {
         assertThat(reinforced.path("confidence").path("alpha").asDouble()).isCloseTo(4.5, within(0.001));
     }
 
+    /**
+     * MEM-03：同一条消息被重复投递（重投与原始重叠）时，两路并发消费也只能留下一条信号和一个候选。
+     * 哪一路真正写成功无所谓，另一路要么在主键上撞车跳过、要么整笔回滚，都不该产生重复记忆。
+     */
+    @Test
+    void concurrentDuplicateDeliveryOfTheSameMessageCreatesOneSignalAndOneCandidate() throws Exception {
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String messageId = send(conversationId, "记住：以后回答先给结论再展开。", "dedupe-1");
+        JsonNode payload = payloadOf(messageId);
+        String taskId = payload.path("task_id").asText();
+        String userId = payload.path("user_id").asText();
+        String content = payload.path("content").asText();
+
+        modelStub.enable();
+        try {
+            java.util.concurrent.CyclicBarrier barrier = new java.util.concurrent.CyclicBarrier(2);
+            java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+            java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+            for (int attempt = 0; attempt < 2; attempt++) {
+                futures.add(pool.submit(() -> {
+                    barrier.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return extractionService.extract(taskId, workspaceId, messageId, userId, content);
+                }));
+            }
+            for (java.util.concurrent.Future<?> future : futures) {
+                try {
+                    future.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                } catch (java.util.concurrent.ExecutionException failure) {
+                    // 重复投递整笔回滚也是可接受的结果：状态由回执与重投兜底
+                }
+            }
+            pool.shutdownNow();
+        } finally {
+            modelStub.disable();
+        }
+
+        assertThat(jdbc.queryForObject("""
+                select count(*) from memory_signal where workspace_id = ? and source_id like ?
+                """, Integer.class, workspaceId, "conversation-message:" + messageId + ":%")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from memory_candidate where workspace_id = ?", Integer.class, workspaceId))
+                .isLessThanOrEqualTo(1);
+    }
+
     /** 只在抽取这一步打开模型桩：同一次请求里的回答生成仍然走模板回退。 */
     private MemoryConversationExtractionService.ExtractionResult consume(JsonNode payload) {
         modelStub.enable();

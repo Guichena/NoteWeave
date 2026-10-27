@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.noteweave.source.eligibility.AllReadableEligibilityStub;
 import com.noteweave.security.AuditActorProvider;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.List;
@@ -19,6 +20,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.support.TransactionTemplate;
 
 class KnowledgeVersionServiceTest {
+    private AllReadableEligibilityStub eligibilityStub;
 
     private JdbcTemplate jdbcTemplate;
     private KnowledgeVersionService versionService;
@@ -46,7 +48,7 @@ class KnowledgeVersionServiceTest {
                 jdbcTemplate,
                 actorProvider,
                 new KnowledgeWikiMutationService(jdbcTemplate),
-                new KnowledgeCitationReadGate(jdbcTemplate, sourceGate));
+                new KnowledgeCitationReadGate(jdbcTemplate, eligibilityStub = new AllReadableEligibilityStub()));
     }
 
     @Test
@@ -84,8 +86,7 @@ class KnowledgeVersionServiceTest {
         seedCitation("citation-a", "Source A");
         KnowledgeItemResponse appended = versionService.appendVersion("item-note",
                 new AppendKnowledgeVersionRequest("derived content", null, List.of("citation-a")));
-        when(sourceGate.readableSourceIds(org.mockito.ArgumentMatchers.eq("workspace"),
-                org.mockito.ArgumentMatchers.anyList())).thenReturn(Set.of());
+        eligibilityStub.revokeAll();
 
         assertThat(versionService.listItemVersions("item-note"))
                 .extracting(KnowledgeVersionSummaryResponse::versionId)
@@ -186,6 +187,8 @@ class KnowledgeVersionServiceTest {
                     status varchar(32) not null,
                     latest_version_id varchar(36),
                     updated_by varchar(80),
+                    wiki_page_state varchar(32),
+                    origin varchar(32),
                     updated_at timestamp default current_timestamp
                 )
                 """);

@@ -39,7 +39,8 @@ public class RetrievalManagementController {
     @PostMapping("/rebuild")
     ApiResponse<BackfillResult> rebuild(@PathVariable String workspaceId) {
         accessGuard.requireOwner(workspaceId);
-        return ApiResponse.success(backfillService.rebuildWorkspace(workspaceId));
+        // 重建在后台线程池执行，这里只返回构建单号；进度用 GET 查，避免大工作台把请求占死
+        return ApiResponse.success(backfillService.startRebuild(workspaceId));
     }
 
     @GetMapping("/release-gate")

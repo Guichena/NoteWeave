@@ -237,42 +237,43 @@ public class AnswerRunService {
             Integer outputTokens
     ) {
         AnswerRunRef current = requireRef(workspaceId, runId);
-        if ("COMPLETED".equals(current.status())) {
-            return CompletionOutcome.COMPLETED;
-        }
-        if ("CANCELLED".equals(current.status())) {
-            return CompletionOutcome.CANCELLED;
-        }
-        if ("FAILED".equals(current.status())) {
-            return CompletionOutcome.FAILED;
+        CompletionOutcome terminal = terminalOutcome(current.status());
+        if (terminal != null) {
+            return terminal;
         }
         requireNonBlankFinalContent(finalContent);
         String actor = actor();
+        // ANS-01：收尾的这一条 CAS 同时判定三件事——运行还在 GENERATING、流持有者是我、
+        // 首版消息仍处于 STREAMING。三者缺一就不改状态，交给 resolveCompleteMiss 判归属，
+        // 避免先推进到 FINALIZING 再发现消息版本不可收尾，把运行永远留在中间态。
         int finalizing = jdbcTemplate.update("""
                 update answer_run
                 set status = 'FINALIZING', version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'GENERATING' and stream_owner = ?
-                """, actor, workspaceId, runId, streamOwner);
-        if (finalizing == 0) {
-            AnswerRunRef latest = requireRef(workspaceId, runId);
-            if ("COMPLETED".equals(latest.status())) {
-                return CompletionOutcome.COMPLETED;
+                  and exists (
+                      select 1 from message_revision r
+                      where r.workspace_id = ? and r.answer_run_id = ? and r.revision_no = 1
+                        and r.status = 'STREAMING'
+                  )
+                """, actor, workspaceId, runId, streamOwner, workspaceId, runId);
+        if (finalizing == 1) {
+            appendEvent(runId, workspaceId, "answer.status", Map.of("status", "FINALIZING"));
+        } else {
+            CompletionOutcome resolved = resolveCompleteMiss(workspaceId, runId, streamOwner);
+            if (resolved != null) {
+                return resolved;
             }
-            if ("CANCELLED".equals(latest.status())) {
-                return CompletionOutcome.CANCELLED;
-            }
-            if ("FAILED".equals(latest.status())) {
-                return CompletionOutcome.FAILED;
-            }
-            requireTransition(finalizing, runId, "FINALIZING");
         }
-        appendEvent(runId, workspaceId, "answer.status", Map.of("status", "FINALIZING"));
         int finalizedRevision = jdbcTemplate.update("""
                 update message_revision
                 set status = 'FINAL', content = ?, output_tokens = ?, updated_at = current_timestamp
                 where workspace_id = ? and answer_run_id = ? and revision_no = 1 and status = 'STREAMING'
                 """, finalContent, outputTokens, workspaceId, runId);
-        requireMessageRevisionFinalization(finalizedRevision);
+        if (finalizedRevision != 1) {
+            // 首版消息在这期间被改走（取消或改写）：显式失败，绝不把运行留在 FINALIZING
+            return failRunInternal(workspaceId, runId, streamOwner, "ANSWER_MESSAGE_REVISION_INVALID",
+                    "Answer message revision is not in STREAMING state");
+        }
         int completed = jdbcTemplate.update("""
                 update answer_run
                 set status = 'COMPLETED', finished_at = current_timestamp,
@@ -280,13 +281,95 @@ public class AnswerRunService {
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'FINALIZING' and stream_owner = ?
                 """, actor, workspaceId, runId, streamOwner);
-        requireTransition(completed, runId, "COMPLETED");
+        if (completed != 1) {
+            CompletionOutcome resolved = resolveCompleteMiss(workspaceId, runId, streamOwner);
+            if (resolved != null) {
+                return resolved;
+            }
+            return failRunInternal(workspaceId, runId, streamOwner, "ANSWER_RUN_NOT_FINALIZABLE",
+                    "Answer run left FINALIZING state during finalization");
+        }
         appendEvent(runId, workspaceId, "answer.completed", Map.of(
                 "status", "COMPLETED",
                 "answer_message_id", current.answerMessageId()
         ));
         meterRegistry.counter("noteweave.answer.run.completed").increment();
         return CompletionOutcome.COMPLETED;
+    }
+
+    /**
+     * 收尾 CAS 没抢到时判定归属。
+     *
+     * @return 已经到终态返回该终态；租约已易主返回 {@link CompletionOutcome#SUPERSEDED}（不写任何状态）；
+     *         仍是我的租约但已经不可能收尾时显式失败并返回 FAILED；
+     *         null 表示「还是我的收尾」，调用方继续走完
+     */
+    private CompletionOutcome resolveCompleteMiss(String workspaceId, String runId, String streamOwner) {
+        CompletionSnapshot snapshot = completionSnapshot(workspaceId, runId);
+        if (snapshot == null) {
+            throw notFound();
+        }
+        CompletionOutcome terminal = terminalOutcome(snapshot.status());
+        if (terminal != null) {
+            return terminal;
+        }
+        if (streamOwner == null || !streamOwner.equals(snapshot.streamOwner())) {
+            // 重连或多端已经把租约抢走：收尾归当前持有者，这里不碰任何状态
+            meterRegistry.counter("noteweave.answer.run.complete_superseded").increment();
+            return CompletionOutcome.SUPERSEDED;
+        }
+        if ("FINALIZING".equals(snapshot.status())) {
+            return null;
+        }
+        String code = "GENERATING".equals(snapshot.status())
+                ? "ANSWER_MESSAGE_REVISION_INVALID"
+                : "ANSWER_RUN_NOT_FINALIZABLE";
+        return failRunInternal(workspaceId, runId, streamOwner, code,
+                "Answer run cannot be finalized in status " + snapshot.status()
+                        + " (streaming revisions=" + snapshot.streamingRevisions() + ")");
+    }
+
+    /** 显式失败；并发取消/失败已经把它推到终态时以当前状态为准，不把异常抛给调用方。 */
+    private CompletionOutcome failRunInternal(
+            String workspaceId,
+            String runId,
+            String streamOwner,
+            String errorCode,
+            String errorMessage
+    ) {
+        try {
+            fail(workspaceId, runId, streamOwner, errorCode, errorMessage);
+        } catch (BusinessException ex) {
+            AnswerRunRef latest = requireRef(workspaceId, runId);
+            CompletionOutcome terminal = terminalOutcome(latest.status());
+            return terminal == null ? CompletionOutcome.FAILED : terminal;
+        }
+        return CompletionOutcome.FAILED;
+    }
+
+    private CompletionSnapshot completionSnapshot(String workspaceId, String runId) {
+        return jdbcTemplate.query("""
+                select r.status, r.stream_owner,
+                       (select count(*) from message_revision v
+                        where v.workspace_id = r.workspace_id and v.answer_run_id = r.id
+                          and v.revision_no = 1 and v.status = 'STREAMING') as streaming_revisions
+                from answer_run r
+                where r.workspace_id = ? and r.id = ?
+                """, rs -> rs.next()
+                ? new CompletionSnapshot(rs.getString(1), rs.getString(2), rs.getInt(3))
+                : null, workspaceId, runId);
+    }
+
+    static CompletionOutcome terminalOutcome(String status) {
+        return switch (status == null ? "" : status) {
+            case "COMPLETED" -> CompletionOutcome.COMPLETED;
+            case "CANCELLED" -> CompletionOutcome.CANCELLED;
+            case "FAILED" -> CompletionOutcome.FAILED;
+            default -> null;
+        };
+    }
+
+    private record CompletionSnapshot(String status, String streamOwner, int streamingRevisions) {
     }
 
     static void requireNonBlankFinalContent(String finalContent) {
@@ -415,13 +498,18 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
+                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
                        r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
-                       mr.revision_no, mr.status as revision_status, mr.content
+                       mr.revision_no, mr.status as revision_status,
+                       case when am.context_status = 'DELETED' then '' else mr.content end as content,
+                       case when qm.context_status = 'DELETED' then null
+                            else r.retrieval_plan_json end as retrieval_plan_json
                 from answer_run r
                 left join message_revision mr on mr.answer_run_id = r.id and mr.revision_no = 1
+                left join conversation_message am on am.id = r.answer_message_id
+                left join conversation_message qm on qm.id = r.query_message_id
                 where r.workspace_id = ? and r.id = ?
                 """, rs -> {
             if (!rs.next()) {
@@ -519,13 +607,18 @@ public class AnswerRunService {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
-                       r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
+                       r.retrieval_plan_version, r.model, r.maximum_output_tokens,
                        r.evidence_bundle_json, r.evidence_sufficiency,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
-                       mr.revision_no, mr.status as revision_status, mr.content
+                       mr.revision_no, mr.status as revision_status,
+                       case when am.context_status = 'DELETED' then '' else mr.content end as content,
+                       case when qm.context_status = 'DELETED' then null
+                            else r.retrieval_plan_json end as retrieval_plan_json
                 from answer_run r
                 left join message_revision mr on mr.answer_run_id = r.id and mr.revision_no = 1
+                left join conversation_message am on am.id = r.answer_message_id
+                left join conversation_message qm on qm.id = r.query_message_id
                 where r.workspace_id = ? and r.conversation_id = ?
                 order by r.created_at desc
                 limit ?
@@ -803,6 +896,8 @@ public class AnswerRunService {
     public enum CompletionOutcome {
         COMPLETED,
         CANCELLED,
-        FAILED
+        FAILED,
+        /** 租约已易主：收尾归当前持有者，本流不写状态。 */
+        SUPERSEDED
     }
 }

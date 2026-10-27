@@ -20,7 +20,8 @@ class RetrievalBackfillServiceCatalogGateTest {
                 mock(JdbcTemplate.class), mock(NoteWeaveProperties.class),
                 mock(RetrievalIndexBuildRepository.class), mock(SourceRetrievalProjectionService.class),
                 mock(RetrievalIndexManager.class), catalogVersionService,
-                mock(RetrievalBackfillSourceFinalizer.class));
+                mock(RetrievalBackfillSourceFinalizer.class),
+                mock(RetrievalRebuildLockRepository.class), Runnable::run, 200);
 
         assertThatCode(() -> service.requireStableCatalog("workspace", 12L)).doesNotThrowAnyException();
         assertThatThrownBy(() -> service.requireStableCatalog("workspace", 11L))

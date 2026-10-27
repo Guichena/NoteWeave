@@ -8,6 +8,7 @@ import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch.core.SearchRequest;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
+import com.noteweave.retrieval.index.RetrievalEmbeddingVersionSource;
 import com.noteweave.retrieval.index.RetrievalIndexNames;
 import com.noteweave.retrieval.projection.RetrievalProjectionRepository.ProjectionType;
 import com.noteweave.retrieval.provider.RetrievalProviderException;
@@ -26,9 +27,20 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "noteweave.elasticsearch.enabled", havingValue = "true", matchIfMissing = true)
 public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
     private final ElasticsearchClient client;
+    private final RetrievalEmbeddingVersionSource embeddingVersions;
 
+    /** 无版本过滤，仅供不涉及向量版本的单元测试；生产装配使用两参构造器。 */
     public ElasticsearchQaHybridSearchAdapter(ElasticsearchClient client) {
+        this(client, () -> "");
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ElasticsearchQaHybridSearchAdapter(
+            ElasticsearchClient client,
+            RetrievalEmbeddingVersionSource embeddingVersions
+    ) {
         this.client = client;
+        this.embeddingVersions = embeddingVersions;
     }
 
     @Override
@@ -36,7 +48,8 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
         if (query.topK() <= 0 || query.queryEmbedding().isEmpty()) {
             return List.of();
         }
-        Query scope = scopeFilter(query.workspaceId(), query.sourceScope());
+        Query scope = vectorScope(query.workspaceId(), query.sourceScope(),
+                embeddingVersions == null ? "" : embeddingVersions.currentEmbeddingVersion());
         KnnSearch knn = new KnnSearch.Builder()
                 .field("content_embedding")
                 .queryVector(query.queryEmbedding())
@@ -91,6 +104,22 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
                     .fields(List.of(fields))
                     .type(co.elastic.clients.elasticsearch._types.query_dsl.TextQueryType.BestFields)));
         }
+    }
+
+    /**
+     * IDX-02：向量召回的作用域必须带上当前向量版本。换模型或改维度后，
+     * 旧索引里的向量和查询向量不在同一个空间，必须被排除，否则相似度看似正常但结果无意义。
+     * 词法召回不加这个过滤——文本匹配与向量版本无关。
+     */
+    Query vectorScope(String workspaceId, Set<String> sourceScope, String embeddingVersion) {
+        List<Query> filters = new ArrayList<>();
+        filters.add(scopeFilter(workspaceId, sourceScope));
+        if (embeddingVersion != null && !embeddingVersion.isBlank()) {
+            filters.add(Query.of(query -> query.term(term -> term
+                    .field("embedding_version")
+                    .value(embeddingVersion))));
+        }
+        return Query.of(query -> query.bool(bool -> bool.filter(filters)));
     }
 
     Query scopeFilter(String workspaceId, Set<String> sourceScope) {

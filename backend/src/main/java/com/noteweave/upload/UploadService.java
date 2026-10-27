@@ -5,6 +5,7 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.noteweave.storage.ObjectStorage;
+import com.noteweave.task.TaskOutboxEnqueuer;
 import com.noteweave.source.SourceMessagingMode;
 import com.noteweave.source.SourceParsePort;
 import com.noteweave.source.SourceCatalogVersionService;
@@ -26,11 +27,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class UploadService {
@@ -45,6 +48,7 @@ public class UploadService {
     private static final Set<String> ACTIVE_PARSE_TASK_STATUSES = Set.of("PENDING", "RUNNING", "WAITING", "QUEUED");
 
     private final JdbcTemplate jdbcTemplate;
+    private com.noteweave.storage.FileObjectLifecycleService fileLifecycle;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final ObjectStorage storage;
     private final SourceParsePort sourceParsePort;
@@ -56,6 +60,8 @@ public class UploadService {
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final UploadTempObjectCleanupService uploadTempObjectCleanupService;
     private final SourceTopicNames topicNames;
+    private TaskOutboxEnqueuer taskOutboxEnqueuer;
+    private TransactionTemplate completionTransactionTemplate;
     private Duration staleAfter = Duration.ofSeconds(86400);
     private com.noteweave.research.ResearchGeneratedSourceReadGate generatedSourceReadGate;
 
@@ -94,6 +100,26 @@ public class UploadService {
         this.uploadTempObjectCleanupService = uploadTempObjectCleanupService;
         this.topicNames = topicNames;
         log.info("UploadService initialised with object storage backend: {}", storage.backendName());
+    }
+
+    /** 统一入队入口：注入后上传→解析消息走 C2 语义幂等（B-02）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTaskOutboxEnqueuer(TaskOutboxEnqueuer taskOutboxEnqueuer) {
+        this.taskOutboxEnqueuer = taskOutboxEnqueuer;
+    }
+
+    /** 完成上传的落库事务模板：合成与内容校验在事务外，只有落库走这里。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setCompletionTransactionTemplate(TransactionTemplate template) {
+        this.completionTransactionTemplate = template;
+    }
+
+    private TransactionTemplate completionTransactions() {
+        if (completionTransactionTemplate == null) {
+            completionTransactionTemplate = new TransactionTemplate(
+                    new DataSourceTransactionManager(jdbcTemplate.getDataSource()));
+        }
+        return completionTransactionTemplate;
     }
 
     @Transactional
@@ -220,7 +246,11 @@ public class UploadService {
         }
         verifyContentMd5(contentMd5, content);
         uploadSecurityPolicy.validateChunk(chunkIndex, upload.totalChunks(), upload.chunkSize(), content);
-        String objectKey = "workspace/%s/upload_tmp/%s/%d".formatted(upload.workspaceId(), uploadId, chunkIndex);
+        // UP-02：分片对象键带上内容摘要。此前键只由 (uploadId, 分片序号) 决定，
+        // 重传不同内容会覆盖同一个对象，行里的 content_md5 与对象实际内容可能对不上
+        // （并发重传时尤其明显），合并阶段就会把不同批次的分片串在一起。
+        String objectKey = "workspace/%s/upload_tmp/%s/%d/%s".formatted(
+                upload.workspaceId(), uploadId, chunkIndex, chunkDigest(content));
         storage.write(BUCKET_SOURCE, objectKey, content);
         int updated = jdbcTemplate.update("""
                 update upload_chunk
@@ -248,15 +278,50 @@ public class UploadService {
         return new UploadChunkResponse(uploadId, chunkIndex, true);
     }
 
-    @Transactional
+    /**
+     * 完成上传（UP-01）：把最耗时的三步移出事务，行锁只覆盖落库。
+     *
+     * <p>1）事务外只读准备：元数据、权限、会话、分片清单与大小校验，能快速失败；
+     * 2）事务外合成整对象、算 SHA-256、做内容安全校验——128MB 上传的耗时都在这里；
+     * 3）短事务内锁行复核、复制对象、写 source/snapshot/task/outbox 并置 COMPLETED。</p>
+     *
+     * <p>未启用 Kafka 的本地/测试环境仍在同一事务内同步解析：解析失败即整体回滚，
+     * 不留半成品资料，这是既有契约（见 UploadRollbackCleanupContractTest）。</p>
+     */
     public CompleteUploadResponse completeUpload(String uploadId) {
-        UploadRow upload = findUploadForUpdate(uploadId);
+        CompletionCandidate candidate = prepareCompletion(uploadId);
+        if (candidate.completed()) {
+            cleanupAfterCommit(uploadId);
+            return sourceResult(candidate.upload().workspaceId(), candidate.upload().sourceId(),
+                    candidate.upload().taskId());
+        }
+        MergedFile merged = mergeChunksToFile(candidate.upload(), candidate.chunkRows());
+        boolean committed = false;
+        try {
+            uploadSecurityPolicy.validateMergedFile(candidate.upload().mimeType(), candidate.upload().fileSize(), merged.path());
+            String sha256 = merged.sha256();
+            if (candidate.upload().expectedSha256() != null && !candidate.upload().expectedSha256().equals(sha256)) {
+                throw new BusinessException("UPLOAD_SHA256_MISMATCH", "完整文件的 SHA-256 与创建上传时的声明不一致");
+            }
+            CompleteUploadResponse response = completionTransactions().execute(status ->
+                    persistCompletion(candidate, uploadId, sha256, merged));
+            committed = true;
+            cleanupAfterCommit(uploadId);
+            return response;
+        } finally {
+            deleteQuietly(merged.path());
+            // 失败路径没人会走到 afterCommit 清理，这里单独删掉本次合成出来的暂存对象
+            if (!committed) deleteObjectQuietly(merged.objectKey());
+        }
+    }
+
+    /** 事务外只读准备：只做能快速失败的校验，不持锁、不做重活。 */
+    private CompletionCandidate prepareCompletion(String uploadId) {
+        UploadRow upload = findUpload(uploadId);
         workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
         requireLiveSession(upload);
-        String actor = auditActorProvider.currentOrSystem("UPLOAD");
         if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
-            cleanupAfterCommit(uploadId);
-            return sourceResult(upload.workspaceId(), upload.sourceId(), upload.taskId());
+            return new CompletionCandidate(upload, List.of(), 0L, true);
         }
         if (!"UPLOADING".equals(upload.status())) {
             throw new BusinessException(
@@ -284,20 +349,28 @@ public class UploadService {
             size = Math.addExact(size, ((Number) chunk.get("byte_size")).longValue());
         }
         if (size != upload.fileSize()) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "上传分片大小与声明不一致");
-        MergedFile merged = mergeChunksToFile(upload, chunkRows);
-        try {
-            return completeWithMergedFile(upload, uploadId, actor, merged);
-        } finally {
-            deleteQuietly(merged.path());
-        }
+        return new CompletionCandidate(upload, chunkRows, size, false);
     }
 
-    private CompleteUploadResponse completeWithMergedFile(UploadRow upload, String uploadId, String actor,
-                                                          MergedFile merged) {
-        uploadSecurityPolicy.validateMergedFile(upload.mimeType(), upload.fileSize(), merged.path());
-        String sha256 = merged.sha256();
-        if (upload.expectedSha256() != null && !upload.expectedSha256().equals(sha256)) {
-            throw new BusinessException("UPLOAD_SHA256_MISMATCH", "完整文件的 SHA-256 与创建上传时的声明不一致");
+    private CompleteUploadResponse persistCompletion(CompletionCandidate candidate, String uploadId,
+                                                     String sha256, MergedFile merged) {
+        UploadRow upload = findUploadForUpdate(uploadId);
+        workspaceAccessGuard.requirePermission(upload.workspaceId(), WorkspacePermission.SOURCE_WRITE);
+        requireLiveSession(upload);
+        String actor = auditActorProvider.currentOrSystem("UPLOAD");
+        if ("COMPLETED".equals(upload.status()) && upload.sourceId() != null && upload.taskId() != null) {
+            // 并发完成：后到的一方直接复用已建好的资料，不再新建
+            return sourceResult(upload.workspaceId(), upload.sourceId(), upload.taskId());
+        }
+        if (!"UPLOADING".equals(upload.status())) {
+            throw new BusinessException(
+                    "UPLOAD_NOT_COMPLETABLE",
+                    "Upload transaction can no longer be completed",
+                    HttpStatus.CONFLICT
+            );
+        }
+        if (candidate.declaredSize() != upload.fileSize()) {
+            throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "上传分片大小与声明不一致");
         }
         FileObjectRef fileObject = getOrCreateFileObject(upload, sha256, upload.fileSize(), merged.objectKey());
         String sourceId = Ids.newId();
@@ -331,10 +404,18 @@ public class UploadService {
         String finalParseStatus = "PARSING_QUEUED";
         String finalIndexStatus = "INDEX_QUEUED";
         if (kafkaEnabled) {
-            jdbcTemplate.update("""
-                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                    values (?, ?, ?, ?, ?, 'READY')
-                    """, Ids.newId(), taskId, topicNames.parse(), sourceId, Json.write(objectMapper, payload));
+            // 统一持久入队（B-02/C2）：上传→解析消息依靠 (semantic_key, delivery_generation)
+            // 唯一约束做数据库层幂等，替代裸 INSERT；身份维度 = workspace/source/snapshot/task/PARSE
+            if (taskOutboxEnqueuer != null) {
+                taskOutboxEnqueuer.enqueue(new TaskOutboxEnqueuer.EnqueueCommand(
+                        upload.workspaceId(), taskId, topicNames.parse(), sourceId,
+                        "SOURCE_PARSE", sourceId, snapshotId, taskId, "PARSE", null, 1, payload));
+            } else {
+                jdbcTemplate.update("""
+                        insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                        values (?, ?, ?, ?, ?, 'READY')
+                        """, Ids.newId(), taskId, topicNames.parse(), sourceId, Json.write(objectMapper, payload));
+            }
         } else {
             taskCommandPort.startTask(taskId);
             sourceParsePort.parseAndIndex(upload.workspaceId(), sourceId, snapshotId, merged.path());
@@ -363,7 +444,6 @@ public class UploadService {
                     HttpStatus.CONFLICT
             );
         }
-        cleanupAfterCommit(uploadId);
         return new CompleteUploadResponse(sourceId, taskId, finalParseStatus, finalIndexStatus);
     }
 
@@ -381,6 +461,12 @@ public class UploadService {
     }
 
     /** 只登记本次事务独占的新对象，复用的文件对象不参与回滚删除。 */
+    /** 文件对象生命周期编排（FB-06）：生产装配必然存在；直连构造的测试走旧路径。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setFileLifecycle(com.noteweave.storage.FileObjectLifecycleService fileLifecycle) {
+        this.fileLifecycle = fileLifecycle;
+    }
+
     private void cleanupObjectOnRollback(String objectKey) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -448,7 +534,28 @@ public class UploadService {
     private record MergedFile(java.nio.file.Path path, String sha256, String objectKey) {
     }
 
+    private void deleteObjectQuietly(String objectKey) {
+        if (objectKey == null) return;
+        try {
+            storage.delete(BUCKET_SOURCE, objectKey);
+        } catch (RuntimeException ex) {
+            log.warn("上传合成对象清理失败：objectKey={}", objectKey, ex);
+        }
+    }
+
+    /** 事务外准备出来的完成上下文：分片清单与声明大小，供落库事务复核。 */
+    private record CompletionCandidate(
+            UploadRow upload,
+            List<Map<String, Object>> chunkRows,
+            long declaredSize,
+            boolean completed
+    ) {
+    }
+
     private FileObjectRef getOrCreateFileObject(UploadRow upload, String sha256, long size, String mergedKey) {
+        if (fileLifecycle != null) {
+            return getOrCreateViaLifecycle(upload, sha256, size, mergedKey);
+        }
         List<FileObjectRef> existing = jdbcTemplate.query("""
                 select id, object_key, file_size from file_object where workspace_id = ? and sha256 = ?
                 """, (rs, rowNum) -> new FileObjectRef(rs.getString("id"), rs.getString("object_key"), rs.getLong("file_size")), upload.workspaceId(), sha256);
@@ -474,6 +581,27 @@ public class UploadService {
                 values (?, ?, ?, ?, ?, ?, 1)
                 """, fileObjectId, upload.workspaceId(), objectKey, sha256, size, upload.mimeType());
         return new FileObjectRef(fileObjectId, objectKey, size);
+    }
+
+    /**
+     * FB-06 生命周期获取：ACTIVE 共享引用；DELETE_CLAIMED 明确待重试；
+     * DELETED 换新不可变 key 换代再发布；并发由 unique(workspace,sha256) 选赢家。
+     * 暂存对象在事务外复制到生效 key，回滚清理沿用既有机制。
+     */
+    private FileObjectRef getOrCreateViaLifecycle(UploadRow upload, String sha256, long size, String mergedKey) {
+        String freshKey = "workspace/%s/file_object/%s/%s-%s"
+                .formatted(upload.workspaceId(), Ids.newId(), sha256, sanitize(upload.fileName()));
+        com.noteweave.storage.FileObjectLifecycleService.AcquireResult acquired =
+                fileLifecycle.acquireOrPrepare(upload.workspaceId(), sha256, size, upload.mimeType(), freshKey);
+        if (acquired.activated()) {
+            // 新建/换代发布的 key 只属于本次上传：回滚时注册清理安全
+            cleanupObjectOnRollback(acquired.objectKey());
+            storage.copy(BUCKET_SOURCE, mergedKey, BUCKET_SOURCE, acquired.objectKey());
+        } else if (!storage.exists(BUCKET_SOURCE, acquired.objectKey())) {
+            // 恢复共享行缺失的对象：对象属于全部引用者，绝不注册回滚清理（RA-P2-011 语义）
+            storage.copy(BUCKET_SOURCE, mergedKey, BUCKET_SOURCE, acquired.objectKey());
+        }
+        return new FileObjectRef(acquired.fileObjectId(), acquired.objectKey(), size);
     }
 
     private UploadRow findUpload(String uploadId) {
@@ -536,6 +664,15 @@ public class UploadService {
             }
         } catch (BusinessException ex) {
             throw ex;
+        } catch (Exception ex) {
+            throw new IllegalStateException("MD5 not available", ex);
+        }
+    }
+
+    /** UP-02：分片对象键的内容摘要，保证「同一个键 = 同一份内容」，重传不同内容不会互相覆盖。 */
+    private String chunkDigest(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("MD5").digest(content));
         } catch (Exception ex) {
             throw new IllegalStateException("MD5 not available", ex);
         }

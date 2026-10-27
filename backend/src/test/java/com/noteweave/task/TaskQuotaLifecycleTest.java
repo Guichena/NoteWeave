@@ -33,6 +33,7 @@ class TaskQuotaLifecycleTest {
         transactionTemplate = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
         jdbcTemplate.execute("""
                 create table task (
+                    generation int not null default 1,
                     id varchar(64) primary key,
                     workspace_id varchar(64) not null,
                     task_type varchar(64) not null,

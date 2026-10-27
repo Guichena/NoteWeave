@@ -57,6 +57,22 @@ class HttpChatLlmClientTest {
         assertThat(body.has("thinking")).isFalse();
     }
 
+    /** USAGE-01：聊天调用要把工作区传给 usage 记录器，否则对账时看不到这笔消耗。 */
+    @Test
+    void shouldRecordUsageWithTheWorkspaceOfTheChatCall() throws Exception {
+        start(200, chunk("答案", "stop") + "data: [DONE]\n\n", new AtomicReference<>(), new AtomicReference<>());
+        com.noteweave.conversation.ActualUsageRecorder recorder =
+                org.mockito.Mockito.mock(com.noteweave.conversation.ActualUsageRecorder.class);
+        HttpChatLlmClient usageClient = new HttpChatLlmClient(mapper, properties("test-model", ""), recorder);
+
+        usageClient.streamChatInSession("noteweave-chat-abc", "workspace-9", "system", "user", 100, ignored -> {});
+
+        org.mockito.Mockito.verify(recorder).record(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq("workspace-9"),
+                org.mockito.ArgumentMatchers.any(com.noteweave.conversation.ActualUsage.class));
+    }
+
     @Test
     void shouldDisableThinkingForGlm5ToPreserveVisibleAnswerBudget() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
@@ -144,12 +160,15 @@ class HttpChatLlmClientTest {
     }
 
     private HttpChatLlmClient client(String model, String apiKey) {
-        NoteWeaveProperties properties = new NoteWeaveProperties(
+        return new HttpChatLlmClient(mapper, properties(model, apiKey));
+    }
+
+    private NoteWeaveProperties properties(String model, String apiKey) {
+        return new NoteWeaveProperties(
                 null, null, null, null, null,
                 new NoteWeaveProperties.Llm(
                         true,
                         "http://127.0.0.1:" + server.getAddress().getPort() + "/v1/chat/completions",
                         model, apiKey, 30));
-        return new HttpChatLlmClient(mapper, properties);
     }
 }

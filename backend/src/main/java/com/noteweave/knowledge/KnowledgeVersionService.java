@@ -3,6 +3,7 @@ package com.noteweave.knowledge;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.security.AuditActorProvider;
+import com.noteweave.source.eligibility.AccessPurpose;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +36,19 @@ public class KnowledgeVersionService {
             String itemId,
             AppendKnowledgeVersionRequest request
     ) {
+        return appendVersion(itemId, request, auditActorProvider.currentOrSystem("KNOWLEDGE"));
+    }
+
+    /**
+     * 指定写入者的追加版本入口（WIKI-05）。后台 ingest 与链接刷新必须传入 SYSTEM 身份，
+     * 否则自动内容会被记成人工编辑，后续自动更新被 WIKI-03 的保护逻辑挡住。
+     */
+    @Transactional
+    public KnowledgeItemResponse appendVersion(
+            String itemId,
+            AppendKnowledgeVersionRequest request,
+            String actor
+    ) {
         KnowledgeItemRef item = loadKnowledgeItem(itemId, true);
         String content = request.content() == null ? "" : request.content().trim();
         if (content.isBlank()) {
@@ -61,7 +75,6 @@ public class KnowledgeVersionService {
         int nextVersionNo = (currentVersion == null ? 0 : currentVersion) + 1;
         String versionId = Ids.newId();
         String summary = summarize(normalizedContent);
-        String actor = auditActorProvider.currentOrSystem("KNOWLEDGE");
         jdbcTemplate.update("""
                 insert into knowledge_version(
                     id, item_id, version_no, content, summary, source_message_id
@@ -69,12 +82,17 @@ public class KnowledgeVersionService {
                 """, versionId, itemId, nextVersionNo,
                 normalizedContent, summary, request.sourceMessageId());
         bindVersionCitations(versionId, citationIds);
+        // WIKI-03：人工追加版本即视为人工页面，后续自动 ingest 让路；
+        // 系统追加的版本保持自动页面，可以继续随资料更新。
+        String pageState = "WIKI".equals(item.itemType())
+                ? (actor.startsWith("SYSTEM:") ? WikiPageState.AUTO.name() : WikiPageState.MANUAL.name())
+                : null;
         jdbcTemplate.update("""
                 update knowledge_item
                 set latest_version_id = ?, page_kind = ?, updated_by = ?,
-                    updated_at = current_timestamp
+                    updated_at = current_timestamp, wiki_page_state = ?
                 where id = ?
-                """, versionId, pageKind, actor, itemId);
+                """, versionId, pageKind, actor, pageState, itemId);
         if ("WIKI".equals(item.itemType())) {
             wikiMutationService.replaceOutgoingLinks(
                     item.workspaceId(), itemId, item.title(), normalizedContent);
@@ -85,7 +103,7 @@ public class KnowledgeVersionService {
         return new KnowledgeItemResponse(
                 itemId, item.itemType(), pageKind, item.title(), "ACTIVE",
                 versionId, nextVersionNo, summary, Instant.now(),
-                0, 0, citationIds.size(), 0);
+                0, 0, citationIds.size(), 0, pageState);
     }
 
     public List<KnowledgeVersionSummaryResponse> listItemVersions(String itemId) {
@@ -106,9 +124,33 @@ public class KnowledgeVersionService {
                 rs.getInt("citation_count"),
                 toInstant(rs.getTimestamp("created_at"))
         ), item.itemId());
+        // 版本列表是元数据读取：Note 按历史政策保留（USER 删除/暂不可用仍列出），Wiki 仍要求当前依赖
+        AccessPurpose listPurpose = purposeForItem(item.itemType());
         var readable = citationReadGate.readableVersionIds(item.workspaceId(),
-                versions.stream().map(KnowledgeVersionSummaryResponse::versionId).toList());
+                versions.stream().map(KnowledgeVersionSummaryResponse::versionId).toList(), listPurpose);
         return versions.stream().filter(version -> readable.contains(version.versionId())).toList();
+    }
+
+    /** Note 历史正文按历史政策展示；Wiki 正文与引用要求当前来源可用。 */
+    private AccessPurpose purposeForItem(String itemType) {
+        return "WIKI".equals(itemType)
+                ? AccessPurpose.CURRENT_EVIDENCE
+                : AccessPurpose.HISTORY_DISPLAY;
+    }
+
+    /** V02：版本引用来源的可用性说明（与详情响应同构，不泄露正文）。 */
+    private List<KnowledgeSourceAvailabilityResponse> sourceAvailabilityFor(String workspaceId, String versionId) {
+        return citationReadGate.versionSourceAvailability(workspaceId, List.of(versionId))
+                .getOrDefault(versionId, List.of()).stream()
+                .map(decision -> new KnowledgeSourceAvailabilityResponse(
+                        decision.originKey().startsWith("source:") ? decision.originKey().substring(7) : decision.originKey(),
+                        decision.status().name(),
+                        decision.reasonCode(),
+                        decision.historyReadable(),
+                        decision.evidenceEligible(),
+                        decision.republishAllowed(),
+                        decision.dependencySummary()))
+                .toList();
     }
 
     public KnowledgeVersionDetailResponse getItemVersionDetail(
@@ -128,7 +170,10 @@ public class KnowledgeVersionService {
                         "KNOWLEDGE_VERSION_NOT_FOUND", "知识版本不存在");
             }
             String versionId = rs.getString("id");
-            citationReadGate.requireReadable(item.workspaceId(), versionId);
+            // 旧版本正文读取同样按用途门控；COMPLIANCE 撤销不能经历史版本绕过
+            citationReadGate.requireReadable(item.workspaceId(), versionId, purposeForItem(item.itemType()));
+            // V02：历史版本同样返回逐项来源可用性（不泄露正文，仅状态与原因），
+            // 前端历史视图此前读取的字段在响应合同中不存在
             return new KnowledgeVersionDetailResponse(
                     versionId,
                     item.itemId(),
@@ -137,7 +182,8 @@ public class KnowledgeVersionService {
                     rs.getString("summary"),
                     rs.getString("source_message_id"),
                     citationsForVersion(versionId),
-                    toInstant(rs.getTimestamp("created_at"))
+                    toInstant(rs.getTimestamp("created_at")),
+                    sourceAvailabilityFor(item.workspaceId(), versionId)
             );
         }, item.itemId(), versionNo);
     }

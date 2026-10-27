@@ -69,7 +69,38 @@ class UploadRollbackCleanupContractTest {
         assertThat(storage.list("noteweave-source", "workspace/" + workspace + "/source/", "", 100)).isEmpty();
         assertThat(uploads.getUpload(upload).status()).isEqualTo("UPLOADING");
         assertThat(uploads.getUpload(upload).uploadedChunkIndexes()).containsExactly(0);
-        assertThat(storage.exists("noteweave-source", "workspace/" + workspace + "/upload_tmp/" + upload + "/0")).isTrue();
+        assertThat(storage.exists("noteweave-source", jdbc.queryForObject(
+                "select object_key from upload_chunk where upload_id = ? and chunk_index = 0",
+                String.class, upload))).isTrue();
+    }
+
+    /**
+     * UP-02：同一分片重传不同内容时，行与对象必须仍然一致。
+     * 此前分片键只由 (uploadId, 序号) 决定，重传会覆盖同一个对象，
+     * 行里的 content_md5 与对象实际内容可能对不上，合并时就会串到上一次的分片。
+     */
+    @Test
+    void reuploadingDifferentChunkContentKeepsRowAndObjectInStep() throws Exception {
+        String workspace = workspace();
+        byte[] first = "第一批分片内容".getBytes(StandardCharsets.UTF_8);
+        byte[] second = "第二批完全不同的分片内容".getBytes(StandardCharsets.UTF_8);
+        int declaredSize = Math.max(first.length, second.length);
+        String upload = uploads.createUpload(workspace,
+                new CreateUploadRequest("资料.txt", declaredSize, "text/plain", declaredSize, 1)).uploadId();
+
+        uploads.acceptChunk(upload, 0, null, first);
+        String firstKey = jdbc.queryForObject(
+                "select object_key from upload_chunk where upload_id = ? and chunk_index = 0", String.class, upload);
+        uploads.acceptChunk(upload, 0, null, second);
+        String secondKey = jdbc.queryForObject(
+                "select object_key from upload_chunk where upload_id = ? and chunk_index = 0", String.class, upload);
+
+        assertThat(secondKey).isNotEqualTo(firstKey);
+        assertThat(new String(storage.read("noteweave-source", secondKey), StandardCharsets.UTF_8))
+                .isEqualTo("第二批完全不同的分片内容");
+        // 上一次的分片对象不被覆盖：重传不会把旧内容写进新键，也不会让新键指向旧内容
+        assertThat(new String(storage.read("noteweave-source", firstKey), StandardCharsets.UTF_8))
+                .isEqualTo("第一批分片内容");
     }
 
     @ParameterizedTest

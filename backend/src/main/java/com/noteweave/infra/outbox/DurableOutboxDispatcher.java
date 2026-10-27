@@ -84,12 +84,20 @@ public class DurableOutboxDispatcher {
             MessagePublisher publisher,
             DeadLetterHandler deadLetterHandler
     ) {
-        return dispatch(
+        DeadLetterHandler requiredDeadLetterHandler = Objects.requireNonNull(deadLetterHandler, "deadLetterHandler");
+        // 与 task 路径一致：先收敛最终耗尽租约，再做正常投递；不依赖 agent task 已被 CLAIMED
+        int exhaustedLeases = deadLetterExpiredExhaustedAgentLeases(runId, requestedLimit, requiredDeadLetterHandler);
+        DispatchResult dispatched = dispatch(
                 findAgentCandidates(runId, requestedLimit),
                 OutboxDispatchPolicy.LEASE_DURATION,
                 CompletionMode.SENT,
                 Objects.requireNonNull(publisher, "publisher"),
-                Objects.requireNonNull(deadLetterHandler, "deadLetterHandler")
+                requiredDeadLetterHandler
+        );
+        return new DispatchResult(
+                dispatched.publishedCount(),
+                dispatched.failedCount() + exhaustedLeases,
+                dispatched.deadLetteredCount() + exhaustedLeases
         );
     }
 
@@ -211,6 +219,85 @@ public class DurableOutboxDispatcher {
                 ).increment();
                 log.warn("Expired outbox callback lease was dead-lettered: outboxId={}, topic={}, attempts={}",
                         candidate.id(), candidate.topic(), candidate.attemptCount());
+            }
+        }
+        return deadLettered;
+    }
+
+    /**
+     * agent 命令投递的最终耗尽租约收敛（B-01）：worker 认领后最后一次租约过期且次数已满，
+     * 消息永远不会再回到投递循环。与 task 路径共用同一终止写入协议：
+     * DEAD_LETTER CAS 与补偿意图插入在同一短事务，业务收尾交给补偿 worker。
+     * 只扫描仍在推进中的 run 与可重投任务；终态 run 的残留行由对账处理，不在这里伪造死信。
+     */
+    private int deadLetterExpiredExhaustedAgentLeases(
+            String runId,
+            int requestedLimit,
+            DeadLetterHandler deadLetterHandler
+    ) {
+        int limit = boundedLimit(requestedLimit, 100);
+        boolean scoped = runId != null && !runId.isBlank();
+        String runFilter = scoped ? "and rao.research_run_id = ?" : "";
+        String sql = """
+                select rao.id, rao.research_agent_task_id, rao.topic, rao.message_key,
+                       rao.payload_json, rao.attempt_count, rao.delivery_no
+                from research_agent_outbox rao
+                join research_run rr on rr.id = rao.research_run_id
+                join research_agent_task rat on rat.id = rao.research_agent_task_id
+                where rao.status = 'PROCESSING'
+                  and rao.attempt_count >= ?
+                  and (rao.lease_until is null or rao.lease_until < current_timestamp)
+                  %s
+                  and rr.agent_execution_mode = 'INCREMENTAL_V1'
+                  and rr.status not in ('COMPLETED', 'FAILED', 'CANCELLED')
+                  and rat.status not in ('SUBMITTED', 'FAILED', 'CANCELLED')
+                order by rao.created_at, rao.id
+                limit ?
+                """.formatted(runFilter);
+        List<Object> arguments = new ArrayList<>();
+        arguments.add(OutboxDispatchPolicy.MAX_ATTEMPTS);
+        if (scoped) {
+            arguments.add(runId);
+        }
+        arguments.add(limit);
+        List<Candidate> exhausted = jdbcTemplate.query(sql, (rs, rowNum) -> new Candidate(
+                Store.AGENT,
+                rs.getString("id"),
+                rs.getString("research_agent_task_id"),
+                rs.getString("topic"),
+                rs.getString("message_key"),
+                rs.getString("payload_json"),
+                rs.getInt("attempt_count"),
+                rs.getInt("delivery_no")
+        ), arguments.toArray());
+
+        int deadLettered = 0;
+        for (Candidate candidate : exhausted) {
+            boolean transitioned = inTransaction(() -> {
+                int updated = jdbcTemplate.update("""
+                        update research_agent_outbox
+                        set status = 'DEAD_LETTER', lease_owner = null, lease_until = null,
+                            next_attempt_at = null, dead_lettered_at = current_timestamp,
+                            last_error = 'agent outbox lease expired after maximum delivery attempts',
+                            updated_at = current_timestamp
+                        where id = ? and delivery_no = ? and status = 'PROCESSING'
+                          and attempt_count = ? and attempt_count >= ?
+                          and (lease_until is null or lease_until < current_timestamp)
+                        """, candidate.id(), candidate.deliveryNo(), candidate.attemptCount(),
+                        OutboxDispatchPolicy.MAX_ATTEMPTS);
+                if (updated == 0) {
+                    return false;
+                }
+                deadLetterHandler.onDeadLetter(candidate.message(""));
+                return true;
+            });
+            if (transitioned) {
+                deadLettered++;
+                meterRegistry.counter(
+                        "noteweave.outbox.dispatch.dead_letter", "topic", candidate.topic()
+                ).increment();
+                log.warn("Expired agent outbox lease was dead-lettered: outboxId={}, taskId={}, deliveryNo={}, attempts={}",
+                        candidate.id(), candidate.taskId(), candidate.deliveryNo(), candidate.attemptCount());
             }
         }
         return deadLettered;
@@ -548,6 +635,10 @@ public class DurableOutboxDispatcher {
         }
     }
 
+    /**
+     * 投递消息。deliveryNo 只对 agent store 有意义（同一 outbox 行的第几次投递），
+     * task store 恒为 0；供死信补偿登记区分同一行的多次投递代次。
+     */
     public record Message(
             String outboxId,
             String taskId,
@@ -555,8 +646,22 @@ public class DurableOutboxDispatcher {
             String messageKey,
             String payloadJson,
             int attemptNo,
-            String deliveryToken
-    ) { }
+            String deliveryToken,
+            int deliveryNo
+    ) {
+        /** 兼容既有构造：task store 没有独立投递代次。 */
+        public Message(
+                String outboxId,
+                String taskId,
+                String topic,
+                String messageKey,
+                String payloadJson,
+                int attemptNo,
+                String deliveryToken
+        ) {
+            this(outboxId, taskId, topic, messageKey, payloadJson, attemptNo, deliveryToken, 0);
+        }
+    }
 
     public record DispatchResult(int publishedCount, int failedCount, int deadLetteredCount) { }
 
@@ -565,6 +670,12 @@ public class DurableOutboxDispatcher {
         void publish(Message message) throws Exception;
     }
 
+    /**
+     * 死信处理器。在 DEAD_LETTER 终止写入的同一数据库事务内被调用，
+     * 只允许做数据库写入（登记补偿意图），禁止网络、ES、文件或模型调用；
+     * 处理器抛出异常会让死信事务整体回滚，消息保持原状态等待下一次扫描。
+     * 业务收尾由 OutboxFinalizationExecutor 认领补偿后异步执行。
+     */
     @FunctionalInterface
     public interface DeadLetterHandler {
         void onDeadLetter(Message message);
@@ -599,7 +710,8 @@ public class DurableOutboxDispatcher {
                     messageKey,
                     payloadJson,
                     attemptCount + 1,
-                    deliveryToken
+                    deliveryToken,
+                    deliveryNo
             );
         }
     }

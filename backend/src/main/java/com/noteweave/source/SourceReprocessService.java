@@ -38,6 +38,7 @@ public class SourceReprocessService {
     private final SourceCatalogVersionService sourceCatalogVersionService;
     private final ApplicationEventPublisher eventPublisher;
     private final SourceTopicNames topicNames;
+    private com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer;
 
     public SourceReprocessService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                   WorkspaceAccessGuard workspaceAccessGuard, TaskCommandPort taskCommandPort,
@@ -54,6 +55,12 @@ public class SourceReprocessService {
         this.sourceCatalogVersionService = sourceCatalogVersionService;
         this.eventPublisher = eventPublisher;
         this.topicNames = topicNames;
+    }
+
+    /** 统一入队入口：注入后重新处理的解析/向量化消息走 C2 语义幂等（B-02）。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTaskOutboxEnqueuer(com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer) {
+        this.taskOutboxEnqueuer = taskOutboxEnqueuer;
     }
 
     @Transactional
@@ -131,11 +138,27 @@ public class SourceReprocessService {
         payload.put("sourceSnapshotId", snapshotId);
         String outboxId = Ids.newId();
         boolean async = messagingMode.isAsyncEnabled();
-        jdbcTemplate.update("""
-                insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
-                values (?, ?, ?, ?, ?, 'READY')
-                """, outboxId, taskId, async ? topicNames.embed() : topicNames.retrievalProjection(),
-                snapshotId, Json.write(objectMapper, payload));
+        String targetTopic = async ? topicNames.embed() : topicNames.retrievalProjection();
+        if (taskOutboxEnqueuer != null) {
+            // 统一入队（B-02）：重跑向量化生成新 task，天然构成新的语义代次；
+            // 同一 task 的重复触发幂等返回既有行
+            com.noteweave.task.TaskOutboxEnqueuer.EnqueueResult enqueued =
+                    taskOutboxEnqueuer.enqueue(new com.noteweave.task.TaskOutboxEnqueuer.EnqueueCommand(
+                            workspaceId, taskId, targetTopic, snapshotId,
+                            async ? "SOURCE_EMBED" : "SOURCE_PROJECTION", sourceId, snapshotId,
+                            taskId + "#" + taskOutboxEnqueuer.priorDeliveries(targetTopic, snapshotId),
+                            async ? "EMBED_INIT" : "PROJECTION", null, 1, payload));
+            outboxId = enqueued.outboxId();
+            if (enqueued.deadLettered()) {
+                taskOutboxEnqueuer.redriveDeadLettered(enqueued.outboxId(),
+                        "SYSTEM:SOURCE_REPROCESS", "重新处理资料后重驱向量化消息");
+            }
+        } else {
+            jdbcTemplate.update("""
+                    insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
+                    values (?, ?, ?, ?, ?, 'READY')
+                    """, outboxId, taskId, targetTopic, snapshotId, Json.write(objectMapper, payload));
+        }
         if (!async) {
             eventPublisher.publishEvent(new SourceParseService.SynchronousRetrievalProjectionRequested(
                     outboxId, taskId, workspaceId, sourceId, snapshotId));
@@ -173,6 +196,10 @@ public class SourceReprocessService {
             payload.put("sourceId", sourceId);
             payload.put("snapshotId", snapshot.snapshotId());
             payload.put("workspaceId", workspaceId);
+            // SRC-04：把任务代次带进消息。人工重驱会复用 task id 并递增代次，
+            // 死信收尾时比对，重驱之前的那条投递自动过期。
+            Integer taskGeneration = taskGenerationOrNull(taskId);
+            if (taskGeneration != null) payload.put("taskGeneration", taskGeneration);
             jdbcTemplate.update("""
                     insert into task_outbox(id, task_id, topic, message_key, payload_json, status)
                     values (?, ?, ?, ?, ?, 'READY')
@@ -189,5 +216,14 @@ public class SourceReprocessService {
 
     private record Snapshot(String sourceStatus, String snapshotId, String parseStatus, String indexStatus,
                             String objectKey) {
+    }
+    /** SRC-04：任务代次。精简测试 schema 可能没有 task 表，取不到就按「不带代次」处理。 */
+    private Integer taskGenerationOrNull(String taskId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "select generation from task where id = ?", Integer.class, taskId);
+        } catch (RuntimeException ex) {
+            return null;
+        }
     }
 }

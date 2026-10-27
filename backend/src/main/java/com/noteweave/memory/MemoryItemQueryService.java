@@ -6,10 +6,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.security.CurrentUserProvider;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
+import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,7 +29,15 @@ public class MemoryItemQueryService {
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final CurrentUserProvider currentUserProvider;
     private final MemoryCandidatePolicy candidatePolicy;
-    private final MemorySourceReadGate sourceReadGate;
+    private MemorySourceReadGate sourceReadGate;
+
+    /** MEM-06：分页默认值与上限，避免一次把整张列表拉进内存。 */
+    private static final int DEFAULT_PAGE_SIZE = 100;
+    private static final int MAX_PAGE_SIZE = 500;
+    /** 兼容旧列表接口时每批装配条数：整体仍返回全部，但逐批装配、按批加载信号。 */
+    private static final int LEGACY_BATCH_SIZE = 200;
+    /** 信号 IN 查询每批上限，避免超长 IN 列表。 */
+    private static final int SIGNAL_BATCH_SIZE = 500;
 
     public MemoryItemQueryService(
             JdbcTemplate jdbcTemplate,
@@ -46,9 +57,96 @@ public class MemoryItemQueryService {
     public List<MemoryItemResponse> listItems(String workspaceId) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
         String userId = currentUserProvider.requireUserId();
-        Map<String, SignalEvidence> signals = loadSignalEvidence(workspaceId);
+        List<MemoryItemResponse> items = loadAllItems(workspaceId, userId);
+        // 来源被删除或不再可读时，只在读路径排除，不物理删除 memory_item。
+        Map<String, String> exclusionReasons = sourceReadGate.exclusionReasons(
+                workspaceId,
+                items.stream().map(MemoryItemResponse::revisionId).toList());
+        return items.stream()
+                .filter(item -> !exclusionReasons.containsKey(item.revisionId()))
+                .toList();
+    }
+
+    /**
+     * MEM-06：keyset 分页。按 (候选状态分组, created_at desc, revision_id desc) 翻页，
+     * 每页只装配这一页用到的信号与来源，避免「一次把全工作台信号读进内存」。
+     * 读门排除会让一页返回的条目变少，但游标按原始顺序推进，不会漏项或重复。
+     */
+    public MemoryItemPageResponse pageItems(String workspaceId, String cursor, Integer limit) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
+        String userId = currentUserProvider.requireUserId();
+        int pageSize = limit == null ? DEFAULT_PAGE_SIZE : Math.max(1, Math.min(limit, MAX_PAGE_SIZE));
+        MemoryItemCursor decoded = cursor == null || cursor.isBlank() ? null : MemoryItemCursor.decode(cursor);
+        // 多取一条用来判断是否还有下一页
+        List<MemoryItemResponse> raw = loadItemPage(workspaceId, userId, decoded, pageSize + 1);
+        boolean hasMore = raw.size() > pageSize;
+        List<MemoryItemResponse> page = hasMore ? raw.subList(0, pageSize) : raw;
+        Map<String, String> exclusionReasons = sourceReadGate.exclusionReasons(
+                workspaceId,
+                page.stream().map(MemoryItemResponse::revisionId).toList());
+        List<MemoryItemResponse> visible = page.stream()
+                .filter(item -> !exclusionReasons.containsKey(item.revisionId()))
+                .toList();
+        String nextCursor = null;
+        if (hasMore) {
+            MemoryItemResponse last = page.get(page.size() - 1);
+            nextCursor = new MemoryItemCursor(
+                    rankOf(last), last.createdAt(), last.revisionId()).encode();
+        }
+        return new MemoryItemPageResponse(visible, nextCursor);
+    }
+
+    /** 兼容旧接口：整体返回，但逐页装配，信号只按页加载。 */
+    private List<MemoryItemResponse> loadAllItems(String workspaceId, String userId) {
+        List<MemoryItemResponse> items = new ArrayList<>();
+        MemoryItemCursor cursor = null;
+        while (true) {
+            List<MemoryItemResponse> page = loadItemPage(workspaceId, userId, cursor, LEGACY_BATCH_SIZE);
+            items.addAll(page);
+            if (page.size() < LEGACY_BATCH_SIZE) {
+                return items;
+            }
+            MemoryItemResponse last = page.get(page.size() - 1);
+            cursor = new MemoryItemCursor(rankOf(last), last.createdAt(), last.revisionId());
+        }
+    }
+
+    /** 与列表排序一致的分组序号：待确认（PROPOSED）在前。 */
+    private static int rankOf(MemoryItemResponse item) {
+        return "PROPOSED".equals(item.revisionStatus()) ? 0 : 1;
+    }
+
+    /**
+     * MEM-05：列出被读路径排除的记忆及原因，供管理端排查「为什么召回不到」。
+     * 原因码区分「暂不支持」（Wiki 引用，等 C1 端口补齐）与真实不可读（来源删除/未就绪/不可作依据）。
+     */
+    public List<MemoryReadGateExclusion> readGateExclusions(String workspaceId) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
+        String userId = currentUserProvider.requireUserId();
+        List<MemoryItemResponse> items = loadAllItems(workspaceId, userId);
+        Map<String, String> reasons = sourceReadGate.exclusionReasons(
+                workspaceId,
+                items.stream().map(MemoryItemResponse::revisionId).toList());
+        return items.stream()
+                .filter(item -> reasons.containsKey(item.revisionId()))
+                .map(item -> {
+                    String reasonCode = reasons.get(item.revisionId());
+                    return new MemoryReadGateExclusion(
+                            item.memoryItemId(),
+                            item.revisionId(),
+                            item.displayText(),
+                            item.itemStatus(),
+                            reasonCode,
+                            MemorySourceReadGate.reasonText(reasonCode));
+                })
+                .toList();
+    }
+
+    private List<MemoryItemResponse> loadItemPage(String workspaceId, String userId,
+                                                  MemoryItemCursor cursor, int limit) {
+        Map<String, SignalEvidence> signals = loadPageSignalEvidence(workspaceId, userId, cursor, limit);
         // 个人范围的记忆只对其所有者可见，与编译时的范围规则一致
-        List<MemoryItemResponse> items = jdbcTemplate.query("""
+        return jdbcTemplate.query("""
                 select i.id as item_id, i.memory_scope, i.status as item_status, i.review_status,
                        i.utility_score, i.application_count, i.last_confirmed_at,
                        r.id as revision_id, r.status as revision_status, r.version_no, r.display_text,
@@ -66,7 +164,11 @@ public class MemoryItemQueryService {
                   and i.status not in ('DELETED', 'SUPERSEDED')
                   and (i.memory_scope <> 'USER' or i.owner_user_id = ?)
                   and (r.status = 'PROPOSED' or (r.status = 'ACTIVE' and r.id = i.current_revision_id))
+                  and (case when r.status = 'PROPOSED' then 0 else 1 end > ?
+                       or (case when r.status = 'PROPOSED' then 0 else 1 end = ?
+                           and (r.created_at < ? or (r.created_at = ? and r.id < ?))))
                 order by case when r.status = 'PROPOSED' then 0 else 1 end, r.created_at desc, r.id
+                limit ?
                 """, (rs, rowNum) -> {
             JsonNode payload = readJson(rs.getString("normalized_value_json"));
             SignalEvidence evidence = firstSignal(rs.getString("created_from_signal_ids_json"), signals);
@@ -115,14 +217,7 @@ public class MemoryItemQueryService {
                     MemoryConfidenceResponse.of(rs.getDouble("evidence_alpha"), rs.getDouble("evidence_beta")),
                     rs.getInt("reinforcement_count"),
                     toInstant(rs.getTimestamp("last_reinforced_at")));
-        }, workspaceId, userId);
-        // 来源被删除或不再可读时，只在读路径排除，不物理删除 memory_item。
-        Set<String> staleRevisionIds = sourceReadGate.staleRevisionIds(
-                workspaceId,
-                items.stream().map(MemoryItemResponse::revisionId).toList());
-        return items.stream()
-                .filter(item -> !staleRevisionIds.contains(item.revisionId()))
-                .toList();
+        }, itemPageArguments(workspaceId, userId, cursor, limit));
     }
 
     /** 与 MemoryCandidateGate 的判定一致：全部条件满足才直接生效。 */
@@ -137,14 +232,92 @@ public class MemoryItemQueryService {
         return ready ? "READY" : "NEEDS_REVIEW";
     }
 
-    private Map<String, SignalEvidence> loadSignalEvidence(String workspaceId) {
-        Map<String, SignalEvidence> signals = new HashMap<>();
+    /**
+     * MEM-06：只加载本页条目引用到的信号，并按批做 IN，避免全工作台信号一次性进内存
+     * 与超长 IN 列表。预查询与主查询使用同一套过滤条件（两处必须同步修改）。
+     */
+    private Map<String, SignalEvidence> loadPageSignalEvidence(String workspaceId, String userId,
+                                                               MemoryItemCursor cursor, int limit) {
+        Set<String> signalIds = new LinkedHashSet<>();
         jdbcTemplate.query("""
-                select id, source_type, source_id, confidence_score from memory_signal where workspace_id = ?
-                """, (RowCallbackHandler) rs -> signals.put(rs.getString("id"),
-                new SignalEvidence(rs.getString("source_type"), rs.getDouble("confidence_score"),
-                        rs.getString("source_id"))), workspaceId);
+                select c.created_from_signal_ids_json
+                from memory_item i
+                join memory_runtime_revision r on r.memory_item_id = i.id
+                left join memory_candidate c
+                  on r.provenance_type = 'MEMORY_CANDIDATE' and c.id = r.provenance_ref
+                where i.workspace_id = ?
+                  and i.status not in ('DELETED', 'SUPERSEDED')
+                  and (i.memory_scope <> 'USER' or i.owner_user_id = ?)
+                  and (r.status = 'PROPOSED' or (r.status = 'ACTIVE' and r.id = i.current_revision_id))
+                  and (case when r.status = 'PROPOSED' then 0 else 1 end > ?
+                       or (case when r.status = 'PROPOSED' then 0 else 1 end = ?
+                           and (r.created_at < ? or (r.created_at = ? and r.id < ?))))
+                order by case when r.status = 'PROPOSED' then 0 else 1 end, r.created_at desc, r.id
+                limit ?
+                """, (RowCallbackHandler) rs -> signalIds.addAll(
+                        stringList(readJson(rs.getString("created_from_signal_ids_json")))),
+                itemPageArguments(workspaceId, userId, cursor, limit));
+        return loadSignalEvidence(workspaceId, signalIds);
+    }
+
+    private Map<String, SignalEvidence> loadSignalEvidence(String workspaceId, Set<String> signalIds) {
+        Map<String, SignalEvidence> signals = new HashMap<>();
+        List<String> ids = new ArrayList<>(signalIds);
+        for (int start = 0; start < ids.size(); start += SIGNAL_BATCH_SIZE) {
+            List<String> chunk = ids.subList(start, Math.min(ids.size(), start + SIGNAL_BATCH_SIZE));
+            List<Object> arguments = new ArrayList<>();
+            arguments.add(workspaceId);
+            arguments.addAll(chunk);
+            jdbcTemplate.query("select id, source_type, source_id, confidence_score from memory_signal"
+                            + " where workspace_id = ? and id in (" + placeholders(chunk.size()) + ")",
+                    (RowCallbackHandler) rs -> signals.put(rs.getString("id"),
+                            new SignalEvidence(rs.getString("source_type"),
+                                    rs.getDouble("confidence_score"), rs.getString("source_id"))),
+                    arguments.toArray());
+        }
         return signals;
+    }
+
+    /** 分页参数：rank=-1 表示第一页（0/1 之外的取值让 keyset 条件恒真）。 */
+    private static Object[] itemPageArguments(String workspaceId, String userId,
+                                              MemoryItemCursor cursor, int limit) {
+        if (cursor == null) {
+            return new Object[]{workspaceId, userId, -1, -1, Timestamp.from(Instant.EPOCH),
+                    Timestamp.from(Instant.EPOCH), "", limit};
+        }
+        Timestamp createdAt = Timestamp.from(cursor.createdAt());
+        return new Object[]{workspaceId, userId, cursor.rank(), cursor.rank(),
+                createdAt, createdAt, cursor.revisionId(), limit};
+    }
+
+    private static String placeholders(int count) {
+        return String.join(",", java.util.Collections.nCopies(count, "?"));
+    }
+
+    /** MEM-06：keyset 游标，(分组序号, 创建时间, revision id) 编码成一个不透明字符串。 */
+    record MemoryItemCursor(int rank, Instant createdAt, String revisionId) {
+
+        String encode() {
+            // 用 ISO-8601 保留纳秒精度：按毫秒截断会让同一毫秒内的多行在翻页时漏掉或重复。
+            String raw = rank + "|" + createdAt + "|" + revisionId;
+            return Base64.getUrlEncoder().withoutPadding()
+                    .encodeToString(raw.getBytes(StandardCharsets.UTF_8));
+        }
+
+        static MemoryItemCursor decode(String encoded) {
+            try {
+                String raw = new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8);
+                String[] parts = raw.split("\\|", 3);
+                if (parts.length != 3) {
+                    throw new IllegalArgumentException("malformed cursor");
+                }
+                return new MemoryItemCursor(Integer.parseInt(parts[0]),
+                        Instant.parse(parts[1]), parts[2]);
+            } catch (RuntimeException exception) {
+                throw new com.noteweave.common.BusinessException(
+                        "MEMORY_PAGE_CURSOR_INVALID", "记忆分页游标无效");
+            }
+        }
     }
 
     private SignalEvidence firstSignal(String signalIdsJson, Map<String, SignalEvidence> signals) {
@@ -209,5 +382,11 @@ public class MemoryItemQueryService {
     }
 
     private record SignalEvidence(String sourceType, double confidence, String sourceRef) {
+    }
+
+    /** FB-05/C1：注入共享读门实例（携带 MaterialEligibilityPort）；直连构造回退内置实现。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setSourceReadGate(MemorySourceReadGate sourceReadGate) {
+        this.sourceReadGate = sourceReadGate;
     }
 }

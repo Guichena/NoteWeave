@@ -11,6 +11,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.Set;
 import org.springframework.core.io.FileSystemResource;
@@ -24,6 +28,8 @@ import org.springframework.web.client.RestClientException;
 @Component
 public class HttpSourceDocumentParserClient implements SourceDocumentParserPort {
     private static final int MAX_ELEMENTS = 100_000;
+    /** Retry-After 的上限，避免服务端给出离谱值把消费线程挂太久。 */
+    private static final long MAX_RETRY_AFTER_SECONDS = 3_600L;
     private static final Set<String> DOCUMENT_FIELDS = Set.of("schema_version", "workspace_id", "source_id",
             "snapshot_id", "sha256", "mime_type", "markdown", "page_count", "elements", "parser",
             "truncated", "warnings");
@@ -81,7 +87,7 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
                     .body(new FileSystemResource(original))
                     .exchange((sent, response) -> {
                         if (!response.getStatusCode().is2xxSuccessful()) {
-                            throw new BusinessException("SOURCE_PARSER_UNAVAILABLE", "文档解析服务未返回成功响应");
+                            throw classifyFailure(response.getStatusCode().value(), response.getHeaders());
                         }
                         MediaType contentType = response.getHeaders().getContentType();
                         if (contentType == null || !MediaType.APPLICATION_JSON.isCompatibleWith(contentType)) {
@@ -94,7 +100,44 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
         } catch (BusinessException exception) {
             throw exception;
         } catch (RestClientException exception) {
-            throw new BusinessException("SOURCE_PARSER_UNAVAILABLE", "无法连接文档解析服务或等待响应超时");
+            // 连接失败、等待响应超时都是暂时性的，交给消费端按退避重试
+            throw SourceParserUnavailableException.transientFailure("无法连接文档解析服务或等待响应超时");
+        }
+    }
+
+    /**
+     * PARSE-01：按状态码区分可重试与终态失败，并读取 Retry-After。
+     * 429/503/504（以及其它 5xx）是可重试的，415/422 等 4xx 表示文档不被接受，重试没有意义。
+     */
+    static SourceParserUnavailableException classifyFailure(int status, org.springframework.http.HttpHeaders headers) {
+        if (status == 429) {
+            return SourceParserUnavailableException.rateLimited(
+                    parseRetryAfter(headers == null ? null : headers.getFirst("Retry-After")));
+        }
+        if (status >= 500) {
+            return SourceParserUnavailableException.transientFailure(
+                    "文档解析服务暂时不可用（HTTP " + status + "）");
+        }
+        return SourceParserUnavailableException.rejected(status);
+    }
+
+    /** 解析 Retry-After：支持秒数与 HTTP 日期两种形式，异常或过大的值按缺失/上限处理。 */
+    static Duration parseRetryAfter(String value) {
+        if (value == null || value.isBlank()) return null;
+        String trimmed = value.trim();
+        try {
+            long seconds = Long.parseLong(trimmed);
+            if (seconds <= 0) return Duration.ZERO;
+            return Duration.ofSeconds(Math.min(seconds, MAX_RETRY_AFTER_SECONDS));
+        } catch (NumberFormatException notSeconds) {
+            // 继续尝试 HTTP 日期形式
+        }
+        try {
+            Instant at = ZonedDateTime.parse(trimmed, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant();
+            Duration delay = Duration.between(Instant.now(), at);
+            return delay.isNegative() ? Duration.ZERO : delay;
+        } catch (DateTimeParseException notDate) {
+            return null;
         }
     }
 

@@ -134,11 +134,12 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId))
                 .andExpect(jsonPath("$.data.parse_status").value("PARSED"));
 
+        // SRC-03：幂等键包含内容摘要——同一正文重复确认复用同一个来源（双击不重复）
         mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", noteAssistantMessageId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "title", "Note 模式确认入库",
-                                "content", "重复确认应返回同一资料"
+                                "content", draftContent
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId));
@@ -147,6 +148,21 @@ class Phase3NoteWikiContractTest {
                 select count(*) from source
                 where workspace_id = ? and generated_by = 'note_answer' and generated_ref_id = ?
                 """, Integer.class, workspaceId, noteAssistantMessageId)).isEqualTo(1);
+
+        // 同一引用换了正文则生成新的来源：不能把旧内容当成这次确认的结果
+        mockMvc.perform(post("/api/v2/messages/{messageId}/save-as-source", noteAssistantMessageId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "Note 模式确认入库",
+                                "content", "重复确认改了正文，应生成新的来源"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.generated_ref_id").value(noteAssistantMessageId));
+
+        assertThat(jdbcTemplate.queryForObject("""
+                select count(*) from source
+                where workspace_id = ? and generated_by = 'note_answer' and generated_ref_id = ?
+                """, Integer.class, workspaceId, noteAssistantMessageId)).isEqualTo(2);
 
         JsonNode secondNoteMessage = sendMessage(conversationId, "NOTE", "继续整理 Note 链路和 Marginalia 的关系");
         String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();

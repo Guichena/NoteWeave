@@ -195,6 +195,7 @@ class KnowledgeWikiSearchEngineHybridTest {
                     title varchar(300) not null,
                     status varchar(32) not null,
                     latest_version_id varchar(36),
+                    origin varchar(32),
                     updated_at timestamp not null
                 )
                 """);
