@@ -4,7 +4,8 @@
 # 评测开发集与留出集并各评分两次，与上一版对照；再在同一镜像上打开补查评测一轮（confirm_chain.sh）
 # 用法：version_chain.sh <新标签> <上一版标签>，例如 version_chain.sh fix19 fix18
 # 中途停下（例如磁盘不足）后加环境变量 RESUME=1 重跑：跳过同步、构建与部署（先核对容器用的是新镜像），已开始的评测只等待不重启
-TAG="${1:?tag}"; PREV="${2:?previous tag}"
+# 上一版评测中途作废时加 SKIP_WAIT=1，不等它的评分标记；COMPARE_WITH=<标签> 改为与另一版对照（默认上一版）
+TAG="${1:?tag}"; PREV="${2:?previous tag}"; BASE="${COMPARE_WITH:-$PREV}"
 EVAL=/data/workspace/noteweave-research-eval
 DEPLOY=/data/workspace/noteweave-research-deploy
 DEV_SRC=/data/workspace/noteweave-research-dev2
@@ -17,9 +18,11 @@ if [ "${RESUME:-}" = 1 ]; then
     docker inspect -f '{{.Config.Image}}' "$c" | grep -q ":$TAG$" || { log "RESUME_IMAGE_MISMATCH $c"; exit 1; }
   done
 else
-  log "wait for $PREV streams"
-  until grep -qE "score final-dev-$PREV|FAILED|IMAGE_MISMATCH" "$EVAL/final-chain-$PREV.status" 2>/dev/null; do sleep 60; done
-  grep -q "score final-dev-$PREV" "$EVAL/final-chain-$PREV.status" || { log "PREVIOUS_FAILED"; exit 1; }
+  if [ "${SKIP_WAIT:-}" != 1 ]; then
+    log "wait for $PREV streams"
+    until grep -qE "score final-dev-$PREV|FAILED|IMAGE_MISMATCH" "$EVAL/final-chain-$PREV.status" 2>/dev/null; do sleep 60; done
+    grep -q "score final-dev-$PREV" "$EVAL/final-chain-$PREV.status" || { log "PREVIOUS_FAILED"; exit 1; }
+  fi
   cd "$DEV_SRC" && git merge -q --ff-only refs/remotes/bundle/research || { log "SYNC_FAILED"; exit 1; }
   log "dev2 $(git log --oneline -1)"
   "$DEPLOY/build_images.sh" "$TAG" > "$DEPLOY/build-$TAG.log" 2>&1
@@ -49,9 +52,9 @@ for label in final-dev-$TAG final-holdout-$TAG; do
   "$EVAL/score_eval.sh" "$label" > "$EVAL/runs/$label/score2.log" 2>&1
 done
 cd "$EVAL" && {
-  python3 compare_eval.py final-dev-$PREV final-dev-$TAG
+  python3 compare_eval.py final-dev-$BASE final-dev-$TAG
   echo
-  python3 compare_eval.py final-holdout-$PREV final-holdout-$TAG
+  python3 compare_eval.py final-holdout-$BASE final-holdout-$TAG
 } > "$EVAL/final-compare-$TAG.md" 2>&1
 log "NOSUPP_DONE"
 OVERRIDE="compose.$TAG.json" "$EVAL/confirm_chain.sh" "$TAG" supp
