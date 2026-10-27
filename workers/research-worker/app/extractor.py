@@ -310,6 +310,7 @@ def _extract_evidence_cards_detailed_with_llm(
             )
             continue
         raw_claim = str(raw_card.get("claim_text") or "").strip()
+        quote_start, quote = _extend_quote_past_colon(window.window_text, quote_start, quote)
         quote_start, quote = _extend_quote_for_claim(window.window_text, quote_start, quote, raw_claim)
         claim = _grounded_claim(raw_claim, quote)
         if not claim:
@@ -665,6 +666,32 @@ def _extend_quote_for_claim(text: str, quote_start: int, quote: str, claim: str)
             if all(token in span for token in missing):
                 return text.find(span, start), span
     return quote_start, quote
+
+
+_HEADING_LINE = re.compile(r"\n[ \t]*#")
+_LAST_SENTENCE_END = re.compile(r".*(?:[.!?](?=\s)|[。！？；])", re.DOTALL)
+
+
+def _extend_quote_past_colon(text: str, quote_start: int, quote: str) -> tuple[int, str]:
+    """引用停在冒号上时（例如 the following two strategies:），答案在冒号后面，把引用扩到后面的内容，仍是原文中连续的一段。
+
+    冒号后的列表在网页转成的文本里形式不一：Markdown 列表、缩进行、空行隔开的短行，也可能是一段话或代码，
+    所以不判断列表形式，只扩到下一个标题之前，总长不超过扩展上限，并截在上限内最后一个完整的行或句子。
+    """
+    if quote_start < 0 or not quote.rstrip().endswith((":", "：")):
+        return quote_start, quote
+    end = quote_start + len(quote)
+    limit = min(len(text), quote_start + _MAX_EXTENDED_QUOTE_CHARS)
+    following = text[end:limit]
+    heading = _HEADING_LINE.search(following)
+    if heading:
+        following = following[:heading.start()]
+    elif limit < len(text):
+        sentence = _LAST_SENTENCE_END.match(following)
+        following = following[:max(following.rfind("\n"), sentence.end() if sentence else -1, 0)]
+    if not following.strip():
+        return quote_start, quote
+    return quote_start, (quote + following).rstrip()
 
 
 def _grounded_claim(claim: str, quote: str) -> str:
