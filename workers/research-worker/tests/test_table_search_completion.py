@@ -193,11 +193,19 @@ def test_summary_cannot_keep_a_claim_after_removing_invalid_citations(summary):
     ("PostgreSQL indexes virtual columns [evidence:mysql].", ["evidence:mysql"]),
     ("The supported version is 17 [evidence:mysql].", ["evidence:mysql"]),
     ("A fabricated finding [evidence:unknown] [evidence:pg].", ["evidence:pg"]),
-    ("PostgreSQL 17 uses GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql].", ["evidence:pg", "evidence:mysql"]),
 ])
 def test_paragraph_cannot_borrow_a_different_entity_or_citations_facts(text, refs):
     with pytest.raises(ValueError):
         _normalize_narrative(_narrative(text, refs), _cells(), [])
+
+
+def test_sentence_borrowing_another_citations_number_is_removed_and_the_rest_kept():
+    text = "PostgreSQL 17 uses GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql]."
+    result = _normalize_narrative(_narrative(text, ["evidence:pg", "evidence:mysql"]), _cells(), [])
+    paragraph = result["sections"][0]["paragraphs"][0]
+    # 17 只在 PostgreSQL 的原文里，MySQL 一句借用了它，只去掉这一句
+    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]."
+    assert paragraph["cell_keys"] == ["pg"] and paragraph["evidence_keys"] == ["evidence:pg"]
 
 
 def test_missing_body_coverage_is_repaired_with_the_actual_verified_finding():

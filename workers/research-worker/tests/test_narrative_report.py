@@ -391,6 +391,54 @@ def test_inline_citation_outside_bound_cells_requires_rewriting_instead_of_remov
     assert result.reason == "NARRATIVE_UNSUPPORTED_TYPED_FACT"
 
 
+def test_paragraph_citing_another_cells_evidence_binds_that_cell_instead_of_being_dropped() -> None:
+    article = json.loads(_inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
+    # 模型只写了一格，却同时引用了另一格的证据
+    article["sections"][0]["paragraphs"][0]["cell_keys"] = ["kafka:ordering"]
+    client = FakeLlmClient({"research.synthesis": json.dumps(article)})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。" in result.markdown
+    assert "补充核验结果" not in result.markdown
+
+
+def test_comparison_row_citing_another_cells_evidence_is_kept() -> None:
+    article = json.loads(_inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
+    article["comparison_table"]["rows"][0]["cell_keys"] = ["kafka:ordering"]
+    client = FakeLlmClient({"research.synthesis": json.dumps(article)})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    row = result.narrative["comparison_table"]["rows"][0]
+    assert row["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
+
+
+def test_only_the_unsupported_sentence_is_removed_from_a_paragraph() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。两者的顺序范围不同。Kafka 从 3.0 起默认开启幂等。"
+        "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    # 不带引用又写了数字的一句去掉，同段有引用的句子和不含事实的过渡句照常保留
+    assert paragraph["text"] == ("Kafka 在单个分区内保证顺序 [evidence:aa01]。两者的顺序范围不同。"
+                                 "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。")
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "3.0" not in result.markdown
+
+
 def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None:
     article = json.loads(_inline_article(
         "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",

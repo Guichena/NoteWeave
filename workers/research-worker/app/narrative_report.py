@@ -286,6 +286,7 @@ def _normalize_narrative(
     lead_evidence = {key for lead in leads for key in lead["evidence_keys"]}  # type: ignore[union-attr]
     # 正文和对比表可以引用线索，摘要只用已核验的单元格
     cells_by_key = {str(cell["cell_key"]): cell for cell in [*cells, *leads]}
+    all_cells = list(cells_by_key.values())
     summary_refs = _INLINE_CITATION.findall(summary)
     summary_supported = (len(set(summary_refs)) <= 2 and _cited_text_supported(summary, cells, summary_refs, cells)
                          and not (_TYPED_TOKEN.search(summary) and not summary_refs))
@@ -304,6 +305,7 @@ def _normalize_narrative(
             text = str(raw_paragraph.get("text") or "").strip()
             cell_keys = [key for key in _clean_strings(raw_paragraph.get("cell_keys")) if key in cells_by_key]
             evidence_keys = _clean_strings(raw_paragraph.get("evidence_keys"))
+            cell_keys = _with_cited_cells(cell_keys, [*_INLINE_CITATION.findall(text), *evidence_keys], cells_by_key)
             if not text or not cell_keys or not (evidence_keys or _INLINE_CITATION.search(text)):
                 continue
             bound_cells = [cells_by_key[key] for key in cell_keys]
@@ -319,10 +321,17 @@ def _normalize_narrative(
             evidence_keys = inline_keys or [key for key in evidence_keys if key in allowed_evidence]
             if not evidence_keys:
                 continue
-            if not _cited_text_supported(text, bound_cells, evidence_keys, list(cells_by_key.values()), trusted_context):
-                # 只去掉写了来源里没有的数字或版本号的那一段，其余段落照常保留；全部去掉时才退回模板
+            if not _cited_text_supported(text, bound_cells, evidence_keys, all_cells, trusted_context):
+                # 只去掉通不过核对的句子（写了来源里没有的数字或版本号，或提到的对象与所引证据不符），同段其余
+                # 句子照常保留；一句可用的都不剩时去掉这一段，全部去掉时才退回模板
                 dropped_unsupported += 1
-                continue
+                text = "".join(statement for statement, supported in _checked_statements(
+                    text, bound_cells, evidence_keys, all_cells, trusted_context) if supported).strip()
+                if inline_keys:
+                    text, evidence_keys = _bind_inline_citations(text, allowed_evidence)
+                if not text or not evidence_keys or not _cited_text_supported(
+                        text, bound_cells, evidence_keys, all_cells, trusted_context):
+                    continue
             text = _mark_unverified(text, lead_evidence, chinese)
             cell_keys = [key for key in cell_keys if set(cells_by_key[key]["evidence_keys"]) & set(evidence_keys)]
             paragraphs.append({
@@ -374,6 +383,19 @@ def _normalize_narrative(
     }
 
 
+def _with_cited_cells(cell_keys: list[str], cited: list[str], cells_by_key: dict[str, dict[str, object]]) -> list[str]:
+    """段落或表格行绑定了真实单元格、又引用了其他单元格的证据编号时，把那些单元格补进来。fix17 确认轮
+    40 题重放成文，正文漏写的 51 个已核验单元格里有 28 个是整段因此被当成未知引用删掉。编造的编号不属于
+    任何单元格，补不进来，仍按未知引用处理。"""
+    if not cell_keys:
+        return cell_keys
+    extended = list(cell_keys)
+    for evidence_key in cited:
+        extended.extend(key for key, cell in cells_by_key.items()
+                        if evidence_key in cell["evidence_keys"] and key not in extended)  # type: ignore[operator]
+    return extended
+
+
 def _omitted_cell_text(cell: dict[str, object], cells: list[dict[str, object]], chinese: bool) -> str:
     """正文没写到的已核验单元格补成一段：先用结论；结论里的数字在原文中写法不同、通不过逐句核对时改用原文，
     补出的段落同样要能通过 Java 侧校验，否则整篇报告会被拒收。"""
@@ -392,8 +414,7 @@ def _verified_summary(sections: list[dict[str, object]], cells: list[dict[str, o
     for section in sections:
         for paragraph in section["paragraphs"]:
             text = str(paragraph["text"])
-            statements = re.findall(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", text, re.S)
-            for statement in statements:
+            for statement in _STATEMENT.findall(text):
                 statement = statement.strip()
                 refs = _INLINE_CITATION.findall(statement)
                 if (_INLINE_CITATION.sub("", statement).strip(" .。！？!?") and refs and len(set(refs)) <= 2
@@ -408,11 +429,24 @@ def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evide
     allowed = {key for cell in bound_cells for key in cell["evidence_keys"]}
     if set(_INLINE_CITATION.findall(text)) - allowed or set(evidence_keys) - allowed:
         return False
-    # 句末之后的引用归于前一句；小数点不作为句号。
-    statements = re.findall(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", text, re.S)
+    return all(supported for _, supported in _checked_statements(
+        text, bound_cells, evidence_keys, all_cells, trusted_context, subject))
+
+
+# 句末之后的引用归于前一句；小数点不作为句号。各句按顺序拼接即为原文
+_STATEMENT = re.compile(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", re.S)
+
+
+def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidence_keys: list[str],
+                        all_cells: list[dict[str, object]], trusted_context: str = "",
+                        subject: str = "") -> list[tuple[str, bool]]:
+    """逐句核对，返回每句及其是否通过。段落里有内联引用时每句只用自己引用的原文核对，
+    不带引用的句子不能有数字，也不能提到研究对象。"""
     has_inline = bool(_INLINE_CITATION.search(text))
-    for statement in statements:
+    checked: list[tuple[str, bool]] = []
+    for statement in _STATEMENT.findall(text):
         if not statement.strip():
+            checked.append((statement, True))
             continue
         refs = set(_INLINE_CITATION.findall(statement)) if has_inline else set(evidence_keys)
         cited = [cell for cell in bound_cells if set(cell["evidence_keys"]) & refs]
@@ -427,16 +461,16 @@ def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evide
         source_tokens = _typed_tokens(" ".join(sources))
         fact_tokens = _typed_tokens(_INLINE_CITATION.sub("", statement))
         if not fact_tokens.issubset(source_tokens):
-            return False
+            checked.append((statement, False))
+            continue
         # 句子提到了研究对象时，所引证据至少要属于其中一个，与 Java 侧校验口径一致；比较句同时提到两边、
         # 只引用其中一边的原文属于正常写法。同名实体的不同版本由上面的数字检查进一步区分。
         prose = subject + " " + _INLINE_CITATION.sub("", statement)
         mentioned = {_entity_stem(str(cell.get("entity_label") or "")) for cell in all_cells
                      if _mentions_entity(prose, str(cell.get("entity_label") or ""))}
         cited_stems = {_entity_stem(str(cell.get("entity_label") or "")) for cell in cited}
-        if mentioned and not mentioned & cited_stems:
-            return False
-    return True
+        checked.append((statement, not (mentioned and not mentioned & cited_stems)))
+    return checked
 
 
 def _entity_stem(label: str) -> str:
@@ -638,7 +672,9 @@ def _normalize_comparison_table(
         if len(row_cells) != len(columns) or not cell_keys or not (evidence_keys or cited_inline):
             continue
         # 行里有问题（未知单元格、越界引用、来源没有的数字）只去掉这一行
-        cell_keys = [key for key in cell_keys if key in cells_by_key]
+        cell_keys = _with_cited_cells([key for key in cell_keys if key in cells_by_key],
+                                      [*(key for cell in row_cells for key in _INLINE_CITATION.findall(cell)),
+                                       *evidence_keys], cells_by_key)
         if not cell_keys:
             continue
         bound_cells = [cells_by_key[key] for key in cell_keys]
