@@ -31,6 +31,11 @@ Research 质量评测在 insta2 上的独立部署（compose 项目 `nw-research
 | `ReplayedNarrativeValidationTest.java` | 本地临时复制到 `backend/src/test/java/com/noteweave/research/` | 用后端的成文校验逐份核对 `replay_ab.py` 输出里新旧两版成文，`-Dreplay.file=<路径>` 运行，打印未通过的题目与原因；用完删除，不提交到测试目录 |
 | `point_evidence.py <输入...>` | 评测目录，经 `run_with_env.py` 运行 | 用评分模型逐条判断缺失的必答要点在交给成文的原文里有没有答案，区分损失在成文还是在检索、抽取 |
 | `page_evidence.py <point_evidence 输出> <明细输出> [并发]` | 评测目录，经 `run_with_env.py` 运行 | 成文原文里没有答案的要点，按模型给出的关键词从该次运行抓到的网页全文里挑段落，再判断能否回答，区分损失在抽取还是检索；关键词预筛可能漏掉措辞不同的段落 |
+| `query_trace.py <标签> <题目>` | 评测目录的 exp 子目录 | 按取证任务打印实体、列要求、实际发出的检索词、证据来源与单元格的值 |
+| `query_gap.py <page_evidence 输出>` | 评测目录的 exp 子目录，经 `run_with_env.py` 运行 | 抓到的网页里也没有答案的要点，按规划没要求、检索词没专门问到、问到了但没搜到三类划分，并标出答案通常在另一个比较对象资料里的情况 |
+| `dump_query_contexts.py <page_evidence 输出> <输出>` | 评测目录的 exp 子目录 | 导出这些题目全部取证任务的检索词规划输入，供 `replay_queries.py` 使用 |
+| `replay_queries.py <输入> <新版 cell_query_planner.py> <输出> [并发]` | Worker 镜像起的临时容器 | 镜像里的版本与新版各规划一次检索词，统计条数、平均词数与超过 10 个词的条数 |
+| `query_gap_ab.py <page_evidence 输出> <replay_queries 输出>` | 评测目录的 exp 子目录，经 `run_with_env.py` 运行 | 两版检索词分开判断有没有一条专门问到缺失要点 |
 | `[WAIT_FOR=状态文件] [OVERRIDE=覆盖文件] confirm_chain.sh <镜像标签> <轮次后缀>` | 评测目录 | 不构建，在同一镜像上把开发集与留出集再评测一轮，用于确认最终版本；`WAIT_FOR` 先等另一条链路结束，`OVERRIDE` 先用该覆盖文件重新部署（例如同一镜像只改配置开关） |
 | `rerun_dev.sh <镜像标签> <轮次后缀> [等待的状态文件]` | 评测目录 | 等另一条链路结束后只重跑开发集，评分两次并与同一镜像首轮对照 |
 | `[RESUME=1] version_chain.sh <新标签> <上一版标签>` | 评测目录 | 等上一版两路评测跑完后同步 dev2、构建两个镜像，先关闭补查评测开发集与留出集并与上一版对照，把 `:dev` 标签指向新镜像并删掉上一版镜像，再在同一镜像上打开补查评测一轮；中途停下后用 `RESUME=1` 从评测步骤接着跑 |
