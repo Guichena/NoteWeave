@@ -28,6 +28,8 @@ _INLINE = re.compile(r"\[(evidence:[0-9a-f]{16,64})]")
 _AUDIT_HEADINGS = ("## 引用核对", "## Citation audit", "## 补充引用")
 _OPEN, _CLOSE = chr(0x201C), chr(0x201D)
 NL, TAB = chr(10), chr(9)
+# 与后端 ResearchReportCitations.MAX_QUOTE_CHARS 一致；评测旧版本报告时按当时的值（300）设置环境变量 AUDIT_QUOTE_CHARS
+_AUDIT_QUOTE_CHARS = int(os.environ.get("AUDIT_QUOTE_CHARS", "700"))
 
 
 def _sources_of(run_id):
@@ -70,7 +72,7 @@ def with_citation_audit(run_id, markdown):
         audit += [f"### [{number}] {_one_line(title) or '来源'}", "", f"- Evidence: `{key}`"]
         quote = _one_line(quote)
         if quote:
-            audit.append(f"  - Exact quote: {_OPEN}{quote[:300] + '…' if len(quote) > 300 else quote}{_CLOSE}")
+            audit.append(f"  - Exact quote: {_OPEN}{quote[:_AUDIT_QUOTE_CHARS] + '…' if len(quote) > _AUDIT_QUOTE_CHARS else quote}{_CLOSE}")
         if url.strip():
             audit.append(f"  - URL: {url.strip()}")
         audit.append("")
