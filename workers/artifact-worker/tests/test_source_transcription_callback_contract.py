@@ -60,7 +60,7 @@ def _responses(monkeypatch, data):
     ({"snapshot_id": "snapshot-00000001", "accepted": True, "discarded": False}, False),
     ({"snapshot_id": "snapshot-00000001", "accepted": False, "discarded": True}, True),
 ])
-def test_only_positive_acceptance_or_discard_acknowledgement_cleans_owned_files(
+def test_only_positive_acceptance_cleans_owned_files_and_discard_keeps_transcript(
     callback_job, monkeypatch, data, discarded,
 ):
     job, sleeps = callback_job
@@ -70,9 +70,16 @@ def test_only_positive_acceptance_or_discard_acknowledgement_cleans_owned_files(
 
     assert result["task_id"] == job.task_id
     assert result["status"] == "COMPLETED"
-    assert (result.get("callback_disposition") == "DISCARDED") is discarded
-    assert not job.media_path.parent.exists()
-    assert not source_transcription._output_root(job).exists()
+    assert (result.get("callback_disposition") == "DISCARDED_RETAINED") is discarded
+    if discarded:
+        # 丢弃只说明这次投递被取代，文字稿仍是唯一产物：留着，并标成孤儿
+        assert job.media_path.parent.is_dir()
+        assert source_transcription._output_root(job).is_dir()
+        checkpoint = json.loads((job.media_path.parent / "job.json").read_text(encoding="utf-8"))
+        assert checkpoint["state"] == source_transcription._ORPHANED_STATE
+    else:
+        assert not job.media_path.parent.exists()
+        assert not source_transcription._output_root(job).exists()
     assert len(calls) == 1
     request, timeout = calls[0]
     assert request.full_url == "http://backend.test/internal/worker/source-transcriptions/" + job.snapshot_id

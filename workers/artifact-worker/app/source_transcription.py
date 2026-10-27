@@ -50,6 +50,12 @@ _shutdown_requested = False
 _MAX_MEDIA_BYTES = 128 * 1024 * 1024
 _MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
 _RECOVERY_RETRY_SECONDS = 30
+# 宿主明确丢弃这次投递（例如已被更新代次取代）时，任务目录与文字稿保留，状态改成这个值：
+# 既不会被恢复流程重新投递，也不会被当成正常完成清掉。
+_ORPHANED_STATE = "ORPHANED_CALLBACK_DISCARDED"
+# 孤儿转写（宿主丢弃的回调）默认保留 30 天，给人工取回文字稿留窗口；可用
+# NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS 调整。
+_DEFAULT_ORPHAN_RETENTION_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -205,7 +211,7 @@ def _load_job(directory: Path, *, verify_media=True) -> TranscriptionJob:
     else:
         if (not isinstance(meta["task_id"], str) or not isinstance(meta["sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", meta["sha256"])
                 or type(meta["file_size"]) is not int or not 0 < meta["file_size"] <= _MAX_MEDIA_BYTES
-                or meta["state"] not in {"QUEUED", "RUNNING", "CALLBACK_PENDING"}
+                or meta["state"] not in {"QUEUED", "RUNNING", "CALLBACK_PENDING", _ORPHANED_STATE}
                 or type(meta["next_attempt_at"]) not in (int, float) or not math.isfinite(meta["next_attempt_at"]) or meta["next_attempt_at"] < 0):
             raise ValueError("转写检查点状态或摘要无效")
         for field in ("model", "language", "device"):
@@ -327,6 +333,9 @@ class TranscriptionPool:
                 meta = _strict_json(directory / "job.json")
                 if not isinstance(meta, dict):
                     raise ValueError("转写检查点必须为对象")
+                if meta.get("state") == _ORPHANED_STATE:
+                    # 被宿主丢弃的孤儿保留在原处，等保留策略或人工处理，不再重新转写
+                    continue
                 if meta.get("next_attempt_at", 0) > time.time():
                     continue
                 snapshot = meta.get("snapshot_id")
@@ -465,10 +474,88 @@ def accept_source_transcription(
 
 def recover_source_transcriptions() -> list[str]:
     """接纳首批磁盘任务；工作线程会持续补入后续 backlog。"""
+    purged = purge_orphaned_transcriptions()
+    if purged:
+        logger.info("已清理过期孤儿转写: count=%d", len(purged))
     pool = start_source_transcription_pool()
     recovered = pool.fill_backlog()
     pool.recovery_enabled = True
     return recovered
+
+
+def _orphan_retention_days() -> float:
+    raw = os.environ.get("NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS", "")
+    if not raw:
+        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("孤儿转写保留天数配置无效，回退默认值: value=%s", raw)
+        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
+    # NaN 与无穷在下面这个链式比较里都为假，一并回退默认值
+    if not 0 <= value < 1_000_000:
+        logger.warning("孤儿转写保留天数配置越界，回退默认值: value=%s", raw)
+        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
+    return value
+
+
+def purge_orphaned_transcriptions(*, retention_days: float | None = None, now: float | None = None) -> list[str]:
+    """清理超过保留期的孤儿转写（任务目录与文字稿输出），返回被清理的目录名。
+
+    只动状态为 ORPHANED 的任务目录，以及已经没有对应任务目录的遗留输出目录；
+    排队中、运行中、等待回调的任务一律不碰。
+    """
+    window = (retention_days if retention_days is not None else _orphan_retention_days()) * 86400
+    moment = time.time() if now is None else now
+    purged: list[str] = []
+    try:
+        jobs = _owned_jobs_root()
+    except ValueError:
+        return purged
+    if jobs.is_dir():
+        for directory in jobs.iterdir():
+            if not directory.is_dir() or directory.is_symlink():
+                continue
+            checkpoint = directory / "job.json"
+            try:
+                meta = _strict_json(checkpoint)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(meta, dict) or meta.get("state") != _ORPHANED_STATE:
+                continue
+            if moment - checkpoint.stat().st_mtime < window:
+                continue
+            _remove_owned_tree(directory)
+            _remove_owned_tree(_output_dir_by_name(directory.name))
+            purged.append(directory.name)
+    outputs = _sandbox_root() / "bilibili-render-pdf" / "source-transcriptions"
+    if outputs.is_dir():
+        for directory in outputs.iterdir():
+            if not directory.is_dir() or directory.is_symlink():
+                continue
+            if (jobs / directory.name).exists():
+                continue
+            if moment - directory.stat().st_mtime < window:
+                continue
+            _remove_owned_tree(directory)
+            purged.append(directory.name)
+    return purged
+
+
+def _output_dir_by_name(name: str) -> Path:
+    return _sandbox_root() / "bilibili-render-pdf" / "source-transcriptions" / name
+
+
+def _remove_owned_tree(directory: Path) -> None:
+    """只删沙箱内、非符号链接的目录树。"""
+    try:
+        if directory.is_symlink() or not directory.is_dir():
+            return
+        if not directory.resolve().is_relative_to(_sandbox_root().resolve()):
+            return
+        shutil.rmtree(directory)
+    except OSError as exc:
+        logger.warning("清理孤儿转写目录失败: name=%s reason=%s", directory.name, sanitize_error_message(str(exc)))
 
 
 def run_transcription_job(
@@ -511,14 +598,21 @@ def run_transcription_job(
     except Exception as exc:
         logger.warning("转写回调失败，保留检查点: snapshot=%s reason=%s", job.snapshot_id, sanitize_error_message(str(exc)))
         acknowledgement = False
-    confirmed = acknowledgement is True or (isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.confirmed)
-    if confirmed:
+    accepted = acknowledgement is True or (
+        isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.accepted is True)
+    discarded = isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.discarded is True
+    if accepted:
         _validate_owned(job)
         shutil.rmtree(job.media_path.parent)
         if output_dir.exists() and not output_dir.is_symlink() and output_dir.resolve().parent == output_dir.parent.resolve():
             shutil.rmtree(output_dir)
-    if isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.discarded:
-        return {**payload, "callback_disposition": "DISCARDED"}
+    elif discarded:
+        # SRC-02：宿主丢弃说明这次投递已被更新代次取代，不代表文字稿没有价值——
+        # 它是这次转写唯一的产物，直接删掉等于把已经付费的结果丢掉。保留任务目录与文字稿，
+        # 状态标成孤儿，交给人工或后续保留策略处理；恢复流程不会重新投递它。
+        _atomic_json(job.media_path.parent / "job.json", _metadata(job, state=_ORPHANED_STATE))
+        logger.warning("转写回调被丢弃，保留文字稿并标记孤儿: snapshot=%s output=%s", job.snapshot_id, output_dir.name)
+        return {**payload, "callback_disposition": "DISCARDED_RETAINED", "retained_output": output_dir.name}
     return payload
 
 

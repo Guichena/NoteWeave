@@ -107,9 +107,13 @@ def consume_artifact_commands(
                 completed += 1
                 _commit(messages)
                 continue
-            if exc.status_code == 409:
-                # The Java host no longer recognizes this delivery token. The
-                # message is an old Kafka replay and must not execute again.
+            if (
+                exc.status_code == 409
+                and getattr(exc, "code", "") == "WORKER_CALLBACK_DELIVERY_STALE"
+            ):
+                # NR08：仅宿主明确判定为过期投递（WORKER_CALLBACK_DELIVERY_STALE）才按
+                # 旧 Kafka 重放跳过；幂等冲突/所有权不匹配等业务 409 必须暴露，
+                # 不能被当作旧投递静默提交
                 skipped += 1
                 _commit(messages)
                 continue

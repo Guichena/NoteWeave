@@ -535,6 +535,31 @@ def test_java_artifact_callback_client_should_send_stable_callback_idempotency_k
     keys = [headers["x-noteweave-idempotency-key"] for headers in captured_headers]
     assert keys[0] == keys[1]
     assert len(set(keys[1:])) == 3
+
+    # NR08：多个 WAITING_FOR_PROVIDER 阶段 phase 相同但载荷不同——幂等键必须互异，
+    # 否则第二阶段撞第一阶段的回执（同键不同摘要）被 409 拒绝，流程中断
+    waiting_transcription = ArtifactProgressEvent(
+        phase="WAITING_FOR_PROVIDER",
+        progress_percent=35,
+        message="等待语音转录",
+        payload={"provider_id": "stt", "operation_key": "transcribe"},
+    )
+    waiting_frames = ArtifactProgressEvent(
+        phase="WAITING_FOR_PROVIDER",
+        progress_percent=55,
+        message="等待视频抽帧",
+        payload={"provider_id": "video", "operation_key": "extract_frames"},
+    )
+    before = len(captured_headers)
+    client.send_progress("task-a-callback", waiting_transcription)
+    client.send_progress("task-a-callback", waiting_frames)
+    waiting_keys = [
+        headers["x-noteweave-idempotency-key"]
+        for headers in captured_headers[before:]
+    ]
+    assert waiting_keys[0] != waiting_keys[1]
+    client.send_progress("task-a-callback", waiting_transcription)
+    assert captured_headers[-1]["x-noteweave-idempotency-key"] == waiting_keys[0]
     assert all(key.startswith("artifact-worker-") for key in keys)
     assert all(
         headers["x-noteweave-outbox-delivery-token"] == "delivery-token-1"

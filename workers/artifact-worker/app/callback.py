@@ -17,6 +17,7 @@ from urllib.parse import urlencode, quote
 from pydantic import BaseModel
 
 from app.config import load_settings, resolve_mcp_sandbox_root
+from app.delivery_outbox import DeliveryOutbox, default_delivery_outbox
 from app.error_sanitizer import sanitize_error_message
 from app.llm_client import build_default_llm_client, credential_safe_urlopen
 from app.acquisition_runtime import (
@@ -77,8 +78,11 @@ class ArtifactAcquisitionAckExecutionResponse(BaseModel):
 
 
 class ArtifactCallbackHttpError(RuntimeError):
-    def __init__(self, status_code: int, detail: str) -> None:
+    def __init__(self, status_code: int, detail: str, code: str = "") -> None:
         self.status_code = status_code
+        # NR08：结构化业务码（如 WORKER_CALLBACK_DELIVERY_STALE / IDEMPOTENCY_CONFLICT），
+        # 消费者据此区分「旧投递可跳过」与「业务冲突必须暴露」，不再把任意 409 当重放
+        self.code = code
         super().__init__(f"Java callback failed: {status_code} {detail}")
 
 
@@ -328,6 +332,9 @@ class JavaArtifactCallbackClient:
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")
+        # NR08：进度幂等键加入规范化载荷摘要——多个 WAITING_FOR_PROVIDER 阶段
+        # 的 provider 操作与请求载荷不同，只按 phase 生键会让第二阶段撞上第一阶段的
+        # 回执（同键不同摘要 → 409 中断）。同事件重试摘要稳定，幂等不受影响。
         self._request(
             "POST",
             f"/internal/worker/tasks/{task_id}/progress",
@@ -335,7 +342,7 @@ class JavaArtifactCallbackClient:
             idempotency_key=_callback_idempotency_key(
                 task_id,
                 "progress",
-                event.phase,
+                event.phase + ":" + _stable_progress_digest(payload),
             ),
             task_id=task_id,
         )
@@ -428,8 +435,14 @@ class JavaArtifactCallbackClient:
             with credential_safe_urlopen(req, timeout=30) as response:
                 text = response.read().decode("utf-8")
         except error.HTTPError as exc:
-            detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
-            raise ArtifactCallbackHttpError(exc.code, detail) from exc
+            raw_body = exc.read().decode("utf-8", errors="replace")
+            error_code = ""
+            try:
+                error_code = str(json.loads(raw_body).get("code") or "")
+            except Exception:
+                error_code = ""
+            detail = sanitize_error_message(raw_body)
+            raise ArtifactCallbackHttpError(exc.code, detail, error_code) from exc
         except error.URLError as exc:
             raise ArtifactCallbackTransportError(
                 f"Java 回调不可用：{sanitize_error_message(str(exc.reason))}"
@@ -468,7 +481,30 @@ def run_artifact_task_with_callbacks(
 def _execute_artifact_task_callbacks(
     task_id: str,
     callback_client: ArtifactCallbackClient,
+    delivery_outbox: DeliveryOutbox | None = None,
 ) -> ArtifactWorkerExecutionResponse:
+    settings = load_settings()
+    outbox = delivery_outbox or default_delivery_outbox(settings)
+    # NR09：生成已完成的重投——跳过完整生成，只重发相同载荷的回调（宿主按幂等键
+    # 返回 DUPLICATE 或正常 ACK），不再重复调用模型
+    saved = outbox.load(task_id)
+    if saved is not None and saved.get("result"):
+        saved_events = [
+            ArtifactProgressEvent.model_validate(item)
+            for item in (saved.get("events") or [])
+        ]
+        saved_result = ArtifactTaskResult.model_validate(saved["result"])
+        return _finish_delivery(task_id, saved_events, saved_result, callback_client, outbox, None)
+    attempts = outbox.bump_attempts(task_id)
+    if attempts > settings.delivery_callback_budget:
+        # NR09：预算耗尽——按宿主终态协议上报失败后终止本投递；
+        # 上报本身失败（传输仍断）会继续抛错不提交，等传输恢复后重投再上报
+        exhausted = RuntimeError(
+            f"artifact delivery callback budget exhausted after {attempts} attempts")
+        if _report_execution_failure(callback_client, task_id, "WORKER_DELIVERY", exhausted):
+            setattr(exhausted, "artifact_failure_reported", True)
+        outbox.remove(task_id)
+        raise exhausted
     task_input = callback_client.fetch_task_input(task_id)
     try:
         referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
@@ -491,16 +527,38 @@ def _execute_artifact_task_callbacks(
             events, result = run_artifact_task(task_input)
         checkpoint_artifact_execution()
     except ArtifactExecutionSuperseded:
+        # 任务被新代次接管：清除本地投递状态，重投由新代次语义处理
+        outbox.remove(task_id)
         raise
     except Exception as exc:
         _prefer_superseded(exc)
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
+            outbox.remove(task_id)
         raise
+    # NR09：生成结果先落本地投递箱——后续回调传输失败时重投不再重新生成
+    outbox.save(
+        task_id,
+        [event.model_dump(mode="json") for event in events],
+        result.model_dump(mode="json"),
+        attempts,
+    )
+    return _finish_delivery(task_id, events, result, callback_client, outbox, task_input)
+
+
+def _finish_delivery(
+    task_id: str,
+    events: list[ArtifactProgressEvent],
+    result: ArtifactTaskResult,
+    callback_client: ArtifactCallbackClient,
+    outbox: DeliveryOutbox,
+    task_input: ArtifactTaskInput | None,
+) -> ArtifactWorkerExecutionResponse:
     try:
         checkpoint_artifact_execution()
-        return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
+        response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
     except ArtifactExecutionSuperseded:
+        outbox.remove(task_id)
         raise
     except ArtifactCallbackHttpError as exc:
         _prefer_superseded(exc)
@@ -511,7 +569,10 @@ def _execute_artifact_task_callbacks(
             setattr(exc, "error_code", rejected_code)
             if _report_execution_failure(callback_client, task_id, "WORKER_COMPLETION", exc):
                 setattr(exc, "artifact_failure_reported", True)
+                outbox.remove(task_id)
         raise
+    outbox.remove(task_id)
+    return response
 
 
 def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
@@ -1127,6 +1188,13 @@ def _callback_idempotency_key(
         "|".join([task_id, callback_type, discriminator]).encode("utf-8")
     ).hexdigest()[:32]
     return f"artifact-worker-{callback_type}-{digest}"
+
+
+def _stable_progress_digest(payload: dict) -> str:
+    """NR08：规范化（键排序/紧凑分隔）后的载荷摘要；同事件重试稳定，不同事件互异。"""
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:16]
 
 
 def _artifact_worker_instance_id() -> str:

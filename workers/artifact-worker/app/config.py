@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     kafka_artifact_group_id: str = "noteweave-artifact-worker"
     kafka_artifact_max_poll_interval_seconds: int = Field(default=4200, ge=60, le=21_600)
     kafka_consume_max_attempts: int = Field(default=3, ge=1, le=20)
+    # NR09：同一条投递的持久回调预算——生成成功但进度/完成持续传输失败时，
+    # 重投只重发相同载荷的回调（本地投递箱），超过该次数按宿主终态协议上报失败
+    delivery_callback_budget: int = Field(
+        default=8,
+        ge=1,
+        le=50,
+        validation_alias=AliasChoices(
+            "delivery_callback_budget", "NOTEWEAVE_ARTIFACT_DELIVERY_CALLBACK_BUDGET"),
+    )
     artifact_consumer_enabled: bool = True
     artifact_repository_backend: str = "memory"
     artifact_repository_file_path: str = "runtime/artifact-worker/repository.json"

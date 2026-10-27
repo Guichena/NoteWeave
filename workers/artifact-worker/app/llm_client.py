@@ -65,6 +65,10 @@ class _CredentialSafeTransport(httpx.BaseTransport):
                 error_body = b""
             return httpx.Response(exc.code, content=error_body, request=request)
         except (urllib.error.URLError, OSError, ValueError) as exc:
+            logger.warning(
+                "Artifact LLM transport failed: %s: %s (url=%s, body_bytes=%d, timeout=%s)",
+                type(exc).__name__, exc, request.url, len(request.read() or b""), timeout,
+            )
             raise httpx.ConnectError(str(exc), request=request) from exc
         if len(body) > MAX_LLM_RESPONSE_BYTES:
             raise httpx.ReadError(
@@ -189,7 +193,10 @@ class OpenAICompatibleLlmClient:
         except (OpenAIError, ValueError) as exc:
             with self._usage_lock:
                 record["status"] = "FAILED"
-            logger.warning("Artifact LLM completion failed for %s: %s", purpose, exc)
+            logger.warning(
+                "Artifact LLM completion failed for %s: %s (cause=%r)",
+                purpose, exc, exc.__cause__ or exc.__context__,
+            )
             return ""
         usage = getattr(completion, "usage", None)
         with self._usage_lock:
