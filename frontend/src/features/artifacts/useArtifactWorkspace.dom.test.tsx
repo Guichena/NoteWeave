@@ -2,6 +2,7 @@
 
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../shared/api/error";
 import { useArtifactWorkspace } from "./useArtifactWorkspace";
 
 function createArtifactApi() {
@@ -150,7 +151,68 @@ describe("useArtifactWorkspace", () => {
     expect(api.compareVersions).not.toHaveBeenCalled();
     expect(run).not.toHaveBeenCalled();
   });
+
+  // FE-03：版本加载失败要按状态码分成可重试与不可重试，并在重试成功后清掉错误
+  it("reports a missing version as a non-retryable load error", async () => {
+    const api = createArtifactApi();
+    api.getVersion.mockRejectedValue(new ApiError("not found", 404, "NOT_FOUND", "req", "corr"));
+    const { result } = renderHook(() => useArtifactWorkspace(workspaceProps(api)));
+
+    await act(async () => {
+      await result.current.openArtifactHistoryVersion(historyItem(3) as never);
+    });
+
+    expect(result.current.versionError).toMatchObject({ versionNo: 3, status: 404, retryable: false });
+    expect(result.current.versionError?.message).toContain("已不存在");
+    expect(result.current.artifactHistoryLoadingKey).toBe("");
+  });
+
+  it("retries a transient version failure and clears the error on success", async () => {
+    const api = createArtifactApi();
+    api.getVersion
+      .mockRejectedValueOnce(new TypeError("network down"))
+      .mockResolvedValueOnce({ artifact_job_id: "job-1", version_no: 2 } as never);
+    const { result } = renderHook(() => useArtifactWorkspace(workspaceProps(api)));
+
+    await act(async () => {
+      await result.current.openArtifactHistoryVersion(historyItem(2) as never);
+    });
+    expect(result.current.versionError).toMatchObject({ status: 0, retryable: true });
+
+    await act(async () => {
+      await result.current.retryVersion();
+    });
+
+    expect(result.current.versionError).toBeNull();
+    expect(result.current.selectedArtifactHistoryVersion).toMatchObject({ version_no: 2 });
+    expect(api.getVersion).toHaveBeenCalledTimes(2);
+  });
 });
+
+function workspaceProps(api: ReturnType<typeof createArtifactApi>) {
+  return {
+    workspaceId: "workspace-1",
+    latestTask: null,
+    run: vi.fn(async (_label: string, action: () => Promise<void>) => action()),
+    setStatus: vi.fn(),
+    replaceSources: vi.fn(),
+    api: api as never,
+    sourceApi: { list: vi.fn() } as never
+  };
+}
+
+function historyItem(versionNo: number) {
+  return {
+    key: `job-1:${versionNo}`,
+    artifactJobId: "job-1",
+    versionNo,
+    skillKey: "resume_highlight",
+    title: "产物",
+    detail: "",
+    updatedAt: "2026-07-29T00:00:00Z",
+    status: ""
+  };
+}
 
 function artifactJob(status: string) {
   return {

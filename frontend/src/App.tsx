@@ -126,14 +126,37 @@ export function App() {
     records: executionRecords,
     trackedTaskIds,
     getExecution,
-    loadExecution
+    loadExecution,
+    trackRestoredTasks
   } = useExecutionRegistry(workspace?.workspace_id ?? "");
+  // NR28：工作台切换/刷新后，恢复资料自带的非终态任务重新纳入观察——
+  // 停留在聊天页也能感知解析/索引完成并更新可选范围
+  const restoredSourceTaskKey = `${workspace?.workspace_id ?? ""}:${
+    sources
+      .map((source) => source.task_id ?? "")
+      .filter(Boolean)
+      .sort()
+      .join("|")
+  }`;
+  useEffect(() => {
+    if (!workspace) return;
+    trackRestoredTasks(sources.map((source) => source.task_id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoredSourceTaskKey, workspace, trackRestoredTasks]);
   const latestTaskExecution = getExecution(latestTaskId);
   const latestTask = latestTaskExecution?.task ?? null;
   const terminalSourceParseTasks = trackedTaskIds
     .map((taskId) => executionRecords[taskId]?.task)
     .filter((task) => task?.task_type === "SOURCE_PARSE" && isExecutionTerminal(task.task_status));
   const terminalSourceParseKey = terminalSourceParseTasks
+    .map((task) => `${task.task_id}:${task.task_status}`)
+    .sort()
+    .join("|");
+  // V01: WIKI_INGEST terminal -> refresh wiki views
+  const terminalWikiIngestTasks = trackedTaskIds
+    .map((taskId) => executionRecords[taskId]?.task)
+    .filter((task) => task?.task_type === "WIKI_INGEST" && isExecutionTerminal(task.task_status));
+  const terminalWikiIngestKey = terminalWikiIngestTasks
     .map((task) => `${task.task_id}:${task.task_status}`)
     .sort()
     .join("|");
@@ -199,6 +222,13 @@ export function App() {
     wiki.refreshWikiHome,
     setStatus
   ]);
+
+  useEffect(() => {
+    if (!workspace || !terminalWikiIngestKey) return;
+    // V01：异步 Wiki 重建任务进入终态时刷新 Wiki 主页/索引统计，
+    // 慢构建不再让页面长期保留旧内容
+    void wiki.refreshWikiHome().catch(() => undefined);
+  }, [workspace?.workspace_id, terminalWikiIngestKey, wiki.refreshWikiHome]);
 
   const chat = useChatSessionController({
     workspace,

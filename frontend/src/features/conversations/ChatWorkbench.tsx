@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, Files, Layers3, LibraryBig } from "lucide-react";
+import { ArrowUp, Files, Layers3, LibraryBig, Square } from "lucide-react";
 import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
@@ -51,6 +51,8 @@ export type ChatWorkbenchProps = {
   onOpenWikiPage?: (title: string) => void;
   onAnswerFeedback?: AnswerFeedbackSender;
   onRegenerateAnswer?: (answerRunId: string) => void;
+  /** 停止正在生成的回答；后端取消接口已有，界面此前没有入口。 */
+  onCancelAnswer?: (answerRunId: string) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
@@ -77,9 +79,15 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     loadAnswerEvidence,
     onOpenWikiPage,
     onAnswerFeedback,
-    onRegenerateAnswer
+    onRegenerateAnswer,
+    onCancelAnswer
   } = props;
   const composerBusy = chatBusy;
+  // 当前正在生成的回答：用于在发送按钮旁提供停止入口
+  const activeAnswerRunId = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant"
+      && message.answerStatus === "GENERATING" && message.answerRunId)?.answerRunId;
   const activeRoute = routes.find((route) => route.key === mode) ?? routes[0];
   // 工作台没有资料时侧边面板没有内容可展示（欢迎区已提供上传入口），
   // 因此等资料首次加载出来后再自动展开。
@@ -311,6 +319,18 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
               >
                 {composerBusy ? <span className="composer-send-spinner" aria-hidden="true" /> : <ArrowUp size={18} aria-hidden="true" />}
               </button>
+              {composerBusy && activeAnswerRunId && onCancelAnswer ? (
+                <button
+                  type="button"
+                  className="composer-cancel-button"
+                  aria-label="停止生成回答"
+                  title="停止生成"
+                  onClick={() => onCancelAnswer(activeAnswerRunId)}
+                >
+                  <Square size={12} aria-hidden="true" />
+                  停止
+                </button>
+              ) : null}
             </div>
           </div>
           <p className="composer-footnote">

@@ -44,6 +44,22 @@ describe("MessageBubble failed answers", () => {
     expect(screen.getByText("已完成的回答")).toBeTruthy();
   });
 
+  it("tells the user when retrieval was degraded so a partial answer is not mistaken for complete", () => {
+    render(
+      <MessageBubble message={{
+        role: "assistant",
+        answerMode: "qa",
+        answerStatus: "COMPLETED",
+        content: "基于可用资料的回答",
+        retrievalDegraded: true,
+        retrievalDegradationReasons: ["qa_hybrid_ownership_rejected"]
+      }} />
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("部分资料暂不可用");
+    expect(screen.getByText("基于可用资料的回答")).toBeTruthy();
+  });
+
   it("does not turn redundant Wiki metadata into large answer cards", () => {
     render(
       <MessageBubble message={{

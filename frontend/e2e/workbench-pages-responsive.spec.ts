@@ -55,7 +55,8 @@ for (const viewport of [
       await expect(manage).toHaveCount(0);
       // 打开第一个页面：文档 + 关系栏
       await page.locator(".wiki-page-card").first().click();
-      await expect(page.locator(".wiki-page-detail h2")).toBeVisible();
+      // 正文里也可能有 h2（Markdown 标题），只断言页头那一个，避免 strict mode 命中两个
+      await expect(page.locator(".wiki-page-detail .wiki-doc-header h2")).toBeVisible();
       await expect(page.getByRole("complementary", { name: "Wiki 关系面板" })).toBeVisible();
     }
     await expectNoHorizontalOverflow(page);

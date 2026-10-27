@@ -14,6 +14,16 @@ import {
   type VideoLearningRequest
 } from "./model";
 
+export interface ArtifactVersionEditResponse {
+  version_id: string;
+  version_no: number;
+  base_version_no: number;
+  created: boolean;
+  file_preparation_status: string;
+  memory_feedback_status: string;
+  edit_event_id: string;
+}
+
 export class ArtifactsApi {
   constructor(private readonly client: ApiClient = apiClient) {}
 
@@ -88,6 +98,19 @@ export class ArtifactsApi {
     return this.client.post<ArtifactVersionDetail>(
       `${this.versionPath(workspaceId, artifactJobId, versionNo)}/rollback`,
       {}
+    );
+  }
+
+  /** 版本正文编辑：服务端读取 before 做完整差异，重复 requestId 幂等返回既有版本。 */
+  editVersion(
+    workspaceId: string,
+    artifactJobId: string,
+    versionNo: number,
+    input: { request_id: string; expected_base_version_no: number; markdown: string; edit_reason?: string }
+  ) {
+    return this.client.post<ArtifactVersionEditResponse>(
+      `${this.versionPath(workspaceId, artifactJobId, versionNo)}/edits`,
+      input
     );
   }
 

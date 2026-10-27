@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { sourcesApi } from "../sources/api";
 import { formatSourceIndexStatus, formatSourceProcessingStatus, type SourceAsset } from "../sources/model";
 import type { UseChatSessionControllerInput } from "./useChatSessionController";
@@ -53,6 +53,9 @@ type ChatSourceActionsInput = Pick<
 };
 
 export function useChatSourceActions(props: ChatSourceActionsInput) {
+  // NR12：旧工作台的异步操作完成后不得写新作用域 UI——
+  // 后端业务照常提交（消息归属 A 不变），只拦截对 B 的列表/状态覆盖
+  const scopeAtCallRef = useRef<string>("");
   const {
     workspace,
     run,
@@ -139,12 +142,19 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
 
   async function refreshUploadedSource(taskId: string) {
     if (!workspace) return;
+    const scopeKey = workspace.workspace_id;
+    scopeAtCallRef.current = scopeKey;
     // 秒传命中的资料可能已经处理完成，没有新的处理任务
     if (taskId) {
       await loadExecution(taskId);
       setLatestTaskId(taskId);
     }
-    const nextSources = await sourcesApi.list(workspace.workspace_id);
+    const nextSources = await sourcesApi.list(scopeKey);
+    const scopeStillCurrent = scopeAtCallRef.current === scopeKey
+      && props.workspace?.workspace_id === scopeKey;
+    if (!scopeStillCurrent) {
+      return; // NR12：A 的上传晚返回，不覆盖 B 的资料列表与 Wiki 状态
+    }
     await refreshWikiHome();
     setSources(nextSources);
   }
@@ -237,11 +247,17 @@ export function useChatSourceActions(props: ChatSourceActionsInput) {
       if (!content) {
         throw new Error("请填写或确认入库正文");
       }
+      const scopeKey = workspace.workspace_id;
       const saved = await sourcesApi.saveAnswerAsSource(lastNoteAssistantMessageId, {
         title,
         content
       });
-      const nextSources = await sourcesApi.list(workspace.workspace_id);
+      const nextSources = await sourcesApi.list(scopeKey);
+      if (props.workspace?.workspace_id !== scopeKey) {
+        // NR12：草稿属于 A 的消息（后端已按 A 归属保存成功），
+        // 不把 B 的列表刷新与“已加入当前工作台”提示误报给用户
+        return;
+      }
       setSources(nextSources);
       appendSystemMessage(
         `资料已加入当前工作台：${saved.title || title}。${formatSourceProcessingStatus(saved.parse_status)}，${formatSourceIndexStatus(saved.index_status)}。`

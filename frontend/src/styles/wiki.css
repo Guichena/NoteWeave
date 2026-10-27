@@ -565,6 +565,26 @@
   font-size: var(--text-xs);
 }
 
+/* WIKI-03：来源已更新但页面被人工编辑过，自动更新被跳过时的提示 */
+.wiki-page-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.wiki-page-notice strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 .wiki-version-menu {
   position: relative;
 }

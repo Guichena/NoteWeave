@@ -21,18 +21,28 @@ export function ArtifactVerificationPanel({ verification }: { verification?: Art
   const unsupported = sections.filter((section) => section.support === "UNSUPPORTED").length;
   const notRun = sections.filter((section) => section.support === "NOT_RUN").length;
   const passed = verification.contract_status === "PASS";
+  // NR23：用户编辑过的正文不能沿用原生成版本的校验结论——明确标注失效并提示重新核验
+  const editedUnverified = verification.contract_status === "USER_EDITED_UNVERIFIED";
 
   return (
     <section className="artifact-verification" aria-label="内容校验">
       <div className="artifact-verification-summary">
         {verification.contract_status ? (
-          <span className={`artifact-badge tone-${passed ? "ok" : "danger"}`}>
-            {passed ? "输出契约通过" : "输出契约未通过"}
+          <span className={`artifact-badge tone-${passed ? "ok" : editedUnverified ? "muted" : "danger"}`}>
+            {passed
+              ? "输出契约通过"
+              : editedUnverified
+                ? "正文已编辑，原校验结论已失效"
+                : "输出契约未通过"}
           </span>
         ) : null}
-        <span>引用召回率 {percent(verification.citation_recall)}</span>
-        <span>引用精确率 {percent(verification.citation_precision)}</span>
-        <span>{rounds.length > 0 ? `修复 ${rounds.length} 轮` : "未经修复"}</span>
+        {editedUnverified ? null : (
+          <>
+            <span>引用召回率 {percent(verification.citation_recall)}</span>
+            <span>引用精确率 {percent(verification.citation_precision)}</span>
+            <span>{rounds.length > 0 ? `修复 ${rounds.length} 轮` : "未经修复"}</span>
+          </>
+        )}
         {unsupported > 0 ? <span className="artifact-verification-alert">{unsupported} 个章节缺少依据</span> : null}
       </div>
       {verification.status === "FAIL" || verification.evidence_status === "FAIL" ? (

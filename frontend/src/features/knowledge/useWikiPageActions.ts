@@ -157,8 +157,12 @@ export function useWikiPageActions({
         mode: wikiGraphMode,
         graphKinds: wikiGraphKindFilters
       });
+      // V01：异步重建的任务完成提示与入队提示分开——慢构建期间页面保留旧数据
+      // 会在任务终态时由 Wiki 终态刷新统一更新，不再把入队误报为完成
       appendSystemMessage(
-        `已按当前工作台资料重建 Wiki：资料 ${rebuilt.source_count} 个，任务 ${rebuilt.task_count} 个。`
+        rebuilt.task_count > 0
+          ? `已按当前工作台资料发起 Wiki 重建：资料 ${rebuilt.source_count} 个，任务 ${rebuilt.task_count} 个，完成后页面自动更新。`
+          : `当前无需重建：未发现新的 READY 资料（资料 ${rebuilt.source_count} 个）。`
       );
     }, "wiki");
   }

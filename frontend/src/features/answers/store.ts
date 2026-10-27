@@ -86,11 +86,14 @@ export class AnswerRunStore {
   reconcileRun(snapshot: AnswerRunSnapshot) {
     const current = this.states.get(snapshot.id) ?? createAnswerRunState(snapshot.id);
     const snapshotStatus = snapshot.status || current.status;
+    // NR24：会话快照不带引用，不得清空已恢复消息的引用；
+    // 终态后的快照幂等补元数据（引用保留为并集，不重复）
     const next: AnswerRunState = {
       ...current,
       content: snapshot.content === "" && current.content !== ""
         ? current.content
         : snapshot.content,
+      citations: [...current.citations],
       status: snapshotStatus,
       error: snapshot.error_message || snapshot.error_code || ""
     };
@@ -189,6 +192,11 @@ export function reduceAnswerRunState(
   runSequence = current.lastRunSequence + 1
 ): AnswerRunState {
   if (isTerminal(current.status)) {
+    // NR24：终态后允许幂等补引用元数据（重复投递不产生副作用）
+    if (eventType === "citation.upsert" && !current.citations.includes(data)) {
+      const supplemented = { ...current, citations: [...current.citations, data] };
+      return supplemented;
+    }
     return current;
   }
   const next = {

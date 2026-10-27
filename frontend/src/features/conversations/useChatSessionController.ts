@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AnswerMode } from "../../routes";
 import { routes } from "../../routes";
-import {
+import { AnswerRunWaitTimeoutError,
   AnswerRunStore,
   createAnswerRunState,
   reduceAnswerRunState
@@ -14,6 +14,7 @@ import {
   updateLastAssistantMessage
 } from "../answers/messageTypes";
 import { useChatSourceActions } from "./useChatSourceActions";
+import { resolveMissingContentState } from "./emptyAnswer";
 import { isSourceSearchable, type SourceAsset } from "../sources/model";
 import type { Workspace } from "../workspace/model";
 import type { Conversation } from "./model";
@@ -75,6 +76,26 @@ export function useChatSessionController({
   const [sourceDraftRewriteMode, setSourceDraftRewriteMode] = useState("");
   const [selectedQaSourceIds, setSelectedQaSourceIds] = useState<string[]>([]);
   const [conversationStreamConnected, setConversationStreamConnected] = useState(false);
+
+  // NR12：草稿绑定作用域——工作台/会话切换后旧草稿不得在新作用域提交。
+  // 问题输入、Note 入库草稿与来源选择一并复位，避免 B 工作台拿到 A 的内容
+  // 或把 A 的 messageId 保存结果误报为 B 的成功。
+  const draftScopeKey = `${workspace?.workspace_id ?? ""}:${conversation?.conversation_id ?? ""}`;
+  const draftScopeRef = useRef(draftScopeKey);
+  useEffect(() => {
+    if (draftScopeRef.current === draftScopeKey) {
+      return;
+    }
+    draftScopeRef.current = draftScopeKey;
+    setSourceText("");
+    setQuestion("");
+    setSourceDraftTitle("工作台整理笔记");
+    setSourceDraftContent("");
+    setSourceDraftRewriteMode("");
+    setSelectedQaSourceIds([]);
+    setLastNoteAssistantMessageId("");
+    setLastNoteAnswerContent("");
+  }, [draftScopeKey]);
 
   function setMode(nextMode: AnswerMode) {
     setModeState(nextMode);
@@ -187,6 +208,34 @@ export function useChatSessionController({
 
 
 
+  async function waitForRunWithAuthorityFallback(answerRunId: string, roundsLeft = 4) {
+    try {
+      await answerRunStoreRef.current.waitFor(answerRunId);
+      return;
+    } catch (error) {
+      if (!(error instanceof AnswerRunWaitTimeoutError)) {
+        throw error;
+      }
+      const authoritative = await reconcileAnswerRun(answerRunId);
+      const status = authoritative?.status ?? "GENERATING";
+      if (status !== "GENERATING" && status !== "FINALIZING") {
+        // 权威状态已是终态：把结果写回 store，让 waitFor 后续逻辑正常走完
+        answerRunStoreRef.current.reconcileRun({
+          id: answerRunId,
+          content: authoritative?.content ?? "",
+          status,
+          error_message: authoritative?.error ?? ""
+        });
+        return;
+      }
+      if (roundsLeft <= 1) {
+        // 有限等待耗尽：保留当前状态返回（长生成由 SSE 继续推进界面）
+        return;
+      }
+      await waitForRunWithAuthorityFallback(answerRunId, roundsLeft - 1);
+    }
+  }
+
   async function reconcileAnswerRun(answerRunId: string, fallback?: AnswerRunState) {
     if (!workspace) {
       return answerRunStoreRef.current.get(answerRunId) ?? fallback;
@@ -204,6 +253,15 @@ export function useChatSessionController({
     const reconciled = answerRunStoreRef.current.reconcileRun(snapshot);
     setMessages((currentMessages) => updateAssistantMessageByRun(currentMessages, answerRunId, reconciled));
     return reconciled;
+  }
+
+  /**
+   * 回答没有正文时的界面状态：严格按权威状态分支，不再把失败或取消伪装成完成。
+   * 具体判定见 {@link resolveMissingContentState}。
+   */
+  function settleEmptyAnswer(answerRunId: string, state?: AnswerRunState) {
+    const next = resolveMissingContentState(answerRunId, state);
+    setMessages((current) => updateAssistantMessageByRun(current, answerRunId, next));
   }
 
   async function sendConversationPrompt(
@@ -265,21 +323,21 @@ export function useChatSessionController({
         citations: buffered?.citations ?? [],
         answerRunId: sent.answer_run_id,
         answerStatus: buffered?.status ?? "GENERATING",
-        answerError: buffered?.error ?? ""
+        answerError: buffered?.error ?? "",
+        retrievalDegraded: sent.retrieval_degraded === true,
+        retrievalDegradationReasons: sent.retrieval_degradation_reasons ?? []
       }]);
       if (conversationStreamConnected) {
-        await answerRunStoreRef.current.waitFor(sent.answer_run_id);
+        // NR27：SSE 已连通但回答超过等待窗口时——查询权威状态而非直接放弃；
+        // 仍在运行则继续有限等待（再等一轮），终态照常走后续恢复与 Note 草稿
+        await waitForRunWithAuthorityFallback(sent.answer_run_id);
         const completed = await reconcileAnswerRun(sent.answer_run_id);
         if (turnMode === "note" && completed?.content) {
           setLastNoteAnswerContent(completed.content);
           await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, completed.content);
         }
         if (!completed?.content) {
-          setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, {
-            ...(completed ?? createAnswerRunState(sent.answer_run_id)),
-            content: "后端已完成回答，但没有返回 delta 内容。",
-            status: "COMPLETED"
-          }));
+          settleEmptyAnswer(sent.answer_run_id, completed);
         }
         return;
       }
@@ -292,13 +350,11 @@ export function useChatSessionController({
         }
         setMessages((current) => updateLastAssistantMessage(current, fallback));
       });
-      if (!fallback.content) {
-        setMessages((current) => updateLastAssistantMessage(current, {
-          ...fallback,
-          content: "后端已完成回答，但没有返回 delta 内容。"
-        }));
-      }
       const reconciled = await reconcileAnswerRun(sent.answer_run_id, fallback);
+      if (!reconciled?.content) {
+        // 先按权威状态回填，再判断是否真的没有正文，避免用兜底文案覆盖 FAILED/CANCELLED
+        settleEmptyAnswer(sent.answer_run_id, reconciled ?? fallback);
+      }
       if (turnMode === "note" && reconciled?.content) {
         setLastNoteAnswerContent(reconciled.content);
         await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, reconciled.content);
@@ -328,6 +384,28 @@ export function useChatSessionController({
   async function sendAnswerFeedback(answerRunId: string, input: AnswerFeedbackInput) {
     if (!workspace) throw new Error("请先选择工作台");
     await answersApi.sendFeedback(workspace.workspace_id, answerRunId, input);
+  }
+
+  /** 停止正在生成的回答：调用后端取消接口，并把权威终态写回消息与运行状态。 */
+  async function cancelAnswer(answerRunId: string) {
+    if (!workspace) {
+      setStatus("请先选择工作台");
+      return;
+    }
+    try {
+      const cancelled = await answersApi.cancel(workspace.workspace_id, answerRunId);
+      const state = answerRunStoreRef.current.reconcileRun({
+        id: answerRunId,
+        status: cancelled?.status || "CANCELLED",
+        content: cancelled?.content ?? "",
+        error_code: cancelled?.error_code,
+        error_message: cancelled?.error_message || "回答已取消"
+      });
+      setMessages((current) => updateAssistantMessageByRun(current, answerRunId, state));
+      setStatus("已停止生成");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "停止生成失败，请稍后重试");
+    }
   }
 
   return {
@@ -361,6 +439,7 @@ export function useChatSessionController({
     sendMessage,
     sendConversationPrompt,
     regenerateAnswer,
+    cancelAnswer,
     sendAnswerFeedback
   };
 }

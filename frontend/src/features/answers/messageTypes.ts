@@ -9,6 +9,9 @@ export type Message = {
   answerRunId?: string;
   answerStatus?: string;
   answerError?: string;
+  /** RET-01：检索链路降级（例如归属门控丢掉了候选），回答可能不完整。 */
+  retrievalDegraded?: boolean;
+  retrievalDegradationReasons?: string[];
 };
 export function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
   let targetIndex = -1;

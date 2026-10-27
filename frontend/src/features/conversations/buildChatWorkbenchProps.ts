@@ -63,6 +63,7 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
       ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId)
       : undefined,
     onAnswerFeedback: workspace ? chat.sendAnswerFeedback : undefined,
-    onRegenerateAnswer: chatBusy ? undefined : (answerRunId) => void chat.regenerateAnswer(answerRunId)
+    onRegenerateAnswer: chatBusy ? undefined : (answerRunId) => void chat.regenerateAnswer(answerRunId),
+    onCancelAnswer: chatBusy ? (answerRunId) => void chat.cancelAnswer(answerRunId) : undefined
   };
 }

@@ -25,6 +25,21 @@ type WikiPageDetailPanelProps = Pick<WikiWorkbenchProps, "isBusy" | "workspace">
   onRepairLink?: (targetTitle: string, sourceTitle: string) => void;
 };
 
+/** 来源可用性状态的用户可读说明；status 与 reason 来自后端 C1 判定。 */
+const SOURCE_AVAILABILITY_LABELS: Record<string, string> = {
+  USER_DELETED: "资料已被用户删除",
+  COMPLIANCE_REVOKED: "资料因合规要求已撤销",
+  TEMPORARILY_UNAVAILABLE: "资料暂时不可用",
+  STALE_SNAPSHOT: "引用的快照已过期",
+  MISSING_INTERNAL: "来源记录缺失",
+  FOREIGN_WORKSPACE: "来源不属于当前工作台",
+  UNKNOWN_SCHEMA: "来源状态未知",
+};
+
+function sourceAvailabilityLabel(status: string): string {
+  return SOURCE_AVAILABILITY_LABELS[status] ?? `来源状态异常（${status}）`;
+}
+
 export function WikiPageDetailPanel({
   isBusy,
   workspace,
@@ -63,6 +78,12 @@ export function WikiPageDetailPanel({
   const citations = viewingHistory
     ? props.selectedWikiVersionDetail?.citations ?? []
     : props.selectedWikiDetail?.citations ?? [];
+  const sourceAvailability = viewingHistory
+    ? props.selectedWikiVersionDetail?.source_availability ?? []
+    : props.selectedWikiDetail?.source_availability ?? [];
+  const availabilityBySourceId = new Map(
+    sourceAvailability.map((entry) => [entry.source_id, entry])
+  );
 
   return (
     <article className="wiki-page wiki-page-detail">
@@ -73,6 +94,12 @@ export function WikiPageDetailPanel({
           <span>更新于 {props.formatDateTime(props.selectedWikiDetail?.updated_at ?? page.updated_at)}</span>
         </p>
         <h2>{page.title}</h2>
+        {page.wiki_page_state === "NEEDS_REVIEW" ? (
+          <p className="wiki-page-notice" role="status">
+            <strong>来源已更新，待确认</strong>
+            <span>该页面已被人工编辑，本次自动更新已跳过，当前显示的是你最后一次保存的内容。</span>
+          </p>
+        ) : null}
         <div className="wiki-doc-toolbar">
           <button
             type="button"
@@ -161,12 +188,27 @@ export function WikiPageDetailPanel({
         <section className="wiki-doc-section">
           <h3>来源引用</h3>
           <ol className="wiki-citation-list">
-            {citations.map((citation) => (
-              <li key={citation.citation_id}>
-                <strong>{props.buildKnowledgeCitationLabel(citation)}</strong>
-                {citation.quote_text ? <blockquote className="wiki-citation-quote">{citation.quote_text}</blockquote> : null}
-              </li>
-            ))}
+            {citations.map((citation) => {
+              const availability = availabilityBySourceId.get(citation.source_id);
+              const revoked = availability && !availability.history_readable;
+              return (
+                <li key={citation.citation_id}>
+                  <strong>{props.buildKnowledgeCitationLabel(citation)}</strong>
+                  {availability && availability.status !== "READY" ? (
+                    <span className={`wiki-citation-status${revoked ? " is-revoked" : ""}`}
+                      role="note">
+                      {sourceAvailabilityLabel(availability.status)}
+                      {!availability.evidence_eligible && availability.history_readable
+                        ? "（历史保留，暂不能作为当前证据）"
+                        : ""}
+                    </span>
+                  ) : null}
+                  {citation.quote_text && !revoked ? (
+                    <blockquote className="wiki-citation-quote">{citation.quote_text}</blockquote>
+                  ) : null}
+                </li>
+              );
+            })}
           </ol>
         </section>
       ) : null}

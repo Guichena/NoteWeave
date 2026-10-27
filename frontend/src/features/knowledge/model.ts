@@ -11,6 +11,8 @@ export type WikiPage = {
   backlink_count: number;
   citation_count: number;
   unresolved_count: number;
+  /** WIKI-03：AUTO 可自动更新，MANUAL 已被人工编辑，NEEDS_REVIEW 来源有更新但自动内容被跳过。 */
+  wiki_page_state?: string | null;
 };
 
 export type WikiLink = {
@@ -188,9 +190,21 @@ export type KnowledgeItemDetail = WikiPage & {
   content: string;
   source_message_id: string | null;
   citations: KnowledgeCitation[];
+  source_availability?: KnowledgeSourceAvailability[];
   outgoing_links: WikiLink[];
   backlinks: WikiLink[];
   version_created_at: string;
+};
+
+/** 引用来源的可用性事实；由后端 C1 资格判定下发，前端据此展示状态并隐藏失效原文。 */
+export type KnowledgeSourceAvailability = {
+  source_id: string;
+  status: string;
+  reason_code: string;
+  history_readable: boolean;
+  evidence_eligible: boolean;
+  republish_allowed: boolean;
+  dependency_summary?: string[];
 };
 
 export type KnowledgeVersionDetail = {
@@ -201,6 +215,7 @@ export type KnowledgeVersionDetail = {
   summary: string;
   source_message_id: string | null;
   citations: KnowledgeCitation[];
+  source_availability?: KnowledgeSourceAvailability[];
   created_at: string;
 };
 

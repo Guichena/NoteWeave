@@ -15,7 +15,8 @@ export type ExecutionRegistryAction =
   | { type: "loading"; taskId: string }
   | { type: "loaded"; taskId: string; snapshot: ExecutionSnapshot; loadedAt: number }
   | { type: "error"; taskId: string; error: string }
-  | { type: "untrack"; taskId: string };
+  | { type: "untrack"; taskId: string }
+  | { type: "track"; taskId: string };
 
 export function createExecutionRegistryState(workspaceId = ""): ExecutionRegistryState {
   return { workspaceId, records: {}, trackedTaskIds: [] };
@@ -82,6 +83,11 @@ export function reduceExecutionRegistry(
         trackedTaskIds: state.trackedTaskIds.filter((taskId) => taskId !== action.taskId)
       };
     }
+    case "track":
+      // NR28：工作台恢复时登记非终态资料任务，观察循环据此重建
+      return state.trackedTaskIds.includes(action.taskId)
+        ? state
+        : { ...state, trackedTaskIds: [...state.trackedTaskIds, action.taskId] };
   }
 }
 

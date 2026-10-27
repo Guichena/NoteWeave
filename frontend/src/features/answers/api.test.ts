@@ -32,4 +32,13 @@ describe("AnswersApi", () => {
 
     expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/answer-runs/run");
   });
+
+  it("cancels a running answer through the DELETE endpoint", async () => {
+    const deleteJson = vi.fn(async () => ({ id: "run", status: "CANCELLED", content: "" }));
+    const api = new AnswersApi({ deleteJson } as unknown as ApiClient);
+
+    await api.cancel("workspace", "run");
+
+    expect(deleteJson).toHaveBeenCalledWith("/api/v2/workspaces/workspace/answer-runs/run");
+  });
 });

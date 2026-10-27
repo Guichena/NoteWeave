@@ -11,7 +11,6 @@ import type {
   ResearchRunSummary
 } from "./model";
 import {
-  buildResearchReportExportArtifact,
   buildResearchReportExportStatusMessage
 } from "./researchReportDelivery";
 import { formatSourceIndexStatus, formatSourceProcessingStatus } from "../sources/model";
@@ -92,26 +91,33 @@ export function useResearchReportActions({
   ]);
 
   const exportResearchReportMarkdown = useCallback(() => {
-    const exportArtifact = buildResearchReportExportArtifact({
-      final_report_markdown: currentResearchRun?.final_report_markdown,
-      final_report_title: currentResearchRun?.final_report_title,
-      question: currentResearchRun?.question
-    });
-    if (!exportArtifact) {
+    if (!workspace || !currentResearchRunId) {
       setStatus("当前没有可导出的 Deep Research Markdown 报告");
       return;
     }
-    const blob = new Blob([exportArtifact.content], { type: exportArtifact.mimeType });
-    const objectUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = exportArtifact.fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(objectUrl);
-    setStatus(buildResearchReportExportStatusMessage(exportArtifact.fileName));
-  }, [currentResearchRun, setStatus]);
+    // 正式导出统一走服务端下载入口：由后端执行当前来源资格判断，
+    // 不再从已缓存的正文 Blob 绕过后端导出
+    void run("导出 Deep Research Markdown 报告", async () => {
+      try {
+        const { blob, fileName } = await researchApi.downloadReportMarkdown(
+          workspace.workspace_id,
+          currentResearchRunId
+        );
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = objectUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(objectUrl);
+        setStatus(buildResearchReportExportStatusMessage(fileName));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(`报告导出被拒绝：${message}`);
+      }
+    }, "research");
+  }, [workspace, currentResearchRunId, run, setStatus]);
 
   return {
     saveResearchReportAsSource,

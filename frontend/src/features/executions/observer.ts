@@ -18,6 +18,7 @@ export class ExecutionObserver {
   private fallbackTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   private stopped = true;
   private connected = false;
+  private lastRefreshFailed = false;
 
   constructor(private readonly options: ExecutionObserverOptions) {
     this.stream = new ReconnectingSseClient(
@@ -65,8 +66,17 @@ export class ExecutionObserver {
       if (this.stopped || this.connected) {
         return;
       }
-      await this.options.refresh().catch(() => undefined);
-      this.armFallback();
+      // NR25：快照刷新失败独立重试——传输连接成功不取消兜底，只有拿到一次
+      // 成功刷新后才停止轮询，避免详情接口持续故障时界面永久停在处理中
+      try {
+        await this.options.refresh();
+        this.lastRefreshFailed = false;
+      } catch {
+        this.lastRefreshFailed = true;
+      }
+      if (this.lastRefreshFailed) {
+        this.armFallback();
+      }
     }, this.options.pollIntervalMs);
   }
 

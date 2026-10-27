@@ -112,6 +112,25 @@ describe("ChatWorkbench notebook surface", () => {
     fireEvent.click(studio);
     expect(document.querySelector(".chat-page")?.hasAttribute("data-panel-tab")).toBe(false);
   });
+  it("offers a stop action only while an answer is generating", () => {
+    const onCancelAnswer = vi.fn();
+    const { rerender } = render(<ChatWorkbench {...buildProps({
+      chatBusy: true,
+      onCancelAnswer,
+      messages: [{ role: "assistant", content: "", answerStatus: "GENERATING", answerRunId: "run-1" }]
+    })} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "停止生成回答" }));
+    expect(onCancelAnswer).toHaveBeenCalledWith("run-1");
+
+    // 回答已结束：停止入口消失，避免对已完成的运行发取消请求
+    rerender(<ChatWorkbench {...buildProps({
+      chatBusy: false,
+      onCancelAnswer,
+      messages: [{ role: "assistant", content: "结论", answerStatus: "COMPLETED", answerRunId: "run-1" }]
+    })} />);
+    expect(screen.queryByRole("button", { name: "停止生成回答" })).toBeNull();
+  });
 });
 
 function buildProps(overrides: Record<string, unknown> = {}) {

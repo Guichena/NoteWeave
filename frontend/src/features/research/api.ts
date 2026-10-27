@@ -95,6 +95,15 @@ export class ResearchApi {
     );
   }
 
+  /** 报告 Markdown 正式下载：服务端完成依赖校验后返回字节流。 */
+  async downloadReportMarkdown(workspaceId: string, researchRunId: string) {
+    const blob = await this.client.blob(
+      `${this.runsPath(workspaceId)}/${researchRunId}/report/markdown`
+    );
+    const fileName = `${researchRunId}-report.md`;
+    return { blob, fileName };
+  }
+
   private runsPath(workspaceId: string) {
     return `/api/v2/workspaces/${workspaceId}/research-runs`;
   }

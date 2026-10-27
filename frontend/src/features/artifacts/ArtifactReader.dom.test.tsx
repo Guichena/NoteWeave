@@ -67,6 +67,7 @@ function readerProps(overrides: Record<string, unknown> = {}) {
     writeArtifactVersionToKnowledge: vi.fn(),
     artifactWritebackByVersionId: {},
     regenerateArtifactVersion: vi.fn(),
+    editArtifactVersion: vi.fn(async () => ({ ok: true } as const)),
     compareArtifactWithPreviousVersion: vi.fn(),
     rollbackArtifactVersion: vi.fn(async () => undefined),
     downloadArtifactVersionPdf: vi.fn(),

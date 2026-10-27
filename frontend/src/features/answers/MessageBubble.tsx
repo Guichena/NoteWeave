@@ -153,8 +153,11 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
   }
 
   async function copyAnswer() {
+    // NR29：复制完整用户可见回答——多章节回答的其余内容在 cards 里，
+    // 只复制 presentation.body 会丢后续章节；按可见结构拼装，
+    // Wiki 内部路径字段过滤与渲染规则一致
     try {
-      await navigator.clipboard?.writeText(presentation.body || message.content);
+      await navigator.clipboard?.writeText(buildCopyableAnswer(presentation, message));
       setCopied(true);
     } catch {
       setCopied(false);
@@ -172,6 +175,11 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
       {isFailed ? (
         <div className="answer-run-error" role="alert">
           回答未完成：{message.answerError || "请稍后重试。"}
+        </div>
+      ) : null}
+      {!isFailed && message.retrievalDegraded ? (
+        <div className="answer-sufficiency-notice is-degraded" role="status">
+          部分资料暂不可用，这条回答可能不完整。
         </div>
       ) : null}
       {!isFailed ? (
@@ -332,6 +340,28 @@ function SufficiencyNotice({ value }: { value?: string | null }) {
   const notice = value ? SUFFICIENCY_NOTICES[value] : undefined;
   if (!notice) return null;
   return <div className={`answer-sufficiency-notice is-${value?.toLowerCase()}`} role="note">{notice}</div>;
+}
+
+/** NR29：复制用全文 = 首章正文 + 各卡片标题/正文，与界面可见内容一致。 */
+function buildCopyableAnswer(presentation: MessagePresentation, message: Message): string {
+  const parts: string[] = [];
+  if (presentation.body?.trim()) {
+    parts.push(presentation.body.trim());
+  }
+  presentation.cards.forEach((card) => {
+    const title = card.title?.trim();
+    const content = card.content?.trim();
+    if (title) {
+      parts.push(title);
+    }
+    if (content) {
+      parts.push(content);
+    }
+  });
+  if (parts.length === 0) {
+    return message.content;
+  }
+  return parts.join("\n\n");
 }
 
 function buildAssistantPresentation(message: Message): MessagePresentation {

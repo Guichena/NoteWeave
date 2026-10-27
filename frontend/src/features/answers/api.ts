@@ -35,6 +35,13 @@ export class AnswersApi {
       input
     );
   }
+
+  /** 停止正在生成的回答；后端把运行置为 CANCELLED 并广播终态事件。 */
+  cancel(workspaceId: string, runId: string) {
+    return this.client.deleteJson<AnswerRunSnapshot>(
+      `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}`
+    );
+  }
 }
 
 export const answersApi = new AnswersApi();

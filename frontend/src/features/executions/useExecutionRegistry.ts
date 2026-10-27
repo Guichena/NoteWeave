@@ -125,6 +125,25 @@ export function useExecutionRegistry(
     };
   }, [activeKey, loadExecution, pollIntervalMs]);
 
+  // NR28：工作台恢复时重建非终态资料处理观察——恢复的 sources 自带 task_id，
+  // 刷新/切回工作台后停留在聊天页也能感知后台完成（此前注册表为空，
+  // 完成状态永不更新、资料不可选）。生成资料另存后的任务同样纳入。
+  const trackRestoredTasks = useCallback((taskIds: Array<string | undefined | null>) => {
+    const ids = Array.from(new Set(
+      taskIds.filter((id): id is string => Boolean(id && id.trim()))
+    ));
+    ids.forEach((taskId) => {
+      const record = visibleState.records[taskId];
+      if (record && isExecutionTerminal(record.task.task_status)) {
+        return;
+      }
+      dispatch({ type: "track", taskId });
+      if (!record) {
+        void loadExecution(taskId).catch(() => undefined);
+      }
+    });
+  }, [visibleState.records, loadExecution]);
+
   const getExecution = useCallback(
     (taskId: string) => visibleState.records[taskId] ?? null,
     [visibleState.records]
@@ -145,6 +164,7 @@ export function useExecutionRegistry(
     trackedTaskIds: visibleState.trackedTaskIds,
     getExecution,
     loadExecution,
-    untrackExecution
+    untrackExecution,
+    trackRestoredTasks
   };
 }

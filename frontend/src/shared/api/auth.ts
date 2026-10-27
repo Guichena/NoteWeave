@@ -22,6 +22,8 @@ export type RegisterInput = {
   displayName?: string;
 };
 
+import { ApiError } from "./error";
+
 const STORAGE_KEY = "noteweave.auth.session.v1";
 const AUTH_CHANGED_EVENT = "noteweave:auth-changed";
 let memorySession: AuthSession | null = readStoredSession();
@@ -87,24 +89,49 @@ export async function register(input: RegisterInput) {
   return session;
 }
 
-export async function refreshAuthSession() {
-  const refreshToken = memorySession?.refresh_token;
-  if (!refreshToken) {
+// NR11：并发 401 共享同一次刷新；后端只允许一次轮换，晚到的旧 token 401
+// 不得清除刚轮换出的有效会话
+let refreshInFlight: Promise<AuthSession | null> | null = null;
+
+export async function refreshAuthSession(): Promise<AuthSession | null> {
+  if (refreshInFlight) {
+    return refreshInFlight;
+  }
+  const refreshTokenAtStart = memorySession?.refresh_token;
+  if (!refreshTokenAtStart) {
     clearAuthSession();
     return null;
   }
-  try {
-    const session = await authRequest<AuthSession>("/api/v2/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken })
-    });
-    setAuthSession(session);
-    return session;
-  } catch (error) {
-    clearAuthSession();
-    throw error;
-  }
+  refreshInFlight = (async () => {
+    try {
+      const session = await authRequest<AuthSession>("/api/v2/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshTokenAtStart })
+      });
+      setAuthSession(session);
+      return session;
+    } catch (error) {
+      const advanced = memorySession?.refresh_token
+        && memorySession.refresh_token !== refreshTokenAtStart;
+      if (advanced) {
+        // 另一个并发刷新已成功轮换：保留新会话，本请求复用其结果
+        return memorySession;
+      }
+      const authInvalid = error instanceof ApiError
+        && (error.status === 401
+          || error.code === "REFRESH_TOKEN_REPLAYED"
+          || error.code === "REFRESH_TOKEN_INVALID");
+      if (authInvalid) {
+        // 只有明确的认证失效才清理；网络故障保留凭证供重试
+        clearAuthSession();
+      }
+      throw error;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
 }
 
 export async function validateAuthSession() {
