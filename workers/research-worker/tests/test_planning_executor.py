@@ -31,7 +31,8 @@ def _command() -> ResearchAgentCommand:
     )
 
 
-def _claim(*, target_cells: list[dict[str, object]] | None = None) -> AgentTaskClaim:
+def _claim(*, target_cells: list[dict[str, object]] | None = None,
+           planning_input: dict[str, object] = PLANNING_INPUT) -> AgentTaskClaim:
     payload: dict[str, object] = {
         "schema_version": "research-agent-task-snapshot.v3",
         "task_id": TASK_ID,
@@ -54,10 +55,10 @@ def _claim(*, target_cells: list[dict[str, object]] | None = None) -> AgentTaskC
             "retrieval_mode": "SOURCES_ONLY",
         },
         "query_policy": {
-            "query": PLANNING_INPUT["question"],
-            "research_brief": {"current_question": PLANNING_INPUT["question"], "conversation_summary": "之前聊过索引"},
+            "query": planning_input["question"],
+            "research_brief": {"current_question": planning_input["question"], "conversation_summary": "之前聊过索引"},
             "allowed_tools": ["search"],
-            "planning_input": PLANNING_INPUT,
+            "planning_input": planning_input,
         },
         "logical_task_key": "planning:run-1",
         "candidate_quorum": 1,
@@ -408,3 +409,69 @@ def test_single_entity_dimension_labels_are_kept() -> None:
     assert [item["label"] for item in draft.plan["dimensions"]] == ["PostgreSQL 17 增量备份命令", "合并工具"]
 
 
+WHETHER_INPUT = {**PLANNING_INPUT, "question": "结对编程是否提高了软件质量？比较不同实证研究的结论。"}
+_EVIDENCE_DIMENSIONS = [
+    {"label": "Supporting evidence with its source", "description": "支持的研究", "answer_format": "LONG_TEXT",
+     "high_risk": False, "search_intents": ["pair programming quality improvement study"]},
+    {"label": "Opposing or inconclusive evidence with its source", "description": "反对或不显著的研究",
+     "answer_format": "LONG_TEXT", "high_risk": False, "search_intents": ["pair programming no quality effect"]},
+]
+
+
+def _study_plan() -> dict[str, object]:
+    return _plan(entities=[{"label": "Hannay, Dybå & Hansen 2009 meta-analysis", "aliases": ["Hannay et al. 2009"]},
+                           {"label": "Müller 2005 multiple case study"}],
+                 dimensions=_EVIDENCE_DIMENSIONS)
+
+
+def _topic_plan() -> dict[str, object]:
+    return _plan(entities=[{"label": "Pair programming and software quality"}], dimensions=_EVIDENCE_DIMENSIONS)
+
+
+def test_unnamed_studies_as_entities_are_sent_back_for_a_whether_question() -> None:
+    """问是否 X 改善 Y 并比较不同研究时，凭记忆点名的论文常与检索到的论文对不上，要求改成一个主题对象。"""
+    rejected = validate_plan(_study_plan(), WHETHER_INPUT, topic_entity_check=True)
+    assert rejected.plan is None
+    assert any("exactly one entity for the topic" in problem for problem in rejected.problems)
+    english = {**PLANNING_INPUT, "question": "Does pair programming improve software quality? Compare different studies."}
+    assert validate_plan(_study_plan(), english, topic_entity_check=True).plan is None
+
+    assert validate_plan(_topic_plan(), WHETHER_INPUT, topic_entity_check=True).plan is not None
+    assert validate_plan(_study_plan(), WHETHER_INPUT).plan is not None
+    # 问题点名的研究、普通的产品比较照常作为研究对象
+    named = {**PLANNING_INPUT, "question": "Hannay et al. 2009 与 Müller 2005 multiple case study 是否得出不同的研究结论？"}
+    assert validate_plan(_study_plan(), named, topic_entity_check=True).plan is not None
+    assert validate_plan(_plan(), PLANNING_INPUT, topic_entity_check=True).plan is not None
+
+
+def test_study_entities_are_repaired_into_one_topic_entity() -> None:
+    llm = _SequenceLlm(_study_plan(), _topic_plan())
+
+    completion = _executor(llm)(_command(), _claim(planning_input=WHETHER_INPUT))
+
+    assert completion.role_result["status"] == "PLANNED"
+    assert [entity["label"] for entity in completion.role_result["plan"]["entities"]] == [
+        "Pair programming and software quality"]
+    assert any("exactly one entity for the topic" in problem for problem in llm.calls[1][1]["previous_output_rejected"])
+
+
+def test_review_that_splits_the_topic_into_studies_keeps_the_first_plan() -> None:
+    llm = _SequenceLlm(_topic_plan(), _study_plan())
+
+    completion = _executor(llm)(_command(), _claim(planning_input=WHETHER_INPUT))
+
+    assert len(llm.calls) == 2
+    assert "candidate_plan_for_review" in llm.calls[1][1]
+    assert [entity["label"] for entity in completion.role_result["plan"]["entities"]] == [
+        "Pair programming and software quality"]
+    assert "PLANNING_REVIEW_INVALID" in completion.role_result["degradation_reasons"]
+
+
+def test_repair_that_keeps_the_studies_is_planned_instead_of_falling_back() -> None:
+    llm = _SequenceLlm(_study_plan(), _study_plan())
+
+    completion = _executor(llm)(_command(), _claim(planning_input=WHETHER_INPUT))
+
+    assert completion.role_result["status"] == "PLANNED"
+    assert len(completion.role_result["plan"]["entities"]) == 2
+    assert len(llm.calls) == 2

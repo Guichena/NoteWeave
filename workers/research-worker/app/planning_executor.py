@@ -100,7 +100,9 @@ class PlanningExecutor:
                 reasons.append("PLANNING_LLM_CALL_FAILED")
                 draft = PlanDraft(None, ["Previous call returned no plan; return the complete plan object."])
                 continue
-            draft = validate_plan(raw, planning_input, final_attempt=attempt >= 1)
+            # 第一次规划与复核已采用的方案时检查研究对象是否该合成一个主题；修复时不再检查，避免整张表退回模板
+            draft = validate_plan(raw, planning_input, final_attempt=attempt >= 1,
+                                  topic_entity_check=attempt == 0 or accepted_plan is not None)
             attempts.append(_planning_attempt(attempt + 1, raw, draft))
             if draft.plan is not None:
                 accepted_plan = draft.plan
@@ -316,10 +318,12 @@ EFFORT_TIER_LIMITS: dict[str, tuple[int | None, int]] = {
 }
 
 
-def validate_plan(raw: object, planning_input: dict[str, object], *, final_attempt: bool = False) -> PlanDraft:
+def validate_plan(raw: object, planning_input: dict[str, object], *, final_attempt: bool = False,
+                  topic_entity_check: bool = False) -> PlanDraft:
     """按与 Java 相同的上限检查模型输出；Java 还会再做一次权威校验。
 
     第一次不合规时把问题和候选方案交给模型修复；最后一次尝试可以调整投入等级，并按上限截断对象和维度。
+    topic_entity_check 为真时，问是否 X 改善 Y 并比较不同研究的问题不接受问题没点名的多个研究对象。
     """
     if not isinstance(raw, dict) or raw.get("_unparsable"):
         return PlanDraft(None, ["output is not a JSON object"])
@@ -365,6 +369,8 @@ def validate_plan(raw: object, planning_input: dict[str, object], *, final_attem
                 entities = entities[:-1]
     if not entities:
         problems.append("entities must contain at least one item with a non-empty label")
+    if topic_entity_check:
+        problems.extend(_study_entity_problems(str(planning_input.get("question") or ""), entities))
     if len(dimensions) < min_columns:
         problems.append(f"dimensions must contain at least {min_columns} distinct labels")
         if meta_labels:
@@ -607,6 +613,36 @@ _META_DIMENSION = re.compile(
 _META_POINT = re.compile(
     r"(?i)\b(?:urls?|links?)\b|official\s+(?:documentation|docs)\s+(?:urls?|entry|entries|pages?)"
     r"|原文引用|引用原始|引用原文|链接|文档页面|文档说明")
+
+
+# 问 X 是否改善 Y、要求比较不同研究或支持与反对证据的问题。提示要求这类问题只用一个主题对象，研究写进证据单元格，
+# 模型仍常凭记忆点名几篇论文作研究对象，作者、年份常与检索到的论文对不上，单元格把另一项研究的数据记在这些名字下面。
+# 评测中这类表格 8 次只通过 1 次，用一个主题对象的 32 次通过 17 次
+_WHETHER_QUESTION = re.compile(r"是否|能否|有没有|(?i:\bwhether\b|^\s*(?:does|do|did|is|are|can)\b)")
+_CROSS_STUDY_QUESTION = re.compile(
+    r"不同的?(?:实证)?(?:研究|组织|实验)|支持(?:和|与)反对|结论不一致"
+    r"|(?i:\b(?:different|several|multiple|conflicting)\s+(?:stud(?:y|ies)|experiments|organi[sz]ations|findings|results)\b"
+    r"|\bsupporting\s+and\s+opposing\b)")
+
+
+def _study_entity_problems(question: str, entities: list[dict[str, object]]) -> list[str]:
+    if len(entities) < 2 or not (_WHETHER_QUESTION.search(question) and _CROSS_STUDY_QUESTION.search(question)):
+        return []
+    folded = unicodedata.normalize("NFKC", question).casefold()
+    names = [str(entity.get("label") or "") for entity in entities]
+    for entity in entities:
+        aliases = entity.get("aliases")
+        if isinstance(aliases, list):
+            names.extend(str(alias) for alias in aliases if isinstance(alias, str))
+    # 问题点名了要比较的研究或组织时照常保留
+    if any(len(name.strip()) >= 2 and unicodedata.normalize("NFKC", name.strip()).casefold() in folded for name in names):
+        return []
+    labels = [str(entity.get("label") or "") for entity in entities]
+    return [f"the question asks whether something improves an outcome and compares studies or organizations it does "
+            f"not name, so do not make {labels[:4]} separate entities: use exactly one entity for the topic and name "
+            "each study with its authors, year and venue inside the evidence cells, using dimensions such as supporting "
+            "evidence with its source, opposing or inconclusive evidence with its source, and the conditions or "
+            "methods that explain the difference"]
 
 
 def _fitting_tier(declared: str, entity_count: int, dimension_count: int) -> str:
