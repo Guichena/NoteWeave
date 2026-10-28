@@ -35,6 +35,8 @@ RUN pip install --no-cache-dir \
     "pypdf>=6.0,<7" \
     "python-pptx>=1.0.2,<2" \
     "reportlab>=4.2.0,<5" \
+    "jsonschema>=4.23,<5" \
+    "PyYAML>=6,<7" \
     "uvicorn>=0.32.0,<1"
 
 COPY app ./app
