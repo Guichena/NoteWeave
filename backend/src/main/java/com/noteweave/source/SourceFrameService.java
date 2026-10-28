@@ -32,15 +32,19 @@ public class SourceFrameService {
                 join source s on s.id = f.source_id and s.workspace_id = f.workspace_id
                 join source_snapshot ss on ss.id = f.source_snapshot_id and ss.source_id = s.id
                 where f.workspace_id = ? and f.source_id = ? and f.frame_id = ? and s.status <> 'DELETED'
+                  and ss.media_document_json is not null
                   and ss.version_no = (select max(x.version_no) from source_snapshot x where x.source_id = s.id)
                 """, (rs, row) -> new FrameRef(rs.getString(1), rs.getString(2)), workspaceId, sourceId, frameId);
         if (rows.size() != 1) throw new BusinessException("SOURCE_FRAME_NOT_FOUND", "关键帧不存在", HttpStatus.NOT_FOUND);
         return new FrameImage(storage.read(SourcePipelineStages.BUCKET_DERIVED, rows.get(0).key()), rows.get(0).type());
     }
 
-    SourceMediaDocument save(String workspaceId, String sourceId, String snapshotId, SourceMediaDocument document) {
+    SourceMediaDocument save(String workspaceId, String sourceId, String snapshotId, String taskId, SourceMediaDocument document) {
+        List<String> previousKeys = jdbc.queryForList("select object_key from source_media_frame where source_snapshot_id = ?",
+                String.class, snapshotId);
         jdbc.update("delete from source_media_frame where source_snapshot_id = ?", snapshotId);
         List<SourceMediaDocument.Segment> segments = new ArrayList<>();
+        java.util.Set<String> savedKeys = new java.util.HashSet<>();
         for (var segment : document.segments()) {
             List<SourceMediaDocument.Frame> frames = new ArrayList<>();
             for (var frame : segment.frames()) {
@@ -53,9 +57,10 @@ public class SourceFrameService {
                 if (!frame.imageRef().startsWith(prefix)) throw new IllegalArgumentException("关键帧必须提供 PNG 或 JPEG 图片内容");
                 byte[] content = Base64.getDecoder().decode(frame.imageRef().substring(prefix.length()));
                 validateImage(content, type);
-                String key = "workspace/%s/source/%s/snapshot/%s/media-frames/%s.%s".formatted(
-                        workspaceId, sourceId, snapshotId, frame.frameId(), type.equals("image/png") ? "png" : "jpg");
+                String key = "workspace/%s/source/%s/snapshot/%s/media-frames/%s/%s.%s".formatted(
+                        workspaceId, sourceId, snapshotId, taskId, frame.frameId(), type.equals("image/png") ? "png" : "jpg");
                 storage.write(SourcePipelineStages.BUCKET_DERIVED, key, content);
+                savedKeys.add(key);
                 jdbc.update("""
                         insert into source_media_frame(workspace_id, source_id, source_snapshot_id, frame_id,
                             part, at_ms, object_key, media_type) values (?, ?, ?, ?, ?, ?, ?, ?)
@@ -64,6 +69,9 @@ public class SourceFrameService {
                 frames.add(new SourceMediaDocument.Frame(frame.frameId(), frame.atMs(), imageUrl, frame.caption(), frame.ocrText()));
             }
             segments.add(new SourceMediaDocument.Segment(segment.part(), segment.startMs(), segment.endMs(), segment.text(), frames));
+        }
+        for (String key : previousKeys) {
+            if (!savedKeys.contains(key)) enqueueImageDeletion(workspaceId, sourceId, key);
         }
         return new SourceMediaDocument(document.title(), document.sourceUrl(), segments, document.stats());
     }
@@ -85,6 +93,16 @@ public class SourceFrameService {
         List<String> keys = jdbc.queryForList("select object_key from source_media_frame where workspace_id = ? and source_id = ?",
                 String.class, workspaceId, sourceId);
         for (String key : keys) {
+            enqueueImageDeletion(workspaceId, sourceId, key);
+        }
+    }
+
+    private void enqueueImageDeletion(String workspaceId, String sourceId, String key) {
+            Integer recorded = jdbc.queryForObject("""
+                    select count(*) from source_cleanup_task where source_id = ? and cleanup_type = 'SOURCE_OBJECT'
+                        and bucket_name = ? and object_key = ?
+                    """, Integer.class, sourceId, SourcePipelineStages.BUCKET_DERIVED, key);
+            if (recorded != null && recorded > 0) return;
             String digest;
             try { digest = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
                     .digest(key.getBytes(java.nio.charset.StandardCharsets.UTF_8))); }
@@ -94,7 +112,6 @@ public class SourceFrameService {
                         object_key, object_key_sha256, status, next_attempt_at)
                     values (?, ?, ?, 'SOURCE_OBJECT', ?, ?, ?, 'READY', current_timestamp)
                     """, com.noteweave.common.Ids.newId(), workspaceId, sourceId, SourcePipelineStages.BUCKET_DERIVED, key, digest);
-        }
     }
 
     private static void validateImage(byte[] content, String type) {

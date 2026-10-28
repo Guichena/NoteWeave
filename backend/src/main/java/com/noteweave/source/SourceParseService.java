@@ -424,7 +424,7 @@ public class SourceParseService implements SourceParsePort {
                     }
                 } catch (IOException ex) { throw new IllegalArgumentException("所选分 P 记录不可读取", ex); }
             }
-            SourceMediaDocument stored = sourceFrames.save(workspaceId, sourceId, snapshotId, document);
+            SourceMediaDocument stored = sourceFrames.save(workspaceId, sourceId, snapshotId, findSourceParseTaskId(sourceId), document);
             List<DocumentElement> elements = stored.segments().stream().map(segment -> new DocumentElement(
                     DocumentElement.ElementType.TEXT, segment.body(), null, null, null, null, null,
                     segment.part(), segment.startMs(), segment.endMs(),

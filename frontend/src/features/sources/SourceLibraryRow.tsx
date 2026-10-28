@@ -98,7 +98,7 @@ export function SourceLibraryRow(props: SourceLibraryRowProps) {
           recovery={props.recovery}
           onReprocess={props.onReprocess}
         />
-        {source.media_available && props.workspaceId ? <SourceMediaPreview workspaceId={props.workspaceId} sourceId={source.source_id} /> : null}
+        {source.media_available && source.parse_status === "PARSED" && props.workspaceId ? <SourceMediaPreview workspaceId={props.workspaceId} sourceId={source.source_id} /> : null}
         </>
       ) : null}
     </article>

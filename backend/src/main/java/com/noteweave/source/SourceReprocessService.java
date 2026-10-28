@@ -154,7 +154,7 @@ public class SourceReprocessService {
                     select id from source_chunk where source_snapshot_id = ?)
                 """, snapshot.snapshotId());
         jdbcTemplate.update("delete from source_chunk where source_snapshot_id = ?", snapshot.snapshotId());
-        jdbcTemplate.update("delete from source_media_frame where source_snapshot_id = ?", snapshot.snapshotId());
+        // 保留旧图片索引，待新图文结果提交时清理未复用的图片；重新处理期间不对外提供旧图文结果。
         jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = null,
