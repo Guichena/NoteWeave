@@ -24,6 +24,9 @@ def project(task, ir, evidence, sections, files):
                  "task_id": task.task_id, "input_snapshot_id": task.input_snapshot_id, "catalog_digest": task.catalog_digest,
                  "content_sha256": sha, "content_ir_digest": content.content_digest,
                  "required_files": build_required_files(markdown, {"format": "MARKDOWN"}) + files}}
+    for file in files:
+        if file["role"] == "PRIMARY_PDF":
+            payload["export_trace"] = {"status": "COMPILED", "format": "PDF", "file_name": file["file_name"]}
     citations = []
     seen = set()
     for fact in facts(ir):

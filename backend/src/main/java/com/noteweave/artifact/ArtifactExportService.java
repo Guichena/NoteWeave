@@ -148,7 +148,7 @@ public class ArtifactExportService {
         }
         appendDeclaredAuxiliaryFiles(taskId, request, files);
         requireCandidateFileManifest(request, files);
-        if ("video_learning_deck".equals(skillKey)) {
+        if ("video_learning_deck".equals(skillKey) && !request.resultPayload().containsKey("ir")) {
             Object deckIr = request.resultPayload().get("video_deck_ir");
             if (!(deckIr instanceof Map<?, ?> ir) || !(ir.get("slides") instanceof List<?> slides)) {
                 throw invalidManifest();
@@ -159,6 +159,18 @@ public class ArtifactExportService {
                     .filter(file -> "SLIDE_PREVIEW".equals(file.role())).count();
             if (decks.size() != 1 || previews != slides.size()) throw invalidManifest();
             VideoDeckFileVerifier.validate(decks.get(0).content(), slides);
+        }
+        if (request.resultPayload().get("ir") instanceof Map<?, ?> ir && "DECK".equals(ir.get("kind"))) {
+            if (!(ir.get("slides") instanceof List<?> slides) || slides.isEmpty()
+                    || files.stream().filter(file -> "PRIMARY_PPTX".equals(file.role())).count() != 1
+                    || files.stream().filter(file -> "SLIDE_PREVIEW".equals(file.role())).count() != slides.size()) {
+                throw invalidManifest();
+            }
+            for (int index = 1; index <= slides.size(); index++) {
+                int sequence = index;
+                if (files.stream().filter(file -> "SLIDE_PREVIEW".equals(file.role()) && file.sequenceNo() == sequence).count() != 1)
+                    throw invalidManifest();
+            }
         }
         return List.copyOf(files);
     }

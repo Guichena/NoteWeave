@@ -46,7 +46,7 @@ final class ArtifactCandidateVerificationPolicy {
             require(originals.putIfAbsent((String) sentence.get("id"), (String) sentence.get("text")) == null,
                     "素材句子编号重复");
         }
-        String collection = Map.of("DOC", "sections", "QUIZ", "questions", "CARDS", "cards", "TREE", "root", "TABLE", "rows").get(expectedKind);
+        String collection = Map.of("DOC", "sections", "QUIZ", "questions", "CARDS", "cards", "TREE", "root", "TABLE", "rows", "DECK", "slides").get(expectedKind);
         require(collection != null, "产物形态无效");
         if (expectedKind.equals("TREE")) {
             require(ir.get("root") instanceof Map<?, ?> root && root.get("children") instanceof List<?> children && !children.isEmpty(),
@@ -54,12 +54,31 @@ final class ArtifactCandidateVerificationPolicy {
         } else {
             require(ir.get(collection) instanceof List<?> items && !items.isEmpty(), "产物缺少内容单元");
         }
+        validateFrames(ir, sentences);
         require(validateAnchors(ir, originals) > 0, "产物缺少带引用的事实内容");
         require(payload.get("pipeline_stats") instanceof Map<?, ?> stats
                 && stats.get("stages") instanceof Map<?, ?> stages
                 && stages.keySet().equals(Set.of("gather", "plan", "draft", "check", "render"))
                 && stats.get("repair_calls") instanceof Number repair && repair.intValue() >= 0 && repair.intValue() <= 1,
                 "流水线阶段或修复次数无效");
+    }
+
+    private static void validateFrames(Object node, List<?> sentences) {
+        if (node instanceof Map<?, ?> map) {
+            if (map.containsKey("frame_id")) {
+                require(map.get("frame_id") instanceof String id && !id.isBlank()
+                        && map.get("caption") instanceof Map<?, ?>, "关键帧引用或图注无效");
+                Map<?, ?> caption = (Map<?, ?>) map.get("caption");
+                require(caption.get("anchors") instanceof List<?>, "关键帧图注缺少引用");
+                List<?> anchors = (List<?>) caption.get("anchors");
+                require(sentences.stream().anyMatch(raw -> raw instanceof Map<?, ?> sentence
+                        && anchors.contains(sentence.get("id")) && sentence.get("frame_ids") instanceof List<?> frames
+                        && frames.contains(map.get("frame_id"))), "插图不属于图注引用的素材关键帧");
+            }
+            for (Object child : map.values()) validateFrames(child, sentences);
+        } else if (node instanceof List<?> list) {
+            for (Object child : list) validateFrames(child, sentences);
+        }
     }
 
     private static int validateAnchors(Object node, Map<String, String> originals) {

@@ -107,6 +107,43 @@ class ArtifactPipelineFlowTest {
         assertThat(result.status()).isEqualTo("COMPLETED");
     }
 
+    @Test
+    void deckAndPdfUseTheExistingVersionPublicationAndDownloadChain() throws Exception {
+        for (String skill : List.of("video-deck", "lecture-notes-pdf")) {
+            String fixture = skill.equals("video-deck") ? "pipeline-deck-v1" : "pipeline-pdf-v1";
+            byte[] archive = java.util.Base64.getMimeDecoder().decode(Files.readString(Path.of(
+                    "../workers/artifact-worker/tests/pipeline/" + fixture + ".files.zip.base64")));
+            Map<String, byte[]> expected = new java.util.LinkedHashMap<>();
+            try (var zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(archive))) {
+                java.util.zip.ZipEntry entry;
+                while ((entry = zip.getNextEntry()) != null) {
+                    byte[] bytes = zip.readAllBytes();
+                    expected.put(entry.getName(), bytes);
+                    when(exports.fetch(anyString(), eq(entry.getName()))).thenReturn(bytes);
+                }
+            }
+            String workspace = workspace();
+            JsonNode created = create(workspace, upload(workspace), skill);
+            complete(created.path("task_id").asText(), fixture + ".json");
+            String job = created.path("artifact_job_id").asText();
+            JsonNode detail = data(mvc.perform(get("/api/v2/workspaces/{w}/artifact-jobs/{j}/versions/1", workspace, job))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+            assertThat(detail.path("kind").asText()).isEqualTo(skill.equals("video-deck") ? "DECK" : "DOC");
+            assertThat(detail.path("ir").path("kind").asText()).isEqualTo(detail.path("kind").asText());
+            int downloaded = 0;
+            for (JsonNode file : detail.path("files")) {
+                if (file.path("file_format").asText().equals("MARKDOWN")) continue;
+                String name = file.path("file_name").asText();
+                assertThat(expected).containsKey(name);
+                mvc.perform(get("/api/v2/workspaces/{w}/artifact-jobs/{j}/versions/1/files/{f}",
+                            workspace, job, file.path("file_id").asText()))
+                        .andExpect(status().isOk()).andExpect(content().bytes(expected.get(name)));
+                downloaded++;
+            }
+            assertThat(downloaded).isEqualTo(expected.size());
+        }
+    }
+
     private JsonNode create(String workspace, String source, String skill) throws Exception {
         return data(mvc.perform(post("/api/v2/workspaces/{w}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(

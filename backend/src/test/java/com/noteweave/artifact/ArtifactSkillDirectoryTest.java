@@ -20,12 +20,16 @@ class ArtifactSkillDirectoryTest {
     @Test
     void sharedDirectoryListsShapesAndResolvesOldAliases() {
         ArtifactSkillCatalogService service = catalog();
-        assertThat(service.listSkills()).hasSize(11);
+        assertThat(service.listSkills()).hasSize(14);
         assertThat(service.listSkills()).extracting(ArtifactSkillSummaryResponse::kind)
-                .contains("DOC", "QUIZ", "CARDS", "TREE", "TABLE");
+                .contains("DOC", "QUIZ", "CARDS", "TREE", "TABLE", "DECK");
         assertThat(service.resolveSkill("report_draft").skillKey()).isEqualTo("briefing");
         assertThat(service.resolveSkill("knowledge_blog").skillKey()).isEqualTo("blog-post");
         assertThat(service.resolveSkill("mindmap_from_workspace").skillKey()).isEqualTo("mind-map");
+        assertThat(service.resolveSkill("video_learning_deck").skillKey()).isEqualTo("video-deck");
+        assertThat(service.resolveSkill("bilibili_course_note_pdf").skillKey()).isEqualTo("lecture-notes-pdf");
+        assertThat(service.requiredFileRoles("slide-deck")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PPTX");
+        assertThat(service.requiredFileRoles("lecture-notes-pdf")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PDF");
         assertThat(service.requiredFileRoles("data-table")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_CSV");
         assertThat(new ArtifactSkillCatalogService("../skills", "../schemas", "legacy").kind("mindmap_from_workspace"))
                 .isEqualTo("TREE");

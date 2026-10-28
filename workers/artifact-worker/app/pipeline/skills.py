@@ -98,7 +98,7 @@ class SkillCatalog:
                     raise ValueError("Skill 选项或默认值无效")
             renderers = header.get("renderers")
             if not isinstance(renderers, list) or not renderers or len(renderers) != len(set(renderers)) \
-                    or "MARKDOWN" not in renderers or set(renderers) - ({"MARKDOWN", "CSV"} if kind == "TABLE" else {"MARKDOWN"}):
+                    or "MARKDOWN" not in renderers or set(renderers) - {"TABLE": {"MARKDOWN", "CSV"}, "DOC": {"MARKDOWN", "PDF"}, "DECK": {"MARKDOWN", "PPTX"}}.get(kind, {"MARKDOWN"}):
                 raise ValueError("Skill 渲染器与形态不匹配")
             aliases = header.get("aliases", [])
             if not isinstance(aliases, list) or any(not isinstance(v, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", v) for v in aliases):

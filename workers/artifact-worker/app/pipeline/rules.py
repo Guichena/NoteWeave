@@ -3,7 +3,7 @@
 
 def units(ir):
     return ir["root"]["children"] if ir["kind"] == "TREE" else ir[
-        {"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows"}[ir["kind"]]]
+        {"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows", "DECK": "slides"}[ir["kind"]]]
 
 
 def _sections(ir, value):
@@ -57,24 +57,37 @@ def _table(ir, value):
     return errors
 
 
-RULES = {"sections": ("DOC", _sections), "required_headings": ("DOC", _headings),
-         "quiz_single_answer": ("QUIZ", _quiz), "card_no_leak": ("CARDS", _cards),
-         "tree_depth": ("TREE", _tree), "table_columns": ("TABLE", _table)}
+def _deck(ir, value):
+    return [f"{slide['id']}：幻灯片要点数量不符合契约" for slide in ir["slides"]
+            if not value["min"] <= len(slide["bullets"]) <= value["max"]]
+
+
+def _figures(ir, value):
+    return [f"{item['id']}：缺少必需的关键帧插图" for item in units(ir)
+            if (value is True or item["id"] in value or item.get("heading", item.get("title")) in value)
+            and not (item.get("figure") if ir["kind"] == "DECK"
+                     else any(block["type"] == "figure" for block in item["blocks"]))]
+
+
+RULES = {"sections": ({"DOC"}, _sections), "required_headings": ({"DOC"}, _headings),
+         "quiz_single_answer": ({"QUIZ"}, _quiz), "card_no_leak": ({"CARDS"}, _cards),
+         "tree_depth": ({"TREE"}, _tree), "table_columns": ({"TABLE"}, _table),
+         "deck_bullets": ({"DECK"}, _deck), "figure_required": ({"DOC", "DECK"}, _figures)}
 
 
 def validate_contract(kind, contract):
     if not isinstance(contract, dict):
         raise ValueError("Skill 契约必须是对象")
     for key, value in contract.items():
-        if key not in RULES or RULES[key][0] != kind:
+        if key not in RULES or kind not in RULES[key][0]:
             raise ValueError(f"契约规则未注册或不适用于形态：{key}")
-        if key in {"sections", "tree_depth", "table_columns"}:
+        if key in {"sections", "tree_depth", "table_columns", "deck_bullets"}:
             allowed = {"min", "max", "min_children", "max_children"} if key == "tree_depth" else {"min", "max"}
             if not isinstance(value, dict) or set(value) - allowed or not {"min", "max"} <= value.keys() \
                     or any(type(v) is not int or v < 1 for v in value.values()) or value["min"] > value["max"] \
                     or value.get("min_children", 1) > value.get("max_children", 20):
                 raise ValueError(f"契约上下限无效：{key}")
-        elif key == "required_headings":
+        elif key == "required_headings" or (key == "figure_required" and value is not True):
             if not isinstance(value, list) or not value or any(not isinstance(v, str) or not v.strip() for v in value) or len(value) != len(set(value)):
                 raise ValueError("必需章节标题无效")
         elif value is not True:

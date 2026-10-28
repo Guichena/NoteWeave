@@ -1,6 +1,6 @@
 \documentclass[a4paper]{article}
 
-% Basic packages
+% 基础宏包
 \usepackage[fontset=fandol]{ctex}
 \usepackage{amsmath, amssymb}
 \usepackage{graphicx}
@@ -8,7 +8,7 @@
 \usepackage[most]{tcolorbox}
 \usepackage{etoolbox}
 \usepackage{listings}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 \usepackage{booktabs}
 \usepackage{subcaption}
 \usepackage{float}
@@ -18,7 +18,7 @@
     \pgfplotsset{compat=1.18}
 }{}
 
-% Highlight boxes
+% 重点提示框
 \newtcolorbox{knowledgebox}[1]{
     enhanced, colback=blue!5!white, colframe=blue!75!black, colbacktitle=blue!75!black,
     coltitle=white, fonttitle=\bfseries, title=#1, attach boxed title to top left={yshift=-2mm, xshift=2mm},
@@ -35,7 +35,7 @@
     coltitle=white, fonttitle=\bfseries, title=#1, sharp corners
 }
 
-% Listings
+% 代码排版
 \lstset{
     language=Python,
     basicstyle=\ttfamily\small,
@@ -50,47 +50,20 @@
     extendedchars=false
 }
 
-% Front-page metadata
-\newcommand{\notetitle}{课程笔记：[在此填写课程主题]}
-\newcommand{\noteauthors}{NoteWeave}
-\newcommand{\notedate}{\today}
-\newcommand{\videochannel}{[在此填写频道或作者]}
-\newcommand{\videopublishdate}{[在此填写发布日期]}
-\newcommand{\videoduration}{[在此填写视频时长]}
-\newcommand{\videourl}{}
-\newcommand{\videocoverpath}{}
+% 由流水线填充标题，不生成未知的视频元数据。
+\newcommand{\notetitle}{}
 
 \begin{document}
 
 \begin{titlepage}
 \centering
-{\Large 课程笔记\par}
+\vspace*{3cm}
+{\Large 视频讲义\par}
 \vspace{1.2cm}
 {\huge\bfseries \notetitle\par}
 \vspace{0.8cm}
-{\large \noteauthors\par}
-\vspace{0.3cm}
-{\large \notedate\par}
-\vspace{1.2cm}
-
-\ifdefempty{\videocoverpath}{
-{\small 请在生成笔记时填入视频封面图的本地路径。\par}
-}{
-\includegraphics[width=0.82\textwidth,height=0.45\textheight,keepaspectratio]{\videocoverpath}\par
-}
-
+{\large NoteWeave\par}
 \vfill
-\begin{tcolorbox}[width=0.9\textwidth, colback=black!2!white, colframe=black!60, sharp corners]
-\textbf{视频作者/频道}：\videochannel\par
-\textbf{发布日期}：\videopublishdate\par
-\textbf{视频时长}：\videoduration\par
-\textbf{视频链接}：
-\ifdefempty{\videourl}{
-未填写
-}{
-\href{\videourl}{\nolinkurl{\videourl}}
-}
-\end{tcolorbox}
 \end{titlepage}
 
 \tableofcontents
@@ -98,22 +71,7 @@
 
 %% --- 正文内容开始 --- %%
 
-% Replace this block with the generated notes.
-% Fill the metadata block above, especially \videocoverpath, so the front page
-% contains the original video cover image.
-% Keep images outside knowledgebox/importantbox/warningbox.
-% For any figure that comes from a video frame or a crop of a frame,
-% include the source time interval as a bottom footnote on the same page.
-% A stable pattern is:
-% \begin{figure}[H]
-% \centering
-% \includegraphics[width=\textwidth]{...}
-% \caption{... \protect\footnotemark}
-% \end{figure}
-% \footnotetext{视频画面时间区间：00:12:31--00:12:46。若为裁剪图，时间区间仍对应原视频画面。}
-% End the document with a final section such as:
-% \section{总结与延伸}
-% covering the speaker's closing discussion and your own synthesis.
+% 流水线在此插入正文、原始关键帧及对应的视频时间区间。
 
 %% --- 正文内容结束 --- %%
 

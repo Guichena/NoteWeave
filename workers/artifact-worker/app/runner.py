@@ -95,13 +95,13 @@ def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
             raise ValueError("legacy catalog Run cannot declare a new acquisition policy")
 
 
-def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None, frame_reader=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
     pipeline = os.environ.get("NOTEWEAVE_ARTIFACT_PIPELINE", "v2")
     if pipeline not in {"v2", "legacy"}:
         raise ValueError("NOTEWEAVE_ARTIFACT_PIPELINE 必须为 v2 或 legacy")
     if pipeline == "v2":
         from app.pipeline.runner import run
-        return run(task_input, passage_search=passage_search, client=build_default_llm_client())
+        return run(task_input, passage_search=passage_search, frame_reader=frame_reader, client=build_default_llm_client())
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)

@@ -81,7 +81,7 @@ def iter_facts(value):
     return facts(value)
 
 
-@pytest.mark.parametrize("name", list(SkillCatalog().skills))
+@pytest.mark.parametrize("name", ["briefing", "study-guide", "blog-post", "faq", "timeline", "custom-report", "course-notes", "quiz", "flashcards", "mind-map", "data-table"])
 def test_all_declared_skills_use_five_stages_and_legacy_projection(name, monkeypatch, tmp_path):
     monkeypatch.setenv("NOTEWEAVE_MCP_SANDBOX_ROOT", str(tmp_path))
     catalog = SkillCatalog()

@@ -10,7 +10,7 @@ from app.pipeline.skills import SkillCatalog
 from app.pipeline.stages import gather, plan, draft, check, render
 
 
-def run(task, *, passage_search=None, client=None, catalog=None):
+def run(task, *, passage_search=None, frame_reader=None, client=None, catalog=None):
     catalog = catalog or SkillCatalog()
     skill = catalog.resolve(task.input_payload.skill_key)
     if task.catalog_digest and task.catalog_digest != catalog.digest:
@@ -35,7 +35,7 @@ def run(task, *, passage_search=None, client=None, catalog=None):
     outline = stage("plan", "ACQUIRING", 35, lambda: plan.plan(task, skill, options, evidence, client))
     value = stage("draft", "COMPOSING", 65, lambda: draft.draft(task, skill, options, evidence, outline, schema, client))
     value, diagnostics = stage("check", "VERIFYING", 85, lambda: check.check(value, outline, skill, evidence, schema, client))
-    sections, files = stage("render", "EXPORTING", 100, lambda: render.render(value, skill, task))
+    sections, files = stage("render", "EXPORTING", 100, lambda: render.render(value, skill, task, evidence=evidence, frame_reader=frame_reader))
     payload, citations = projection.project(task, value, evidence, sections, files)
     stats.update(diagnostics)
     payload["pipeline_stats"] = stats

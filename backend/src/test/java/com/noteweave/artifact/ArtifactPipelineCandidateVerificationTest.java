@@ -58,5 +58,13 @@ class ArtifactPipelineCandidateVerificationTest {
         statement.put("text", "缓存有效期为99秒。");
         assertThatThrownBy(() -> ArtifactCandidateVerificationPolicy.validatePipeline(payload, "DOC", Set.of("source")))
                 .hasMessageContaining("数字");
+        Map<String, Object> deck = new ObjectMapper().readValue(Files.readAllBytes(Path.of(
+                "../workers/artifact-worker/tests/pipeline/pipeline-deck-v1.json")), Map.class);
+        ArtifactCandidateVerificationPolicy.validatePipeline(deck, "DECK", Set.of("source"));
+        Map<String, Object> deckIr = (Map<String, Object>) deck.get("ir");
+        Map<String, Object> slide = ((List<Map<String, Object>>) deckIr.get("slides")).get(0);
+        ((Map<String, Object>) slide.get("figure")).put("frame_id", "foreign-frame");
+        assertThatThrownBy(() -> ArtifactCandidateVerificationPolicy.validatePipeline(deck, "DECK", Set.of("source")))
+                .hasMessageContaining("关键帧");
     }
 }

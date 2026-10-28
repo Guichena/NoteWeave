@@ -62,10 +62,13 @@ def _fit_image(width: int, height: int) -> tuple[int, int, int, int]:
 
 
 def render_original_video_deck(
-    task_id: str, ir: VideoDeckIRV1, bundle: VideoMaterialBundleV1,
-    plan: VideoKnowledgePlanV1, read_file: Callable[[str], bytes],
+    task_id: str, ir: VideoDeckIRV1 | dict, bundle: VideoMaterialBundleV1 | None = None,
+    plan: VideoKnowledgePlanV1 | None = None, read_file: Callable[[str], bytes] | None = None,
+    *, evidence: dict | None = None,
 ) -> Path:
-    """Embed verified original frames without cropping; text remains editable."""
+    """嵌入原始关键帧，不裁剪图片，保留可编辑正文。"""
+    if isinstance(ir, dict):
+        return _render_deck(task_id, ir, evidence, read_file)
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
         raise ValueError("video deck task ID is unsafe")
     ir.verify_against(bundle, plan)
@@ -147,3 +150,58 @@ def verify_original_video_deck(path: Path, ir: VideoDeckIRV1) -> None:
         text = "\n".join(shape.text for shape in slide.shapes if shape.has_text_frame)
         if spec.title not in text or any(claim not in text for claim in spec.claims):
             raise ValueError(f"video deck slide {index} lost editable evidence text")
+
+
+def _render_deck(task_id, ir, evidence, frame_reader):
+    from app.pipeline.renderers.frames import read_frame, time_label
+    if ir.get("kind") != "DECK" or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
+        raise ValueError("幻灯片形态或任务编号无效")
+    presentation = Presentation()
+    presentation.slide_width, presentation.slide_height = WIDTH, HEIGHT
+    images = []
+    for index, spec in enumerate(ir["slides"], 1):
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = RGBColor(250, 249, 246)
+        title = slide.shapes.add_textbox(Inches(0.7), Inches(0.42), Inches(11.9), Inches(0.7))
+        title.text_frame.text = spec["title"]
+        p = title.text_frame.paragraphs[0]
+        p.font.name, p.font.size, p.font.bold = "Noto Sans CJK SC", Pt(_title_font_size(spec["title"])), True
+        p.font.color.rgb = RGBColor(25, 44, 62)
+        content = None
+        figure = spec.get("figure")
+        if figure:
+            content = read_frame(figure["frame_id"], evidence, frame_reader)
+            with Image.open(BytesIO(content)) as image:
+                box = _fit_image(*image.size)
+            slide.shapes.add_picture(BytesIO(content), *box[:2], width=box[2], height=box[3])
+        images.append(content)
+        claims = [bullet["text"] for bullet in spec["bullets"]]
+        body = slide.shapes.add_textbox(*(TEXT_BOX if figure else (Inches(1.1), Inches(1.6), Inches(11.1), Inches(4.7))))
+        body.text_frame.word_wrap = True
+        body.text_frame.text = "\n\n".join(claims)
+        # 无配图的页面仍按较窄栏宽估算，避免文本溢出。
+        size = _body_font_size(claims)
+        for paragraph in body.text_frame.paragraphs:
+            paragraph.font.name, paragraph.font.size = "Noto Sans CJK SC", Pt(size)
+            paragraph.font.color.rgb = RGBColor(38, 51, 60)
+        footer = slide.shapes.add_textbox(Inches(0.7), Inches(6.9), Inches(11.9), Inches(0.35))
+        footer.text_frame.text = (time_label(figure, evidence) + " · " if figure else "") + f"{index}/{len(ir['slides'])}"
+        footer.text_frame.paragraphs[0].font.size = Pt(10)
+        slide.notes_slide.notes_text_frame.text = spec.get("speaker_notes", {}).get("text", "")
+    output = resolve_mcp_sandbox_root() / "bilibili-render-pdf" / "exports" / task_id
+    output.mkdir(parents=True, exist_ok=True)
+    path = output / "learning-deck.pptx"
+    presentation.save(path)
+    saved = Presentation(path)
+    if len(saved.slides) != len(ir["slides"]):
+        raise ValueError("幻灯片保存后页数与 IR 不一致")
+    for slide, spec, content in zip(saved.slides, ir["slides"], images):
+        pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+        if len(pictures) != (1 if content else 0) or (content and (pictures[0].image.blob != content
+                or any((pictures[0].crop_left, pictures[0].crop_right, pictures[0].crop_top, pictures[0].crop_bottom)))):
+            raise ValueError("幻灯片改变或裁剪了原始关键帧")
+        text = "\n".join(shape.text for shape in slide.shapes if shape.has_text_frame)
+        if spec["title"] not in text or any(b["text"] not in text for b in spec["bullets"]):
+            raise ValueError("幻灯片丢失可编辑正文")
+    return path

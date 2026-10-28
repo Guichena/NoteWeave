@@ -117,7 +117,7 @@
     "candidate_id": "641a4b778deffecc673889cf45fcdc1be329792ad9b82cb842a30484e29ac988",
     "task_id": "pipeline-task",
     "input_snapshot_id": "input",
-    "catalog_digest": "8063a26d3a79450f5439b83e4e45758e41eda363e7a9714998a15fde2d24fa37",
+    "catalog_digest": "0dd1dffa30c1a40af4155ba00368c5a326cad5d22a2729b753b8e86b3035e07c",
     "content_sha256": "53fb4b44e785f6e8c6383e55a7a09c78afb85fc138d9b6692b3cfabb9bb2b7ed",
     "content_ir_digest": "c27cd26bb1a56c34c9cbcc7bf8912b4865e698649e0404d4d946077944926e71",
     "required_files": [

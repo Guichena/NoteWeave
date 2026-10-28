@@ -24,7 +24,7 @@ def draft(task, skill, options, evidence, outline, schema, client):
     if skill.kind == "TREE":
         value["root"] = {"id": "root", "label": outline["title"], "children": items}
     else:
-        value[{"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows"}[skill.kind]] = items
+        value[{"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows", "DECK": "slides"}[skill.kind]] = items
     if skill.kind == "TABLE":
         value["columns"] = outline["columns"]
     return value

@@ -23,11 +23,18 @@ def check(ir, outline, skill, evidence, schema, client):
                     errors.append("写作单元编号与规划不一致")
                 if skill.kind == "DOC" and item["heading"] != outline["units"][index]["heading"]:
                     errors.append("章节标题与规划不一致")
+                if skill.kind == "DECK" and item["title"] != outline["units"][index]["heading"]:
+                    errors.append("幻灯片标题与规划不一致")
                 local_rules = {k: v for k, v in skill.contract.items()
-                               if k in {"quiz_single_answer", "card_no_leak", "table_columns"}}
+                               if k in {"quiz_single_answer", "card_no_leak", "table_columns", "deck_bullets", "figure_required"}}
                 if local_rules:
-                    key = {"QUIZ": "questions", "CARDS": "cards", "TABLE": "rows"}[skill.kind]
+                    key = {"QUIZ": "questions", "CARDS": "cards", "TABLE": "rows", "DECK": "slides", "DOC": "sections"}[skill.kind]
                     errors.extend(contract_errors({**current, key: [item]}, local_rules))
+                planned_frames = set(outline["units"][index].get("frame_ids", []))
+                figures = [item["figure"]] if skill.kind == "DECK" and "figure" in item else [
+                    block for block in item.get("blocks", []) if block.get("type") == "figure"]
+                if any(figure["frame_id"] not in planned_frames for figure in figures):
+                    errors.append("插图与规划选择的关键帧不一致")
                 errors.extend(evidence_errors(item, evidence))
             if errors:
                 failed[identifier] = errors

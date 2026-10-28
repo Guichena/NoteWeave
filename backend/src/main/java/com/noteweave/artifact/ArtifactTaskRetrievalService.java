@@ -1,6 +1,9 @@
 package com.noteweave.artifact;
 
 import com.noteweave.common.BusinessException;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import com.noteweave.retrieval.qa.ScopedPassageSearch;
 import com.noteweave.worker.WorkerSourceScopeItemResponse;
 import java.nio.charset.StandardCharsets;
@@ -19,8 +22,20 @@ public class ArtifactTaskRetrievalService {
     private final ArtifactJobService jobs;
     private final ScopedPassageSearch search;
     private final JdbcTemplate jdbc;
+    private final boolean pipeline;
 
     public ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc) {
+        this(jobs, search, jdbc, false);
+    }
+
+    @Autowired
+    public ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc,
+                                        ArtifactSkillCatalogService catalog) {
+        this(jobs, search, jdbc, catalog.pipelineEnabled());
+    }
+
+    private ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc, boolean pipeline) {
+        this.pipeline = pipeline;
         this.jobs = jobs;
         this.search = search;
         this.jdbc = jdbc;
@@ -48,7 +63,7 @@ public class ArtifactTaskRetrievalService {
         LinkedHashSet<String> reasons = new LinkedHashSet<>(found.degradationReasons());
         if (found.degraded() && reasons.isEmpty()) reasons.add("ARTIFACT_RETRIEVAL_PROVIDER_DEGRADED");
         LinkedHashSet<String> seen = new LinkedHashSet<>();
-        List<ScopedPassageSearch.Passage> passages = new ArrayList<>();
+        List<Passage> passages = new ArrayList<>();
         int remaining = 65_536;
         for (ScopedPassageSearch.Passage candidate : found.passages()) {
             WorkerSourceScopeItemResponse source = scope.get(candidate.sourceId());
@@ -57,24 +72,29 @@ public class ArtifactTaskRetrievalService {
                 continue;
             }
             if (!seen.add(candidate.chunkId())) continue;
-            List<ScopedPassageSearch.Passage> rows = jdbc.query("""
-                    select sc.id, sc.chunk_no, coalesce(sc.location_info, '') as location_info, sc.content
+            List<Passage> rows = jdbc.query("""
+                    select sc.id, sc.chunk_no, coalesce(sc.location_info, '') as location_info, sc.content%s
                     from source_chunk sc
                     join source s on s.id = sc.source_id
                     join source_snapshot ss on ss.id = sc.source_snapshot_id and ss.source_id = s.id
                     where sc.id = ? and sc.workspace_id = ? and s.workspace_id = ?
                       and sc.source_id = ? and sc.source_snapshot_id = ? and s.status = 'READY'
                       and ss.parse_status = 'PARSED' and ss.index_status in ('INDEXED', 'DISABLED')
-                    """, (rs, index) -> new ScopedPassageSearch.Passage(rs.getString("id"), source.sourceId(),
+                    """.formatted(pipeline ? ", sc.part, sc.start_ms, sc.end_ms, sc.frame_ids_json, sc.source_url" : ""), (rs, index) -> new Passage(rs.getString("id"), source.sourceId(),
                     source.sourceSnapshotId(), rs.getInt("chunk_no"), source.title(),
                     rs.getString("location_info"), rs.getString("content"),
-                    Double.isFinite(candidate.score()) ? candidate.score() : 0),
+                    Double.isFinite(candidate.score()) ? candidate.score() : 0,
+                    pipeline ? (Integer) rs.getObject("part") : null,
+                    pipeline ? rs.getObject("start_ms", Long.class) : null,
+                    pipeline ? rs.getObject("end_ms", Long.class) : null,
+                    pipeline ? frameIds(rs.getString("frame_ids_json")) : null,
+                    pipeline ? rs.getString("source_url") : null),
                     candidate.chunkId(), input.workspaceId(), input.workspaceId(), source.sourceId(), source.sourceSnapshotId());
             if (rows.isEmpty()) {
                 reasons.add("ARTIFACT_RETRIEVAL_CHUNK_UNAVAILABLE");
                 continue;
             }
-            ScopedPassageSearch.Passage passage = rows.get(0);
+            Passage passage = rows.get(0);
             int size = passage.content().getBytes(StandardCharsets.UTF_8).length;
             if (passage.content().isBlank()) continue;
             if (size > remaining) {
@@ -90,11 +110,30 @@ public class ArtifactTaskRetrievalService {
         return response(input, passages, List.copyOf(reasons));
     }
 
-    private Response response(ArtifactWorkerInputResponse input, List<ScopedPassageSearch.Passage> passages,
+    private Response response(ArtifactWorkerInputResponse input, List<Passage> passages,
                               List<String> reasons) {
         return new Response(input.taskId(), input.inputSnapshotId(), List.copyOf(passages), !reasons.isEmpty(), reasons);
     }
 
-    public record Response(String taskId, String inputSnapshotId, List<ScopedPassageSearch.Passage> passages,
+    private static List<String> frameIds(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            var node = new ObjectMapper().readTree(json);
+            if (!node.isArray()) throw new IllegalArgumentException("关键帧索引必须是数组");
+            List<String> ids = new ArrayList<>();
+            for (var item : node) {
+                if (!item.isTextual() || item.asText().isBlank()) throw new IllegalArgumentException("关键帧编号无效");
+                ids.add(item.asText());
+            }
+            return List.copyOf(ids);
+        } catch (java.io.IOException ex) { throw new IllegalStateException("关键帧索引不可读取", ex); }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Passage(String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
+                          String title, String location, String content, double score,
+                          Integer part, Long startMs, Long endMs, List<String> frameIds, String sourceUrl) { }
+
+    public record Response(String taskId, String inputSnapshotId, List<Passage> passages,
                            boolean degraded, List<String> degradationReasons) { }
 }

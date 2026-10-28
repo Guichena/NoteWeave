@@ -464,6 +464,7 @@ services:
       - noteweave_v2_artifact_worker_runtime:/app/runtime
       - ./skills:/app/skills:ro
       - ./schemas:/app/schemas:ro
+      - ./workers/artifact-worker/templates:/app/templates:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18092/health', timeout=3).read()"]
       interval: 10s

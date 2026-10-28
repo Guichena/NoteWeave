@@ -56,6 +56,11 @@ def evidence_errors(value, evidence):
         if isinstance(node, dict):
             if "frame_id" in node and node["frame_id"] not in frame_ids:
                 errors.append("插图引用了素材范围外的关键帧")
+            if "frame_id" in node and isinstance(node.get("caption"), dict):
+                cited_frames = {f for a in node["caption"].get("anchors", []) if a in sentences
+                                for f in sentences[a].get("frame_ids", [])}
+                if node["frame_id"] not in cited_frames:
+                    errors.append("图注引用的素材未包含该关键帧")
             for v in node.values(): visit(v)
         elif isinstance(node, list):
             for v in node: visit(v)

@@ -79,6 +79,30 @@ class ArtifactTaskRetrievalServiceTest {
     }
 
     @Test
+    void pipelineCarriesMediaMetadataWhileLegacyKeepsTheOriginalPayload() throws Exception {
+        jdbc.execute("alter table source_chunk add part int");
+        jdbc.execute("alter table source_chunk add start_ms bigint");
+        jdbc.execute("alter table source_chunk add end_ms bigint");
+        jdbc.execute("alter table source_chunk add frame_ids_json varchar");
+        jdbc.execute("alter table source_chunk add source_url varchar");
+        jdbc.update("update source_chunk set part=2, start_ms=1000, end_ms=9000, frame_ids_json='[\"frame\"]', source_url='https://www.bilibili.com/video/BVtest' where id='good'");
+        results(candidate("good", "source", "frozen"));
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper()
+                .setPropertyNamingStrategy(com.fasterxml.jackson.databind.PropertyNamingStrategies.SNAKE_CASE);
+        var legacy = mapper.valueToTree(service.retrieve("task", "查询", 3).passages().get(0));
+        assertThat(legacy.has("frame_ids")).isFalse();
+        var catalog = mock(ArtifactSkillCatalogService.class);
+        when(catalog.pipelineEnabled()).thenReturn(true);
+        var pipeline = new ArtifactTaskRetrievalService(jobs, search, jdbc, catalog);
+        var passage = pipeline.retrieve("task", "查询", 3).passages().get(0);
+        assertThat(passage.part()).isEqualTo(2);
+        assertThat(passage.startMs()).isEqualTo(1000);
+        assertThat(passage.endMs()).isEqualTo(9000);
+        assertThat(passage.frameIds()).containsExactly("frame");
+        assertThat(mapper.valueToTree(passage).path("frame_ids").get(0).asText()).isEqualTo("frame");
+    }
+
+    @Test
     void forgedChunkIdentityCannotReadAnUnrelatedDatabaseRow() {
         results(candidate("foreign", "source", "frozen"));
         assertThat(service.retrieve("task", "查询", 3).passages()).isEmpty();

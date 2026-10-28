@@ -16,7 +16,7 @@ def schema_directory():
 
 
 def load_schema(kind, directory=None):
-    if kind not in {"DOC", "QUIZ", "CARDS", "TREE", "TABLE"}:
+    if kind not in {"DOC", "QUIZ", "CARDS", "TREE", "TABLE", "DECK"}:
         raise ValueError(f"不支持的产物形态：{kind}")
     schema = json.loads(((directory or schema_directory()) / f"{kind.lower()}.v1.json").read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
@@ -31,6 +31,6 @@ def schema_errors(value, schema):
 
 
 def item_schema(kind, schema):
-    key = {"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows"}.get(kind)
+    key = {"DOC": "sections", "QUIZ": "questions", "CARDS": "cards", "TABLE": "rows", "DECK": "slides"}.get(kind)
     item = schema["$defs"]["node"] if kind == "TREE" else schema["properties"][key]["items"]
     return {**item, "$defs": schema.get("$defs", {})}

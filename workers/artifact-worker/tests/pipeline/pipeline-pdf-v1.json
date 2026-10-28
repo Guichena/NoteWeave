@@ -1,0 +1,232 @@
+{
+  "markdown": "# 缓存学习材料\n\n## 主题0\n\n缓存有效期为30秒。\n\n缓存有效期为30秒。\n\n## 主题1\n\n缓存有效期为30秒。\n\n缓存有效期为30秒。\n\n## 主题2\n\n缓存有效期为30秒。\n\n缓存有效期为30秒。",
+  "sections": [
+    {
+      "heading": "主题0",
+      "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    },
+    {
+      "heading": "主题1",
+      "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    },
+    {
+      "heading": "主题2",
+      "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    }
+  ],
+  "content_ir": {
+    "schema_version": "artifact-content-v1",
+    "artifact_type": "DOC",
+    "title": "缓存学习材料",
+    "sections": [
+      {
+        "heading": "主题0",
+        "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      },
+      {
+        "heading": "主题1",
+        "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      },
+      {
+        "heading": "主题2",
+        "body": "缓存有效期为30秒。\n\n缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      }
+    ],
+    "markdown_sha256": "9e26492d18da46484fb11447ff741cea775473f2579266fb6fa971a3ee45ae35",
+    "content_digest": "81e43b6734e212173d457d1a2153dbd67c6271045fee325db7658ca51b118147"
+  },
+  "ir": {
+    "schema_version": 1,
+    "kind": "DOC",
+    "title": "缓存学习材料",
+    "sections": [
+      {
+        "id": "u0",
+        "heading": "主题0",
+        "blocks": [
+          {
+            "id": "p0",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "s0",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "f0",
+            "type": "figure",
+            "frame_id": "frame",
+            "caption": {
+              "text": "缓存有效期为30秒。",
+              "anchors": [
+                "s0001"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "u1",
+        "heading": "主题1",
+        "blocks": [
+          {
+            "id": "p0",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "s0",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "f0",
+            "type": "figure",
+            "frame_id": "frame",
+            "caption": {
+              "text": "缓存有效期为30秒。",
+              "anchors": [
+                "s0001"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "id": "u2",
+        "heading": "主题2",
+        "blocks": [
+          {
+            "id": "p0",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "s0",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "f0",
+            "type": "figure",
+            "frame_id": "frame",
+            "caption": {
+              "text": "缓存有效期为30秒。",
+              "anchors": [
+                "s0001"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "sentences": [
+      {
+        "id": "s0001",
+        "text": "缓存有效期为30秒。",
+        "source_id": "source",
+        "source_snapshot_id": "snapshot",
+        "chunk_id": "chunk",
+        "title": "缓存资料",
+        "part": 2,
+        "start_ms": 1000,
+        "end_ms": 9000,
+        "frame_ids": [
+          "frame"
+        ]
+      }
+    ]
+  },
+  "candidate": {
+    "candidate_id": "b2b65692894a2389ced6ca43f50a4baf66cbfb37c41cfdc98b6a40ad325a841b",
+    "task_id": "pipeline-task",
+    "input_snapshot_id": "input",
+    "catalog_digest": "0dd1dffa30c1a40af4155ba00368c5a326cad5d22a2729b753b8e86b3035e07c",
+    "content_sha256": "9e26492d18da46484fb11447ff741cea775473f2579266fb6fa971a3ee45ae35",
+    "content_ir_digest": "81e43b6734e212173d457d1a2153dbd67c6271045fee325db7658ca51b118147",
+    "required_files": [
+      {
+        "role": "PRIMARY_MARKDOWN",
+        "variant": "",
+        "sequence_no": 0,
+        "file_name": "content.md",
+        "media_type": "text/markdown; charset=UTF-8",
+        "size_bytes": 224,
+        "checksum_sha256": "9e26492d18da46484fb11447ff741cea775473f2579266fb6fa971a3ee45ae35"
+      },
+      {
+        "role": "PRIMARY_PDF",
+        "variant": "",
+        "sequence_no": 0,
+        "file_name": "lecture-notes.pdf",
+        "media_type": "application/pdf",
+        "size_bytes": 39072,
+        "checksum_sha256": "024469d599dadb3a531de007f3916b05e2204371b44779ab310a1c857769f145"
+      }
+    ]
+  },
+  "export_trace": {
+    "status": "COMPILED",
+    "format": "PDF",
+    "file_name": "lecture-notes.pdf"
+  },
+  "pipeline_stats": {
+    "version": 1,
+    "stages": {
+      "gather": {
+        "duration_ms": 0
+      },
+      "plan": {
+        "duration_ms": 0
+      },
+      "draft": {
+        "duration_ms": 0
+      },
+      "check": {
+        "duration_ms": 0
+      },
+      "render": {
+        "duration_ms": 4938
+      }
+    },
+    "repair_calls": 0,
+    "deleted_units": []
+  },
+  "verification": {
+    "status": "PASS",
+    "contract_status": "PASS",
+    "evidence_status": "PASS",
+    "failed_checks": []
+  }
+}

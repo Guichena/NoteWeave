@@ -175,6 +175,25 @@ class JavaArtifactCallbackClient:
         return {"task_id": task_id, "input_snapshot_id": input_snapshot_id,
                 "passages": [], "degraded": True, "degradation_reasons": [reason]}
 
+    def read_artifact_frame(self, task_id: str, frame_id: str) -> bytes:
+        req = request.Request(
+            f"{self.java_base_url}/internal/worker/artifact-tasks/{quote(task_id, safe='')}/frames/{quote(frame_id, safe='')}",
+            headers={"Accept": "image/png, image/jpeg",
+                     **({"X-NoteWeave-Internal-Token": self.internal_auth_token} if self.internal_auth_token else {}),
+                     **({"X-NoteWeave-Outbox-Delivery-Token": self.delivery_token} if self.delivery_token else {})})
+        try:
+            with credential_safe_urlopen(req, timeout=30) as response:
+                if response.headers.get_content_type() not in {"image/png", "image/jpeg"}:
+                    raise ValueError("任务关键帧返回了不支持的图片类型")
+                content = response.read(16_000_001)
+                if not content or len(content) > 16_000_000:
+                    raise ValueError("任务关键帧图片大小无效")
+                return content
+        except error.HTTPError as exc:
+            raise ArtifactCallbackHttpError(exc.code, "任务关键帧不可读取") from exc
+        except error.URLError as exc:
+            raise ArtifactCallbackTransportError("任务关键帧读取服务不可用") from exc
+
     def publish_parent_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
         digest = bundle.content_digest()
         receipt = _unwrap_api_response(self._request(
@@ -434,7 +453,8 @@ def run_artifact_task_with_callbacks(
                 task_input.frozen_video_knowledge_plan = plan.model_dump(mode="json")
         if isinstance(callback_client, JavaArtifactCallbackClient):
             events, result = run_artifact_task(task_input, passage_search=lambda task_id, query, limit:
-                callback_client.retrieve_passages(task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id))
+                callback_client.retrieve_passages(task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id),
+                frame_reader=lambda frame_id: callback_client.read_artifact_frame(task_id, frame_id))
         else:
             events, result = run_artifact_task(task_input)
     except Exception as exc:

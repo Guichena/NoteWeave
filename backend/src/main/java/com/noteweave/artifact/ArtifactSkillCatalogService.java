@@ -166,7 +166,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     private static final Map<String, String> RULE_KINDS = Map.of(
             "sections", "DOC", "required_headings", "DOC", "quiz_single_answer", "QUIZ",
-            "card_no_leak", "CARDS", "tree_depth", "TREE", "table_columns", "TABLE");
+            "card_no_leak", "CARDS", "tree_depth", "TREE", "table_columns", "TABLE", "deck_bullets", "DECK");
 
     @SuppressWarnings("unchecked")
     private static Map<String, Object> loadDirectoryCatalog(Path directory, Path schemas) throws Exception {
@@ -197,7 +197,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             if (!name.equals(path.getParent().getFileName().toString()) || !name.matches("[a-z][a-z0-9-]*")
                     || !names.add(name) || !(header.get("description") instanceof String) || ((String) header.get("description")).isBlank()
                     || !(header.get("version") instanceof Integer version) || version < 1
-                    || !Set.of("DOC", "QUIZ", "CARDS", "TREE", "TABLE").contains(kind)) {
+                    || !Set.of("DOC", "QUIZ", "CARDS", "TREE", "TABLE", "DECK").contains(kind)) {
                 throw new IllegalStateException("Skill 名称、形态、描述或版本无效");
             }
             Map<String, Object> shape = new ObjectMapper().readValue(Files.readAllBytes(
@@ -222,7 +222,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             }
             if (!(header.get("renderers") instanceof List<?> renderers) || !renderers.contains("MARKDOWN")
                     || renderers.size() != Set.copyOf(renderers).size()
-                    || !(kind.equals("TABLE") ? Set.of("MARKDOWN", "CSV") : Set.of("MARKDOWN")).containsAll(renderers)) {
+                    || !(switch (kind) { case "TABLE" -> Set.of("MARKDOWN", "CSV"); case "DOC" -> Set.of("MARKDOWN", "PDF"); case "DECK" -> Set.of("MARKDOWN", "PPTX"); default -> Set.of("MARKDOWN"); }).containsAll(renderers)) {
                 throw new IllegalStateException("Skill 渲染器与形态不匹配");
             }
             Object rawAliases = header.getOrDefault("aliases", List.of());
@@ -242,7 +242,11 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             entry.put("graph_key", kind);
             entry.put("graph_definition", Map.of());
             entry.put("action_key", kind);
-            entry.put("required_file_roles", renderers.contains("CSV") ? List.of("PRIMARY_MARKDOWN", "PRIMARY_CSV") : List.of("PRIMARY_MARKDOWN"));
+            List<String> roles = new ArrayList<>(List.of("PRIMARY_MARKDOWN"));
+            if (renderers.contains("CSV")) roles.add("PRIMARY_CSV");
+            if (renderers.contains("PDF")) roles.add("PRIMARY_PDF");
+            if (renderers.contains("PPTX")) roles.add("PRIMARY_PPTX");
+            entry.put("required_file_roles", List.copyOf(roles));
             entry.put("output_contract", Map.of("citation", Map.of("density", "PER_SECTION")));
             entries.add(entry);
             digest.update(("skills/" + name + "/SKILL.md\0").getBytes(StandardCharsets.UTF_8));
@@ -276,8 +280,8 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         for (var entry : contract.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
-            if (!kind.equals(RULE_KINDS.get(key))) throw new IllegalStateException("契约规则未注册或不适用于形态：" + key);
-            if (Set.of("sections", "tree_depth", "table_columns").contains(key)) {
+            if (!(key.equals("figure_required") ? Set.of("DOC", "DECK").contains(kind) : kind.equals(RULE_KINDS.get(key)))) throw new IllegalStateException("契约规则未注册或不适用于形态：" + key);
+            if (Set.of("sections", "tree_depth", "table_columns", "deck_bullets").contains(key)) {
                 Set<String> allowed = key.equals("tree_depth") ? Set.of("min", "max", "min_children", "max_children") : Set.of("min", "max");
                 if (!(value instanceof Map<?, ?> bounds) || !allowed.containsAll(bounds.keySet())
                         || !(bounds.get("min") instanceof Integer min) || !(bounds.get("max") instanceof Integer max)
@@ -286,7 +290,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                             && (Integer) bounds.get("min_children") > (Integer) bounds.get("max_children"))) {
                     throw new IllegalStateException("契约上下限无效：" + key);
                 }
-            } else if (key.equals("required_headings")) {
+            } else if ((key.equals("required_headings") || key.equals("figure_required") && !Boolean.TRUE.equals(value))) {
                 if (!(value instanceof List<?> list) || list.isEmpty()
                         || list.stream().anyMatch(v -> !(v instanceof String text) || text.isBlank())
                         || list.size() != Set.copyOf(list).size()) throw new IllegalStateException("必需章节标题无效");
