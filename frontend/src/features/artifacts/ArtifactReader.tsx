@@ -12,7 +12,7 @@ import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
 import { ArtifactVerificationPanel } from "./ArtifactVerificationPanel";
-import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
+import { ArtifactMindMapPreview } from "./ArtifactMindMapPreview";
 import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
 import { buildArtifactRuntimeDetailSections } from "./artifactRuntimeTraceDetails";
 import {
@@ -98,6 +98,7 @@ export function ArtifactReader(props: ArtifactReaderProps) {
   const pdfReady = version?.runtime_trace?.export_trace?.status === "COMPILED"
     && !files.some((file) => file.file_format === "PDF");
   const regenerating = isArtifactOutputActive(item);
+  const isTree = version != null && "kind" in version && version.kind === "TREE";
 
   function runMenuAction(action: () => void | Promise<unknown>) {
     menuRef.current?.removeAttribute("open");
@@ -238,14 +239,14 @@ export function ArtifactReader(props: ArtifactReaderProps) {
             <ArtifactVerificationPanel verification={version.verification} />
             <ArtifactProcessPanel version={version} />
             <article className="artifact-reader-content">
-              {isMindMapArtifact(version.skill_key) ? (
+              {isTree ? (
                 <ArtifactMindMapPreview title={title} markdown={version.content_markdown} variant="inline" />
               ) : null}
               {version.skill_key === "video_learning_deck" && files.length > 0 ? (
                 <ArtifactSlidePreview workspaceId={workspaceId} artifactJobId={item.artifactJobId}
                   versionNo={versionNo} files={files} api={api} />
               ) : null}
-              {isMindMapArtifact(version.skill_key) ? null : (
+              {isTree ? null : (
                 <MarkdownSurface className="artifact-reader-markdown" content={stripLeadingTitle(version.content_markdown, title)} />
               )}
             </article>
