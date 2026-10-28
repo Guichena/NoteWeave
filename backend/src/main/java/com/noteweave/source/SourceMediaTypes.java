@@ -24,7 +24,7 @@ public final class SourceMediaTypes {
     }
 
     public static boolean isMedia(String mimeType) {
-        return EXTENSION_MIME.containsValue(normalize(mimeType));
+        return EXTENSION_MIME.containsValue(normalize(mimeType)) || SourceLinkService.LINK_MIME.equals(normalize(mimeType));
     }
 
     /** 按文件头判断内容是否与声明的音视频类型相符，避免把任意二进制文件当作音频交给转写。 */

@@ -40,6 +40,10 @@ public class SourceService {
     private final ApplicationEventPublisher eventPublisher;
     private final RunReplayRedactionService runReplayRedactionService;
     private final ResearchGeneratedSourceReadGate researchGeneratedSourceReadGate;
+    private SourceFrameService mediaFrames;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMediaFrames(SourceFrameService mediaFrames) { this.mediaFrames = mediaFrames; }
 
     public SourceService(
             JdbcTemplate jdbcTemplate,
@@ -110,7 +114,8 @@ public class SourceService {
                         parseTaskIds.get(sourceId),
                         stage.stage(),
                         stage.attempts(),
-                        stage.nextRetryAt()
+                        stage.nextRetryAt(),
+                        metadata != null && metadata.has("media_stats")
                 );
             }, workspaceId);
         } catch (RuntimeException exception) {
@@ -195,6 +200,7 @@ public class SourceService {
                 """, sourceId);
         runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         cancelPendingSourceTasks(workspaceId, sourceId);
+        if (mediaFrames != null) mediaFrames.enqueueDeletion(workspaceId, sourceId);
         if (releaseFileObject(source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
         sourceCatalogVersionService.bump(workspaceId);
         String wikiTaskId = wikiCommandPort.requestSourceRetract(workspaceId, sourceId, source.title());

@@ -4,6 +4,7 @@ import { formatRelativeTime } from "../../shared/util/datetime";
 import type { ExecutionSnapshot } from "../executions/model";
 import type { SourceAsset } from "./model";
 import { sourceKind } from "./sourceFiles";
+import { SourceMediaPreview } from "./SourceMediaPreview";
 import {
   buildSourcePipeline,
   buildSourceTaskEntries,
@@ -14,6 +15,7 @@ import {
 
 type SourceLibraryRowProps = {
   source: SourceAsset;
+  workspaceId?: string;
   expanded: boolean;
   onToggle: () => void;
   busy: boolean;
@@ -87,6 +89,7 @@ export function SourceLibraryRow(props: SourceLibraryRowProps) {
         </div>
       </div>
       {expanded ? (
+        <>
         <SourceProcessingDetail
           id={detailId}
           source={source}
@@ -95,6 +98,8 @@ export function SourceLibraryRow(props: SourceLibraryRowProps) {
           recovery={props.recovery}
           onReprocess={props.onReprocess}
         />
+        {source.media_available && props.workspaceId ? <SourceMediaPreview workspaceId={props.workspaceId} sourceId={source.source_id} /> : null}
+        </>
       ) : null}
     </article>
   );

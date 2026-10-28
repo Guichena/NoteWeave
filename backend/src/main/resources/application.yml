@@ -215,6 +215,29 @@ noteweave:
     transcription-submission-delay-ms: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_DELAY_MS:5000}
     transcription-submission-batch-size: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_BATCH_SIZE:4}
     transcription-submission-lease-seconds: ${NOTEWEAVE_TRANSCRIPTION_SUBMISSION_LEASE_SECONDS:300}
+  media-mcp:
+    # Java 经 Artifact Worker 调用；同步列出服务配置，避免部署参数分散。
+    url: ${NOTEWEAVE_MEDIA_MCP_URL:http://localhost:18094/mcp}
+    client-auth-token: ${NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN:}
+    client-timeout-seconds: ${NOTEWEAVE_MEDIA_MCP_TIMEOUT_SECONDS:3660}
+    auth-token: ${MEDIA_MCP_AUTH_TOKEN:}
+    input-root: ${MEDIA_MCP_INPUT_ROOT:../artifact-worker/runtime/inputs}
+    timeout-seconds: ${MEDIA_MCP_TIMEOUT_SECONDS:3600}
+    max-duration-ms: ${MEDIA_MCP_MAX_DURATION_MS:7200000}
+    max-chars: ${MEDIA_MCP_MAX_CHARS:2000000}
+    max-frames: ${MEDIA_MCP_MAX_FRAMES:128}
+    max-candidates: ${MEDIA_MCP_MAX_CANDIDATES:4096}
+    phash-threshold: ${MEDIA_MCP_PHASH_THRESHOLD:8}
+    scene-threshold: ${MEDIA_MCP_SCENE_THRESHOLD:0.3}
+    asr-model: ${MEDIA_MCP_ASR_MODEL:small}
+    asr-language: ${MEDIA_MCP_ASR_LANGUAGE:zh}
+    asr-device: ${MEDIA_MCP_ASR_DEVICE:cpu}
+    model-cache: ${MEDIA_MCP_MODEL_CACHE:./runtime/models}
+    bilibili-cookies-file: ${MEDIA_MCP_BILIBILI_COOKIES_FILE:}
+    vision-enabled: ${MEDIA_MCP_VISION_ENABLED:false}
+    vision-endpoint: ${MEDIA_MCP_VISION_ENDPOINT:https://vision.example.invalid/v1/chat/completions}
+    vision-model: ${MEDIA_MCP_VISION_MODEL:placeholder}
+    vision-api-key: ${MEDIA_MCP_VISION_API_KEY:}
   kafka:
     enabled: ${NOTEWEAVE_KAFKA_ENABLED:true}
     instance-id: ${NOTEWEAVE_KAFKA_INSTANCE_ID:${HOSTNAME:noteweave-backend-local}}

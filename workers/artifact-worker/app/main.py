@@ -102,7 +102,7 @@ from app.writeback_runtime import (
     list_writeback_requests,
 )
 from app.system_mcp_executor import recover_system_mcp_acquisition_operations
-from app.source_transcription import (accept_source_transcription, recover_source_transcriptions,
+from app.source_transcription import (accept_source_transcription, accept_video_link, recover_source_transcriptions,
     start_source_transcription_pool, shutdown_source_transcriptions, TranscriptionCapacityExceeded)
 
 settings = load_settings()
@@ -652,6 +652,39 @@ def ack_acquisition_callback(
 
 
 _MAX_TRANSCRIPTION_BYTES = 128 * 1024 * 1024
+
+
+class VideoLinkRequest(BaseModel):
+    workspace_id: str
+    source_id: str
+    snapshot_id: str
+    task_id: str
+    source_url: str
+    parts: list[int]
+    title: str = "视频资料"
+
+
+class VideoInfoRequest(BaseModel):
+    source_url: str
+
+
+@app.post("/internal/source-video-info")
+def preview_source_video(body: VideoInfoRequest) -> dict:
+    from app.media_mcp_client import call_media_tool
+    try:
+        return call_media_tool("get_video_info", {"source_url": body.source_url})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/internal/source-video-parses", status_code=202)
+def submit_source_video(body: VideoLinkRequest) -> dict:
+    try:
+        return accept_video_link(**body.model_dump())
+    except TranscriptionCapacityExceeded as exc:
+        raise HTTPException(status_code=429, detail=str(exc), headers={"Retry-After": "5"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/internal/source-transcriptions", status_code=202)

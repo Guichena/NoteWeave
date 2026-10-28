@@ -66,7 +66,7 @@ export function validateSourceFile(file: File, formats: SourceFormat[] = DEFAULT
 export function sourceKind(source: { title: string; source_type?: string }): "pdf" | "doc" | "data" | "web" | "note" | "media" {
   const type = (source.source_type || "").toUpperCase();
   const extension = fileExtension(source.title);
-  if (MEDIA_SOURCE_EXTENSIONS.has(extension)) return "media";
+  if (MEDIA_SOURCE_EXTENSIONS.has(extension) || type === "VIDEO" || type === "AUDIO") return "media";
   if (type.includes("PDF") || extension === "pdf") return "pdf";
   if (type.includes("CSV") || type.includes("JSON") || extension === "csv" || extension === "json") return "data";
   if (type.includes("WEB") || type.includes("URL") || type.includes("HTML")) return "web";

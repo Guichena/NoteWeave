@@ -79,10 +79,23 @@ public class DocumentChunker {
             int tokens,
             StructureMetadata structureMetadata,
             @JsonProperty("text_origin") DocumentElement.TextOrigin textOrigin,
-            @JsonProperty("ocr_confidence") Double ocrConfidence
+            @JsonProperty("ocr_confidence") Double ocrConfidence,
+            Integer part,
+            @JsonProperty("start_ms") Long startMs,
+            @JsonProperty("end_ms") Long endMs,
+            @JsonProperty("frame_ids") List<String> frameIds,
+            @JsonProperty("source_url") String sourceUrl
     ) {
         public DocumentChunk {
             DocumentElement.validateTextSource(textOrigin, ocrConfidence);
+            frameIds = frameIds == null ? List.of() : List.copyOf(frameIds);
+        }
+
+        public DocumentChunk(String headingPath, String content, Integer pageStart, Integer pageEnd,
+                             String timeStart, String timeEnd, int tokens, StructureMetadata structureMetadata,
+                             DocumentElement.TextOrigin textOrigin, Double ocrConfidence) {
+            this(headingPath, content, pageStart, pageEnd, timeStart, timeEnd, tokens, structureMetadata,
+                    textOrigin, ocrConfidence, null, null, null, List.of(), null);
         }
 
         public DocumentChunk(String headingPath, String content, Integer pageStart, Integer pageEnd,
@@ -196,6 +209,9 @@ public class DocumentChunker {
         for (int index = 0; index < document.elements().size(); index++) {
             DocumentElement element = document.elements().get(index);
             if (element.text() == null || element.text().isBlank()) continue;
+            if (!buffer.isEmpty() && !java.util.Objects.equals(buffer.get(0).element().part(), element.part())) {
+                flushTyped(chunks, buffer);
+            }
             boolean heading = element.elementType() == DocumentElement.ElementType.TITLE
                     || element.elementType() == DocumentElement.ElementType.SECTION_HEADER;
             if (heading) {
@@ -270,8 +286,19 @@ public class DocumentChunker {
                         / characters;
             }
         }
+        Integer part = parts.get(0).element().part();
+        Long startMs = part == null ? null : parts.stream().mapToLong(item -> item.element().startMs()).min().orElseThrow();
+        Long endMs = part == null ? null : parts.stream().mapToLong(item -> item.element().endMs()).max().orElseThrow();
+        List<String> frameIds = parts.stream().flatMap(item -> item.element().frameIds().stream()).distinct().toList();
         return new DocumentChunk(truncate(String.join(PATH_SEPARATOR, path), HEADING_PATH_MAX_CHARS), text,
-                start, end, null, null, estimate, metadata, origin, confidence);
+                start, end, clock(startMs), clock(endMs), estimate, metadata, origin, confidence,
+                part, startMs, endMs, frameIds, parts.get(0).element().sourceUrl());
+    }
+
+    private static String clock(Long ms) {
+        if (ms == null) return null;
+        long seconds = ms / 1000;
+        return "%02d:%02d:%02d".formatted(seconds / 3600, seconds / 60 % 60, seconds % 60);
     }
 
     /** 不可拆结构也不在阅读窗口阶段被重新切开。 */

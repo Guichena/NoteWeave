@@ -47,6 +47,11 @@ public class SourceTranscriptionService {
         }
         if (submissions != null && !submissions.acceptsCallback(snapshotId, callback.taskId())) return false;
         if ("COMPLETED".equals(callback.status())) {
+            if (callback.mediaDocument() != null) {
+                boolean accepted = parseService.acceptMediaDocument(callback.workspaceId(), callback.sourceId(), snapshotId, callback.mediaDocument());
+                if (accepted) completeSubmission(snapshotId, callback.taskId());
+                return accepted;
+            }
             String transcript = callback.transcriptText() == null ? "" : callback.transcriptText().trim();
             if (transcript.isBlank()) {
                 fail(callback.workspaceId(), callback.sourceId(), snapshotId, "SOURCE_TRANSCRIPT_EMPTY",
@@ -136,7 +141,8 @@ public class SourceTranscriptionService {
             Integer correctedLineCount,
             String errorCode,
             String errorMessage,
-            String taskId
+            String taskId,
+            @com.fasterxml.jackson.annotation.JsonProperty("media_document") SourceMediaDocument mediaDocument
     ) {
         public TranscriptionCallback {
             if (!"COMPLETED".equals(status) && !"FAILED".equals(status)) {
@@ -153,7 +159,14 @@ public class SourceTranscriptionService {
                 String language, Double durationSeconds, Integer segmentCount, Integer correctedLineCount,
                 String errorCode, String errorMessage) {
             this(workspaceId, sourceId, status, transcriptText, language, durationSeconds, segmentCount,
-                    correctedLineCount, errorCode, errorMessage, null);
+                    correctedLineCount, errorCode, errorMessage, null, null);
+        }
+
+        public TranscriptionCallback(String workspaceId, String sourceId, String status, String transcriptText,
+                String language, Double durationSeconds, Integer segmentCount, Integer correctedLineCount,
+                String errorCode, String errorMessage, String taskId) {
+            this(workspaceId, sourceId, status, transcriptText, language, durationSeconds, segmentCount,
+                    correctedLineCount, errorCode, errorMessage, taskId, null);
         }
     }
 

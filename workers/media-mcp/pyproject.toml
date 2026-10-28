@@ -1,0 +1,24 @@
+[project]
+name = "noteweave-media-mcp"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "mcp>=1.30,<2",
+  "httpx>=0.28,<1",
+  "Pillow>=11,<13",
+  "imagehash>=4.3,<5",
+  "faster-whisper>=1.2.1,<2",
+  "av>=15,<16",
+  "yt-dlp>=2025.6.30,<2027",
+  "uvicorn>=0.32,<1",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=9,<10"]
+
+[tool.setuptools.packages.find]
+include = ["media_mcp*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

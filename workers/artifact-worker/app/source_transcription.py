@@ -1,5 +1,5 @@
-"""资料转写：接收 Java Host 发来的音视频原件，通过系统 MCP 服务的 transcribe_local_audio
-工具（faster-whisper）生成带时间戳的文字稿，完成后回调 Java 的
+"""资料解析：接收 Java Host 发来的音视频或视频链接，通过独立 media-mcp
+生成带时间戳和关键帧的图文文档，完成后回调 Java 的
 /internal/worker/source-transcriptions/{snapshot_id}。
 
 转写在固定工作线程和有界队列中执行；完成结果落盘后回调，确认回调后才清理原件。
@@ -22,14 +22,14 @@ from typing import Callable
 from urllib import error, request
 
 from app.config import load_settings, resolve_mcp_sandbox_root
-from app.custom_mcp_executor import _call_custom_mcp_tool
+from app.media_mcp_client import call_media_tool
 from app.llm_client import LlmClient, build_default_llm_client
 from app.error_sanitizer import sanitize_error_message
-from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID, resolve_system_mcp_server
 
 logger = logging.getLogger(__name__)
 
 MEDIA_SUFFIXES = {
+    "application/vnd.noteweave.bilibili-link+json": ".json",
     "audio/mpeg": ".mp3",
     "audio/mp4": ".m4a",
     "audio/wav": ".wav",
@@ -463,6 +463,23 @@ def accept_source_transcription(
     return {"accepted": True, "snapshot_id": snapshot_id, "duplicate": False}
 
 
+def accept_video_link(*, workspace_id: str, source_id: str, snapshot_id: str, task_id: str,
+                      source_url: str, parts: list[int], title: str, run_async: bool = True) -> dict:
+    """链接清单沿用原有任务目录、容量控制与回调检查点，不保存远程原视频。"""
+    from urllib.parse import urlsplit
+    parsed = urlsplit(source_url)
+    if (parsed.scheme != "https" or parsed.hostname != "www.bilibili.com" or parsed.username
+            or parsed.password or parsed.port not in (None, 443)
+            or not re.fullmatch(r"/video/(BV[0-9A-Za-z]{10}|av[0-9]+)/?", parsed.path)):
+        raise ValueError("视频链接无效")
+    if not parts or len(parts) > 1000 or len(set(parts)) != len(parts) or any(type(part) is not int or not 1 <= part <= 1000 for part in parts):
+        raise ValueError("所选分 P 无效")
+    return accept_source_transcription(workspace_id=workspace_id, source_id=source_id, snapshot_id=snapshot_id,
+        task_id=task_id, file_name="video-link.json", mime_type="application/vnd.noteweave.bilibili-link+json",
+        content=json.dumps({"source_url": source_url, "parts": sorted(parts), "title": title}, ensure_ascii=False).encode("utf-8"),
+        run_async=run_async)
+
+
 def recover_source_transcriptions() -> list[str]:
     """接纳首批磁盘任务；工作线程会持续补入后续 backlog。"""
     pool = start_source_transcription_pool()
@@ -474,7 +491,7 @@ def recover_source_transcriptions() -> list[str]:
 def run_transcription_job(
     job: TranscriptionJob,
     *,
-    call_tool: Callable[[object, dict[str, object]], dict[str, object]] = _call_custom_mcp_tool,
+    call_tool: Callable[[str, dict[str, object]], dict[str, object]] = call_media_tool,
     post_callback: Callable[[str, dict[str, object]], bool | CallbackAcknowledgement] | None = None,
     llm_client: LlmClient | None | bool = True,
 ) -> dict[str, object]:
@@ -524,32 +541,39 @@ def run_transcription_job(
 
 def _transcribe_payload(job, output_dir, call_tool, llm_client):
     try:
-        server = resolve_system_mcp_server(SYSTEM_BILIBILI_SERVER_ID)
-        result = call_tool(server, {
-            "tool_name": "transcribe_local_audio",
-            "tool_arguments": {
-                "input_path": str(job.media_path),
-                "output_dir": str(output_dir),
-                "model": job.model,
-                "language": job.language,
-                "device": job.device,
-                "skip_existing": False,
-                "json_output": True,
-            },
-        })
-        transcript = _read_transcript(result, expected_dir=output_dir)
-        lines = str(transcript["text"]).split("\n") if transcript["text"] else []
+        if job.mime_type == "application/vnd.noteweave.bilibili-link+json":
+            link = _strict_json(job.media_path)
+            document = call_tool("parse_video", {"source_url": link["source_url"], "parts": link["parts"]})
+        else:
+            reference = job.media_path.resolve().relative_to((_sandbox_root() / "inputs").resolve()).as_posix()
+            document = call_tool("parse_media", {"file_ref": reference, "title": job.file_name})
+        segments = document.get("segments")
+        stats = document.get("stats")
+        if not isinstance(segments, list) or not segments or not isinstance(stats, dict):
+            raise ValueError("媒体解析结果缺少片段或统计")
+        lines = []
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            # 没有语音的静态画面仍可通过实际 OCR 内容成为可检索资料。
+            if not text:
+                text = "\n".join(str(frame.get("caption", "")) + "\n" + str(frame.get("ocr_text", ""))
+                                 for frame in segment.get("frames", [])).strip() or "关键帧"
+            lines.append(f"[{_clock(segment['start_ms'] / 1000)}] {text}")
         corrector = build_default_llm_client() if llm_client is True else llm_client
         corrected_lines, corrected_count = correct_transcript(lines, corrector) if corrector else (lines, 0)
+        for segment, original, corrected in zip(segments, lines, corrected_lines):
+            if corrected != original and segment.get("text"):
+                segment["text"] = _TIMESTAMP.sub("", corrected, count=1)
         payload: dict[str, object] = {
             "workspace_id": job.workspace_id,
             "source_id": job.source_id,
             "status": "COMPLETED",
             "transcript_text": "\n".join(corrected_lines),
             "corrected_line_count": corrected_count,
-            "language": transcript["language"],
-            "duration_seconds": transcript["duration"],
-            "segment_count": transcript["segment_count"],
+            "language": job.language,
+            "duration_seconds": stats.get("duration_ms", 0) / 1000,
+            "segment_count": len(segments),
+            "media_document": document,
         }
         _validate_callback_payload(job, {**payload, **({"task_id": job.task_id} if job.task_id else {})})
     except Exception as exc:  # noqa: BLE001 - 任何失败都要回调 Java，避免资料停在转写中
@@ -568,6 +592,8 @@ def _validate_callback_payload(job, payload):
     import math
     identity_fields = {"workspace_id", "source_id", "status"} | ({"task_id"} if job.task_id else set())
     complete_fields = {"transcript_text", "corrected_line_count", "language", "duration_seconds", "segment_count"}
+    if "media_document" in payload:
+        complete_fields.add("media_document")
     failure_fields = {"error_code", "error_message"}
     if (not isinstance(payload, dict) or payload.get("workspace_id") != job.workspace_id or payload.get("source_id") != job.source_id
             or payload.get("task_id", "") != job.task_id or payload.get("status") not in {"COMPLETED", "FAILED"}):

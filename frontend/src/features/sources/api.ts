@@ -24,6 +24,22 @@ import {
 export class SourcesApi {
   constructor(private readonly client: ApiClient = apiClient) {}
 
+  previewLink(workspaceId: string, sourceUrl: string) {
+    return this.client.post<import("./model").SourceVideoInfo>(`/api/v2/workspaces/${workspaceId}/sources/links/preview`, { source_url: sourceUrl });
+  }
+
+  addLink(workspaceId: string, sourceUrl: string, parts: number[]) {
+    return this.client.post<{ source_id: string; snapshot_id: string; task_id: string }>(`/api/v2/workspaces/${workspaceId}/sources/links`, { source_url: sourceUrl, parts });
+  }
+
+  readMedia(workspaceId: string, sourceId: string) {
+    return this.client.get<import("./model").SourceMediaDocument>(`/api/v2/workspaces/${workspaceId}/sources/${sourceId}/media`);
+  }
+
+  readFrame(workspaceId: string, sourceId: string, frameId: string) {
+    return this.client.blob(`/api/v2/workspaces/${workspaceId}/sources/${sourceId}/frames/${encodeURIComponent(frameId)}`);
+  }
+
   list(workspaceId: string) {
     return this.client.get<SourceAsset[]>(`/api/v2/workspaces/${workspaceId}/sources`);
   }
