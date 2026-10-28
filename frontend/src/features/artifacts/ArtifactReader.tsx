@@ -8,12 +8,11 @@ import {
   MoreHorizontal,
   X
 } from "lucide-react";
-import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
 import { ArtifactVerificationPanel } from "./ArtifactVerificationPanel";
 import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
-import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
+import { ArtifactKindView } from "./views/ArtifactKindView";
 import { buildArtifactRuntimeDetailSections } from "./artifactRuntimeTraceDetails";
 import {
   buildArtifactProcessView,
@@ -98,7 +97,9 @@ export function ArtifactReader(props: ArtifactReaderProps) {
   const pdfReady = version?.runtime_trace?.export_trace?.status === "COMPILED"
     && !files.some((file) => file.file_format === "PDF");
   const regenerating = isArtifactOutputActive(item);
-  const isTree = isMindMapArtifact(version?.kind);
+  const kind = version?.kind ?? "";
+  const ir = version != null && "ir" in version ? version.ir : null;
+  const isTree = isMindMapArtifact(kind);
 
   function runMenuAction(action: () => void | Promise<unknown>) {
     menuRef.current?.removeAttribute("open");
@@ -242,12 +243,10 @@ export function ArtifactReader(props: ArtifactReaderProps) {
               {isTree ? (
                 <ArtifactMindMapPreview title={title} markdown={version.content_markdown} variant="inline" />
               ) : null}
-              {version.skill_key === "video_learning_deck" && files.length > 0 ? (
-                <ArtifactSlidePreview workspaceId={workspaceId} artifactJobId={item.artifactJobId}
-                  versionNo={versionNo} files={files} api={api} />
-              ) : null}
               {isTree ? null : (
-                <MarkdownSurface className="artifact-reader-markdown" content={stripLeadingTitle(version.content_markdown, title)} />
+                <ArtifactKindView key={version.version_id} kind={kind} ir={ir} workspaceId={workspaceId}
+                  artifactJobId={item.artifactJobId} versionNo={versionNo} files={files} api={api}
+                  markdown={stripLeadingTitle(version.content_markdown, title)} />
               )}
             </article>
           </>
