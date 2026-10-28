@@ -176,6 +176,7 @@ public class ArtifactExportService {
             if ("PRIMARY_MARKDOWN".equals(role) || "PRIMARY_PDF".equals(role)) continue;
             String format = switch (role) {
                 case "PRIMARY_PPTX" -> "PPTX";
+                case "PRIMARY_CSV" -> "CSV";
                 case "SOURCE_MD" -> MARKDOWN;
                 case "SLIDE_PREVIEW" -> "PNG";
                 default -> throw invalidManifest();
@@ -183,11 +184,13 @@ public class ArtifactExportService {
             String mediaType = switch (format) {
                 case "PPTX" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation";
                 case "PNG" -> "image/png";
+                case "CSV" -> "text/csv; charset=UTF-8";
                 default -> "text/markdown; charset=UTF-8";
             };
             String extension = switch (format) {
                 case "PPTX" -> ".pptx";
                 case "PNG" -> ".png";
+                case "CSV" -> ".csv";
                 default -> ".md";
             };
             String name = String.valueOf(entry.get("file_name"));
@@ -309,7 +312,7 @@ public class ArtifactExportService {
         for (PreparedFile file : files) {
             String key = file.role() + ":" + file.variant() + ":" + file.sequenceNo();
             if (!fileKeys.add(key) || !java.util.Set.of(
-                    "PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW"
+                    "PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW", "PRIMARY_CSV"
             ).contains(file.role()) || file.variant() == null
                     || !file.variant().matches("[A-Za-z0-9_-]{0,64}")
                     || file.sequenceNo() < 0 || file.sequenceNo() > 10_000) {
@@ -320,6 +323,7 @@ public class ArtifactExportService {
                     "PRIMARY_MARKDOWN", MARKDOWN,
                     "PRIMARY_PDF", PDF,
                     "PRIMARY_PPTX", "PPTX",
+                    "PRIMARY_CSV", "CSV",
                     "SOURCE_MD", MARKDOWN,
                     "SLIDE_PREVIEW", "PNG"
             ).get(file.role()).equals(file.format())) {

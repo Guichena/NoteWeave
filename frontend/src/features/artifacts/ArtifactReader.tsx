@@ -12,7 +12,7 @@ import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
 import { ArtifactVerificationPanel } from "./ArtifactVerificationPanel";
-import { ArtifactMindMapPreview } from "./ArtifactMindMapPreview";
+import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
 import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
 import { buildArtifactRuntimeDetailSections } from "./artifactRuntimeTraceDetails";
 import {
@@ -98,7 +98,7 @@ export function ArtifactReader(props: ArtifactReaderProps) {
   const pdfReady = version?.runtime_trace?.export_trace?.status === "COMPILED"
     && !files.some((file) => file.file_format === "PDF");
   const regenerating = isArtifactOutputActive(item);
-  const isTree = version != null && "kind" in version && version.kind === "TREE";
+  const isTree = isMindMapArtifact(version?.kind);
 
   function runMenuAction(action: () => void | Promise<unknown>) {
     menuRef.current?.removeAttribute("open");

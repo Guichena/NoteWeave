@@ -49,6 +49,10 @@ spring:
       acks: all
 
 noteweave:
+  artifact:
+    pipeline: ${NOTEWEAVE_ARTIFACT_PIPELINE:v2}
+    skills-dir: ${NOTEWEAVE_SKILLS_DIR:../skills}
+    schemas-dir: ${NOTEWEAVE_SCHEMAS_DIR:../schemas}
   context:
     v2:
       shadow-enabled: ${NOTEWEAVE_CONTEXT_V2_SHADOW_ENABLED:false}

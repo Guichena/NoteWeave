@@ -1,0 +1,172 @@
+{
+  "markdown": "# 缓存学习材料\n\n## 缓存学习材料\n\n| 概念 | 说明 |\n| --- | --- |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |",
+  "sections": [
+    {
+      "heading": "缓存学习材料",
+      "body": "| 概念 | 说明 |\n| --- | --- |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |",
+      "source_refs": [
+        "缓存资料"
+      ]
+    }
+  ],
+  "content_ir": {
+    "schema_version": "artifact-content-v1",
+    "artifact_type": "TABLE",
+    "title": "缓存学习材料",
+    "sections": [
+      {
+        "heading": "缓存学习材料",
+        "body": "| 概念 | 说明 |\n| --- | --- |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |\n| 缓存有效期为30秒。 | 缓存有效期为30秒。 |",
+        "source_refs": [
+          "缓存资料"
+        ]
+      }
+    ],
+    "markdown_sha256": "53fb4b44e785f6e8c6383e55a7a09c78afb85fc138d9b6692b3cfabb9bb2b7ed",
+    "content_digest": "c27cd26bb1a56c34c9cbcc7bf8912b4865e698649e0404d4d946077944926e71"
+  },
+  "ir": {
+    "schema_version": 1,
+    "kind": "TABLE",
+    "title": "缓存学习材料",
+    "rows": [
+      {
+        "id": "u0",
+        "cells": [
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          },
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "u1",
+        "cells": [
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          },
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "u2",
+        "cells": [
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          },
+          {
+            "text": "缓存有效期为30秒。",
+            "anchors": [
+              "s0001"
+            ]
+          }
+        ]
+      }
+    ],
+    "columns": [
+      {
+        "id": "concept",
+        "label": "概念"
+      },
+      {
+        "id": "value",
+        "label": "说明"
+      }
+    ]
+  },
+  "evidence": {
+    "sentences": [
+      {
+        "id": "s0001",
+        "text": "缓存有效期为30秒。",
+        "source_id": "source",
+        "source_snapshot_id": "snapshot",
+        "chunk_id": "chunk",
+        "title": "缓存资料"
+      },
+      {
+        "id": "s0002",
+        "text": "过期后重新读取数据。",
+        "source_id": "source",
+        "source_snapshot_id": "snapshot",
+        "chunk_id": "chunk",
+        "title": "缓存资料"
+      }
+    ]
+  },
+  "candidate": {
+    "candidate_id": "641a4b778deffecc673889cf45fcdc1be329792ad9b82cb842a30484e29ac988",
+    "task_id": "pipeline-task",
+    "input_snapshot_id": "input",
+    "catalog_digest": "8063a26d3a79450f5439b83e4e45758e41eda363e7a9714998a15fde2d24fa37",
+    "content_sha256": "53fb4b44e785f6e8c6383e55a7a09c78afb85fc138d9b6692b3cfabb9bb2b7ed",
+    "content_ir_digest": "c27cd26bb1a56c34c9cbcc7bf8912b4865e698649e0404d4d946077944926e71",
+    "required_files": [
+      {
+        "role": "PRIMARY_MARKDOWN",
+        "variant": "",
+        "sequence_no": 0,
+        "file_name": "content.md",
+        "media_type": "text/markdown; charset=UTF-8",
+        "size_bytes": 258,
+        "checksum_sha256": "53fb4b44e785f6e8c6383e55a7a09c78afb85fc138d9b6692b3cfabb9bb2b7ed"
+      },
+      {
+        "role": "PRIMARY_CSV",
+        "variant": "",
+        "sequence_no": 0,
+        "file_name": "content.csv",
+        "media_type": "text/csv; charset=UTF-8",
+        "size_bytes": 183,
+        "checksum_sha256": "1667dca4a354c6b82d54b82c9c736f2761967d24abd12590be47e36a4d6875ff"
+      }
+    ]
+  },
+  "pipeline_stats": {
+    "version": 1,
+    "stages": {
+      "gather": {
+        "duration_ms": 0
+      },
+      "plan": {
+        "duration_ms": 0
+      },
+      "draft": {
+        "duration_ms": 0
+      },
+      "check": {
+        "duration_ms": 0
+      },
+      "render": {
+        "duration_ms": 0
+      }
+    },
+    "repair_calls": 0,
+    "deleted_units": []
+  },
+  "verification": {
+    "status": "PASS",
+    "contract_status": "PASS",
+    "evidence_status": "PASS",
+    "failed_checks": []
+  }
+}

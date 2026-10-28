@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from app.verification_runtime import blocking_failures
 from app.acquisition_runtime import get_acquisition_result_payload, register_acquisition_runtime
 from app.artifact_repository import commit_artifact_result, reserve_next_artifact_version
@@ -50,6 +52,11 @@ from app.writeback_runtime import register_writeback_request
 from app.video_derived_runtime import run_video_derived_text_task
 from app.video_deck_runtime import run_video_deck_task
 
+# 默认链路在进程启动时校验目录，错误的 Skill 不延迟到任务执行才报错。
+if os.environ.get("NOTEWEAVE_ARTIFACT_PIPELINE", "v2") == "v2":
+    from app.pipeline.skills import SkillCatalog
+    SkillCatalog()
+
 
 PHASE_SEQUENCE = [
     ("RESOLVING", 10, "artifact action resolved"),
@@ -89,6 +96,12 @@ def _require_published_catalog(task_input: ArtifactTaskInput) -> None:
 
 
 def run_artifact_task(task_input: ArtifactTaskInput, *, passage_search=None) -> tuple[list[ArtifactProgressEvent], ArtifactTaskResult]:
+    pipeline = os.environ.get("NOTEWEAVE_ARTIFACT_PIPELINE", "v2")
+    if pipeline not in {"v2", "legacy"}:
+        raise ValueError("NOTEWEAVE_ARTIFACT_PIPELINE 必须为 v2 或 legacy")
+    if pipeline == "v2":
+        from app.pipeline.runner import run
+        return run(task_input, passage_search=passage_search, client=build_default_llm_client())
     _require_published_catalog(task_input)
     if task_input.input_payload.skill_key in {"knowledge_blog", "interview_qa"}:
         return run_video_derived_text_task(task_input)

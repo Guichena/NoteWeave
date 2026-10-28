@@ -169,7 +169,7 @@ def health() -> dict[str, str]:
 def download_task_export(task_id: str, file_name: str) -> FileResponse:
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", task_id):
         raise HTTPException(status_code=404, detail="artifact export not found")
-    if not re.fullmatch(r"[^/\\\x00-\x1f]{1,160}\.(?:pdf|png|pptx|md)", file_name, re.IGNORECASE):
+    if not re.fullmatch(r"[^/\\\x00-\x1f]{1,160}\.(?:pdf|png|pptx|md|csv)", file_name, re.IGNORECASE):
         raise HTTPException(status_code=404, detail="artifact export not found")
     export_root = (
         resolve_mcp_sandbox_root(settings)
@@ -186,6 +186,7 @@ def download_task_export(task_id: str, file_name: str) -> FileResponse:
         ".png": "image/png",
         ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         ".md": "text/markdown; charset=UTF-8",
+        ".csv": "text/csv; charset=UTF-8",
     }[export_path.suffix.lower()]
     return FileResponse(export_path, media_type=media_type, filename=file_name)
 

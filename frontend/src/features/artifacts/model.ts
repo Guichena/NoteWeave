@@ -41,6 +41,7 @@ export type ArtifactFileMetadata = {
 
 export type ArtifactVersionDetail = {
   version_id: string;
+  kind?: string;
   artifact_job_id: string;
   skill_key: string;
   version_no: number;

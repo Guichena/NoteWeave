@@ -18,6 +18,7 @@ export type ArtifactStudioField = {
 
 export type ArtifactStudioSkill = {
   key: string;
+  kind?: string;
   title: string;
   summary: string;
   artifactType: string;
@@ -53,6 +54,7 @@ export type ArtifactSkillPresentation = {
 
 export type ArtifactSkillSummary = {
   skill_key: string;
+  kind?: string;
   display_name: string;
   description: string;
   status: string;
@@ -125,7 +127,10 @@ function readSchemaOptions(propertySchema?: Record<string, unknown>): ArtifactSt
           return [];
         }
         const normalized = value.trim();
-        return normalized ? [{ value: normalized, label: normalized }] : [];
+        const labels: Record<string, string> = {
+          SHORT: "简短", STANDARD: "标准", LONG: "详细", EASY: "简单", HARD: "困难"
+        };
+        return normalized ? [{ value: normalized, label: labels[normalized] || normalized }] : [];
       });
     return options.length > 0 ? options : undefined;
   }
@@ -138,6 +143,10 @@ function isUrlFieldKey(key: string): boolean {
 }
 
 function buildFieldLabel(skillKey: string, fieldKey: string): string {
+  const pipelineLabels: Record<string, string> = { length: "长度", count: "数量", difficulty: "难度" };
+  if (pipelineLabels[fieldKey]) {
+    return pipelineLabels[fieldKey];
+  }
   if (fieldKey === "language") {
     return "选择语言";
   }
@@ -217,6 +226,7 @@ export function buildArtifactStudioSkill(
   const shown = skill.presentation ?? {};
   return {
     key: skill.skill_key,
+    kind: skill.kind,
     title: skill.display_name || fallback.title || skill.skill_key,
     summary: shown.summary || fallback.summary || skill.description || "生成工作台产物。",
     artifactType: shown.artifact_type || fallback.artifactType || skill.display_name,

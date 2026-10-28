@@ -18,6 +18,14 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 @Service
 public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
@@ -29,21 +37,42 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, String> publishedVersions;
     private final Map<String, Boolean> evidenceRequiredByKey;
     private final String catalogDigest;
+    private final boolean pipelineEnabled;
+    private final Map<String, String> kinds;
     /** 目录里的描述与展示信息：前端的产物卡片和默认输入提示都从这里读取，新增产物不需要改代码。 */
     private final Map<String, String> descriptions;
     private final Map<String, Map<String, Object>> presentations;
 
     public ArtifactSkillCatalogService() {
+        this(System.getenv().getOrDefault("NOTEWEAVE_SKILLS_DIR", "../skills"),
+                System.getenv().getOrDefault("NOTEWEAVE_SCHEMAS_DIR", "../schemas"),
+                System.getenv().getOrDefault("NOTEWEAVE_ARTIFACT_PIPELINE", "v2"));
+    }
+
+    @Autowired
+    public ArtifactSkillCatalogService(
+            @Value("${noteweave.artifact.skills-dir:../skills}") String skillsDir,
+            @Value("${noteweave.artifact.schemas-dir:../schemas}") String schemasDir,
+            @Value("${noteweave.artifact.pipeline:v2}") String pipeline) {
+        if (!Set.of("v2", "legacy").contains(pipeline)) {
+            throw new IllegalStateException("产物流水线配置必须为 v2 或 legacy");
+        }
+        pipelineEnabled = pipeline.equals("v2");
         Map<String, Object> catalog;
-        byte[] catalogBytes;
-        try (InputStream input = ArtifactSkillCatalogService.class.getResourceAsStream(
-                "/artifact-skill-catalog-v2.json")) {
-            if (input == null) throw new IllegalStateException("published artifact Skill catalog is missing");
-            catalogBytes = input.readAllBytes();
-            catalog = new ObjectMapper().readValue(catalogBytes, new TypeReference<>() {});
-            catalogDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(catalogBytes));
+        try {
+            if (pipelineEnabled) {
+                catalog = loadDirectoryCatalog(Path.of(skillsDir), Path.of(schemasDir));
+                catalogDigest = String.valueOf(catalog.remove("digest"));
+            } else {
+                try (InputStream input = ArtifactSkillCatalogService.class.getResourceAsStream("/artifact-skill-catalog-v2.json")) {
+                    if (input == null) throw new IllegalStateException("旧版产物目录不存在");
+                    byte[] bytes = input.readAllBytes();
+                    catalog = new ObjectMapper().readValue(bytes, new TypeReference<>() {});
+                    catalogDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+                }
+            }
         } catch (Exception error) {
-            throw new IllegalStateException("cannot load published artifact Skill catalog", error);
+            throw new IllegalStateException("无法加载产物 Skill 目录", error);
         }
         if (!Integer.valueOf(2).equals(catalog.get("catalog_version"))) {
             throw new IllegalStateException("unsupported artifact Skill catalog version");
@@ -54,7 +83,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
                 throw new IllegalStateException("invalid artifact Skill catalog entry");
             }
-            validatePublishedEntry(entry, schema);
+            if (!pipelineEnabled) validatePublishedEntry(entry, schema);
             Object previousGraph = graphDefinitions.putIfAbsent(
                     String.valueOf(entry.get("graph_key")), entry.get("graph_definition"));
             if (previousGraph != null && !previousGraph.equals(entry.get("graph_definition"))) {
@@ -68,7 +97,19 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 throw new IllegalStateException("duplicate artifact Skill key: " + key);
             }
         }
-        this.skillsByKey = Map.copyOf(skills);
+        this.skillsByKey = java.util.Collections.unmodifiableMap(skills);
+        Map<String, String> shapeKinds = new LinkedHashMap<>();
+        for (Object raw : (List<?>) catalog.get("skills")) {
+            Map<?, ?> entry = (Map<?, ?>) raw;
+            String kind = entry.get("kind") == null ? switch (String.valueOf(entry.get("action_key"))) {
+                case "MINDMAP" -> "TREE";
+                case "QUIZ" -> "QUIZ";
+                case "VIDEO_LEARNING_DECK" -> "DECK";
+                default -> "DOC";
+            } : String.valueOf(entry.get("kind"));
+            shapeKinds.put(String.valueOf(entry.get("skill_key")), kind);
+        }
+        this.kinds = Map.copyOf(shapeKinds);
         Map<String, String> catalogAliases = new LinkedHashMap<>();
         ((Map<?, ?>) catalog.get("aliases")).forEach((key, value) ->
                 catalogAliases.put(String.valueOf(key), String.valueOf(value)));
@@ -91,7 +132,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             List<String> names = roles.stream().map(String::valueOf).toList();
             if (names.isEmpty() || names.size() != Set.copyOf(names).size()
                     || !names.contains("PRIMARY_MARKDOWN")
-                    || !Set.of("PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW")
+                    || !Set.of("PRIMARY_MARKDOWN", "PRIMARY_PDF", "PRIMARY_PPTX", "SOURCE_MD", "SLIDE_PREVIEW", "PRIMARY_CSV")
                             .containsAll(names)) {
                 throw new IllegalStateException("invalid required file roles: " + key);
             }
@@ -115,6 +156,142 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         this.requiredFileRoles = Map.copyOf(requiredRoles);
         this.publishedVersions = Map.copyOf(versions);
         this.evidenceRequiredByKey = Map.copyOf(evidenceRequired);
+    }
+
+    public boolean pipelineEnabled() { return pipelineEnabled; }
+
+    public String kind(String skillKey) {
+        return kinds.getOrDefault(canonicalSkillKey(skillKey), "");
+    }
+
+    private static final Map<String, String> RULE_KINDS = Map.of(
+            "sections", "DOC", "required_headings", "DOC", "quiz_single_answer", "QUIZ",
+            "card_no_leak", "CARDS", "tree_depth", "TREE", "table_columns", "TABLE");
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> loadDirectoryCatalog(Path directory, Path schemas) throws Exception {
+        List<Path> paths;
+        try (var stream = Files.list(directory)) {
+            paths = stream.filter(Files::isDirectory).map(path -> path.resolve("SKILL.md"))
+                    .filter(Files::isRegularFile).sorted().toList();
+        }
+        if (paths.isEmpty()) throw new IllegalStateException("Skill 目录为空");
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        LoaderOptions yamlOptions = new LoaderOptions();
+        yamlOptions.setAllowDuplicateKeys(false);
+        Yaml yaml = new Yaml(new SafeConstructor(yamlOptions));
+        List<Map<String, Object>> entries = new ArrayList<>();
+        Map<String, String> aliases = new LinkedHashMap<>();
+        Set<String> names = new java.util.HashSet<>();
+        for (Path path : paths) {
+            byte[] raw = Files.readAllBytes(path);
+            String[] parts = new String(raw, StandardCharsets.UTF_8).split("---", 3);
+            if (parts.length != 3 || !parts[0].isBlank() || parts[2].isBlank()) {
+                throw new IllegalStateException("Skill 缺少 YAML 头部或生成指令");
+            }
+            Object loaded = yaml.load(parts[1]);
+            if (!(loaded instanceof Map<?, ?>)) throw new IllegalStateException("Skill 头部必须是对象");
+            Map<String, Object> header = (Map<String, Object>) loaded;
+            String name = String.valueOf(header.get("name"));
+            String kind = String.valueOf(header.get("kind"));
+            if (!name.equals(path.getParent().getFileName().toString()) || !name.matches("[a-z][a-z0-9-]*")
+                    || !names.add(name) || !(header.get("description") instanceof String) || ((String) header.get("description")).isBlank()
+                    || !(header.get("version") instanceof Integer version) || version < 1
+                    || !Set.of("DOC", "QUIZ", "CARDS", "TREE", "TABLE").contains(kind)) {
+                throw new IllegalStateException("Skill 名称、形态、描述或版本无效");
+            }
+            Map<String, Object> shape = new ObjectMapper().readValue(Files.readAllBytes(
+                    schemas.resolve(kind.toLowerCase(Locale.ROOT) + ".v1.json")), Map.class);
+            if (!(shape.get("properties") instanceof Map<?, ?> props)
+                    || !Map.of("const", kind).equals(props.get("kind"))) {
+                throw new IllegalStateException("Skill 形态与 Schema 不一致");
+            }
+            Map<String, Object> contract = objectField(header, "contract");
+            validateDirectoryContract(kind, contract);
+            Map<String, Object> options = objectField(header, "options");
+            Map<String, Object> properties = new LinkedHashMap<>();
+            for (var option : options.entrySet()) {
+                if (!(option.getValue() instanceof Map<?, ?> rule)
+                        || !Set.of("choices", "default").containsAll(rule.keySet())
+                        || !(rule.get("choices") instanceof List<?> choices) || choices.isEmpty()
+                        || choices.stream().anyMatch(v -> !(v instanceof String text) || text.isBlank())
+                        || choices.size() != Set.copyOf(choices).size() || !choices.contains(rule.get("default"))) {
+                    throw new IllegalStateException("Skill 选项或默认值无效");
+                }
+                properties.put(option.getKey(), Map.of("type", "string", "enum", rule.get("choices"), "default", rule.get("default")));
+            }
+            if (!(header.get("renderers") instanceof List<?> renderers) || !renderers.contains("MARKDOWN")
+                    || renderers.size() != Set.copyOf(renderers).size()
+                    || !(kind.equals("TABLE") ? Set.of("MARKDOWN", "CSV") : Set.of("MARKDOWN")).containsAll(renderers)) {
+                throw new IllegalStateException("Skill 渲染器与形态不匹配");
+            }
+            Object rawAliases = header.getOrDefault("aliases", List.of());
+            if (!(rawAliases instanceof List<?>)) throw new IllegalStateException("Skill 别名必须是数组");
+            for (Object alias : (List<?>) rawAliases) {
+                if (!(alias instanceof String text) || !text.matches("[a-z][a-z0-9_-]*")
+                        || aliases.putIfAbsent(text, name) != null) throw new IllegalStateException("Skill 别名无效或重复");
+            }
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("skill_key", name);
+            String description = (String) header.get("description");
+            entry.put("display_name", description.split("：", 2)[0]);
+            entry.put("description", description);
+            entry.put("kind", kind);
+            entry.put("version", String.valueOf(header.get("version")));
+            entry.put("input_schema", Map.of("type", "object", "properties", properties, "required", List.of()));
+            entry.put("graph_key", kind);
+            entry.put("graph_definition", Map.of());
+            entry.put("action_key", kind);
+            entry.put("required_file_roles", renderers.contains("CSV") ? List.of("PRIMARY_MARKDOWN", "PRIMARY_CSV") : List.of("PRIMARY_MARKDOWN"));
+            entry.put("output_contract", Map.of("citation", Map.of("density", "PER_SECTION")));
+            entries.add(entry);
+            digest.update(("skills/" + name + "/SKILL.md\0").getBytes(StandardCharsets.UTF_8));
+            digest.update(new String(raw, StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+        }
+        if (names.stream().anyMatch(aliases::containsKey)) throw new IllegalStateException("Skill 别名覆盖正式名称");
+        try (var stream = Files.list(schemas)) {
+            for (Path path : stream.filter(p -> p.getFileName().toString().endsWith(".v1.json")).sorted().toList()) {
+                digest.update(("schemas/" + path.getFileName() + "\0").getBytes(StandardCharsets.UTF_8));
+                digest.update(Files.readString(path, StandardCharsets.UTF_8).replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+            }
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("catalog_version", 2);
+        result.put("skills", entries);
+        result.put("aliases", aliases);
+        result.put("digest", HexFormat.of().formatHex(digest.digest()));
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> objectField(Map<String, Object> header, String field) {
+        Object value = header.getOrDefault(field, Map.of());
+        if (!(value instanceof Map<?, ?>)) throw new IllegalStateException("Skill 字段必须是对象：" + field);
+        return (Map<String, Object>) value;
+    }
+
+    private static void validateDirectoryContract(String kind, Map<String, Object> contract) {
+        for (var entry : contract.entrySet()) {
+            String key = entry.getKey();
+            Object value = entry.getValue();
+            if (!kind.equals(RULE_KINDS.get(key))) throw new IllegalStateException("契约规则未注册或不适用于形态：" + key);
+            if (Set.of("sections", "tree_depth", "table_columns").contains(key)) {
+                Set<String> allowed = key.equals("tree_depth") ? Set.of("min", "max", "min_children", "max_children") : Set.of("min", "max");
+                if (!(value instanceof Map<?, ?> bounds) || !allowed.containsAll(bounds.keySet())
+                        || !(bounds.get("min") instanceof Integer min) || !(bounds.get("max") instanceof Integer max)
+                        || min < 1 || min > max || bounds.values().stream().anyMatch(v -> !(v instanceof Integer n) || n < 1)
+                        || (bounds.containsKey("min_children") && bounds.containsKey("max_children")
+                            && (Integer) bounds.get("min_children") > (Integer) bounds.get("max_children"))) {
+                    throw new IllegalStateException("契约上下限无效：" + key);
+                }
+            } else if (key.equals("required_headings")) {
+                if (!(value instanceof List<?> list) || list.isEmpty()
+                        || list.stream().anyMatch(v -> !(v instanceof String text) || text.isBlank())
+                        || list.size() != Set.copyOf(list).size()) throw new IllegalStateException("必需章节标题无效");
+            } else if (!Boolean.TRUE.equals(value)) throw new IllegalStateException("契约开关必须为 true");
+        }
     }
 
     public String catalogDigest() {
@@ -316,13 +493,14 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                         "ACTIVE",
                         publicInputSchema(skill.inputSchema()),
                         defaultInputHints(skill.skillKey()),
-                        presentations.getOrDefault(skill.skillKey(), Map.of())
+                        presentations.getOrDefault(skill.skillKey(), Map.of()),
+                        kinds.getOrDefault(skill.skillKey(), "")
                 ))
                 .toList();
     }
 
     private String canonicalSkillKey(String value) {
-        String normalizedSkillKey = normalizeSkillKey(value);
+        String normalizedSkillKey = pipelineEnabled ? (value == null ? "" : value.trim().toLowerCase(Locale.ROOT)) : normalizeSkillKey(value);
         return aliases.getOrDefault(normalizedSkillKey, normalizedSkillKey);
     }
 

@@ -217,6 +217,9 @@ services:
       NOTEWEAVE_RERANK_TIMEOUT_SECONDS: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:-20}
       NOTEWEAVE_RERANK_MAX_ATTEMPTS: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:-3}
       NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
+      NOTEWEAVE_ARTIFACT_PIPELINE: ${NOTEWEAVE_ARTIFACT_PIPELINE:-v2}
+      NOTEWEAVE_SKILLS_DIR: /app/skills
+      NOTEWEAVE_SCHEMAS_DIR: /app/schemas
       NOTEWEAVE_WORKER_ARTIFACT_BASE_URL: http://artifact-worker-api:18092
       NOTEWEAVE_PARSE_ENABLED: ${NOTEWEAVE_PARSE_ENABLED:-true}
       NOTEWEAVE_PARSE_BASE_URL: http://parse-worker:8000
@@ -284,6 +287,8 @@ services:
       NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:-false}
     volumes:
       - noteweave_v2_backend_storage:/app/storage
+      - ./skills:/app/skills:ro
+      - ./schemas:/app/schemas:ro
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/actuator/health/liveness"]
       interval: 10s
@@ -435,6 +440,9 @@ services:
       NOTEWEAVE_MEDIA_MCP_URL: http://media-mcp:18094/mcp
       NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN: ${NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN:?Set NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN}
       NOTEWEAVE_MEDIA_MCP_TIMEOUT_SECONDS: ${NOTEWEAVE_MEDIA_MCP_TIMEOUT_SECONDS:-3660}
+      NOTEWEAVE_ARTIFACT_PIPELINE: ${NOTEWEAVE_ARTIFACT_PIPELINE:-v2}
+      NOTEWEAVE_SKILLS_DIR: /app/skills
+      NOTEWEAVE_SCHEMAS_DIR: /app/schemas
       NOTEWEAVE_DEBUG_ROUTES_ENABLED: ${NOTEWEAVE_ARTIFACT_DEBUG_ROUTES_ENABLED:-false}
       NOTEWEAVE_ARTIFACT_LLM_API_KEY: ${NOTEWEAVE_ARTIFACT_LLM_API_KEY:-}
       NOTEWEAVE_ARTIFACT_LLM_BASE_URL: ${NOTEWEAVE_ARTIFACT_LLM_BASE_URL:-https://api.siliconflow.cn/v1}
@@ -454,6 +462,8 @@ services:
       NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK: ${NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK:-false}
     volumes:
       - noteweave_v2_artifact_worker_runtime:/app/runtime
+      - ./skills:/app/skills:ro
+      - ./schemas:/app/schemas:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18092/health', timeout=3).read()"]
       interval: 10s

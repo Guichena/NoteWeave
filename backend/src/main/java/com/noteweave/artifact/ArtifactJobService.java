@@ -179,6 +179,16 @@ public class ArtifactJobService {
         Map<String, Object> inputs = request.inputs() == null
                 ? artifactPayloadReadModelAssembler.readInputs(row.inputsJson())
                 : artifactSkillCatalogService.validateAndNormalizeInputs(skill, request.inputs());
+        if (artifactSkillCatalogService.pipelineEnabled()) {
+            if (request.inputs() == null && !skill.skillKey().equals(row.skillKey())) {
+                // 历史版本通过别名进入新 Skill，只保留新声明支持的选项，其余使用新默认值。
+                Map<?, ?> properties = (Map<?, ?>) skill.inputSchema().get("properties");
+                Map<String, Object> declared = new LinkedHashMap<>();
+                inputs.forEach((key, value) -> { if (properties.containsKey(key)) declared.put(key, value); });
+                inputs = declared;
+            }
+            inputs = artifactSkillCatalogService.validateAndNormalizeInputs(skill, inputs);
+        }
         int nextRunNo = row.latestRunNo() + 1;
         String taskId = taskService.createTask(
                 workspaceId,
@@ -409,7 +419,8 @@ public class ArtifactJobService {
                 runtimeTrace == null ? null : runtimeTrace.verification(),
                 runtimeTrace,
                 artifactJobReadRepository.loadArtifactFiles(row.versionId()),
-                row.createdAt()
+                row.createdAt(),
+                artifactSkillCatalogService.kind(row.skillKey())
         );
     }
 
@@ -631,6 +642,21 @@ public class ArtifactJobService {
     }
 
     private void requireVerifiedCandidate(ArtifactJobTaskRow row, com.noteweave.worker.WorkerCompleteRequest request) {
+        if (artifactSkillCatalogService.pipelineEnabled()) {
+            Map<String, String> snapshots = readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()).stream()
+                    .collect(java.util.stream.Collectors.toMap(WorkerSourceScopeItemResponse::sourceId,
+                            WorkerSourceScopeItemResponse::sourceSnapshotId));
+            ArtifactCandidateVerificationPolicy.validatePipeline(request.resultPayload(),
+                    artifactSkillCatalogService.kind(row.skillKey()), snapshots.keySet());
+            Map<?, ?> pack = (Map<?, ?>) request.resultPayload().get("evidence");
+            for (Object raw : (List<?>) pack.get("sentences")) {
+                Map<?, ?> sentence = (Map<?, ?>) raw;
+                if (!java.util.Objects.equals(snapshots.get(sentence.get("source_id")), sentence.get("source_snapshot_id"))) {
+                    throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED", "素材不属于冻结的资料快照", HttpStatus.CONFLICT);
+                }
+            }
+            return;
+        }
         boolean currentCatalog = catalogDigestFrom(row.compilerVersion()).equals(artifactSkillCatalogService.catalogDigest());
         boolean frozenVideo = Set.of("knowledge_blog", "interview_qa", "video_learning_deck").contains(row.skillKey());
         boolean requiredEvidence = currentCatalog
