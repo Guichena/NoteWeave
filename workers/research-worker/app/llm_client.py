@@ -125,6 +125,9 @@ class _CredentialSafeTransport(httpx.BaseTransport):
                 error_body = b""
             return httpx.Response(exc.code, content=error_body, request=request)
         except (urllib.error.URLError, OSError, ValueError) as exc:
+            # 等满时限没有响应要报超时，调用方据此放宽下一次的等待时间；其他网络错误仍按连接失败处理
+            if isinstance(exc, TimeoutError):
+                raise httpx.ReadTimeout(str(exc), request=request) from exc
             raise httpx.ConnectError(str(exc), request=request) from exc
         return httpx.Response(200, headers={"content-type": "application/json"}, content=body, request=request)
 
@@ -231,6 +234,7 @@ class OpenAICompatibleLlmClient:
         if "max_tokens" in purpose_config:
             request_payload["max_tokens"] = max(1, int(purpose_config["max_tokens"]))
         purpose_timeout_seconds = max(1, int(purpose_config.get("timeout_seconds") or self.timeout_seconds))
+        attempt_timeout_seconds = purpose_timeout_seconds
         # 规划由调用方保留一次修复机会，首个请求不应耗尽整个角色的两次预算。
         default_attempts = 1 if purpose == "research.plan.matrix" else self.max_attempts
         purpose_max_attempts = max(1, int(purpose_config.get("max_attempts") or default_attempts))
@@ -262,7 +266,7 @@ class OpenAICompatibleLlmClient:
                     **request_payload,
                     extra_body=extra_body or None,
                     extra_headers={"X-Session-ID": self.session_id} if self.session_id else None,
-                    timeout=purpose_timeout_seconds,
+                    timeout=attempt_timeout_seconds,
                 )
                 data = completion.model_dump()
                 usage = data.get("usage") if isinstance(data, dict) else None
@@ -292,6 +296,10 @@ class OpenAICompatibleLlmClient:
                     "PROVIDER_CONNECTION_ERROR" if isinstance(exc, APIConnectionError) else
                     "INVALID_MODEL_OUTPUT" if isinstance(exc, ValueError) else "PROVIDER_ERROR")
                 logger.warning("LLM JSON completion attempt %s failed for %s: %s", attempt, purpose, exc)
+                if isinstance(exc, APITimeoutError):
+                    # 超时多半是模型这次思考过长（2026-10-28 同一份答案核对请求的思考长度在 2500 到 15000 词元之间），
+                    # 原样重试大概率再次超时，下一次把等待时间加倍，最多到原时限的 4 倍
+                    attempt_timeout_seconds = min(attempt_timeout_seconds * 2, purpose_timeout_seconds * 4)
                 if attempt < purpose_max_attempts:
                     time.sleep(min(2 ** (attempt - 1), 4))
         if extra_body:
