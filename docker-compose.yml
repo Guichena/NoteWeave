@@ -404,6 +404,8 @@ services:
     profiles: ["app"]
     networks: [default, media]
     depends_on:
+      media-mcp:
+        condition: service_healthy
       backend:
         condition: service_healthy
       kafka:
