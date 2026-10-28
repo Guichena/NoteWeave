@@ -30,18 +30,22 @@ def callback_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         file_name="测试录音.mp3", mime_type="audio/mpeg", media_path=media, task_id="task-00000001",
         content_sha256=hashlib.sha256(content).hexdigest(), file_size=len(content),
     )
+    # 保留旧中间文件场景：未确认回调时不得清理，确认后必须清理。
+    legacy_output = source_transcription._output_root(job)
+    legacy_output.mkdir(parents=True)
+    (legacy_output / "source.json").write_text("{}", encoding="utf-8")
     return job, sleeps
 
 
-def _transcribe(_server, operation):
-    output = Path(operation["tool_arguments"]["output_dir"])
-    output.mkdir(parents=True)
-    transcript = output / "source.json"
-    transcript.write_text(json.dumps({
-        "language": "zh", "duration": 2.0,
-        "segments": [{"start": 0.0, "end": 2.0, "text": "测试文字稿"}],
-    }, ensure_ascii=False), encoding="utf-8")
-    return {"ok": True, "artifacts": {"json_files": [str(transcript)]}}
+def _transcribe(tool_name, arguments):
+    assert tool_name == "parse_media"
+    assert set(arguments) == {"file_ref", "title"}
+    assert not Path(arguments["file_ref"]).is_absolute()
+    return {
+        "title": arguments["title"],
+        "segments": [{"part": 1, "start_ms": 0, "end_ms": 2000, "text": "测试文字稿", "frames": []}],
+        "stats": {"duration_ms": 2000, "candidate_frames": 0, "kept_frames": 0, "transcript_origin": "ASR"},
+    }
 
 
 def _responses(monkeypatch, data):
@@ -80,6 +84,7 @@ def test_only_positive_acceptance_or_discard_acknowledgement_cleans_owned_files(
     assert timeout == 30
     assert request.get_header("X-noteweave-internal-token") == "callback-test-token"
     assert json.loads(request.data)["task_id"] == job.task_id
+    assert json.loads(request.data)["media_document"] == result["media_document"]
     assert sleeps == []
 
 

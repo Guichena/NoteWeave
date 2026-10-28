@@ -124,7 +124,10 @@ class SourceParseProjectionDisabledTest {
                     parse_status varchar(32) not null,
                     index_status varchar(32) not null,
                     processing_stage varchar(32), index_attempt_count int default 0 not null,
-                    next_index_retry_at timestamp
+                    next_index_retry_at timestamp,
+                    source_url varchar(1024),
+                    selected_parts_json clob,
+                    media_document_json clob
                 )
                 """);
         jdbcTemplate.execute("""
@@ -144,7 +147,12 @@ class SourceParseProjectionDisabledTest {
                     text_origin varchar(16),
                     ocr_confidence double,
                     projection_status varchar(32) default 'PENDING',
-                    projected_at timestamp
+                    projected_at timestamp,
+                    part int,
+                    start_ms bigint,
+                    end_ms bigint,
+                    frame_ids_json clob,
+                    source_url varchar(1024)
                 )
                 """);
         jdbcTemplate.execute("""

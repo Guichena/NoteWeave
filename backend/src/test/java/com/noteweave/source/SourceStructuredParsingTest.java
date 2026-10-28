@@ -50,12 +50,14 @@ class SourceStructuredParsingTest {
                     updated_by varchar(120), updated_at timestamp);
                 create table source_snapshot(id varchar(64) primary key, source_id varchar(64), file_object_id varchar(64),
                     version_no int, object_key varchar(500), sha256 varchar(64), parse_status varchar(32),
-                    index_status varchar(32), processing_stage varchar(32));
+                    index_status varchar(32), processing_stage varchar(32), source_url varchar(1024),
+                    selected_parts_json clob, media_document_json clob);
                 create table source_chunk(id varchar(64) primary key, workspace_id varchar(64), source_id varchar(64),
                     source_snapshot_id varchar(64), chunk_no int, heading varchar(300), content clob,
                     token_estimate int, location_info varchar(300), page_start int, page_end int,
                     structure_metadata_json clob, projection_status varchar(32), projected_at timestamp,
-                    text_origin varchar(16), ocr_confidence double);
+                    text_origin varchar(16), ocr_confidence double, part int, start_ms bigint, end_ms bigint,
+                    frame_ids_json clob, source_url varchar(1024));
                 create table source_window(id varchar(64) primary key, source_chunk_id varchar(64), window_no int,
                     content clob, location_info varchar(300));
                 create table task(id varchar(64) primary key, task_type varchar(64), target_id varchar(64), created_at timestamp);

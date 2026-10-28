@@ -28,14 +28,16 @@ def _request(number=1, *, task=""):
 
 
 def _tool(calls):
-    def invoke(server, operation):
-        calls.append(operation)
-        output = Path(operation["tool_arguments"]["output_dir"])
-        output.mkdir(parents=True, exist_ok=True)
-        transcript = output / "transcript.json"
-        transcript.write_text(json.dumps({"language": "zh", "duration": 2.0,
-            "segments": [{"start": 1.0, "end": 2.0, "text": "原始文字稿"}]}, ensure_ascii=False), encoding="utf-8")
-        return {"artifacts": {"json_files": [str(transcript)]}}
+    def invoke(tool_name, arguments):
+        assert tool_name == "parse_media"
+        assert set(arguments) == {"file_ref", "title"}
+        assert not Path(arguments["file_ref"]).is_absolute()
+        calls.append({"tool_name": tool_name, "arguments": arguments})
+        return {
+            "title": arguments["title"],
+            "segments": [{"part": 1, "start_ms": 1000, "end_ms": 2000, "text": "原始文字稿", "frames": []}],
+            "stats": {"duration_ms": 2000, "candidate_frames": 0, "kept_frames": 0, "transcript_origin": "ASR"},
+        }
     return invoke
 
 
@@ -48,6 +50,10 @@ def _job(root, number=1, *, task=""):
     job = transcriptions.TranscriptionJob(data["workspace_id"], data["source_id"], data["snapshot_id"], data["file_name"],
         data["mime_type"], path, task, hashlib.sha256(data["content"]).hexdigest(), len(data["content"]))
     transcriptions._atomic_json(directory / "job.json", transcriptions._metadata(job))
+    # 预置遗留中间文件，保留恢复、重试与跨任务隔离的清理断言。
+    legacy_output = transcriptions._output_root(job)
+    legacy_output.mkdir(parents=True)
+    (legacy_output / "transcript.json").write_text("{}", encoding="utf-8")
     return job
 
 
