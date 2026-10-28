@@ -42,8 +42,9 @@ class Settings(BaseSettings):
     research_agent_fault_invalid_json: bool = False
     research_agent_fault_tamper_quote: bool = False
     research_agent_fault_crash_after_archive: bool = False
-    # 答案检查认为有列要求没答到时，DEEP_CELL 任务内只针对这些要求补查一轮（NOTEWEAVE_RESEARCH_SUPPLEMENT_ROUND）
-    research_supplement_round: bool = True
+    # 答案检查认为有列要求没答到时，DEEP_CELL 任务内只针对这些要求补查一轮（NOTEWEAVE_RESEARCH_SUPPLEMENT_ROUND）。
+    # 默认关闭：同一镜像开关对照两组，打开时通过与要点覆盖没有稳定收益，模型调用多三到四成
+    research_supplement_round: bool = False
     research_agent_worker_instance_id: str = Field(default_factory=lambda: _default_worker_instance_id())
     research_agent_lease_seconds: int = Field(default=60, ge=4, le=3600)
     research_agent_heartbeat_interval_seconds: float | None = Field(default=None, gt=0)
