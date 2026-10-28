@@ -2,6 +2,7 @@
 # 确认轮：不构建，在同一镜像上把开发集与留出集再评测一轮，评分后与同一镜像的上一轮对照
 # 用法：[WAIT_FOR=状态文件] [OVERRIDE=覆盖文件] confirm_chain.sh <镜像标签> <轮次后缀>，例如 confirm_chain.sh fix17 r2
 # WAIT_FOR 先等另一条链路结束；OVERRIDE 先用该覆盖文件重新部署（例如同一镜像只改配置开关），不给则沿用当前部署
+# 评测目录下存在 skip-<镜像标签><轮次后缀> 文件时直接跳过，用于已决定不再需要的确认轮（例如补查开关已定）
 TAG="${1:?tag}"; RUN="${2:?suffix}"
 EVAL=/data/workspace/noteweave-research-eval
 DEPLOY=/data/workspace/noteweave-research-deploy
@@ -9,6 +10,7 @@ DEV_SRC=/data/workspace/noteweave-research-dev2
 HOLDOUT=$DEV_SRC/experiments/deep-research/quality-eval/dataset-holdout.json
 STATUS=$EVAL/final-chain-$TAG$RUN.status
 log() { echo "$(date -u +%H:%M:%S) $*" >> "$STATUS"; }
+if [ -f "$EVAL/skip-$TAG$RUN" ]; then log "SKIPPED: $(cat "$EVAL/skip-$TAG$RUN")"; exit 0; fi
 if [ -n "$WAIT_FOR" ]; then
   log "waiting for $WAIT_FOR"
   until grep -qE "CHAIN_DONE|FAILED|IMAGE_MISMATCH" "$EVAL/$WAIT_FOR" 2>/dev/null; do sleep 60; done
