@@ -420,7 +420,8 @@ public class ArtifactJobService {
                 runtimeTrace,
                 artifactJobReadRepository.loadArtifactFiles(row.versionId()),
                 row.createdAt(),
-                artifactSkillCatalogService.kind(row.skillKey())
+                artifactSkillCatalogService.kind(row.skillKey()),
+                ArtifactVersionDetailResponse.readIr(row.resultPayloadJson())
         );
     }
 
