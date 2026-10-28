@@ -45,7 +45,7 @@ class ArtifactTaskRetrievalContractTest {
         JsonNode created = data(mvc.perform(post("/api/v2/workspaces/{workspace}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
                         "skill_key", "study_guide", "user_requirement", "解释恢复机制",
-                        "inputs", Map.of("language", "zh-CN"), "source_scope_source_ids", List.of(source)))))
+                        "inputs", Map.of("length", "STANDARD"), "source_scope_source_ids", List.of(source)))))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         String task = created.path("task_id").asText();
         String newer = UUID.randomUUID().toString();

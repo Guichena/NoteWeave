@@ -50,7 +50,6 @@ spring:
 
 noteweave:
   artifact:
-    pipeline: ${NOTEWEAVE_ARTIFACT_PIPELINE:v2}
     skills-dir: ${NOTEWEAVE_SKILLS_DIR:../skills}
     schemas-dir: ${NOTEWEAVE_SCHEMAS_DIR:../schemas}
   context:
@@ -59,7 +58,6 @@ noteweave:
       active-enabled: ${NOTEWEAVE_CONTEXT_V2_ACTIVE_ENABLED:false}
       default-mode: ${NOTEWEAVE_CONTEXT_V2_DEFAULT_MODE:OFF}
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
-      artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
     intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:true}
@@ -100,9 +98,6 @@ noteweave:
         capacity: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_CAPACITY:24}
         refill-per-minute: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_REFILL_PER_MINUTE:24}
   environment: ${NOTEWEAVE_ENVIRONMENT:local}
-  video-learning:
-    enabled: ${NOTEWEAVE_VIDEO_LEARNING_ENABLED:false}
-    workspace-allowlist: ${NOTEWEAVE_VIDEO_LEARNING_WORKSPACE_ALLOWLIST:}
   retrieval:
     query-rewrite:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}

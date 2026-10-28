@@ -37,7 +37,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     private final Map<String, String> publishedVersions;
     private final Map<String, Boolean> evidenceRequiredByKey;
     private final String catalogDigest;
-    private final boolean pipelineEnabled;
     private final Map<String, String> kinds;
     /** 目录里的描述与展示信息：前端的产物卡片和默认输入提示都从这里读取，新增产物不需要改代码。 */
     private final Map<String, String> descriptions;
@@ -45,32 +44,17 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
 
     public ArtifactSkillCatalogService() {
         this(System.getenv().getOrDefault("NOTEWEAVE_SKILLS_DIR", "../skills"),
-                System.getenv().getOrDefault("NOTEWEAVE_SCHEMAS_DIR", "../schemas"),
-                System.getenv().getOrDefault("NOTEWEAVE_ARTIFACT_PIPELINE", "v2"));
+                System.getenv().getOrDefault("NOTEWEAVE_SCHEMAS_DIR", "../schemas"));
     }
 
     @Autowired
     public ArtifactSkillCatalogService(
             @Value("${noteweave.artifact.skills-dir:../skills}") String skillsDir,
-            @Value("${noteweave.artifact.schemas-dir:../schemas}") String schemasDir,
-            @Value("${noteweave.artifact.pipeline:v2}") String pipeline) {
-        if (!Set.of("v2", "legacy").contains(pipeline)) {
-            throw new IllegalStateException("产物流水线配置必须为 v2 或 legacy");
-        }
-        pipelineEnabled = pipeline.equals("v2");
+            @Value("${noteweave.artifact.schemas-dir:../schemas}") String schemasDir) {
         Map<String, Object> catalog;
         try {
-            if (pipelineEnabled) {
-                catalog = loadDirectoryCatalog(Path.of(skillsDir), Path.of(schemasDir));
-                catalogDigest = String.valueOf(catalog.remove("digest"));
-            } else {
-                try (InputStream input = ArtifactSkillCatalogService.class.getResourceAsStream("/artifact-skill-catalog-v2.json")) {
-                    if (input == null) throw new IllegalStateException("旧版产物目录不存在");
-                    byte[] bytes = input.readAllBytes();
-                    catalog = new ObjectMapper().readValue(bytes, new TypeReference<>() {});
-                    catalogDigest = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-                }
-            }
+            catalog = loadDirectoryCatalog(Path.of(skillsDir), Path.of(schemasDir));
+            catalogDigest = String.valueOf(catalog.remove("digest"));
         } catch (Exception error) {
             throw new IllegalStateException("无法加载产物 Skill 目录", error);
         }
@@ -78,16 +62,9 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             throw new IllegalStateException("unsupported artifact Skill catalog version");
         }
         Map<String, ArtifactSkillDefinition> skills = new LinkedHashMap<>();
-        Map<String, Object> graphDefinitions = new LinkedHashMap<>();
         for (Object rawEntry : (List<?>) catalog.get("skills")) {
             if (!(rawEntry instanceof Map<?, ?> entry) || !(entry.get("input_schema") instanceof Map<?, ?> schema)) {
                 throw new IllegalStateException("invalid artifact Skill catalog entry");
-            }
-            if (!pipelineEnabled) validatePublishedEntry(entry, schema);
-            Object previousGraph = graphDefinitions.putIfAbsent(
-                    String.valueOf(entry.get("graph_key")), entry.get("graph_definition"));
-            if (previousGraph != null && !previousGraph.equals(entry.get("graph_definition"))) {
-                throw new IllegalStateException("发布目录中共享技能图的声明不一致");
             }
             String key = String.valueOf(entry.get("skill_key"));
             Map<String, Object> inputSchema = new LinkedHashMap<>();
@@ -158,7 +135,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         this.evidenceRequiredByKey = Map.copyOf(evidenceRequired);
     }
 
-    public boolean pipelineEnabled() { return pipelineEnabled; }
 
     public String kind(String skillKey) {
         return kinds.getOrDefault(canonicalSkillKey(skillKey), "");
@@ -239,8 +215,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
             entry.put("kind", kind);
             entry.put("version", String.valueOf(header.get("version")));
             entry.put("input_schema", Map.of("type", "object", "properties", properties, "required", List.of()));
-            entry.put("graph_key", kind);
-            entry.put("graph_definition", Map.of());
             entry.put("action_key", kind);
             List<String> roles = new ArrayList<>(List.of("PRIMARY_MARKDOWN"));
             if (renderers.contains("CSV")) roles.add("PRIMARY_CSV");
@@ -314,61 +288,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         return requiredFileRoles.get(resolveSkill(skillKey).skillKey());
     }
 
-    private static final Set<String> REQUIRED_ENTRY_FIELDS = Set.of("skill_key", "version", "display_name",
-            "description", "input_schema", "output_schema_ref", "graph_key", "prompt_recipe_id",
-            "required_file_roles", "capability_allowlist", "action_key", "output_contract", "graph_definition");
-    /** presentation 是展示信息；definition 让新产物只在目录里声明动作和提示词配方，由 Worker 加载。 */
-    private static final Set<String> OPTIONAL_ENTRY_FIELDS = Set.of("presentation", "definition", "generation_mode");
-
-    static void validatePublishedEntry(Map<?, ?> entry, Map<?, ?> schema) {
-        Set<String> fields = new java.util.HashSet<>();
-        entry.keySet().forEach(field -> fields.add(String.valueOf(field)));
-        boolean knownFields = fields.containsAll(REQUIRED_ENTRY_FIELDS) && fields.stream()
-                .allMatch(field -> REQUIRED_ENTRY_FIELDS.contains(field) || OPTIONAL_ENTRY_FIELDS.contains(field));
-        if (!knownFields
-                || (entry.containsKey("presentation") && !validPresentation(entry.get("presentation")))
-                || (entry.containsKey("definition") && !(entry.get("definition") instanceof Map<?, ?>))
-                || !"1.0.0".equals(entry.get("version"))
-                || !("artifact-" + entry.get("skill_key") + "-output.v1").equals(entry.get("output_schema_ref"))
-                || !schema.keySet().stream().allMatch(Set.of("type", "properties", "required")::contains)
-                || !"object".equals(schema.get("type"))
-                || !(schema.get("properties") instanceof Map<?, ?> properties)
-                || !(entry.get("capability_allowlist") instanceof List<?> capabilities)
-                || !Set.of("READ_WORKSPACE_DOC", "GENERATE_STRUCTURED_TEXT", "VERIFY_OUTPUT",
-                        "READ_WEB_PAGE", "EXTRACT_TRANSCRIPT", "TRANSCRIBE_AUDIO",
-                        "CAPTURE_VIDEO_FRAMES", "ANALYZE_FRAME").containsAll(capabilities)) {
-            throw new IllegalStateException("unsupported artifact Skill publication policy");
-        }
-        ArtifactOutputContractPublicationPolicy.validate(entry.get("output_contract"));
-        ArtifactNodeGraphPublicationPolicy.validate(
-                entry.get("graph_key"), entry.get("graph_definition"), entry.get("output_contract"), generationMode(entry));
-        Object required = schema.containsKey("required") ? schema.get("required") : List.of();
-        if (!(required instanceof List<?> requiredKeys) || !properties.keySet().containsAll(requiredKeys)) {
-            throw new IllegalStateException("published Skill has invalid required inputs");
-        }
-        for (Object rawField : properties.values()) {
-            if (!(rawField instanceof Map<?, ?> field)
-                    || !field.keySet().stream().allMatch(Set.of("type", "default", "oneOf", "enum")::contains)
-                    || !"string".equals(field.get("type"))) {
-                throw new IllegalStateException("unsupported published Skill input field");
-            }
-        }
-    }
-
-    private static String generationMode(Map<?, ?> entry) {
-        Object value = entry.containsKey("generation_mode") ? entry.get("generation_mode") : "SINGLE";
-        if (!(value instanceof String mode) || !Set.of("SINGLE", "SECTIONED").contains(mode)) {
-            throw new IllegalStateException("产物生成模式必须是 SINGLE 或 SECTIONED");
-        }
-        return mode;
-    }
-
-    private static boolean validPresentation(Object value) {
-        if (!(value instanceof Map<?, ?> presentation)) return false;
-        Object hints = presentation.get("default_input_hints");
-        return hints == null || (hints instanceof List<?> list && list.stream().allMatch(String.class::isInstance));
-    }
-
     public ArtifactSkillDefinition resolveSkill(String skillKey) {
         String canonicalSkillKey = canonicalSkillKey(skillKey);
         ArtifactSkillDefinition skill = skillsByKey.get(canonicalSkillKey);
@@ -425,25 +344,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
                 normalized.put(key, normalizedValue);
             }
         }
-        if (schemaProperties.containsKey("url")) {
-            String canonicalUrl = String.valueOf(normalized.getOrDefault("url", "")).trim();
-            for (String alias : List.of("video_url", "bilibili_url")) {
-                Object rawAlias = normalized.remove(alias);
-                if (rawAlias == null) continue;
-                String aliasUrl = String.valueOf(rawAlias).trim();
-                if (aliasUrl.isEmpty()) continue;
-                if (!canonicalUrl.isEmpty() && !canonicalUrl.equals(aliasUrl)) {
-                    throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT",
-                            "产物视频链接字段不一致：url 与 " + alias);
-                }
-                canonicalUrl = aliasUrl;
-            }
-            if ("bilibili_course_note_pdf".equals(skill.skillKey()) && normalized.containsKey("part")) {
-                canonicalUrl = resolveVideoPart(canonicalUrl, String.valueOf(normalized.get("part")));
-            }
-            if (!canonicalUrl.isEmpty()) normalized.put("url", canonicalUrl);
-        }
-
         List<String> missingRequiredKeys = readRequiredInputKeys(skill.inputSchema()).stream()
                 .filter(requiredKey -> isMissingRequiredValue(requiredKey, schemaProperties.get(requiredKey), normalized.get(requiredKey)))
                 .toList();
@@ -455,37 +355,6 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         }
 
         return Map.copyOf(normalized);
-    }
-
-    private static String resolveVideoPart(String url, String requestedPart) {
-        if (!requestedPart.matches("[1-9][0-9]{0,3}") || Integer.parseInt(requestedPart) > 1_000) {
-            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频分集必须为 1–1000");
-        }
-        URI parsed;
-        try { parsed = URI.create(url); }
-        catch (IllegalArgumentException ex) {
-            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "视频链接格式不正确");
-        }
-        if (!("http".equals(parsed.getScheme()) || "https".equals(parsed.getScheme()))
-                || !("bilibili.com".equals(parsed.getHost())
-                        || "www.bilibili.com".equals(parsed.getHost()))
-                || parsed.getPath() == null
-                || !parsed.getPath().matches("/video/BV[0-9A-Za-z]{10}/?")
-                || parsed.getRawFragment() != null) {
-            throw new BusinessException("ARTIFACT_SKILL_INPUT_PART_INVALID", "分集只适用于 B 站视频链接");
-        }
-        Matcher existing = Pattern.compile("(?:^|&)p=([^&]*)")
-                .matcher(parsed.getRawQuery() == null ? "" : parsed.getRawQuery());
-        if (existing.find()) {
-            String value = existing.group(1);
-            if (!value.matches("[1-9][0-9]{0,3}") || Integer.parseInt(value) > 1_000
-                    || Integer.parseInt(value) != Integer.parseInt(requestedPart) || existing.find()) {
-                throw new BusinessException("ARTIFACT_SKILL_INPUT_CONFLICT", "视频链接分集与 part 输入不一致");
-            }
-            return url;
-        }
-        if ("1".equals(requestedPart)) return url;
-        return url + (parsed.getRawQuery() == null ? "?" : "&") + "p=" + requestedPart;
     }
 
     public List<ArtifactSkillSummaryResponse> listSkills() {
@@ -504,7 +373,7 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
     }
 
     private String canonicalSkillKey(String value) {
-        String normalizedSkillKey = pipelineEnabled ? (value == null ? "" : value.trim().toLowerCase(Locale.ROOT)) : normalizeSkillKey(value);
+        String normalizedSkillKey = (value == null ? "" : value.trim().toLowerCase(Locale.ROOT));
         return aliases.getOrDefault(normalizedSkillKey, normalizedSkillKey);
     }
 

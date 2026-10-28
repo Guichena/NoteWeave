@@ -14,7 +14,7 @@ class ArtifactSkillDirectoryTest {
     private final Path root = Path.of("..").toAbsolutePath().normalize();
 
     private ArtifactSkillCatalogService catalog() {
-        return new ArtifactSkillCatalogService(root.resolve("skills").toString(), root.resolve("schemas").toString(), "v2");
+        return new ArtifactSkillCatalogService(root.resolve("skills").toString(), root.resolve("schemas").toString());
     }
 
     @Test
@@ -31,7 +31,7 @@ class ArtifactSkillDirectoryTest {
         assertThat(service.requiredFileRoles("slide-deck")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PPTX");
         assertThat(service.requiredFileRoles("lecture-notes-pdf")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_PDF");
         assertThat(service.requiredFileRoles("data-table")).containsExactly("PRIMARY_MARKDOWN", "PRIMARY_CSV");
-        assertThat(new ArtifactSkillCatalogService("../skills", "../schemas", "legacy").kind("mindmap_from_workspace"))
+        assertThat(new ArtifactSkillCatalogService("../skills", "../schemas").kind("mindmap_from_workspace"))
                 .isEqualTo("TREE");
         assertThat(service.validateAndNormalizeInputs(service.resolveSkill("quiz"), Map.of())).containsEntry("count", "10");
         assertThatThrownBy(() -> service.validateAndNormalizeInputs(service.resolveSkill("quiz"), Map.of("count", "999")))
@@ -55,7 +55,7 @@ class ArtifactSkillDirectoryTest {
         String content = Files.readString(root.resolve("skills/study-guide/SKILL.md"))
                 .replace("name: study-guide", "name: new-learning-product").replace("- study_guide", "- new_learning_alias");
         Files.writeString(skill, content);
-        ArtifactSkillCatalogService service = new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString(), "v2");
+        ArtifactSkillCatalogService service = new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString());
         assertThat(new ArtifactSkillController(service).listSkills().data()).singleElement()
                 .satisfies(value -> {
                     assertThat(value.skillKey()).isEqualTo("new-learning-product");
@@ -63,10 +63,10 @@ class ArtifactSkillDirectoryTest {
                 });
         assertThat(service.resolveSkill("new_learning_alias").skillKey()).isEqualTo("new-learning-product");
         Files.writeString(skill, content.replace("\r\n", "\n").replace("\n", "\r\n"));
-        assertThat(new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString(), "v2").catalogDigest())
+        assertThat(new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString()).catalogDigest())
                 .isEqualTo(service.catalogDigest());
         Files.writeString(skill, content.replace("sections:", "unknown_rule:"));
-        assertThatThrownBy(() -> new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString(), "v2"))
+        assertThatThrownBy(() -> new ArtifactSkillCatalogService(directory.toString(), root.resolve("schemas").toString()))
                 .isInstanceOf(IllegalStateException.class).hasRootCauseMessage("契约规则未注册或不适用于形态：unknown_rule");
     }
 }

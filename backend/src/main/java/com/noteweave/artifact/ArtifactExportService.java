@@ -40,7 +40,6 @@ public class ArtifactExportService {
     private final ArtifactWorkerExportClient artifactWorkerClient;
     private final ArtifactSkillCatalogService skillCatalog;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
-    private final ArtifactContextV2ShadowSnapshotService contextV2Snapshots;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
     private final String exportBucket;
     private String orphanScanCursor = "";
@@ -52,7 +51,6 @@ public class ArtifactExportService {
             ArtifactWorkerExportClient artifactWorkerClient,
             ArtifactSkillCatalogService skillCatalog,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
-            ArtifactContextV2ShadowSnapshotService contextV2Snapshots,
             ResearchGeneratedSourceReadGate generatedSourceGate,
             com.noteweave.config.NoteWeaveProperties properties
     ) {
@@ -62,7 +60,6 @@ public class ArtifactExportService {
         this.artifactWorkerClient = artifactWorkerClient;
         this.skillCatalog = skillCatalog;
         this.memoryRevisionGuard = memoryRevisionGuard;
-        this.contextV2Snapshots = contextV2Snapshots;
         this.generatedSourceGate = generatedSourceGate;
         this.exportBucket = properties.storage().minio().bucketExport();
     }
@@ -148,18 +145,6 @@ public class ArtifactExportService {
         }
         appendDeclaredAuxiliaryFiles(taskId, request, files);
         requireCandidateFileManifest(request, files);
-        if ("video_learning_deck".equals(skillKey) && !request.resultPayload().containsKey("ir")) {
-            Object deckIr = request.resultPayload().get("video_deck_ir");
-            if (!(deckIr instanceof Map<?, ?> ir) || !(ir.get("slides") instanceof List<?> slides)) {
-                throw invalidManifest();
-            }
-            List<PreparedFile> decks = files.stream()
-                    .filter(file -> "PRIMARY_PPTX".equals(file.role())).toList();
-            long previews = files.stream()
-                    .filter(file -> "SLIDE_PREVIEW".equals(file.role())).count();
-            if (decks.size() != 1 || previews != slides.size()) throw invalidManifest();
-            VideoDeckFileVerifier.validate(decks.get(0).content(), slides);
-        }
         if (request.resultPayload().get("ir") instanceof Map<?, ?> ir && "DECK".equals(ir.get("kind"))) {
             if (!(ir.get("slides") instanceof List<?> slides) || slides.isEmpty()
                     || files.stream().filter(file -> "PRIMARY_PPTX".equals(file.role())).count() != 1
@@ -592,8 +577,6 @@ public class ArtifactExportService {
                 rs.getString(3), rs.getString(4), rs.getString(5)), version.originTaskId());
         if (inputs.isEmpty()) return; // Historical versions predate frozen input snapshots.
         VersionInput input = inputs.get(0);
-        contextV2Snapshots.activeRequirement(version.originTaskId(), input.workspaceId(),
-                input.snapshotId(), input.requirement());
         try {
             JsonNode sources = objectMapper.readTree(input.sourceScopeJson());
             if (!sources.isArray()) throw new IllegalArgumentException("source scope must be an array");

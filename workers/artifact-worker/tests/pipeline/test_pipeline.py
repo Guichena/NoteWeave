@@ -180,7 +180,6 @@ def test_scope_snapshot_and_number_checks_reject_invalid_material():
 def test_entry_defaults_to_v2_and_passes_task_retrieval(monkeypatch):
     import app.runner
     catalog = SkillCatalog()
-    monkeypatch.delenv("NOTEWEAVE_ARTIFACT_PIPELINE", raising=False)
     monkeypatch.setattr(app.runner, "build_default_llm_client", lambda: Model("DOC"))
     called = []
     def retrieve(task_id, query, limit):

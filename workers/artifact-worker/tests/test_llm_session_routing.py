@@ -59,10 +59,11 @@ def test_fake_and_disabled_clients_remain_compatible():
 
 
 def test_runner_binds_job_before_building_generation_plan(monkeypatch):
-    import app.runner as runner
+    import app.pipeline.runner as runner
+    from tests.pipeline.test_pipeline import task
+    from app.pipeline.skills import SkillCatalog
 
     calls = []
-    monkeypatch.setattr(runner, "build_default_llm_client", client)
     original = runner.bind_llm_session
 
     def bind(*args):
@@ -72,5 +73,7 @@ def test_runner_binds_job_before_building_generation_plan(monkeypatch):
 
     monkeypatch.setattr(runner, "bind_llm_session", bind)
     with pytest.raises(RuntimeError, match="stop-before-planning"):
-        runner._run_artifact_task(SimpleNamespace(workspace_id="ws", target_id="job"))
+        value = task("briefing", SkillCatalog())
+        value.workspace_id, value.task_id = "ws", "job"
+        runner.run(value, client=client())
     assert calls == [routing_session_id("artifact", "ws", "job")]

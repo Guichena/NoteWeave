@@ -69,7 +69,6 @@ class ArtifactFileReconcileReadbackTest {
         ArtifactExportService service = new ArtifactExportService(
                 jdbc, new ObjectMapper(), storage, workerExports,
                 mock(ArtifactSkillCatalogService.class), mock(ArtifactMemoryRevisionGuard.class),
-                mock(ArtifactContextV2ShadowSnapshotService.class),
                 mock(ResearchGeneratedSourceReadGate.class), properties);
 
         service.reconcileDegradedFiles();

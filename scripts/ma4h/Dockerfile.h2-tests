@@ -7,7 +7,9 @@ RUN rm -rf /workspace/src
 COPY backend/pom.xml ./pom.xml
 COPY backend/maven-settings.xml ./maven-settings.xml
 COPY backend/src ./src
-COPY reference/artifact-skill-catalog-v1.json /reference/artifact-skill-catalog-v1.json
+COPY skills /skills
+COPY schemas /schemas
+COPY workers/artifact-worker/tests/pipeline /workers/artifact-worker/tests/pipeline
 
 RUN mvn -o -s maven-settings.xml -B -ntp -Dmaven.test.skip=true clean package
 

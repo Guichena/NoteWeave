@@ -293,8 +293,8 @@ class ContextV2ResearchContractTest {
         String artifactTaskId = data(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsBytes(Map.of(
-                        "skill_key", "resume_highlight", "user_requirement", "Summarize report",
-                        "inputs", Map.of("language", "zh-CN"),
+                        "skill_key", "custom-report", "user_requirement", "Summarize report",
+                        "inputs", Map.of(),
                         "source_scope_source_ids", java.util.List.of(sourceId)))))
                 .path("task_id").asText();
         assertThat(artifactJobs.getWorkerInput(artifactTaskId).sourceScope())
@@ -306,7 +306,7 @@ class ContextV2ResearchContractTest {
         jdbc.update("""
                 insert into artifact_version(id, artifact_job_id, skill_key, version_no, title,
                                              content_markdown, origin_task_id)
-                values (?, ?, 'resume_highlight', 1, 'Derived version', '# Derived report', ?)
+                values (?, ?, 'custom-report', 1, 'Derived version', '# Derived report', ?)
                 """, Ids.newId(), artifactJobId, artifactTaskId);
         assertThat(artifactJobs.getVersionDetail(workspace, artifactJobId, 1).contentMarkdown())
                 .contains("Derived report");
@@ -397,8 +397,8 @@ class ContextV2ResearchContractTest {
         mvc.perform(post("/api/v2/workspaces/{workspaceId}/artifact-jobs", workspace)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsBytes(Map.of(
-                        "skill_key", "resume_highlight", "user_requirement", "Retry report",
-                        "inputs", Map.of("language", "zh-CN"),
+                        "skill_key", "custom-report", "user_requirement", "Retry report",
+                        "inputs", Map.of(),
                         "source_scope_source_ids", java.util.List.of(sourceId)))))
                 .andExpect(status().isConflict());
     }

@@ -3,8 +3,7 @@ import type {
   ArtifactJobSummary,
   ArtifactVersionComparison,
   ArtifactVersionDetail,
-  ArtifactVersionSummary,
-  VideoLearningOverview
+  ArtifactVersionSummary
 } from "../../features/artifacts/model";
 
 // 产物页设计数据：覆盖生成中、等待外部服务、失败和已完成（含多个版本、PDF 文件、MCP 能力调用）几种状态。
@@ -296,9 +295,3 @@ export function compareVersions(from: number, to: number): ArtifactVersionCompar
     summary: `v${from} → v${to}`
   };
 }
-
-export const videoLearning: VideoLearningOverview = {
-  enabled: true,
-  available_skills: ["knowledge_blog", "interview_qa", "video_learning_deck", "bilibili_course_note_pdf"],
-  requests: []
-};

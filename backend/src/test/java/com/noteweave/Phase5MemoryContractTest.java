@@ -58,7 +58,7 @@ class Phase5MemoryContractTest {
                 "signal_type", "FORMAT",
                 "source_type", "USER_FEEDBACK",
                 "signal_text", "报告使用问题方法效果结构",
-                "task_neighborhood", "ARTIFACT_RESUME_HIGHLIGHT",
+                "task_neighborhood", "ARTIFACT_SKILL_BRIEFING",
                 "structure_constraints", List.of("问题-方法-效果")));
         String researchSignal = createMemorySignal(workspaceId, Map.of(
                 "signal_type", "DECISION",
@@ -79,7 +79,7 @@ class Phase5MemoryContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.style_constraints[0]").value("结论先行"));
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/control-pack/artifact", workspaceId)
-                        .param("skill_key", "resume_highlight"))
+                        .param("skill_key", "briefing"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.structure_constraints[0]").value("问题-方法-效果"));
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/control-pack/research", workspaceId)

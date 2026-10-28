@@ -34,24 +34,24 @@ describe("ArtifactsApi", () => {
     const api = new ArtifactsApi({ post } as unknown as ApiClient);
 
     await api.createJob("workspace", {
-      skill_key: "study_guide",
+      skill_key: "study-guide",
       user_requirement: "生成学习指南",
-      inputs: { language: "zh-CN" }
+      inputs: { length: "STANDARD" }
     });
     await api.saveVersionAsSource("workspace", "job", 4);
-    await api.writebackVersion("workspace", "job", 4, { item_type: "WIKI", title: "指南" });
+    await api.writebackVersion("workspace", "job", 4, { item_type: "NOTE", title: "指南" });
     await api.regenerateVersion("workspace", "job", 4);
     await api.rollbackVersion("workspace", "job", 4);
 
     expect(post.mock.calls).toEqual([
       ["/api/v2/workspaces/workspace/artifact-jobs", {
-        skill_key: "study_guide",
+        skill_key: "study-guide",
         user_requirement: "生成学习指南",
-        inputs: { language: "zh-CN" }
+        inputs: { length: "STANDARD" }
       }],
       ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/save-as-source", {}],
       ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/writeback", {
-        item_type: "WIKI",
+        item_type: "NOTE",
         title: "指南"
       }],
       ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/regenerate", {}],
@@ -71,24 +71,5 @@ describe("ArtifactsApi", () => {
     expect(get.mock.calls.every(([, init]) => init?.signal === controller.signal)).toBe(true);
   });
 
-  it("uses the parent video route for list, create, cancellation and choice retry", async () => {
-    const get = vi.fn(async (_path: string) => ({ enabled: false, requests: [] }));
-    const post = vi.fn(async (_path: string, _body?: unknown) => ({}));
-    const api = new ArtifactsApi({ get, post } as unknown as ApiClient);
-    await api.listVideoLearning("workspace");
-    await api.createVideoLearning("workspace", {
-      client_request_id: "request-1", video_url: "https://www.bilibili.com/video/BV1234567890",
-      part: 1, language: "zh-CN", frame_density: "STANDARD", asr_fallback: "ALLOW",
-      template_version: "original-v1", user_requirement: "Study",
-      selected_skills: ["knowledge_blog"]
-    });
-    await api.cancelVideoLearning("workspace", "parent-1");
-    await api.retryVideoLearningChoice("workspace", "parent-1", "knowledge_blog");
-    expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/video-learning-bundles", undefined);
-    expect(post.mock.calls.map(([path]) => path)).toEqual([
-      "/api/v2/workspaces/workspace/video-learning-bundles",
-      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/cancel",
-      "/api/v2/workspaces/workspace/video-learning-bundles/parent-1/choices/knowledge_blog/retry"
-    ]);
-  });
+
 });

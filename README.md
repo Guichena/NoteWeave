@@ -40,7 +40,7 @@
 | --- | --- |
 | **Backend**（Java） | 唯一的业务真源：Workspace 隔离与权限、资料版本、研究表与全部判定、产物版本、记忆门控、配额与限流。跨进程任务先写 Outbox，再投递 Kafka。 |
 | **Research Worker**（Python） | 无状态执行面：领取研究子任务，完成联网检索、网页快照、原文抽取和本地校验，只提交候选与证据。 |
-| **Artifact Worker**（Python） | 按 Skill 目录生成产物并导出 PPTX、PDF；内置系统 MCP 服务端，负责字幕、抓帧、OCR 与转写。 |
+| **Artifact Worker**（Python） | 读取 SKILL.md 与 JSON Schema，执行取材、规划、写作、校验、渲染五个阶段，导出 Markdown、CSV、PPTX 和 PDF。 |
 | **Frontend**（React） | 三栏工作台：导航与对话列表、对话与研究、来源与产物面板；通过 SSE 接收回答流和任务事件。 |
 | **存储与中间件** | MySQL 保存真源与审计账本；Elasticsearch 承担 BM25 与向量检索；MinIO 存放大文件和产物；Redis 负责配额限流、热点缓存和回答流的跨实例转发；Kafka 承载各阶段任务。 |
 
@@ -102,14 +102,12 @@
 
 **要解决的问题**：报告、测验、导图、讲义等产物各写一套 Prompt 和流程，难以复用，结果也无法校验。
 
-- **Skill 目录声明产物**：输入、输出契约、所需能力和导出格式都写在目录里，新增产物类型不改编排代码。
-- **Java Host + Python Worker 分层**：Host 负责创建任务、冻结输入、复核契约与证据覆盖、管理版本；Worker 负责生成与导出。
-- **系统 MCP 接入外部能力**：基于官方 MCP Python SDK，提供 B站字幕、音频转写、抓帧、画面 OCR 和 PDF 编译，参数按 inputSchema 校验。
-- **视频学习**：一次采集视频素材并冻结，生成视频摘要、知识博客、面试问答、学习 PPTX 和 PDF 讲义；每个观点必须引用字幕原文，Host 发布前复核产物与冻结素材是否一致。
+- **Skill 目录声明产物**：根目录 `skills/<name>/SKILL.md` 定义形态、选项与输出契约，`schemas/` 定义内容结构；新增同形态产物只需增加 SKILL.md。
+- **共享五段流水线**：取材、规划、写作、校验、渲染共用；模型输出须通过 Schema、引用和数字一致性校验，最多修复一次。
+- **Java Host + Python Worker 分层**：Host 负责任务投递、冻结来源、候选验收、版本与文件；Worker 负责模型执行和渲染。
+- **视频资料生成**：音视频由独立的 media-mcp 服务解析后进入资料库；生成时按冻结来源读取文字与关键帧，支持原帧 PPTX 和插图 PDF 讲义。产物支持写回 Note。
 
 ![产物框架](./docs/images/artifact-framework.svg)
-
-![视频学习流程](./docs/images/video-learning.svg)
 
 <table>
   <tr>
@@ -117,7 +115,7 @@
     <td width="50%"><img src="./docs/images/screenshots/artifact-slides.png" alt="学习演示文稿"><br><sub><b>学习 PPTX</b>：逐页预览，每页配视频原画面，并标注视频时间点与字幕证据</sub></td>
   </tr>
   <tr>
-    <td width="50%"><img src="./docs/images/screenshots/studio.png" alt="产物面板"><br><sub><b>产物面板</b>：产物按输入类型分组，同一视频的面试问答、知识博客、学习演示文稿均已完成</sub></td>
+    <td width="50%"><img src="./docs/images/screenshots/studio.png" alt="产物面板"><br><sub><b>产物面板</b>：从选定资料生成报告、讲义和幻灯片，提供历史版本与文件下载</sub></td>
     <td width="50%"><img src="./docs/images/screenshots/artifact-pdf-pages.png" alt="PDF 讲义"><br><sub><b>PDF 讲义</b>：XeLaTeX 编译的课程笔记，包含目录、知识点、复习题和带时间点的视频画面</sub></td>
   </tr>
 </table>
@@ -213,7 +211,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-只想看界面时，在 `frontend/.env.local` 写入 `VITE_NOTEWEAVE_MOCK=1`，前端会使用内置的演示数据，不需要启动后端。Python Worker 的环境与启动方式见 [workers/README.md](./workers/README.md)。修改产物目录时只改 `reference/artifact-skill-catalog-v2.json`，再运行 `python scripts/sync-artifact-skill-catalog.py` 同步到 Backend 和 Worker。
+只想看界面时，在 `frontend/.env.local` 写入 `VITE_NOTEWEAVE_MOCK=1`，前端会使用内置的演示数据，不需要启动后端。Python Worker 的环境与启动方式见 [workers/README.md](./workers/README.md)。新增同形态产物时，在 `skills/` 下增加 SKILL.md，Backend 与 Artifact Worker 读取同一目录；新增形态时同步补充 Schema、提示词和渲染器。
 
 ```powershell
 # Backend 全量测试
@@ -242,7 +240,9 @@ NoteWeave
 │   ├── research-worker      深度研究执行面
 │   └── artifact-worker      产物生成与导出
 │       └── mcp_servers      系统 MCP 服务端（字幕、抓帧、OCR、转写、PDF 渲染）
-├── reference                产物 Skill 目录等跨语言共享定义
+├── skills                   产物 SKILL.md 定义
+├── schemas                  产物形态 JSON Schema
+├── reference                其他跨语言共享定义
 ├── scripts                  运行、评测、Smoke 和同步脚本
 └── docs                     设计文档与架构图
 ```
@@ -254,7 +254,7 @@ NoteWeave
 | 深度研究 | [Research Agent 架构](./docs/DeepResearch-ResearchAgent架构文档.md) |
 | 问答、精读与 Wiki | [问答 RAG 链路设计](./docs/问答RAG链路设计.md)、[Note 链路设计](./docs/Note链路设计.md)、[Wiki 模式设计](./docs/Wiki模式设计.md) |
 | 资料上传、解析与检索投影 | [资料基础设施详细设计](./docs/资料基础设施详细设计.md) |
-| 产物框架 | [Artifact Skill 执行架构](./docs/Artifact-Skill执行架构.md) |
+| 产物框架 | [产物生成框架改造规划](./docs/升级改造/12-产物生成框架改造规划.md) |
 | 记忆 | [Memory 机制详细设计](./docs/Memory机制详细设计.md) |
 | 接口与事件 | [API 与事件契约](./docs/API与事件契约-v2.md) |
 

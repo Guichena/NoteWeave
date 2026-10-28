@@ -205,10 +205,6 @@ export function ArtifactReader(props: ArtifactReaderProps) {
             onClick={() => void props.writeArtifactVersionToKnowledge({ ...target, title }, "NOTE")}>
             {props.artifactWritebackByVersionId[saveKey]?.includes("NOTE") ? "已写入 Note" : "写入 Note"}
           </button>
-          <button type="button" className="secondary-button" disabled={isBusy || !version}
-            onClick={() => void props.writeArtifactVersionToKnowledge({ ...target, title }, "WIKI")}>
-            {props.artifactWritebackByVersionId[saveKey]?.includes("WIKI") ? "已写入 Wiki" : "写入 Wiki"}
-          </button>
         </div>
 
         {regenerating ? (

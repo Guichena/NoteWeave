@@ -137,7 +137,7 @@ export function useArtifactWorkspace({
 
   const writeArtifactVersionToKnowledge = useCallback(async (
     version: ArtifactWritebackVersion,
-    itemType: "NOTE" | "WIKI"
+    itemType: "NOTE"
   ) => {
     if (!workspaceId) {
       setStatus("请先创建工作台");

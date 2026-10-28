@@ -21,7 +21,7 @@ dependencies = [
 test = ["pytest>=9.0.0,<10"]
 
 [tool.setuptools.packages.find]
-include = ["app*", "mcp_servers*"]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

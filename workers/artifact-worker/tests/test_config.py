@@ -1,51 +1,30 @@
-from __future__ import annotations
+"""退休配置移除后，生产传输约束仍然有效。"""
 
 import pytest
-
 from app.config import Settings
 
 
-def _set_valid_production_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+def production(monkeypatch):
     monkeypatch.setenv("NOTEWEAVE_ENVIRONMENT", "production")
     monkeypatch.setenv("NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN", "a" * 32)
     monkeypatch.setenv("NOTEWEAVE_ARTIFACT_CALLBACK_SECRET", "b" * 32)
     monkeypatch.setenv("NOTEWEAVE_JAVA_BASE_URL", "https://noteweave.example")
-    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_REPOSITORY_BACKEND", "file")
 
 
-def test_production_rejects_debug_routes(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_valid_production_environment(monkeypatch)
-    monkeypatch.setenv("NOTEWEAVE_DEBUG_ROUTES_ENABLED", "true")
-
-    with pytest.raises(ValueError, match="production forbids artifact worker debug routes"):
-        Settings()
+def test_production_transport_accepts_dedicated_credentials(monkeypatch):
+    production(monkeypatch)
+    assert Settings().artifact_consumer_enabled
 
 
-def test_production_accepts_debug_routes_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_valid_production_environment(monkeypatch)
-    monkeypatch.setenv("NOTEWEAVE_DEBUG_ROUTES_ENABLED", "false")
-
-    assert Settings().debug_routes_enabled is False
-
-
-def test_production_rejects_memory_artifact_repository(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_valid_production_environment(monkeypatch)
-    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_REPOSITORY_BACKEND", "memory")
-
-    with pytest.raises(ValueError, match="file artifact repository backend"):
-        Settings()
-
-
-def test_production_requires_consumer_and_poll_budget_above_mcp_timeout(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _set_valid_production_environment(monkeypatch)
-    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_CONSUMER_ENABLED", "false")
-    with pytest.raises(ValueError, match="durable Artifact Kafka consumer"):
-        Settings()
-
-    monkeypatch.setenv("NOTEWEAVE_ARTIFACT_CONSUMER_ENABLED", "true")
-    monkeypatch.setenv("NOTEWEAVE_MCP_PROCESS_TIMEOUT_SECONDS", "4200")
-    monkeypatch.setenv("NOTEWEAVE_KAFKA_ARTIFACT_MAX_POLL_INTERVAL_SECONDS", "4200")
-    with pytest.raises(ValueError, match="max poll interval"):
+@pytest.mark.parametrize(("name", "value", "error"), [
+    ("NOTEWEAVE_ARTIFACT_CONSUMER_ENABLED", "false", "durable Artifact Kafka consumer"),
+    ("NOTEWEAVE_JAVA_BASE_URL", "http://example", "HTTPS"),
+    ("NOTEWEAVE_ARTIFACT_INTERNAL_AUTH_TOKEN", "short", "sufficient entropy"),
+    ("NOTEWEAVE_ARTIFACT_CALLBACK_SECRET", "short", "sufficient entropy"),
+    ("NOTEWEAVE_KAFKA_ARTIFACT_MAX_POLL_INTERVAL_SECONDS", "1", "greater than or equal"),
+])
+def test_production_transport_keeps_required_guards(monkeypatch, name, value, error):
+    production(monkeypatch)
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=error):
         Settings()

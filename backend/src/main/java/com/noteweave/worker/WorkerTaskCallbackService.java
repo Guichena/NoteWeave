@@ -149,16 +149,7 @@ public class WorkerTaskCallbackService {
             taskService.startTask(taskId);
             task = taskService.getTaskRef(taskId);
         }
-        boolean waitingPhase = isWaitingPhase(request.phase());
-        if (waitingPhase) {
-            artifactJobService.markWaiting(taskId, request.phase());
-        } else {
-            artifactJobService.markRunning(taskId);
-        }
-        if (waitingPhase) {
-            taskService.recordWaiting(taskId, request.phase(), request.message(), request.progressPercent(), request.metrics(), request.payload());
-            return new WorkerAckResponse(taskId, "WAITING", "");
-        }
+        artifactJobService.markRunning(taskId);
         taskService.recordProgress(taskId, request.phase(), request.message(), request.progressPercent(), request.metrics(), request.payload());
         return new WorkerAckResponse(taskId, "RUNNING", "");
     }
@@ -287,9 +278,6 @@ public class WorkerTaskCallbackService {
     public record CompletionOutcome(String phase, String message, String resultRef) {
     }
 
-    private boolean isWaitingPhase(String phase) {
-        return phase != null && phase.startsWith("WAITING_FOR_");
-    }
 
     private void validateWorkerType(TaskService.TaskRef task, String workerType) {
         if (!"artifact".equalsIgnoreCase(workerType == null ? "" : workerType.trim())) {

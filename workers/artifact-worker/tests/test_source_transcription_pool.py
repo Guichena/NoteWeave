@@ -338,7 +338,6 @@ def test_capacity_exception_is_http_429_with_retry_header_and_task_id_passthroug
 def test_lifecycle_stops_pool_even_when_consumer_start_fails(monkeypatch):
     from app import main
     calls = []
-    monkeypatch.setattr(main, "recover_system_mcp_acquisition_operations", lambda **kwargs: None)
     monkeypatch.setattr(main, "start_source_transcription_pool", lambda settings: calls.append("pool-start"))
     monkeypatch.setattr(main, "recover_source_transcriptions", lambda: [])
     monkeypatch.setattr(main, "shutdown_source_transcriptions", lambda: calls.append("pool-stop"))
@@ -373,7 +372,6 @@ def test_http_stream_rejects_over_limit_before_accepting_job(monkeypatch):
 def test_lifecycle_always_stops_pool_when_consumer_shutdown_raises(monkeypatch):
     from app import main
     calls = []
-    monkeypatch.setattr(main, "recover_system_mcp_acquisition_operations", lambda **kwargs: None)
     monkeypatch.setattr(main, "start_source_transcription_pool", lambda settings: calls.append("pool-start"))
     monkeypatch.setattr(main, "recover_source_transcriptions", lambda: [])
     monkeypatch.setattr(main, "shutdown_source_transcriptions", lambda: calls.append("pool-stop"))

@@ -4,7 +4,6 @@ import { ArtifactOutputList } from "./ArtifactOutputList";
 import { ArtifactReader } from "./ArtifactReader";
 import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import { NoteSourceDraftTool } from "./NoteSourceDraftTool";
-import { VideoLearningPanel } from "./VideoLearningPanel";
 import { buildArtifactHistoryVersionKey } from "./artifactHistory";
 import { buildArtifactOutputItems, type ArtifactOutputItem } from "./artifactOutputs";
 import { buildInitialArtifactFormValues } from "./artifactStudio";
@@ -192,14 +191,6 @@ export function ArtifactRail(props: ArtifactRailProps) {
             }}
           />
         )}
-
-        {workspace ? (
-          <VideoLearningPanel
-            workspaceId={workspace.workspace_id}
-            onJobsChanged={props.refreshArtifactJobs}
-            onOpenVersion={(artifactJobId, versionNo) => setReaderTarget({ artifactJobId, versionNo })}
-          />
-        ) : null}
 
         <ArtifactOutputList
           items={outputItems}

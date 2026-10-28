@@ -16,7 +16,6 @@ public record ArtifactWorkerInputResponse(
         List<ArtifactUpstreamRefRequest> upstreamRefs,
         WorkerContextSnapshotResponse contextSnapshot,
         MemoryControlPackResponse controlPack,
-        ArtifactWorkerInputPayload inputPayload,
-        ArtifactContextV2ShadowInputResponse contextV2Shadow
+        ArtifactWorkerInputPayload inputPayload
 ) {
 }

@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record ArtifactKnowledgeWritebackRequest(
-        @NotBlank @Pattern(regexp = "NOTE|WIKI") String itemType,
+        @NotBlank @Pattern(regexp = "NOTE") String itemType,
         @Size(max = 300) String title
 ) {
 }

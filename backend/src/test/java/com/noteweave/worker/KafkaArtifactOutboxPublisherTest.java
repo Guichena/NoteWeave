@@ -60,17 +60,15 @@ class KafkaArtifactOutboxPublisherTest {
     }
 
     @Test
-    void materialTaskUsesDistinctCommandWithoutLeakingParentInput() throws Exception {
+    void shouldRejectRetiredMaterialTasksBeforePublishing() {
         AtomicReference<String> payload = new AtomicReference<>();
         KafkaArtifactOutboxPublisher publisher = new KafkaArtifactOutboxPublisher(
                 (topic, key, body) -> payload.set(body), objectMapper);
-        publisher.publish("noteweave.artifact.job", "parent-1",
+        assertThatThrownBy(() -> publisher.publish("noteweave.artifact.job", "parent-1",
                 "{\"task_id\":\"task-2\",\"task_type\":\"VIDEO_MATERIAL\",\"video_url\":\"private\"}",
-                "delivery-2");
-        JsonNode command = objectMapper.readTree(payload.get());
-        assertThat(command.path("schema_version").asText()).isEqualTo("video-material-command.v1");
-        assertThat(command.path("task_id").asText()).isEqualTo("task-2");
-        assertThat(command.path("delivery_token").asText()).isEqualTo("delivery-2");
-        assertThat(payload.get()).doesNotContain("private");
+                "delivery-2"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported artifact outbox task type");
+        assertThat(payload.get()).isNull();
     }
 }

@@ -46,7 +46,6 @@ public class KafkaArtifactOutboxPublisher implements ArtifactOutboxPublisher {
             String taskType = objectMapper.readTree(payloadJson).path("task_type").asText("");
             return switch (taskType) {
                 case "", "ARTIFACT_JOB" -> "artifact-command.v1";
-                case "VIDEO_MATERIAL" -> "video-material-command.v1";
                 default -> throw new IllegalArgumentException("Unsupported artifact outbox task type");
             };
         } catch (JsonProcessingException exception) {

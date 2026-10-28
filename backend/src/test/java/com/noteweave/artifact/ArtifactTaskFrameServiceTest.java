@@ -41,7 +41,7 @@ class ArtifactTaskFrameServiceTest {
     private ArtifactWorkerInputResponse input(String replay) {
         var source = new WorkerSourceScopeItemResponse("source", "视频", "", "", "snapshot", "", "", "", "VIDEO", "", Map.of());
         return new ArtifactWorkerInputResponse("task", "workspace", "artifact", "input", "digest", replay,
-                List.of(source), List.of(), null, null, null, null);
+                List.of(source), List.of(), null, null, null);
     }
 
     @AfterEach

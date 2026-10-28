@@ -39,7 +39,7 @@ export type ArtifactRailProps = {
   artifactVersionSaveKey: (version: { artifact_job_id: string; version_no: number }) => string;
   writeArtifactVersionToKnowledge: (
     version: { artifact_job_id: string; version_no: number; title: string },
-    target: "NOTE" | "WIKI"
+    target: "NOTE"
   ) => void | Promise<void>;
   artifactWritebackByVersionId: Record<string, string[]>;
   regenerateArtifactVersion: (version: { artifact_job_id: string; version_no: number }) => void | Promise<void>;

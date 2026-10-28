@@ -40,7 +40,6 @@ RUN pip install --no-cache-dir \
     "uvicorn>=0.32.0,<1"
 
 COPY app ./app
-COPY mcp_servers ./mcp_servers
 RUN mkdir -p /app/runtime
 
 EXPOSE 18092

@@ -36,6 +36,11 @@ class ArtifactTaskRetrievalServiceTest {
         jdbc.update("insert into source values ('source', 'workspace', 'READY'), ('other', 'elsewhere', 'READY')");
         jdbc.update("insert into source_snapshot values ('frozen', 'source', 'PARSED', 'DISABLED'), ('latest', 'source', 'PARSED', 'INDEXED'), ('other-snap', 'other', 'PARSED', 'INDEXED')");
         jdbc.update("insert into source_chunk values ('good', 'workspace', 'source', 'frozen', 9, 'page 9', '冻结数据库原文'), ('new', 'workspace', 'source', 'latest', 0, 'page 1', '新版本原文'), ('foreign', 'elsewhere', 'other', 'other-snap', 0, '', '其他工作区内容')");
+        jdbc.execute("alter table source_chunk add part int");
+        jdbc.execute("alter table source_chunk add start_ms bigint");
+        jdbc.execute("alter table source_chunk add end_ms bigint");
+        jdbc.execute("alter table source_chunk add frame_ids_json varchar");
+        jdbc.execute("alter table source_chunk add source_url varchar");
         jobs = mock(ArtifactJobService.class);
         search = mock(ScopedPassageSearch.class);
         when(jobs.getWorkerInput("task")).thenReturn(input("FULL", List.of(source())));
@@ -51,7 +56,7 @@ class ArtifactTaskRetrievalServiceTest {
 
     private ArtifactWorkerInputResponse input(String replay, List<WorkerSourceScopeItemResponse> sources) {
         return new ArtifactWorkerInputResponse("task", "workspace", "artifact", "input", "digest", replay,
-                sources, List.of(), null, null, null, null);
+                sources, List.of(), null, null, null);
     }
 
     private ScopedPassageSearch.Passage candidate(String id, String source, String snapshot) {
@@ -79,22 +84,12 @@ class ArtifactTaskRetrievalServiceTest {
     }
 
     @Test
-    void pipelineCarriesMediaMetadataWhileLegacyKeepsTheOriginalPayload() throws Exception {
-        jdbc.execute("alter table source_chunk add part int");
-        jdbc.execute("alter table source_chunk add start_ms bigint");
-        jdbc.execute("alter table source_chunk add end_ms bigint");
-        jdbc.execute("alter table source_chunk add frame_ids_json varchar");
-        jdbc.execute("alter table source_chunk add source_url varchar");
+    void retrievalCarriesFrozenMediaMetadata() throws Exception {
         jdbc.update("update source_chunk set part=2, start_ms=1000, end_ms=9000, frame_ids_json='[\"frame\"]', source_url='https://www.bilibili.com/video/BVtest' where id='good'");
         results(candidate("good", "source", "frozen"));
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper()
                 .setPropertyNamingStrategy(com.fasterxml.jackson.databind.PropertyNamingStrategies.SNAKE_CASE);
-        var legacy = mapper.valueToTree(service.retrieve("task", "查询", 3).passages().get(0));
-        assertThat(legacy.has("frame_ids")).isFalse();
-        var catalog = mock(ArtifactSkillCatalogService.class);
-        when(catalog.pipelineEnabled()).thenReturn(true);
-        var pipeline = new ArtifactTaskRetrievalService(jobs, search, jdbc, catalog);
-        var passage = pipeline.retrieve("task", "查询", 3).passages().get(0);
+        var passage = service.retrieve("task", "查询", 3).passages().get(0);
         assertThat(passage.part()).isEqualTo(2);
         assertThat(passage.startMs()).isEqualTo(1000);
         assertThat(passage.endMs()).isEqualTo(9000);

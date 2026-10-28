@@ -135,7 +135,7 @@ Research 除通用运行状态外，还包含 Matrix/Cell 状态、Run Stage、V
 
 ### Artifact Job
 
-Artifact 同时区分 Job、Task/Run、Version 和 File。Worker 执行成功只产生候选。`[目标设计]` 内容 Contract 通过后，Host 先创建不可见的 `DELIVERY_PENDING` Version，并冻结全部必需文件 Manifest；文件全部通过 Contract 并达到 `READY` 后，Version 才晋升为可发布的 `READY`。`WAITING` 表示缺少外部输入或审批。`ROLLBACK` 是命令，不是 Version 状态：它创建触发类型为 Rollback 的新 ArtifactRun，并追加带 `restored_from_version_id` 的新 Version；Current Head 只从旧 Head 单调推进到这个新 Version，不把指针倒拨到历史行，也不删除中间版本。
+Artifact 同时区分 Job、Task/Run、Version 和 File。Worker 执行成功只产生候选。`[目标设计]` 内容 Contract 通过后，Host 先创建不可见的 `DELIVERY_PENDING` Version，并冻结全部必需文件 Manifest；文件全部通过 Contract 并达到 `READY` 后，Version 才晋升为可发布的 `READY`。当前产物流水线不再进入旧外部采集 `WAITING` 流程。`ROLLBACK` 是命令，不是 Version 状态：它创建触发类型为 Rollback 的新 ArtifactRun，并追加带 `restored_from_version_id` 的新 Version；Current Head 只从旧 Head 单调推进到这个新 Version，不把指针倒拨到历史行，也不删除中间版本。
 
 ## Provider 失败与结果未知
 
@@ -256,9 +256,14 @@ MySQL Source Version / ACL Version / Tombstone commit
 
 Research Worker 走 Kafka `noteweave.research.agent.command` 与 `/internal/research-agent*`；Artifact Worker 走 `/internal/worker/artifact-tasks`、`/internal/worker/tasks` 与 Artifact Outbox。DTO 以 Controller 和契约测试为准。
 
+产物生成统一使用 SKILL.md、JSON Schema 与取材、规划、写作、校验、渲染五段流水线，旧 `NOTEWEAVE_ARTIFACT_PIPELINE` 开关、Skill Graph、视频素材包、产物影子快照、resume/provider-ack 和 debug 入口已移除。`video-learning-bundles` 不再提供；视频先作为资料入库，再经冻结范围内的取材与关键帧接口生成。写回目标仅支持 `NOTE`，历史版本及文件保持只读可用。
+
+已执行 V210 的数据库升级 V200 清理迁移时，仅本次启动设置 `SPRING_FLYWAY_OUT_OF_ORDER=true`，迁移成功后恢复默认；全新数据库按编号顺序执行。该设置不写入常驻配置。
+
+
 ## Worker 最小契约
 
-所有 `/internal` 请求共享的最小 Envelope 只有服务间认证、Request ID、Schema Version、领域 Run/Task 身份和 Workspace Scope。执行期端点再按写权限分层：输入读取校验当前 Owner、Attempt、Epoch 和 Scope；Heartbeat/Progress 校验 Owner、Attempt、Epoch、Fencing 与单调序号；Checkpoint、Complete 和 Fail 额外携带输入摘要；Complete 使用 Completion Idempotency Key、Payload Digest 和结果 Receipt；Fail 才携带可重试分类；Resume 使用 Wait Receipt、恢复条件摘要和新的执行代际。不存在的字段不能为了统一 DTO 填空字符串。Artifact Worker 使用输入读取、Heartbeat、Progress、Complete、Fail、Resume 与 Outbox 运维接口；Research 命令通过 `noteweave.research.agent.command` 投递，并通过受保护的 Research Internal Interface 完成 Claim、Checkpoint、预算、External Snapshot 和 Completion。
+所有 `/internal` 请求共享的最小 Envelope 只有服务间认证、Request ID、Schema Version、领域 Run/Task 身份和 Workspace Scope。执行期端点再按写权限分层：输入读取校验当前 Owner、Attempt、Epoch 和 Scope；Heartbeat/Progress 校验 Owner、Attempt、Epoch、Fencing 与单调序号；Checkpoint、Complete 和 Fail 额外携带输入摘要；Complete 使用 Completion Idempotency Key、Payload Digest 和结果 Receipt；Fail 才携带可重试分类；Resume 使用 Wait Receipt、恢复条件摘要和新的执行代际。不存在的字段不能为了统一 DTO 填空字符串。Artifact Worker 使用输入读取、Heartbeat、Progress、Complete、Fail 与 Outbox 运维接口；Research 命令通过 `noteweave.research.agent.command` 投递，并通过受保护的 Research Internal Interface 完成 Claim、Checkpoint、预算、External Snapshot 和 Completion。
 
 Worker 不直接写 Java 业务表。Kafka Payload 中的 Role、Workspace 和权限信息只能帮助路由，权威输入来自 Claim 后读取并校验的服务端 Snapshot。
 

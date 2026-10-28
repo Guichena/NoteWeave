@@ -3,7 +3,6 @@ package com.noteweave.artifact;
 import com.noteweave.common.BusinessException;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
 import com.noteweave.retrieval.qa.ScopedPassageSearch;
 import com.noteweave.worker.WorkerSourceScopeItemResponse;
 import java.nio.charset.StandardCharsets;
@@ -22,20 +21,8 @@ public class ArtifactTaskRetrievalService {
     private final ArtifactJobService jobs;
     private final ScopedPassageSearch search;
     private final JdbcTemplate jdbc;
-    private final boolean pipeline;
 
     public ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc) {
-        this(jobs, search, jdbc, false);
-    }
-
-    @Autowired
-    public ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc,
-                                        ArtifactSkillCatalogService catalog) {
-        this(jobs, search, jdbc, catalog.pipelineEnabled());
-    }
-
-    private ArtifactTaskRetrievalService(ArtifactJobService jobs, ScopedPassageSearch search, JdbcTemplate jdbc, boolean pipeline) {
-        this.pipeline = pipeline;
         this.jobs = jobs;
         this.search = search;
         this.jdbc = jdbc;
@@ -73,22 +60,22 @@ public class ArtifactTaskRetrievalService {
             }
             if (!seen.add(candidate.chunkId())) continue;
             List<Passage> rows = jdbc.query("""
-                    select sc.id, sc.chunk_no, coalesce(sc.location_info, '') as location_info, sc.content%s
+                    select sc.id, sc.chunk_no, coalesce(sc.location_info, '') as location_info, sc.content, sc.part, sc.start_ms, sc.end_ms, sc.frame_ids_json, sc.source_url
                     from source_chunk sc
                     join source s on s.id = sc.source_id
                     join source_snapshot ss on ss.id = sc.source_snapshot_id and ss.source_id = s.id
                     where sc.id = ? and sc.workspace_id = ? and s.workspace_id = ?
                       and sc.source_id = ? and sc.source_snapshot_id = ? and s.status = 'READY'
                       and ss.parse_status = 'PARSED' and ss.index_status in ('INDEXED', 'DISABLED')
-                    """.formatted(pipeline ? ", sc.part, sc.start_ms, sc.end_ms, sc.frame_ids_json, sc.source_url" : ""), (rs, index) -> new Passage(rs.getString("id"), source.sourceId(),
+                    """, (rs, index) -> new Passage(rs.getString("id"), source.sourceId(),
                     source.sourceSnapshotId(), rs.getInt("chunk_no"), source.title(),
                     rs.getString("location_info"), rs.getString("content"),
                     Double.isFinite(candidate.score()) ? candidate.score() : 0,
-                    pipeline ? (Integer) rs.getObject("part") : null,
-                    pipeline ? rs.getObject("start_ms", Long.class) : null,
-                    pipeline ? rs.getObject("end_ms", Long.class) : null,
-                    pipeline ? frameIds(rs.getString("frame_ids_json")) : null,
-                    pipeline ? rs.getString("source_url") : null),
+                    (Integer) rs.getObject("part"),
+                    rs.getObject("start_ms", Long.class),
+                    rs.getObject("end_ms", Long.class),
+                    frameIds(rs.getString("frame_ids_json")),
+                    rs.getString("source_url")),
                     candidate.chunkId(), input.workspaceId(), input.workspaceId(), source.sourceId(), source.sourceSnapshotId());
             if (rows.isEmpty()) {
                 reasons.add("ARTIFACT_RETRIEVAL_CHUNK_UNAVAILABLE");

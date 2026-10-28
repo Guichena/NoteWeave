@@ -39,10 +39,8 @@ public class ArtifactJobService {
     private final ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler;
     private final MemoryCompilerService memoryCompilerService;
     private final ArtifactSkillCatalogService artifactSkillCatalogService;
-    private final ArtifactVideoMaterialService videoMaterialService;
     private final GeneratedSourceService generatedSourceService;
     private final KnowledgeCommandService knowledgeCommandService;
-    private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
     private final ArtifactExportService exportService;
@@ -56,10 +54,8 @@ public class ArtifactJobService {
             ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler,
             MemoryCompilerService memoryCompilerService,
             ArtifactSkillCatalogService artifactSkillCatalogService,
-            ArtifactVideoMaterialService videoMaterialService,
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService,
-            ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
             ResearchGeneratedSourceReadGate generatedSourceGate,
             ArtifactExportService exportService
@@ -72,10 +68,8 @@ public class ArtifactJobService {
         this.artifactPayloadReadModelAssembler = artifactPayloadReadModelAssembler;
         this.memoryCompilerService = memoryCompilerService;
         this.artifactSkillCatalogService = artifactSkillCatalogService;
-        this.videoMaterialService = videoMaterialService;
         this.generatedSourceService = generatedSourceService;
         this.knowledgeCommandService = knowledgeCommandService;
-        this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
         this.memoryRevisionGuard = memoryRevisionGuard;
         this.generatedSourceGate = generatedSourceGate;
         this.exportService = exportService;
@@ -146,12 +140,6 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
-        if (actorUserId == null) {
-            contextV2ShadowSnapshots.freeze(workspaceId, taskId, userRequirement, skillKey);
-        } else {
-            contextV2ShadowSnapshots.freezeForActor(
-                    workspaceId, taskId, userRequirement, skillKey, actorUserId);
-        }
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",
@@ -179,16 +167,14 @@ public class ArtifactJobService {
         Map<String, Object> inputs = request.inputs() == null
                 ? artifactPayloadReadModelAssembler.readInputs(row.inputsJson())
                 : artifactSkillCatalogService.validateAndNormalizeInputs(skill, request.inputs());
-        if (artifactSkillCatalogService.pipelineEnabled()) {
-            if (request.inputs() == null && !skill.skillKey().equals(row.skillKey())) {
-                // 历史版本通过别名进入新 Skill，只保留新声明支持的选项，其余使用新默认值。
-                Map<?, ?> properties = (Map<?, ?>) skill.inputSchema().get("properties");
-                Map<String, Object> declared = new LinkedHashMap<>();
-                inputs.forEach((key, value) -> { if (properties.containsKey(key)) declared.put(key, value); });
-                inputs = declared;
-            }
-            inputs = artifactSkillCatalogService.validateAndNormalizeInputs(skill, inputs);
+        if (request.inputs() == null && !skill.skillKey().equals(row.skillKey())) {
+            // 历史版本通过别名进入新 Skill，只保留新声明支持的选项，其余使用新默认值。
+            Map<?, ?> properties = (Map<?, ?>) skill.inputSchema().get("properties");
+            Map<String, Object> declared = new LinkedHashMap<>();
+            inputs.forEach((key, value) -> { if (properties.containsKey(key)) declared.put(key, value); });
+            inputs = declared;
         }
+        inputs = artifactSkillCatalogService.validateAndNormalizeInputs(skill, inputs);
         int nextRunNo = row.latestRunNo() + 1;
         String taskId = taskService.createTask(
                 workspaceId,
@@ -222,7 +208,6 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
-        contextV2ShadowSnapshots.freeze(workspaceId, taskId, requirement, row.skillKey());
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",
@@ -265,7 +250,6 @@ public class ArtifactJobService {
                         "trace_id", artifactJobId + ":retry-" + (row.latestRunNo() + 1),
                         "created_at", System.currentTimeMillis())),
                 artifactSkillCatalogService.catalogDigest());
-        contextV2ShadowSnapshots.freeze(workspaceId, taskId, row.userRequirement(), row.skillKey());
         memoryCompilerService.logPackUsage(workspaceId, "ARTIFACT", "ARTIFACT_JOB_RUN", taskId,
                 artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()));
         return new ArtifactJobResponse(artifactJobId, taskId, row.skillKey(), "QUEUED");
@@ -302,7 +286,6 @@ public class ArtifactJobService {
                 source.originTaskId(),
                 workspaceId
         );
-        videoMaterialService.linkPublishedVersion(versionId, source.materialBundleId());
         return getVersionDetail(workspaceId, artifactJobId, nextVersionNo);
     }
 
@@ -464,6 +447,9 @@ public class ArtifactJobService {
             int versionNo,
             ArtifactKnowledgeWritebackRequest request
     ) {
+        if (!"NOTE".equals(request.itemType())) {
+            throw new BusinessException("ARTIFACT_WRITEBACK_TARGET_INVALID", "产物只支持写回 Note", HttpStatus.BAD_REQUEST);
+        }
         requireWorkspace(workspaceId);
         exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionSourceRow row = loadVersionForSource(workspaceId, artifactJobId, versionNo);
@@ -482,8 +468,6 @@ public class ArtifactJobService {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
-        String activeRequirement = contextV2ShadowSnapshots.activeRequirement(
-                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
         Map<String, Object> inputs = artifactPayloadReadModelAssembler.readInputs(row.inputsJson());
         return new ArtifactWorkerInputResponse(
                 row.taskId(),
@@ -501,10 +485,9 @@ public class ArtifactJobService {
                         blankIfNull(row.styleProfileKey()),
                         blankIfNull(row.contextSnapshotId()),
                         row.userRequirement(),
-                        activeRequirement == null ? row.userRequirement() : activeRequirement,
+                        row.userRequirement(),
                         inputs
-                ),
-                contextV2ShadowSnapshots.readForWorker(taskId)
+                )
         );
     }
 
@@ -514,24 +497,12 @@ public class ArtifactJobService {
     }
 
     @Transactional
-    public void markWaiting(String taskId, String waitStatus) {
-        artifactJobWriteRepository.updateStatusByTaskId(
-                taskId,
-                blankToNull(waitStatus) == null ? "WAITING_FOR_PROVIDER" : waitStatus.trim()
-        );
-    }
-
-    @Transactional
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         String markdown = extractMarkdown(request.resultPayload());
         requireVerifiedCandidate(row, request);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
-        contextV2ShadowSnapshots.activeRequirement(
-                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
-        String materialBundleId = videoMaterialService.validateCandidateReference(
-                taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
@@ -556,7 +527,6 @@ public class ArtifactJobService {
                 Json.write(objectMapper, request.citations() == null ? List.of() : request.citations()),
                 taskId
         );
-        videoMaterialService.linkPublishedVersion(versionId, materialBundleId);
         artifactJobWriteRepository.recordCandidateReceipt(taskId, candidate.candidateId(),
                 candidate.digest(), versionId, row.inputSnapshotId());
         artifactJobWriteRepository.completeJob(row.artifactJobId(), request.resultTitle(), nextVersionNo);
@@ -643,36 +613,21 @@ public class ArtifactJobService {
     }
 
     private void requireVerifiedCandidate(ArtifactJobTaskRow row, com.noteweave.worker.WorkerCompleteRequest request) {
-        if (artifactSkillCatalogService.pipelineEnabled()) {
-            Map<String, String> snapshots = readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()).stream()
-                    .collect(java.util.stream.Collectors.toMap(WorkerSourceScopeItemResponse::sourceId,
-                            WorkerSourceScopeItemResponse::sourceSnapshotId));
-            ArtifactCandidateVerificationPolicy.validatePipeline(request.resultPayload(),
-                    artifactSkillCatalogService.kind(row.skillKey()), snapshots.keySet());
-            Map<?, ?> pack = (Map<?, ?>) request.resultPayload().get("evidence");
-            for (Object raw : (List<?>) pack.get("sentences")) {
-                Map<?, ?> sentence = (Map<?, ?>) raw;
-                if (!java.util.Objects.equals(snapshots.get(sentence.get("source_id")), sentence.get("source_snapshot_id"))) {
-                    throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED", "素材不属于冻结的资料快照", HttpStatus.CONFLICT);
-                }
+        Map<String, String> snapshots = readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()).stream()
+                .collect(java.util.stream.Collectors.toMap(WorkerSourceScopeItemResponse::sourceId,
+                        WorkerSourceScopeItemResponse::sourceSnapshotId));
+        ArtifactCandidateVerificationPolicy.validatePipeline(request.resultPayload(),
+                artifactSkillCatalogService.kind(row.skillKey()), snapshots.keySet());
+        Map<?, ?> pack = (Map<?, ?>) request.resultPayload().get("evidence");
+        for (Object raw : (List<?>) pack.get("sentences")) {
+            Map<?, ?> sentence = (Map<?, ?>) raw;
+            if (!java.util.Objects.equals(snapshots.get(sentence.get("source_id")), sentence.get("source_snapshot_id"))) {
+                throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED", "素材不属于冻结的资料快照", HttpStatus.CONFLICT);
             }
-            return;
         }
-        boolean currentCatalog = catalogDigestFrom(row.compilerVersion()).equals(artifactSkillCatalogService.catalogDigest());
-        boolean frozenVideo = Set.of("knowledge_blog", "interview_qa", "video_learning_deck").contains(row.skillKey());
-        boolean requiredEvidence = currentCatalog
-                ? artifactSkillCatalogService.requiresEvidence(row.skillKey()) : frozenEvidenceRequired(request.resultPayload());
-        ArtifactCandidateVerificationPolicy.validate(request.resultPayload(), currentCatalog && !frozenVideo, requiredEvidence);
+
     }
 
-    private boolean frozenEvidenceRequired(Map<String, Object> payload) {
-        if (payload != null && payload.get("execution_plan") instanceof Map<?, ?> plan
-                && plan.get("declared_output_contract") instanceof Map<?, ?> contract
-                && contract.get("citation") instanceof Map<?, ?> citation) {
-            return !("NONE".equals(citation.get("density")) || "OPTIONAL".equals(citation.get("density")));
-        }
-        return true;
-    }
 
     private void requireFrozenSourcesVisible(ArtifactJobTaskRow row) {
         for (WorkerSourceScopeItemResponse source : readCapturedSourceScope(
