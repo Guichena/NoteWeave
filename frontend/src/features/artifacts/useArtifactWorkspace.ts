@@ -6,7 +6,6 @@ import type { ShellRun } from "../shell/useShellBusy";
 import { sourcesApi, type SourcesApi } from "../sources/api";
 import { type SourceAsset } from "../sources/model";
 import { artifactsApi, type ArtifactsApi } from "./api";
-import { ApiError } from "../../shared/api/error";
 import { type ArtifactFileMetadata, type ArtifactJobSummary, type ArtifactVersionComparison } from "./model";
 import { useArtifactState } from "./useArtifactState";
 import { artifactVersionSaveKey } from "./versionKey";
@@ -31,9 +30,6 @@ type UseArtifactWorkspaceInput = {
   api?: ArtifactsApi;
   sourceApi?: SourcesApi;
 };
-
-// NR22：编辑保存结果契约——阅读器据此决定是否清理草稿
-export type ArtifactEditOutcome = { ok: true } | { ok: false; code: string };
 
 type ArtifactVersionRef = {
   artifact_job_id: string;
@@ -92,21 +88,18 @@ export function useArtifactWorkspace({
   ]);
 
   useEffect(() => {
-    if (!workspaceId || artifactPollIntervalMs <= 0) {
-      return;
-    }
-    // NR26：轮询不完全依赖列表里的活动任务——曾出现过活动任务但列表查询失败
-    // （列表被清空后不再轮询，后台完成永远不恢复）。有活动任务或最近一次查询
-    // 失败时都继续按间隔重试，正常空闲（无活动任务且查询正常）不无意义轮询。
-    const hasActiveJob = state.artifactJobs.some(isArtifactJobActive);
-    if (!hasActiveJob && !state.lastJobsFailed) {
+    if (
+      !workspaceId
+      || artifactPollIntervalMs <= 0
+      || !state.artifactJobs.some(isArtifactJobActive)
+    ) {
       return;
     }
     const timer = window.setTimeout(() => {
       void loadJobs();
     }, artifactPollIntervalMs);
     return () => window.clearTimeout(timer);
-  }, [workspaceId, artifactPollIntervalMs, state.artifactJobs, state.lastJobsFailed, loadJobs]);
+  }, [workspaceId, artifactPollIntervalMs, state.artifactJobs, loadJobs]);
 
   const openArtifactHistoryVersion = useCallback(async (item: ArtifactHistoryItem) => {
     if (!workspaceId) {
@@ -144,7 +137,7 @@ export function useArtifactWorkspace({
 
   const writeArtifactVersionToKnowledge = useCallback(async (
     version: ArtifactWritebackVersion,
-    itemType: "NOTE" | "WIKI"
+    itemType: "NOTE"
   ) => {
     if (!workspaceId) {
       setStatus("请先创建工作台");
@@ -171,66 +164,6 @@ export function useArtifactWorkspace({
       await api.regenerateVersion(workspaceId, version.artifact_job_id, version.version_no);
       await loadJobs();
     }, "artifact");
-  }, [workspaceId, run, api, loadJobs, setStatus]);
-
-  // NR22：编辑保存返回明确结果——阅读器只在成功后清理草稿；失败/冲突保留编辑器内容。
-  // run() 会吞掉 action 内的错误，因此结果经闭包变量带出。
-  const editArtifactVersion = useCallback(async (
-    version: ArtifactVersionRef,
-    markdown: string,
-    editReason?: string,
-    requestId?: string
-  ): Promise<ArtifactEditOutcome> => {
-    if (!workspaceId) {
-      setStatus("请先创建工作台");
-      return { ok: false, code: "WORKSPACE_MISSING" };
-    }
-    if (!markdown.trim()) {
-      setStatus("编辑内容为空，未生成新版本");
-      return { ok: false, code: "CONTENT_EMPTY" };
-    }
-    let outcome: ArtifactEditOutcome = { ok: true };
-    await run("保存产物正文编辑", async () => {
-      try {
-        const edited = await api.editVersion(
-          workspaceId,
-          version.artifact_job_id,
-          version.version_no,
-          {
-            request_id: requestId ?? `edit-${version.artifact_job_id}-${version.version_no}-${crypto.randomUUID()}`,
-            expected_base_version_no: version.version_no,
-            markdown,
-            edit_reason: editReason ?? ""
-          }
-        );
-        if (!edited.created) {
-          outcome = { ok: false, code: "CONTENT_UNCHANGED" };
-          setStatus("正文没有变化，未生成新版本");
-          return;
-        }
-        setStatus(`已生成编辑版本 v${edited.version_no}，原生成任务保持不变`);
-        await loadJobs();
-      } catch (error) {
-        // NR22：按 ApiError.code 分支，不再从 message 字符串匹配
-        const code =
-          error instanceof ApiError
-            ? error.code
-            : error instanceof Error
-              ? error.message
-              : "UNKNOWN";
-        outcome = { ok: false, code };
-        if (code === "ARTIFACT_EDIT_BASE_CONFLICT") {
-          setStatus("基础版本已变化，请刷新后基于最新版本重新编辑（未保存的内容仍在编辑器中）");
-        } else if (code === "ARTIFACT_EDIT_REQUEST_CONFLICT") {
-          setStatus("该编辑请求身份已提交过不同内容，请重新发起编辑");
-        } else if (code === "ARTIFACT_EDIT_TYPE_UNSUPPORTED") {
-          setStatus("包含 PDF/PPTX 产物的版本不能通过 Markdown 编辑修改，请使用再生成");
-        } else {
-          setStatus("保存编辑失败，请稍后重试（未保存的内容仍在编辑器中）");
-        }
-      }
-    });
-    return outcome;
   }, [workspaceId, run, api, loadJobs, setStatus]);
 
   const rollbackArtifactVersion = useCallback(async (version: ArtifactVersionRef) => {
@@ -311,13 +244,11 @@ export function useArtifactWorkspace({
   return {
     ...state,
     loadJobs,
-    retryVersion: state.retryVersion,
     openArtifactHistoryVersion,
     saveArtifactVersionAsSource,
     writeArtifactVersionToKnowledge,
     regenerateArtifactVersion,
     rollbackArtifactVersion,
-    editArtifactVersion,
     compareArtifactWithPreviousVersion,
     downloadArtifactVersionPdf,
     downloadArtifactVersionFile

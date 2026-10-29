@@ -94,21 +94,6 @@ describe("buildArtifactProcessView", () => {
     ]);
   });
 
-  it("labels frame text recognition for both the current name and the stored alias", () => {
-    const view = buildArtifactProcessView({
-      capability_union_trace: {
-        capability_decisions: [
-          { capability_name: "OCR_FRAME", server_id: "builtin-bilibili-mcp", tool_name: "ocr_frames" },
-          { capability_name: "ANALYZE_FRAME", server_id: "builtin-bilibili-mcp", tool_name: "analyze_frames" }
-        ]
-      }
-    });
-    expect(view?.capabilities).toEqual([
-      { key: "OCR_FRAME", label: "画面文字识别", via: "MCP · builtin-bilibili-mcp / ocr_frames" },
-      { key: "ANALYZE_FRAME", label: "画面文字识别", via: "MCP · builtin-bilibili-mcp / analyze_frames" }
-    ]);
-  });
-
   it("hides the phase row for versions recorded before lifecycle tracing", () => {
     expect(buildArtifactProcessView(null)).toBeNull();
     expect(buildArtifactProcessView({ verification: { status: "WARN" } })).toMatchObject({

@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ArtifactMindMapPreview,
+  isMindMapArtifact,
   buildMindMapDocument,
   sanitizeMindMapMarkdown,
   summarizeMindMap
@@ -39,6 +40,12 @@ vi.mock("markmap-view", () => ({
 }));
 
 describe("ArtifactMindMapPreview", () => {
+  it("仅按产物形态判断思维导图", () => {
+    expect(isMindMapArtifact("TREE")).toBe(true);
+    expect(isMindMapArtifact("DOC")).toBe(false);
+    expect(isMindMapArtifact("mindmap_from_workspace")).toBe(false);
+    expect(isMindMapArtifact(undefined)).toBe(false);
+  });
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();

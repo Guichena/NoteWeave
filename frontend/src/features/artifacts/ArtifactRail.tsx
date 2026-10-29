@@ -1,10 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CircleAlert, LoaderCircle, Sparkles, X } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Sparkles, X } from "lucide-react";
 import { ArtifactOutputList } from "./ArtifactOutputList";
 import { ArtifactReader } from "./ArtifactReader";
 import { ArtifactStudioGrid } from "./ArtifactStudioGrid";
 import { NoteSourceDraftTool } from "./NoteSourceDraftTool";
-import { VideoLearningPanel } from "./VideoLearningPanel";
 import { buildArtifactHistoryVersionKey } from "./artifactHistory";
 import { buildArtifactOutputItems, type ArtifactOutputItem } from "./artifactOutputs";
 import { buildInitialArtifactFormValues } from "./artifactStudio";
@@ -193,24 +192,6 @@ export function ArtifactRail(props: ArtifactRailProps) {
           />
         )}
 
-        {workspace ? (
-          <VideoLearningPanel
-            workspaceId={workspace.workspace_id}
-            onJobsChanged={props.refreshArtifactJobs}
-            onOpenVersion={(artifactJobId, versionNo) => setReaderTarget({ artifactJobId, versionNo })}
-          />
-        ) : null}
-
-        {props.jobsError ? (
-          <div className="artifact-pending-state" role="alert">
-            <CircleAlert size={16} aria-hidden="true" />
-            <span>产物列表加载失败：{props.jobsError}</span>
-            <button type="button" className="icon-button" onClick={() => void props.onRetryJobs?.()}>
-              重试
-            </button>
-          </div>
-        ) : null}
-
         <ArtifactOutputList
           items={outputItems}
           loading={props.artifactJobsLoading}
@@ -239,15 +220,12 @@ function ArtifactReaderContainer(props: ArtifactRailProps & {
   const version = [latestArtifactVersion, selectedArtifactHistoryVersion].find((candidate) => (
     candidate?.artifact_job_id === target.artifactJobId && candidate.version_no === versionNo
   )) ?? null;
-  const versionFailure = props.versionError && props.versionError.key === versionKey
-    ? props.versionError
-    : null;
   const item = listed ?? buildPlaceholderItem(target, version, props.resolveArtifactSkillTitle);
   const openVersionRef = useRef(props.openArtifactHistoryVersion);
   openVersionRef.current = props.openArtifactHistoryVersion;
 
   useEffect(() => {
-    if (version || versionNo <= 0 || versionFailure) return;
+    if (version || versionNo <= 0) return;
     void openVersionRef.current({
       key: versionKey,
       artifactJobId: item.artifactJobId,
@@ -268,8 +246,6 @@ function ArtifactReaderContainer(props: ArtifactRailProps & {
       versionNo={versionNo}
       version={version}
       loading={props.artifactHistoryLoadingKey === versionKey}
-      error={versionFailure}
-      onRetryVersion={props.onRetryVersion}
       onClose={props.onCloseArtifactRail}
       onSelectVersion={(next) => props.onChangeTarget({
         artifactJobId: item.artifactJobId,

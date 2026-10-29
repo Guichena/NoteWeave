@@ -53,6 +53,9 @@ spring:
       acks: all
 
 noteweave:
+  artifact:
+    skills-dir: ${NOTEWEAVE_SKILLS_DIR:../skills}
+    schemas-dir: ${NOTEWEAVE_SCHEMAS_DIR:../schemas}
   # B-01 死信补偿执行器（OutboxFinalizationExecutor）
   outbox:
     finalization:

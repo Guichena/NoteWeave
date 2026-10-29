@@ -23,8 +23,8 @@ type MindMapCanvasHandle = {
 
 type MindMapInstance = import("markmap-view").Markmap;
 
-export function isMindMapArtifact(skillKey: string): boolean {
-  return skillKey.trim().toLowerCase() === "mindmap_from_workspace";
+export function isMindMapArtifact(kind?: string): boolean {
+  return kind === "TREE";
 }
 
 export function sanitizeMindMapMarkdown(markdown: string): string {

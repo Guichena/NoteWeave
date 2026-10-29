@@ -6,15 +6,13 @@ import {
   Download,
   LoaderCircle,
   MoreHorizontal,
-  Pencil,
   X
 } from "lucide-react";
-import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { artifactsApi, type ArtifactsApi } from "./api";
 import type { ArtifactRailProps } from "./ArtifactRailProps";
 import { ArtifactVerificationPanel } from "./ArtifactVerificationPanel";
 import { ArtifactMindMapPreview, isMindMapArtifact } from "./ArtifactMindMapPreview";
-import { ArtifactSlidePreview } from "./ArtifactSlidePreview";
+import { ArtifactKindView } from "./views/ArtifactKindView";
 import { buildArtifactRuntimeDetailSections } from "./artifactRuntimeTraceDetails";
 import {
   buildArtifactProcessView,
@@ -38,16 +36,12 @@ type ArtifactReaderProps = Pick<
   | "rollbackArtifactVersion"
   | "downloadArtifactVersionPdf"
   | "downloadArtifactVersionFile"
-  | "editArtifactVersion"
 > & {
   workspaceId: string;
   item: ArtifactOutputItem;
   versionNo: number;
   version: ArtifactVersionDetail | null;
   loading: boolean;
-  /** FE-03：该版本的加载失败原因；有值时显示错误与重试，不显示加载中或空态 */
-  error?: import("./state").ArtifactVersionLoadError | null;
-  onRetryVersion?: () => void | Promise<unknown>;
   onBack: () => void;
   onClose?: () => void;
   onSelectVersion: (versionNo: number) => void;
@@ -72,32 +66,21 @@ export function ArtifactReader(props: ArtifactReaderProps) {
     api = artifactsApi
   } = props;
   const [versions, setVersions] = useState<ArtifactVersionSummary[]>([]);
-  const [versionsError, setVersionsError] = useState("");
-  const [versionsReloadToken, setVersionsReloadToken] = useState(0);
   const [comparison, setComparison] = useState<ArtifactVersionComparison | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [editRequestId, setEditRequestId] = useState("");
-  // NR22：编辑会话锚定的基础版本号；null 表示未在编辑
-  const [editBaseVersionNo, setEditBaseVersionNo] = useState<number | null>(null);
   const menuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
     let cancelled = false;
     setVersions([]);
-    setVersionsError("");
     void api.listVersions(workspaceId, item.artifactJobId)
       .then((list) => {
         if (!cancelled) setVersions([...list].sort((left, right) => right.version_no - left.version_no));
       })
-      .catch((error: unknown) => {
-        // FE-03：版本列表失败要能看见、能重试，不能静默退回按版本号猜出来的列表
-        if (!cancelled) setVersionsError(error instanceof Error ? error.message : "版本列表加载失败");
-      });
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [api, workspaceId, item.artifactJobId, item.versionNo, versionsReloadToken]);
+  }, [api, workspaceId, item.artifactJobId, item.versionNo]);
 
   useEffect(() => {
     setComparison(null);
@@ -114,50 +97,9 @@ export function ArtifactReader(props: ArtifactReaderProps) {
   const pdfReady = version?.runtime_trace?.export_trace?.status === "COMPILED"
     && !files.some((file) => file.file_format === "PDF");
   const regenerating = isArtifactOutputActive(item);
-  // 二进制产物版本（PDF/PPTX）不能通过 Markdown 编辑修改源产物
-  const editable = !loading
-    && version !== null
-    && !files.some((file) => file.file_format === "PDF" || file.file_format === "PPTX")
-    && version.content_markdown?.trim().length > 0;
-
-  // NR22：编辑会话绑定开启时的基础版本——版本/成品切换后旧草稿不得提交到新基线
-  const startEditing = () => {
-    if (!version) return;
-    setDraft(version.content_markdown);
-    setEditBaseVersionNo(versionNo);
-    setEditRequestId(`edit-${item.artifactJobId}-${versionNo}-${crypto.randomUUID()}`);
-    setEditing(true);
-  };
-
-  const cancelEditing = () => {
-    setEditing(false);
-    setDraft("");
-    setEditRequestId("");
-    setEditBaseVersionNo(null);
-  };
-
-  const saveEdit = async () => {
-    if (!version) return;
-    // 基线已切换：旧草稿不得写入新版本，直接中断（编辑器保持打开，内容仍在）
-    if (editing && editBaseVersionNo !== null && editBaseVersionNo !== versionNo) {
-      return;
-    }
-    // NR22：仅成功才关闭编辑并清空草稿；冲突/断网/服务错误一律保留编辑器内容
-    const outcome = await props.editArtifactVersion(
-      { artifact_job_id: item.artifactJobId, version_no: versionNo },
-      draft,
-      "",
-      editRequestId
-    );
-    if (!outcome || outcome.ok === false) {
-      return;
-    }
-    setEditing(false);
-    setDraft("");
-    setEditRequestId("");
-    setEditBaseVersionNo(null);
-    props.onSelectVersion(item.versionNo + 1 > versionNo ? item.versionNo : versionNo);
-  };
+  const kind = version?.kind ?? "";
+  const ir = version != null && "ir" in version ? version.ir : null;
+  const isTree = isMindMapArtifact(kind);
 
   function runMenuAction(action: () => void | Promise<unknown>) {
     menuRef.current?.removeAttribute("open");
@@ -255,15 +197,6 @@ export function ArtifactReader(props: ArtifactReaderProps) {
               下载 {formatFileLabel(file.file_format)}
             </button>
           ))}
-          {editable ? (
-            editing ? null : (
-              <button type="button" className="secondary-button" disabled={isBusy || !version}
-                onClick={startEditing}>
-                <Pencil size={15} aria-hidden="true" />
-                编辑正文
-              </button>
-            )
-          ) : null}
           <button type="button" className="secondary-button" disabled={isBusy || !version}
             onClick={() => void props.saveArtifactVersionAsSource(target)}>
             {props.artifactSavedSourceByVersionId[saveKey] ? "已保存为资料" : "保存为资料"}
@@ -272,37 +205,7 @@ export function ArtifactReader(props: ArtifactReaderProps) {
             onClick={() => void props.writeArtifactVersionToKnowledge({ ...target, title }, "NOTE")}>
             {props.artifactWritebackByVersionId[saveKey]?.includes("NOTE") ? "已写入 Note" : "写入 Note"}
           </button>
-          <button type="button" className="secondary-button" disabled={isBusy || !version}
-            onClick={() => void props.writeArtifactVersionToKnowledge({ ...target, title }, "WIKI")}>
-            {props.artifactWritebackByVersionId[saveKey]?.includes("WIKI") ? "已写入 Wiki" : "写入 Wiki"}
-          </button>
         </div>
-
-        {editing ? (
-          <div className="artifact-edit-composer" role="group" aria-label="产物正文编辑">
-            <textarea
-              className="artifact-edit-textarea"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={16}
-              aria-label="编辑产物正文"
-              spellCheck={false}
-            />
-            <div className="artifact-edit-actions">
-              <button type="button" className="primary-button" disabled={isBusy || !draft.trim()}
-                onClick={() => void saveEdit()}>
-                {isBusy ? "保存中…" : "保存为新版本"}
-              </button>
-              <button type="button" className="secondary-button" disabled={isBusy}
-                onClick={cancelEditing}>
-                取消
-              </button>
-              <span className="artifact-edit-hint">
-                保存会追加一个不可变的新版本；若基础版本已变化，草稿会保留在编辑器中。
-              </span>
-            </div>
-          </div>
-        ) : null}
 
         {regenerating ? (
           <p className="artifact-reader-notice" role="status">
@@ -323,57 +226,23 @@ export function ArtifactReader(props: ArtifactReaderProps) {
           </p>
         ) : null}
 
-        {versionsError ? (
-          <p className="artifact-reader-notice" role="alert">
-            <span>版本列表加载失败：{versionsError}</span>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="重新加载版本列表"
-              onClick={() => setVersionsReloadToken((token) => token + 1)}
-            >
-              <LoaderCircle size={14} aria-hidden="true" />
-            </button>
-          </p>
-        ) : null}
-
-        {props.error ? (
-          <div className="artifact-pending-state" role="alert">
-            <CircleAlert size={16} aria-hidden="true" />
-            <span>
-              v{props.error.versionNo} 加载失败：{props.error.message}
-            </span>
-            {props.error.retryable ? (
-              <button type="button" className="icon-button" onClick={() => void props.onRetryVersion?.()}>
-                重试
-              </button>
-            ) : (
-              <span>可以切换到其他版本，或返回产物列表。</span>
-            )}
-          </div>
-        ) : loading || (versionNo > 0 && !version) ? (
+        {loading || !version ? (
           <div className="artifact-pending-state" role="status">
             <LoaderCircle className="is-spinning" size={16} aria-hidden="true" />
             <span>正在加载 v{versionNo}</span>
-          </div>
-        ) : !version ? (
-          <div className="artifact-pending-state" role="status">
-            <span>v{versionNo} 暂无可展示的内容</span>
           </div>
         ) : (
           <>
             <ArtifactVerificationPanel verification={version.verification} />
             <ArtifactProcessPanel version={version} />
             <article className="artifact-reader-content">
-              {isMindMapArtifact(version.skill_key) ? (
+              {isTree ? (
                 <ArtifactMindMapPreview title={title} markdown={version.content_markdown} variant="inline" />
               ) : null}
-              {version.skill_key === "video_learning_deck" && files.length > 0 ? (
-                <ArtifactSlidePreview workspaceId={workspaceId} artifactJobId={item.artifactJobId}
-                  versionNo={versionNo} files={files} api={api} />
-              ) : null}
-              {isMindMapArtifact(version.skill_key) ? null : (
-                <MarkdownSurface className="artifact-reader-markdown" content={stripLeadingTitle(version.content_markdown, title)} />
+              {isTree ? null : (
+                <ArtifactKindView key={version.version_id} kind={kind} ir={ir} workspaceId={workspaceId}
+                  artifactJobId={item.artifactJobId} versionNo={versionNo} files={files} api={api}
+                  markdown={stripLeadingTitle(version.content_markdown, title)} />
               )}
             </article>
           </>

@@ -11,6 +11,22 @@ const presentation = {
 const preferredSkillKeys = ["first", "second"];
 
 describe("useArtifactStudioCatalog", () => {
+  it("仅由接口声明的新 Skill 能出现在列表并生成选项表单", async () => {
+    const api = { listSkills: vi.fn(async () => [{
+      skill_key: "new-learning-product", display_name: "新的学习材料", description: "新 Skill 的描述",
+      status: "ACTIVE", kind: "DOC", input_schema: { type: "object", properties: {
+        length: { type: "string", enum: ["SHORT", "STANDARD", "LONG"], default: "STANDARD" }
+      } }
+    }]) };
+    const { result } = renderHook(() => useArtifactStudioCatalog({}, [], vi.fn(), api as never));
+    await waitFor(() => expect(result.current.skills).toHaveLength(1));
+    expect(result.current.selectedSkill?.key).toBe("new-learning-product");
+    expect(result.current.selectedSkill?.kind).toBe("DOC");
+    expect(result.current.selectedSkill?.inputFields[0].label).toBe("长度");
+    expect(result.current.selectedSkill?.inputFields[0].options?.map((option) => option.label)).toEqual(["简短", "标准", "详细"]);
+    expect(result.current.formValues).toEqual({ length: "STANDARD" });
+  });
+
   it("uses only skills returned by the server and derives form defaults", async () => {
     const onStatus = vi.fn();
     const api = {

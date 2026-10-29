@@ -41,16 +41,11 @@ type BuildArtifactRailPropsInput = {
     artifactSavedSourceByVersionId: Record<string, string>;
     artifactWritebackByVersionId: Record<string, string[]>;
     artifactHistoryLoadingKey: string;
-    /** FE-03：失败原因与重试入口 */
-    jobsError?: string | null;
-    versionError?: ArtifactRailProps["versionError"];
-    retryVersion?: () => Promise<unknown>;
     loadJobs: () => Promise<unknown>;
     openArtifactHistoryVersion: ArtifactRailProps["openArtifactHistoryVersion"];
     saveArtifactVersionAsSource: ArtifactRailProps["saveArtifactVersionAsSource"];
     writeArtifactVersionToKnowledge: ArtifactRailProps["writeArtifactVersionToKnowledge"];
     regenerateArtifactVersion: ArtifactRailProps["regenerateArtifactVersion"];
-    editArtifactVersion: ArtifactRailProps["editArtifactVersion"];
     compareArtifactWithPreviousVersion: ArtifactRailProps["compareArtifactWithPreviousVersion"];
     rollbackArtifactVersion: ArtifactRailProps["rollbackArtifactVersion"];
     downloadArtifactVersionPdf: ArtifactRailProps["downloadArtifactVersionPdf"];
@@ -113,7 +108,6 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     writeArtifactVersionToKnowledge: artifactWorkspace.writeArtifactVersionToKnowledge,
     artifactWritebackByVersionId: artifactWorkspace.artifactWritebackByVersionId,
     regenerateArtifactVersion: artifactWorkspace.regenerateArtifactVersion,
-    editArtifactVersion: artifactWorkspace.editArtifactVersion,
     compareArtifactWithPreviousVersion: artifactWorkspace.compareArtifactWithPreviousVersion,
     rollbackArtifactVersion: artifactWorkspace.rollbackArtifactVersion,
     downloadArtifactVersionPdf: artifactWorkspace.downloadArtifactVersionPdf,
@@ -121,10 +115,6 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     resolveArtifactSkillTitle: (skillKey: string) => resolveArtifactSkillTitle(skillKey, catalog.skills),
     openArtifactHistoryVersion: artifactWorkspace.openArtifactHistoryVersion,
     artifactHistoryLoadingKey: artifactWorkspace.artifactHistoryLoadingKey,
-    versionError: artifactWorkspace.versionError,
-    onRetryVersion: artifactWorkspace.retryVersion,
-    jobsError: artifactWorkspace.jobsError,
-    onRetryJobs: artifactWorkspace.loadJobs,
     sourceDraftTitle: chat.sourceDraftTitle,
     setSourceDraftTitle: chat.setSourceDraftTitle,
     sourceDraftContent: chat.sourceDraftContent,

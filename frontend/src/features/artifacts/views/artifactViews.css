@@ -1,0 +1,27 @@
+.artifact-kind-view { color: inherit; line-height: 1.65; }
+.artifact-kind-toolbar, .artifact-card-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.artifact-kind-toolbar p { margin: 0; }
+.artifact-quiz-question { margin: 20px 0; padding: 20px; border: 1px solid var(--border); border-radius: 10px; }
+.artifact-quiz-question fieldset { display: grid; gap: 10px; border: 0; margin: 0 0 16px; padding: 0; min-width: 0; }
+.artifact-quiz-question legend { padding: 0 0 14px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-quiz-option { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.artifact-quiz-option input { flex: 0 0 auto; accent-color: var(--accent); }
+.artifact-quiz-option span, .artifact-quiz-feedback p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-quiz-feedback { border-inline-start: 3px solid var(--warning); padding-inline-start: 14px; }
+.artifact-quiz-feedback.is-correct { border-color: var(--success); }
+.artifact-quiz-feedback p:last-child { margin-bottom: 0; }
+.artifact-cards-view { max-width: 760px; margin-inline: auto; }
+.artifact-card-progress { text-align: center; }
+.artifact-flashcard { display: flex; flex-direction: column; justify-content: space-between; gap: 24px; width: 100%; min-height: 280px; padding: 28px; border: 1px solid var(--border); border-radius: 12px; color: inherit; background: var(--surface); text-align: center; cursor: pointer; }
+.artifact-flashcard[aria-pressed="true"] { background: var(--surface-2); }
+.artifact-card-side, .artifact-card-hint { font-size: 13px; opacity: .75; }
+.artifact-card-text { font-size: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-card-nav { margin-top: 20px; }
+.artifact-flashcard:focus-visible, .artifact-table-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.artifact-table-view { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.artifact-table-view table { border-collapse: collapse; width: 100%; }
+.artifact-table-view caption { text-align: start; padding: 12px 16px; font-weight: 600; }
+.artifact-table-view th, .artifact-table-view td { border-top: 1px solid var(--border); padding: 12px 16px; text-align: start; vertical-align: top; min-width: 120px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.artifact-table-view th { background: var(--surface-2); }
+.artifact-deck-view .artifact-slide-preview { margin-bottom: 24px; }
+@media (max-width: 600px) { .artifact-quiz-question { padding: 14px; } .artifact-flashcard { padding: 20px; } .artifact-card-text { font-size: 18px; } }

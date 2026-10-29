@@ -67,7 +67,6 @@ function readerProps(overrides: Record<string, unknown> = {}) {
     writeArtifactVersionToKnowledge: vi.fn(),
     artifactWritebackByVersionId: {},
     regenerateArtifactVersion: vi.fn(),
-    editArtifactVersion: vi.fn(async () => ({ ok: true } as const)),
     compareArtifactWithPreviousVersion: vi.fn(),
     rollbackArtifactVersion: vi.fn(async () => undefined),
     downloadArtifactVersionPdf: vi.fn(),
@@ -88,6 +87,20 @@ function readerProps(overrides: Record<string, unknown> = {}) {
 
 describe("ArtifactReader", () => {
   afterEach(() => cleanup());
+
+  it("任意 Skill 名称的 TREE 产物都使用思维导图视图", async () => {
+    render(<ArtifactReader {...readerProps({ version: version(3, { skill_key: "new-tree-product", kind: "TREE" }) })} />);
+    expect(screen.getByRole("region", { name: "思维导图预览" })).toBeTruthy();
+    expect(document.querySelector(".artifact-reader-markdown")).toBeNull();
+    await waitFor(() => expect((screen.getByLabelText("选择版本") as HTMLSelectElement).options).toHaveLength(3));
+  });
+
+  it("DOC 产物不因旧思维导图名称而选择导图视图", async () => {
+    render(<ArtifactReader {...readerProps({ version: version(3, { skill_key: "mindmap_from_workspace", kind: "DOC" }) })} />);
+    expect(screen.queryByRole("region", { name: "思维导图预览" })).toBeNull();
+    expect(screen.getByText("第 3 版正文")).toBeTruthy();
+    await waitFor(() => expect((screen.getByLabelText("选择版本") as HTMLSelectElement).options).toHaveLength(3));
+  });
 
   it("renders the content once under the header and summarizes how it was generated", async () => {
     render(<ArtifactReader {...readerProps()} />);

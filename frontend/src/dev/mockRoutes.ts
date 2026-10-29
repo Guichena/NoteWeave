@@ -88,7 +88,6 @@ const routes: Array<[method: string, pattern: RegExp, handler: Handler]> = [
     status: "READY", parse_status: "PARSED", index_status: "INDEXED"
   })],
   ["POST", /^\/api\/v2\/workspaces\/[^/]+\/artifact-jobs\/[^/]+\/versions\/\d+\/writeback$/, () => ({ status: "ACCEPTED" })],
-  ["GET", /^\/api\/v2\/workspaces\/[^/]+\/video-learning-bundles$/, () => artifacts.videoLearning],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/memory\/items$/, () => memory.listItems()],
   ["GET", /^\/api\/v2\/workspaces\/[^/]+\/memory\/control-pack\/chat$/, (_m, _r, url) => (
     memory.previewControlPack(url.searchParams.get("answer_mode") ?? "QA", url.searchParams.get("query") ?? "")

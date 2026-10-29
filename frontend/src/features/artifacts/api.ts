@@ -9,20 +9,7 @@ import {
   type ArtifactVersionDetail,
   type ArtifactVersionSummary,
   type CreateArtifactJobInput,
-  type CreateVideoLearningInput,
-  type VideoLearningOverview,
-  type VideoLearningRequest
 } from "./model";
-
-export interface ArtifactVersionEditResponse {
-  version_id: string;
-  version_no: number;
-  base_version_no: number;
-  created: boolean;
-  file_preparation_status: string;
-  memory_feedback_status: string;
-  edit_event_id: string;
-}
 
 export class ArtifactsApi {
   constructor(private readonly client: ApiClient = apiClient) {}
@@ -37,26 +24,6 @@ export class ArtifactsApi {
 
   createJob(workspaceId: string, input: CreateArtifactJobInput) {
     return this.client.post<ArtifactJobCreateResponse>(`/api/v2/workspaces/${workspaceId}/artifact-jobs`, input);
-  }
-
-  listVideoLearning(workspaceId: string, init?: RequestInit) {
-    return this.client.get<VideoLearningOverview>(
-      `/api/v2/workspaces/${workspaceId}/video-learning-bundles`, init);
-  }
-
-  createVideoLearning(workspaceId: string, input: CreateVideoLearningInput) {
-    return this.client.post<VideoLearningRequest>(
-      `/api/v2/workspaces/${workspaceId}/video-learning-bundles`, input);
-  }
-
-  cancelVideoLearning(workspaceId: string, requestId: string) {
-    return this.client.post<VideoLearningRequest>(
-      `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/cancel`, {});
-  }
-
-  retryVideoLearningChoice(workspaceId: string, requestId: string, skillKey: string) {
-    return this.client.post<VideoLearningRequest>(
-      `/api/v2/workspaces/${workspaceId}/video-learning-bundles/${requestId}/choices/${encodeURIComponent(skillKey)}/retry`, {});
   }
 
   listVersions(workspaceId: string, artifactJobId: string, init?: RequestInit) {
@@ -98,19 +65,6 @@ export class ArtifactsApi {
     return this.client.post<ArtifactVersionDetail>(
       `${this.versionPath(workspaceId, artifactJobId, versionNo)}/rollback`,
       {}
-    );
-  }
-
-  /** 版本正文编辑：服务端读取 before 做完整差异，重复 requestId 幂等返回既有版本。 */
-  editVersion(
-    workspaceId: string,
-    artifactJobId: string,
-    versionNo: number,
-    input: { request_id: string; expected_base_version_no: number; markdown: string; edit_reason?: string }
-  ) {
-    return this.client.post<ArtifactVersionEditResponse>(
-      `${this.versionPath(workspaceId, artifactJobId, versionNo)}/edits`,
-      input
     );
   }
 
