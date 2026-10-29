@@ -705,13 +705,23 @@ def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object,
 
 def _prefer_primary_answers(snapshot: ResearchAgentTaskSnapshot, answering: list[object], windows: list[object],
                             coverage: list[list[object]]) -> list[object]:
-    """回答了这一列的卡片里优先一手来源；一手来源没把各项要求答全时，留下答到其余部分的二手来源。"""
+    """回答了这一列的卡片里优先一手来源；一手来源没把各项要求答全时，留下答到其余部分的二手来源。
+
+    题目要求官方文档时同样如此，只是二手来源排在官方来源之后（单元格的值仍取官方结论），版本不符的页面不补；
+    完全没有官方来源回答时，二手来源照旧只作有出处的线索。fix22 缺失的 28 个要点里有 12 个答案就在抓到的
+    网页上，多是官方页面只答了一部分、第三方页面答了其余部分，按原来的规则第三方卡片连线索都不留。
+    """
     primary = _prefer_primary_cards(snapshot, answering, windows)
-    if not primary or len(primary) == len(answering) or _official_sources_required(snapshot):
+    if not primary or len(primary) == len(answering):
         return primary
     if coverage and all(group and all(card in primary for card in group) for group in coverage):
         return primary
-    return answering
+    if not _official_sources_required(snapshot):
+        return answering
+    by_window = {getattr(window, "window_id", ""): window for window in windows}
+    versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
+    return primary + [card for card in answering if card not in primary
+                      and not _version_mismatch(versions, by_window.get(getattr(card, "window_id", "")))]
 
 
 def _retained_cards(raw: list[object], judged: list[object], kept: list[object],

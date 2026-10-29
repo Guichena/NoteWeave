@@ -258,6 +258,44 @@ def test_secondary_answers_are_dropped_only_when_official_cards_answer_every_req
     assert _answering_column_cards(_lb_snapshot(), both, [official, blog], _lb_windows(), partial, []) == [official, blog]
 
 
+def test_required_official_sources_take_secondary_answers_only_for_what_official_cards_miss() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    official = _card("w-doc", "Round robin is the default policy")
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    both = SimpleNamespace(key="col-a", label="Policies", requirements=["Default policy", "Supported policies"])
+    snapshot = _lb_snapshot("请引用官方文档说明 Atlas 的负载均衡策略")
+
+    partial = _Llm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [0]},
+                                                              {"requirement_index": 1, "claim_indices": [1]}]})
+    # 官方卡片只答了默认策略，博客补上支持的策略；官方结论排在最前，单元格的值仍取官方来源
+    assert _answering_column_cards(snapshot, both, [official, blog], _lb_windows(), partial, []) == [official, blog]
+
+    complete = _Llm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [0]},
+                                                               {"requirement_index": 1, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, both, [official, blog], _lb_windows(), complete, []) == [official]
+
+
+def test_required_official_sources_do_not_take_secondary_pages_of_another_version() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    windows = [
+        SimpleNamespace(window_id="w-doc", adapter="external_url", source_domain="docs.atlas.example",
+                        source_quality="OFFICIAL_DOC", url="https://docs.atlas.example/3.2/load-balancing.html"),
+        SimpleNamespace(window_id="w-old", adapter="external_url", source_domain="blog.example",
+                        source_quality="GENERAL_WEB", url="https://blog.example/atlas/2.9/load-balancing"),
+    ]
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["docs.atlas.example"], "entity_label": "Atlas 3.2",
+                                             "research_brief": {"current_question": "引用官方文档说明 Atlas 3.2 的负载均衡"}})
+    both = SimpleNamespace(key="col-a", label="Policies", requirements=["Default policy", "Supported policies"])
+    llm = _Llm({"answering_indices": [0, 1], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+
+    official, old = _card("w-doc", "Round robin is the default policy"), _card("w-old", "Atlas 2.9 supports ring hash")
+    assert _answering_column_cards(snapshot, both, [official, old], windows, llm, []) == [official]
+
+
 def test_required_official_sources_keep_secondary_answers_as_sourced_leads_only() -> None:
     from app.deep_cell_executor import _answering_column_cards
     from tests.test_cell_levels import _card
