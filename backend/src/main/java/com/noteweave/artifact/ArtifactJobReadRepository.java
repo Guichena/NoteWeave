@@ -19,14 +19,6 @@ class ArtifactJobReadRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    String loadJobSourceScopeJson(String workspaceId, String artifactJobId) {
-        List<String> rows = jdbcTemplate.query("""
-                select source_scope_json from artifact_job
-                where id = ? and workspace_id = ?
-                """, (rs, rowNum) -> rs.getString(1), artifactJobId, workspaceId);
-        return rows.isEmpty() ? null : rows.get(0);
-    }
-
     List<ArtifactJobSummaryRow> listJobs(String workspaceId) {
         return jdbcTemplate.query("""
                 select aj.id,
@@ -245,56 +237,10 @@ class ArtifactJobReadRepository {
         }, workspaceId, artifactJobId);
     }
 
-    /**
-     * NR18：按所选版本解析再生成输入——沿版本 origin_task_id 定位对应 Run 与冻结快照，
-     * 不再静默取最新 Run（v1 用要求 A、v2 用要求 B 时，选 v1 再生成必须用 A）。
-     * 版本缺 origin 任务或 Run 已不可恢复时明确失败。
-     */
-    ArtifactRegenerationRow loadRegenerationRowForVersion(
-            String workspaceId, String artifactJobId, int versionNo) {
-        return jdbcTemplate.query("""
-                select aj.skill_key,
-                       coalesce(r.user_requirement, '') as user_requirement,
-                       coalesce(r.inputs_json, '') as inputs_json,
-                       coalesce(r.source_scope_json, '') as source_scope_json,
-                       coalesce(r.control_pack_json, '') as control_pack_json,
-                       r.input_snapshot_id,
-                       coalesce((select max(x.run_no) from artifact_job_run x
-                                 where x.artifact_job_id = aj.id), 0) as latest_run_no
-                from artifact_version av
-                join artifact_job aj on aj.id = av.artifact_job_id
-                left join artifact_job_run r on r.task_id = av.origin_task_id
-                     and r.artifact_job_id = aj.id
-                where aj.workspace_id = ? and aj.id = ? and av.version_no = ?
-                for update
-                """, rs -> {
-            if (!rs.next()) {
-                throw new BusinessException("ARTIFACT_VERSION_NOT_FOUND", "产物版本不存在");
-            }
-            if (rs.getString("input_snapshot_id") == null) {
-                throw new BusinessException(
-                        "ARTIFACT_REGENERATION_SOURCE_UNRECOVERABLE",
-                        "所选版本的生成输入已不可恢复（缺少来源任务或运行记录），"
-                                + "请基于该版本明确填写要求与参数后再生成",
-                        org.springframework.http.HttpStatus.CONFLICT);
-            }
-            return new ArtifactRegenerationRow(
-                    blank(rs.getString("skill_key")),
-                    blank(rs.getString("user_requirement")),
-                    blank(rs.getString("inputs_json")),
-                    blank(rs.getString("source_scope_json")),
-                    blank(rs.getString("control_pack_json")),
-                    rs.getString("input_snapshot_id"),
-                    rs.getInt("latest_run_no")
-            );
-        }, workspaceId, artifactJobId, versionNo);
-    }
-
     ArtifactRollbackRow loadRollbackRow(String workspaceId, String artifactJobId, int versionNo) {
         return jdbcTemplate.query("""
                 select av.skill_key, av.title, av.content_markdown, av.result_payload_json,
-                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id,
-                       av.material_bundle_id
+                       av.citations_json, coalesce(av.origin_task_id, aj.task_id) as origin_task_id
                 from artifact_version av
                 join artifact_job aj on aj.id = av.artifact_job_id
                 where aj.workspace_id = ? and aj.id = ? and av.version_no = ?
@@ -308,8 +254,7 @@ class ArtifactJobReadRepository {
                     blank(rs.getString("content_markdown")),
                     blank(rs.getString("result_payload_json")),
                     blank(rs.getString("citations_json")),
-                    blank(rs.getString("origin_task_id")),
-                    rs.getString("material_bundle_id")
+                    blank(rs.getString("origin_task_id"))
             );
         }, workspaceId, artifactJobId, versionNo);
     }
@@ -432,7 +377,7 @@ class ArtifactJobReadRepository {
             int versionNo
     ) {
         return jdbcTemplate.query("""
-                select av.id, av.title, av.content_markdown, coalesce(av.citations_json, '[]') as citations_json
+                select av.id, av.title, av.content_markdown
                 from artifact_version av
                 join artifact_job aj on aj.id = av.artifact_job_id
                 where aj.workspace_id = ? and av.artifact_job_id = ? and av.version_no = ?
@@ -443,8 +388,7 @@ class ArtifactJobReadRepository {
             return new ArtifactVersionSourceRow(
                     rs.getString("id"),
                     rs.getString("title"),
-                    blank(rs.getString("content_markdown")),
-                    blank(rs.getString("citations_json"))
+                    blank(rs.getString("content_markdown"))
             );
         }, workspaceId, artifactJobId, versionNo);
     }
@@ -516,12 +460,11 @@ record ArtifactRollbackRow(
         String contentMarkdown,
         String resultPayloadJson,
         String citationsJson,
-        String originTaskId,
-        String materialBundleId
+        String originTaskId
 ) {
 }
 
-record ArtifactVersionSourceRow(String versionId, String title, String contentMarkdown, String citationsJson) {
+record ArtifactVersionSourceRow(String versionId, String title, String contentMarkdown) {
 }
 
 record ArtifactJobSummaryRow(

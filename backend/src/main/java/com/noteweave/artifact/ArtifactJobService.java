@@ -8,6 +8,7 @@ import com.noteweave.common.Ids;
 import com.noteweave.common.Json;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
+import com.noteweave.knowledge.KnowledgeItemRequest;
 import com.noteweave.knowledge.KnowledgeItemResponse;
 import com.noteweave.knowledge.KnowledgeCommandService;
 import com.noteweave.source.GeneratedSourceResult;
@@ -30,9 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class ArtifactJobService {
 
-    /** 产物写回时最多绑定多少个来源，防止异常载荷把引用表写爆。 */
-    private static final int MAX_ARTIFACT_CITATION_SOURCES = 50;
-
     private final ObjectMapper objectMapper;
     private final WorkspaceService workspaceService;
     private final TaskService taskService;
@@ -41,10 +39,8 @@ public class ArtifactJobService {
     private final ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler;
     private final MemoryCompilerService memoryCompilerService;
     private final ArtifactSkillCatalogService artifactSkillCatalogService;
-    private final ArtifactVideoMaterialService videoMaterialService;
     private final GeneratedSourceService generatedSourceService;
     private final KnowledgeCommandService knowledgeCommandService;
-    private final ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots;
     private final ArtifactMemoryRevisionGuard memoryRevisionGuard;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
     private final ArtifactExportService exportService;
@@ -58,10 +54,8 @@ public class ArtifactJobService {
             ArtifactPayloadReadModelAssembler artifactPayloadReadModelAssembler,
             MemoryCompilerService memoryCompilerService,
             ArtifactSkillCatalogService artifactSkillCatalogService,
-            ArtifactVideoMaterialService videoMaterialService,
             GeneratedSourceService generatedSourceService,
             KnowledgeCommandService knowledgeCommandService,
-            ArtifactContextV2ShadowSnapshotService contextV2ShadowSnapshots,
             ArtifactMemoryRevisionGuard memoryRevisionGuard,
             ResearchGeneratedSourceReadGate generatedSourceGate,
             ArtifactExportService exportService
@@ -74,10 +68,8 @@ public class ArtifactJobService {
         this.artifactPayloadReadModelAssembler = artifactPayloadReadModelAssembler;
         this.memoryCompilerService = memoryCompilerService;
         this.artifactSkillCatalogService = artifactSkillCatalogService;
-        this.videoMaterialService = videoMaterialService;
         this.generatedSourceService = generatedSourceService;
         this.knowledgeCommandService = knowledgeCommandService;
-        this.contextV2ShadowSnapshots = contextV2ShadowSnapshots;
         this.memoryRevisionGuard = memoryRevisionGuard;
         this.generatedSourceGate = generatedSourceGate;
         this.exportService = exportService;
@@ -148,12 +140,6 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
-        if (actorUserId == null) {
-            contextV2ShadowSnapshots.freeze(workspaceId, taskId, userRequirement, skillKey);
-        } else {
-            contextV2ShadowSnapshots.freezeForActor(
-                    workspaceId, taskId, userRequirement, skillKey, actorUserId);
-        }
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",
@@ -173,13 +159,7 @@ public class ArtifactJobService {
     ) {
         requireWorkspace(workspaceId);
         getVersionDetail(workspaceId, artifactJobId, sourceVersionNo);
-        // NR18：按所选版本的 origin Run 取输入，不取最新 Run——历史版本再生成
-        // 必须使用该版本冻结时的要求与参数（显式覆盖仍可合并）
-        ArtifactRegenerationRow row = loadRegenerationRowForVersion(workspaceId, artifactJobId, sourceVersionNo);
-        // NR15：行锁内拒绝与活动任务冲突的再生成——覆盖 artifact_job.task_id 会让
-        // 旧 Worker 的完成回执因所有权不匹配被拒（孤儿任务 + 重复成本 + 结果丢失）
-        artifactJobWriteRepository.lockNextVersionNo(workspaceId, artifactJobId);
-        requireNoActiveTask(workspaceId, artifactJobId, "再生成");
+        ArtifactRegenerationRow row = loadRegenerationRow(workspaceId, artifactJobId);
         ArtifactSkillDefinition skill = artifactSkillCatalogService.resolveSkill(row.skillKey());
         String requirement = request.userRequirement() == null || request.userRequirement().isBlank()
                 ? row.userRequirement()
@@ -187,6 +167,14 @@ public class ArtifactJobService {
         Map<String, Object> inputs = request.inputs() == null
                 ? artifactPayloadReadModelAssembler.readInputs(row.inputsJson())
                 : artifactSkillCatalogService.validateAndNormalizeInputs(skill, request.inputs());
+        if (request.inputs() == null && !skill.skillKey().equals(row.skillKey())) {
+            // 历史版本通过别名进入新 Skill，只保留新声明支持的选项，其余使用新默认值。
+            Map<?, ?> properties = (Map<?, ?>) skill.inputSchema().get("properties");
+            Map<String, Object> declared = new LinkedHashMap<>();
+            inputs.forEach((key, value) -> { if (properties.containsKey(key)) declared.put(key, value); });
+            inputs = declared;
+        }
+        inputs = artifactSkillCatalogService.validateAndNormalizeInputs(skill, inputs);
         int nextRunNo = row.latestRunNo() + 1;
         String taskId = taskService.createTask(
                 workspaceId,
@@ -220,7 +208,6 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
-        contextV2ShadowSnapshots.freeze(workspaceId, taskId, requirement, row.skillKey());
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 "ARTIFACT",
@@ -263,7 +250,6 @@ public class ArtifactJobService {
                         "trace_id", artifactJobId + ":retry-" + (row.latestRunNo() + 1),
                         "created_at", System.currentTimeMillis())),
                 artifactSkillCatalogService.catalogDigest());
-        contextV2ShadowSnapshots.freeze(workspaceId, taskId, row.userRequirement(), row.skillKey());
         memoryCompilerService.logPackUsage(workspaceId, "ARTIFACT", "ARTIFACT_JOB_RUN", taskId,
                 artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()));
         return new ArtifactJobResponse(artifactJobId, taskId, row.skillKey(), "QUEUED");
@@ -276,62 +262,30 @@ public class ArtifactJobService {
             int sourceVersionNo,
             RollbackArtifactVersionRequest request
     ) {
-        return rollbackVersion(workspaceId, artifactJobId, sourceVersionNo, request, null);
-    }
-
-    /**
-     * 回滚版本：staged 文件准备在数据库事务外完成，版本插入与文件元数据在同一个短事务提交。
-     *
-     * <p>prepare 后退出：无版本行，staged 对象按孤儿规则回收。
-     * 提交后退出：版本与文件引用已一致。发布失败不回滚已写 staged 对象，由清理任务处理。</p>
-     */
-    public ArtifactVersionDetailResponse rollbackVersion(
-            String workspaceId,
-            String artifactJobId,
-            int sourceVersionNo,
-            RollbackArtifactVersionRequest request,
-            List<ArtifactExportService.PreparedFile> preparedFiles
-    ) {
         requireWorkspace(workspaceId);
         exportService.requireVersionReadable(workspaceId, artifactJobId, sourceVersionNo);
         ArtifactRollbackRow source = loadRollbackRow(workspaceId, artifactJobId, sourceVersionNo);
+        int nextVersionNo = artifactJobWriteRepository.lockNextVersionNo(workspaceId, artifactJobId);
         String versionId = Ids.newId();
-        // prepare 段：文件校验与 staged 写入都在数据库事务之外
-        List<ArtifactExportService.StagedFile> stagedFiles =
-                preparedFiles == null || preparedFiles.isEmpty()
-                        ? List.of()
-                        : exportService.prepareStagedFiles(
-                                source.skillKey(), source.originTaskId(), versionId, preparedFiles);
         String requestedTitle = request == null || request.title() == null ? "" : request.title().trim();
         String title = requestedTitle.isBlank() ? source.title() + "（回滚副本）" : requestedTitle;
         Map<String, Object> payload = new LinkedHashMap<>(
                 artifactPayloadReadModelAssembler.readInputs(source.resultPayloadJson()));
         payload.put("rollback_of_version_no", sourceVersionNo);
         payload.put("rollback_mode", "APPEND_ONLY_COPY");
-        int nextVersionNo = exportService.runInShortTransaction(() -> {
-            int versionNo = artifactJobWriteRepository.lockNextVersionNo(workspaceId, artifactJobId);
-            // NR15：行锁内拒绝活动任务期间的回滚——回滚会把 Job 置 COMPLETED，
-            // claimCompletion 随即拒绝 Worker 的完成回执，已生成结果无法提交
-            requireNoActiveTask(workspaceId, artifactJobId, "回滚");
-            artifactJobWriteRepository.appendRollbackVersion(
-                    versionId,
-                    artifactJobId,
-                    source.skillKey(),
-                    versionNo,
-                    title,
-                    source.contentMarkdown(),
-                    Json.write(objectMapper, payload),
-                    "append-only rollback of version " + sourceVersionNo,
-                    source.citationsJson(),
-                    source.originTaskId(),
-                    workspaceId
-            );
-            if (!stagedFiles.isEmpty()) {
-                exportService.commitStagedFiles(versionId, stagedFiles);
-            }
-            return versionNo;
-        });
-        videoMaterialService.linkPublishedVersion(versionId, source.materialBundleId());
+        artifactJobWriteRepository.appendRollbackVersion(
+                versionId,
+                artifactJobId,
+                source.skillKey(),
+                nextVersionNo,
+                title,
+                source.contentMarkdown(),
+                Json.write(objectMapper, payload),
+                "append-only rollback of version " + sourceVersionNo,
+                source.citationsJson(),
+                source.originTaskId(),
+                workspaceId
+        );
         return getVersionDetail(workspaceId, artifactJobId, nextVersionNo);
     }
 
@@ -416,15 +370,6 @@ public class ArtifactJobService {
     public List<ArtifactVersionSummaryResponse> listVersions(String workspaceId, String artifactJobId) {
         requireWorkspace(workspaceId);
         requireArtifactJob(workspaceId, artifactJobId);
-        try {
-            requireJobSourceScopeReadable(workspaceId, artifactJobId);
-        } catch (BusinessException ex) {
-            if ("RESEARCH_SOURCE_CONTEXT_REDACTED".equals(ex.code())) {
-                // 上下文脱敏是合法撤销态：版本列表整体隐藏而不是报错；摘要损坏仍抛出
-                return List.of();
-            }
-            throw ex;
-        }
         return artifactJobReadRepository.listVersions(workspaceId, artifactJobId).stream()
                 .filter(row -> exportService.versionVisibleForListing(
                         workspaceId, artifactJobId, row.versionNo()))
@@ -441,9 +386,6 @@ public class ArtifactJobService {
     ) {
         requireWorkspace(workspaceId);
         requireArtifactJob(workspaceId, artifactJobId);
-        // 来源范围复核先于来源资格：上下文损坏/脱敏透出
-        // RESEARCH_CONTEXT_SNAPSHOT_MISMATCH / RESEARCH_SOURCE_CONTEXT_REDACTED（与 getWorkerInput 一致）
-        requireJobSourceScopeReadable(workspaceId, artifactJobId);
         exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionDetailRow row = artifactJobReadRepository.getVersionDetail(
                 workspaceId, artifactJobId, versionNo);
@@ -460,7 +402,9 @@ public class ArtifactJobService {
                 runtimeTrace == null ? null : runtimeTrace.verification(),
                 runtimeTrace,
                 artifactJobReadRepository.loadArtifactFiles(row.versionId()),
-                row.createdAt()
+                row.createdAt(),
+                artifactSkillCatalogService.kind(row.skillKey()),
+                ArtifactVersionDetailResponse.readIr(row.resultPayloadJson())
         );
     }
 
@@ -471,9 +415,7 @@ public class ArtifactJobService {
             int versionNo
     ) {
         requireWorkspace(workspaceId);
-        // 另存为资料属于再发布：无变化的重复请求也按 REPUBLISH 重新校验，不能绕过权限撤销
-        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo,
-                com.noteweave.source.eligibility.AccessPurpose.REPUBLISH);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionSourceRow row = loadVersionForSource(workspaceId, artifactJobId, versionNo);
         if (row.contentMarkdown().isBlank()) {
             throw new BusinessException("ARTIFACT_VERSION_CONTENT_EMPTY", "产物版本正文为空，不能保存为资料");
@@ -505,87 +447,27 @@ public class ArtifactJobService {
             int versionNo,
             ArtifactKnowledgeWritebackRequest request
     ) {
+        if (!"NOTE".equals(request.itemType())) {
+            throw new BusinessException("ARTIFACT_WRITEBACK_TARGET_INVALID", "产物只支持写回 Note", HttpStatus.BAD_REQUEST);
+        }
         requireWorkspace(workspaceId);
-        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo,
-                com.noteweave.source.eligibility.AccessPurpose.REPUBLISH);
+        exportService.requireVersionReadable(workspaceId, artifactJobId, versionNo);
         ArtifactVersionSourceRow row = loadVersionForSource(workspaceId, artifactJobId, versionNo);
         if (row.contentMarkdown().isBlank()) {
             throw new BusinessException("ARTIFACT_VERSION_CONTENT_EMPTY", "产物版本正文为空，不能写回知识库");
         }
         String requestedTitle = request.title() == null ? "" : request.title().trim();
         String title = requestedTitle.isBlank() ? row.title() : requestedTitle;
-        // KB-01：写回必须带上来源血缘，否则撤销来源后内容仍可读
-        return knowledgeCommandService.createArtifactItem(
+        return knowledgeCommandService.createItem(
                 workspaceId,
-                request.itemType(),
-                title,
-                row.contentMarkdown(),
-                artifactSourceCitations(workspaceId, artifactJobId, row)
+                new KnowledgeItemRequest(request.itemType(), title, row.contentMarkdown(), null)
         );
-    }
-
-    /**
-     * 产物的来源依赖集合：冻结来源范围为主，产物自带的引用条目补充引用信息。
-     * 引用里出现但不在冻结范围里的来源也要绑定，否则那条来源撤销后内容照样可读。
-     */
-    private List<com.noteweave.knowledge.ArtifactSourceCitation> artifactSourceCitations(
-            String workspaceId,
-            String artifactJobId,
-            ArtifactVersionSourceRow row
-    ) {
-        Map<String, Map<String, Object>> citationsBySource = new LinkedHashMap<>();
-        for (Map<String, Object> entry : artifactPayloadReadModelAssembler.readCitations(row.citationsJson())) {
-            if (entry == null) continue;
-            String sourceId = firstText(entry, "source_id", "sourceId", "source");
-            if (sourceId == null) continue;
-            citationsBySource.putIfAbsent(sourceId, entry);
-        }
-        Map<String, com.noteweave.knowledge.ArtifactSourceCitation> citations = new LinkedHashMap<>();
-        for (WorkerSourceScopeItemResponse item : readCapturedSourceScope(
-                workspaceId, artifactJobReadRepository.loadJobSourceScopeJson(workspaceId, artifactJobId))) {
-            if (item == null || item.sourceId() == null || item.sourceId().isBlank()) continue;
-            citations.put(item.sourceId(), toSourceCitation(
-                    item.sourceId(), item.sourceSnapshotId(), citationsBySource.get(item.sourceId())));
-        }
-        citationsBySource.forEach((sourceId, entry) -> citations.computeIfAbsent(sourceId, key ->
-                toSourceCitation(key, firstText(entry, "source_snapshot_id", "sourceSnapshotId", "snapshot_id"), entry)));
-        return citations.values().stream().limit(MAX_ARTIFACT_CITATION_SOURCES).toList();
-    }
-
-    private com.noteweave.knowledge.ArtifactSourceCitation toSourceCitation(
-            String sourceId,
-            String sourceSnapshotId,
-            Map<String, Object> entry
-    ) {
-        return new com.noteweave.knowledge.ArtifactSourceCitation(
-                sourceId,
-                sourceSnapshotId,
-                firstText(entry, "title", "source_title"),
-                firstText(entry, "quote", "quote_text", "snippet", "excerpt", "text"),
-                firstText(entry, "location", "location_info", "section", "page"));
-    }
-
-    /** 引用条目是 Worker 自由结构，按常见字段名逐个取值。 */
-    private String firstText(Map<String, Object> entry, String... keys) {
-        if (entry == null) return null;
-        for (String key : keys) {
-            Object value = entry.get(key);
-            if (value instanceof String text && !text.isBlank()) {
-                return text.strip();
-            }
-            if (value instanceof Number number) {
-                return String.valueOf(number);
-            }
-        }
-        return null;
     }
 
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
-        String activeRequirement = contextV2ShadowSnapshots.activeRequirement(
-                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
         Map<String, Object> inputs = artifactPayloadReadModelAssembler.readInputs(row.inputsJson());
         return new ArtifactWorkerInputResponse(
                 row.taskId(),
@@ -603,10 +485,9 @@ public class ArtifactJobService {
                         blankIfNull(row.styleProfileKey()),
                         blankIfNull(row.contextSnapshotId()),
                         row.userRequirement(),
-                        activeRequirement == null ? row.userRequirement() : activeRequirement,
+                        row.userRequirement(),
                         inputs
-                ),
-                contextV2ShadowSnapshots.readForWorker(taskId)
+                )
         );
     }
 
@@ -616,24 +497,12 @@ public class ArtifactJobService {
     }
 
     @Transactional
-    public void markWaiting(String taskId, String waitStatus) {
-        artifactJobWriteRepository.updateStatusByTaskId(
-                taskId,
-                blankToNull(waitStatus) == null ? "WAITING_FOR_PROVIDER" : waitStatus.trim()
-        );
-    }
-
-    @Transactional
     public CompletionOutcome completeFromWorker(String taskId, com.noteweave.worker.WorkerCompleteRequest request) {
         ArtifactJobTaskRow row = findByTaskId(taskId);
         String markdown = extractMarkdown(request.resultPayload());
         requireVerifiedCandidate(row, request);
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
-        contextV2ShadowSnapshots.activeRequirement(
-                taskId, row.workspaceId(), row.inputSnapshotId(), row.userRequirement());
-        String materialBundleId = videoMaterialService.validateCandidateReference(
-                taskId, request.resultPayload());
         ArtifactCandidate candidate = ArtifactCandidate.from(taskId, row.inputSnapshotId(),
                 catalogDigestFrom(row.compilerVersion()), expectedArtifactType(row), request, markdown);
         int claimed = artifactJobWriteRepository.claimCompletion(row.artifactJobId(), taskId);
@@ -658,7 +527,6 @@ public class ArtifactJobService {
                 Json.write(objectMapper, request.citations() == null ? List.of() : request.citations()),
                 taskId
         );
-        videoMaterialService.linkPublishedVersion(versionId, materialBundleId);
         artifactJobWriteRepository.recordCandidateReceipt(taskId, candidate.candidateId(),
                 candidate.digest(), versionId, row.inputSnapshotId());
         artifactJobWriteRepository.completeJob(row.artifactJobId(), request.resultTitle(), nextVersionNo);
@@ -745,24 +613,23 @@ public class ArtifactJobService {
     }
 
     private void requireVerifiedCandidate(ArtifactJobTaskRow row, com.noteweave.worker.WorkerCompleteRequest request) {
-        boolean currentCatalog = catalogDigestFrom(row.compilerVersion()).equals(artifactSkillCatalogService.catalogDigest());
-        boolean frozenVideo = Set.of("knowledge_blog", "interview_qa", "video_learning_deck").contains(row.skillKey());
-        boolean requiredEvidence = currentCatalog
-                ? artifactSkillCatalogService.requiresEvidence(row.skillKey()) : frozenEvidenceRequired(request.resultPayload());
-        ArtifactCandidateVerificationPolicy.validate(request.resultPayload(), currentCatalog && !frozenVideo, requiredEvidence);
+        Map<String, String> snapshots = readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()).stream()
+                .collect(java.util.stream.Collectors.toMap(WorkerSourceScopeItemResponse::sourceId,
+                        WorkerSourceScopeItemResponse::sourceSnapshotId));
+        ArtifactCandidateVerificationPolicy.validatePipeline(request.resultPayload(),
+                artifactSkillCatalogService.kind(row.skillKey()), snapshots.keySet());
+        Map<?, ?> pack = (Map<?, ?>) request.resultPayload().get("evidence");
+        for (Object raw : (List<?>) pack.get("sentences")) {
+            Map<?, ?> sentence = (Map<?, ?>) raw;
+            if (!java.util.Objects.equals(snapshots.get(sentence.get("source_id")), sentence.get("source_snapshot_id"))) {
+                throw new BusinessException("ARTIFACT_CONTENT_NOT_VERIFIED", "素材不属于冻结的资料快照", HttpStatus.CONFLICT);
+            }
+        }
+
     }
 
-    private boolean frozenEvidenceRequired(Map<String, Object> payload) {
-        if (payload != null && payload.get("execution_plan") instanceof Map<?, ?> plan
-                && plan.get("declared_output_contract") instanceof Map<?, ?> contract
-                && contract.get("citation") instanceof Map<?, ?> citation) {
-            return !("NONE".equals(citation.get("density")) || "OPTIONAL".equals(citation.get("density")));
-        }
-        return true;
-    }
 
     private void requireFrozenSourcesVisible(ArtifactJobTaskRow row) {
-        java.util.List<String> scopeSourceIds = new java.util.ArrayList<>();
         for (WorkerSourceScopeItemResponse source : readCapturedSourceScope(
                 row.workspaceId(), row.sourceScopeJson())) {
             if (source.sourceSnapshotId() == null || source.sourceSnapshotId().isBlank()) {
@@ -776,10 +643,7 @@ public class ArtifactJobService {
             }
             generatedSourceGate.requireReadable(row.workspaceId(),
                     source.generatedBy(), source.generatedRefId());
-            scopeSourceIds.add(source.sourceId());
         }
-        // 提交前统一经 C1 端口复核当前证据资格：晚到任务不能因文件已生成而绕过来源撤销
-        exportService.requireSourcesEvidenceEligible(row.workspaceId(), scopeSourceIds);
         for (ArtifactUpstreamRefRequest ref : readUpstreamRefs(row.upstreamRefsJson())) {
             if (!artifactJobReadRepository.validUpstreamRef(
                     row.workspaceId(), ref.refType(), ref.refId(), ref.revisionId())) {
@@ -808,11 +672,6 @@ public class ArtifactJobService {
 
     private ArtifactRegenerationRow loadRegenerationRow(String workspaceId, String artifactJobId) {
         return artifactJobReadRepository.loadRegenerationRow(workspaceId, artifactJobId);
-    }
-
-    private ArtifactRegenerationRow loadRegenerationRowForVersion(
-            String workspaceId, String artifactJobId, int versionNo) {
-        return artifactJobReadRepository.loadRegenerationRowForVersion(workspaceId, artifactJobId, versionNo);
     }
 
     private ArtifactRollbackRow loadRollbackRow(String workspaceId, String artifactJobId, int versionNo) {
@@ -903,17 +762,6 @@ public class ArtifactJobService {
         }
     }
 
-    /**
-     * 版本读路径的来源范围复核：与 getWorkerInput 相同的门控语义，
-     * 上下文摘要损坏抛 RESEARCH_CONTEXT_SNAPSHOT_MISMATCH、
-     * 上下文脱敏抛 RESEARCH_SOURCE_CONTEXT_REDACTED、范围来源失效抛对应错误。
-     */
-    private void requireJobSourceScopeReadable(String workspaceId, String artifactJobId) {
-        String sourceScopeJson = artifactJobReadRepository.loadJobSourceScopeJson(
-                workspaceId, artifactJobId);
-        readCapturedSourceScope(workspaceId, sourceScopeJson);
-    }
-
     private List<WorkerSourceScopeItemResponse> readCapturedSourceScope(String workspaceId, String json) {
         if (json == null || json.isBlank() || "[]".equals(json.trim())) {
             return List.of();
@@ -989,21 +837,6 @@ public class ArtifactJobService {
     private void requireWorkspace(String workspaceId) {
         if (!workspaceService.exists(workspaceId)) {
             throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在");
-        }
-    }
-
-    /**
-     * NR15：Job 仍有活动任务时拒绝版本操作（再生成/回滚/编辑）。
-     * 必须在 lockNextVersionNo 的行锁事务内调用；任务活动性按任务表状态判定，
-     * 同请求重投也会得到明确的「任务进行中」冲突，不产生重复成本。
-     */
-    private void requireNoActiveTask(String workspaceId, String artifactJobId, String operation) {
-        String activeTaskId = artifactJobWriteRepository.activeTaskId(workspaceId, artifactJobId);
-        if (activeTaskId != null) {
-            throw new BusinessException(
-                    "ARTIFACT_JOB_TASK_ACTIVE",
-                    "产物已有进行中的任务，" + operation + "被拒绝，请等待完成或取消后再试",
-                    HttpStatus.CONFLICT);
         }
     }
 

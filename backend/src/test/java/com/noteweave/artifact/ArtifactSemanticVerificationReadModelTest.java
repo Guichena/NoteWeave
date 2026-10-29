@@ -26,9 +26,8 @@ class ArtifactSemanticVerificationReadModelTest {
     private final ArtifactExportService exports = mock(ArtifactExportService.class);
     private final ArtifactJobService jobs = new ArtifactJobService(mapper, workspaces, mock(TaskService.class),
             reads, mock(ArtifactJobWriteRepository.class), assembler, mock(MemoryCompilerService.class),
-            mock(ArtifactSkillCatalogService.class), mock(ArtifactVideoMaterialService.class),
-            mock(GeneratedSourceService.class), mock(KnowledgeCommandService.class),
-            mock(ArtifactContextV2ShadowSnapshotService.class), mock(ArtifactMemoryRevisionGuard.class),
+            mock(ArtifactSkillCatalogService.class),
+            mock(GeneratedSourceService.class), mock(KnowledgeCommandService.class), mock(ArtifactMemoryRevisionGuard.class),
             mock(ResearchGeneratedSourceReadGate.class), exports);
 
     private ArtifactVersionDetailResponse version(String json) {

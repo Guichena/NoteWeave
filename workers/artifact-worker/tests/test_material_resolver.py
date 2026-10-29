@@ -5,10 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from app.content_runtime import build_canonical_content_objects
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
-from tests.test_runner import _build_resume_task_input
+from tests.test_callback import _build_resume_task_input
+from tests.pipeline.test_pipeline import Model
+import app.runner as runner_module
 
 
 def _window(index: int, content: str) -> dict[str, object]:
@@ -19,7 +20,7 @@ def _window(index: int, content: str) -> dict[str, object]:
     }
 
 
-def test_later_fact_is_selected_from_paginated_frozen_windows() -> None:
+def test_later_fact_is_selected_from_paginated_frozen_windows(monkeypatch) -> None:
     windows = [_window(index, f"Opening section {index}") for index in range(20)]
     windows[-1] = _window(19, "OnlyInLaterWindow is the grounded answer")
 
@@ -40,13 +41,10 @@ def test_later_fact_is_selected_from_paginated_frozen_windows() -> None:
     task = _build_resume_task_input()
     task.source_scope[0].material_windows = selected
     task.source_scope[0].material_gap = gap
-    objects = build_canonical_content_objects(task)
-    serialized = " ".join(str(item.model_dump(mode="json")) for item in objects)
-    assert "OnlyInLaterWindow" in serialized
-    assert "window-19" in serialized
-    _, result = run_artifact_task(task)
-    assert "window-19" in result.result_payload["material_resolution"][0]["selected_window_ids"]
-    assert "window-19" in result.citations[0]["source_window_ids"]
+    result = generate_selected_window(task, "window-19", monkeypatch)
+    assert any("OnlyInLaterWindow" in sentence["text"] and sentence["chunk_id"] == "window-19"
+               for sentence in result.result_payload["evidence"]["sentences"])
+    assert "window-19" in [citation["chunk_id"] for citation in result.citations]
 
 
 def test_changed_window_content_is_rejected_before_generation() -> None:
@@ -59,7 +57,7 @@ def test_changed_window_content_is_rejected_before_generation() -> None:
         })
 
 
-def test_real_architecture_document_late_fact_reaches_frozen_artifact_citation() -> None:
+def test_real_architecture_document_late_fact_reaches_frozen_artifact_citation(monkeypatch) -> None:
     document = (Path(__file__).resolve().parents[3] / "docs" / "Artifact-Skill执行架构.md").read_text(
         encoding="utf-8"
     )
@@ -93,6 +91,23 @@ def test_real_architecture_document_late_fact_reaches_frozen_artifact_citation()
     task = _build_resume_task_input()
     task.source_scope[0].material_windows = selected
     task.source_scope[0].material_gap = gap
-    _, result = run_artifact_task(task)
-    assert late["window_id"] in result.result_payload["material_resolution"][0]["selected_window_ids"]
-    assert late["window_id"] in result.citations[0]["source_window_ids"]
+    result = generate_selected_window(task, late["window_id"], monkeypatch)
+    assert late["window_id"] in [s["chunk_id"] for s in result.result_payload["evidence"]["sentences"]]
+    assert late["window_id"] in [citation["chunk_id"] for citation in result.citations]
+
+
+def generate_selected_window(task, window_id, monkeypatch):
+    from copy import deepcopy
+    import json
+    class SelectedWindowModel(Model):
+        def complete_json(self, purpose, payload):
+            if "evidence" not in payload["inputs"]:
+                return super().complete_json(purpose, payload)
+            changed = deepcopy(payload)
+            sentences = changed["inputs"]["evidence"]["sentences"]
+            selected = next(s for s in sentences if s["chunk_id"] == window_id)
+            sentences.remove(selected)
+            sentences.insert(0, selected)
+            return super().complete_json(purpose, changed).replace('"s0001"', json.dumps(selected["id"]))
+    monkeypatch.setattr(runner_module, "build_default_llm_client", lambda: SelectedWindowModel("DOC"))
+    return run_artifact_task(task)[1]

@@ -28,14 +28,16 @@ def _request(number=1, *, task=""):
 
 
 def _tool(calls):
-    def invoke(server, operation):
-        calls.append(operation)
-        output = Path(operation["tool_arguments"]["output_dir"])
-        output.mkdir(parents=True, exist_ok=True)
-        transcript = output / "transcript.json"
-        transcript.write_text(json.dumps({"language": "zh", "duration": 2.0,
-            "segments": [{"start": 1.0, "end": 2.0, "text": "原始文字稿"}]}, ensure_ascii=False), encoding="utf-8")
-        return {"artifacts": {"json_files": [str(transcript)]}}
+    def invoke(tool_name, arguments):
+        assert tool_name == "parse_media"
+        assert set(arguments) == {"file_ref", "title"}
+        assert not Path(arguments["file_ref"]).is_absolute()
+        calls.append({"tool_name": tool_name, "arguments": arguments})
+        return {
+            "title": arguments["title"],
+            "segments": [{"part": 1, "start_ms": 1000, "end_ms": 2000, "text": "原始文字稿", "frames": []}],
+            "stats": {"duration_ms": 2000, "candidate_frames": 0, "kept_frames": 0, "transcript_origin": "ASR"},
+        }
     return invoke
 
 
@@ -48,6 +50,10 @@ def _job(root, number=1, *, task=""):
     job = transcriptions.TranscriptionJob(data["workspace_id"], data["source_id"], data["snapshot_id"], data["file_name"],
         data["mime_type"], path, task, hashlib.sha256(data["content"]).hexdigest(), len(data["content"]))
     transcriptions._atomic_json(directory / "job.json", transcriptions._metadata(job))
+    # 预置遗留中间文件，保留恢复、重试与跨任务隔离的清理断言。
+    legacy_output = transcriptions._output_root(job)
+    legacy_output.mkdir(parents=True)
+    (legacy_output / "transcript.json").write_text("{}", encoding="utf-8")
     return job
 
 
@@ -226,70 +232,14 @@ def test_callback_exception_keeps_success_and_failure_checkpoints(sandbox):
         assert (job.media_path.parent / "callback-pending.json").is_file()
 
 
-def test_discarded_acknowledgement_retains_transcript_and_marks_orphaned(sandbox):
+def test_discarded_acknowledgement_cleans_only_old_task_directory(sandbox):
     old = _job(sandbox, 1, task="task-00000001")
     new = _job(sandbox, 1, task="task-00000002")
     result = transcriptions.run_transcription_job(old, call_tool=_tool([]),
         post_callback=lambda sid, body: transcriptions.CallbackAcknowledgement(discarded=True), llm_client=None)
-    assert result["callback_disposition"] == "DISCARDED_RETAINED"
-    # 丢弃只代表这次投递被取代：任务目录、检查点与文字稿都保留
-    assert old.media_path.parent.is_dir()
-    assert (old.media_path.parent / "callback-pending.json").is_file()
-    assert transcriptions._output_root(old).is_dir()
-    meta = json.loads((old.media_path.parent / "job.json").read_text(encoding="utf-8"))
-    assert meta["state"] == transcriptions._ORPHANED_STATE
-    # 孤儿目录仍能被读回（不是损坏的检查点），但状态让它不再参与恢复投递
-    assert transcriptions._load_job(old.media_path.parent).snapshot_id == old.snapshot_id
+    assert result["callback_disposition"] == "DISCARDED"
+    assert not old.media_path.parent.exists()
     assert new.media_path.is_file()
-
-
-def _orphan(sandbox, number=1, *, task=""):
-    job = _job(sandbox, number, task=task)
-    transcriptions.run_transcription_job(job, call_tool=_tool([]),
-        post_callback=lambda sid, body: transcriptions.CallbackAcknowledgement(discarded=True), llm_client=None)
-    return job
-
-
-def test_expired_orphan_is_purged_with_its_transcript(sandbox):
-    job = _orphan(sandbox, 1, task="task-00000001")
-    purged = transcriptions.purge_orphaned_transcriptions(retention_days=30, now=time.time() + 31 * 86400)
-    assert purged == ["snapshot-00000001--task-00000001"]
-    assert not job.media_path.parent.exists()
-    assert not transcriptions._output_root(job).exists()
-
-
-def test_fresh_orphan_survives_retention_window(sandbox):
-    job = _orphan(sandbox, 1, task="task-00000001")
-    assert transcriptions.purge_orphaned_transcriptions(retention_days=30) == []
-    assert job.media_path.parent.is_dir()
-    assert transcriptions._output_root(job).is_dir()
-
-
-def test_purge_never_touches_tasks_that_are_not_orphaned(sandbox):
-    queued = _job(sandbox, 2, task="task-00000003")
-    assert transcriptions.purge_orphaned_transcriptions(retention_days=0, now=time.time() + 365 * 86400) == []
-    assert queued.media_path.is_file()
-    assert (queued.media_path.parent / "job.json").is_file()
-
-
-def test_orphaned_output_without_job_directory_is_purged(sandbox):
-    leftover = sandbox / "bilibili-render-pdf" / "source-transcriptions" / "snapshot-00000009"
-    leftover.mkdir(parents=True)
-    (leftover / "transcript.json").write_text("{}", encoding="utf-8")
-    purged = transcriptions.purge_orphaned_transcriptions(retention_days=0, now=time.time() + 60)
-    assert purged == ["snapshot-00000009"]
-    assert not leftover.exists()
-
-
-@pytest.mark.parametrize("value", ["", "abc", "-1", "nan", "inf", "1000000"])
-def test_orphan_retention_env_falls_back_to_default(sandbox, monkeypatch, value):
-    monkeypatch.setenv("NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS", value)
-    assert transcriptions._orphan_retention_days() == 30
-
-
-def test_orphan_retention_env_accepts_fractional_days(sandbox, monkeypatch):
-    monkeypatch.setenv("NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS", "7.5")
-    assert transcriptions._orphan_retention_days() == 7.5
 
 
 def test_recovery_rejects_external_media_and_directory_identity_before_reading(sandbox, monkeypatch):
@@ -388,7 +338,6 @@ def test_capacity_exception_is_http_429_with_retry_header_and_task_id_passthroug
 def test_lifecycle_stops_pool_even_when_consumer_start_fails(monkeypatch):
     from app import main
     calls = []
-    monkeypatch.setattr(main, "recover_system_mcp_acquisition_operations", lambda **kwargs: None)
     monkeypatch.setattr(main, "start_source_transcription_pool", lambda settings: calls.append("pool-start"))
     monkeypatch.setattr(main, "recover_source_transcriptions", lambda: [])
     monkeypatch.setattr(main, "shutdown_source_transcriptions", lambda: calls.append("pool-stop"))
@@ -423,7 +372,6 @@ def test_http_stream_rejects_over_limit_before_accepting_job(monkeypatch):
 def test_lifecycle_always_stops_pool_when_consumer_shutdown_raises(monkeypatch):
     from app import main
     calls = []
-    monkeypatch.setattr(main, "recover_system_mcp_acquisition_operations", lambda **kwargs: None)
     monkeypatch.setattr(main, "start_source_transcription_pool", lambda settings: calls.append("pool-start"))
     monkeypatch.setattr(main, "recover_source_transcriptions", lambda: [])
     monkeypatch.setattr(main, "shutdown_source_transcriptions", lambda: calls.append("pool-stop"))

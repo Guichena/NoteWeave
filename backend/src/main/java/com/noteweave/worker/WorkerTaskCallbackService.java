@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.HttpStatus;
 
 @Service
@@ -34,13 +33,6 @@ public class WorkerTaskCallbackService {
     private final JdbcTemplate jdbcTemplate;
     private final DurableOutboxDispatcher outboxDispatcher;
     private final ObjectMapper objectMapper;
-    /** 提交段短事务模板；无事务管理器的测试构造下为空，内联执行同段逻辑。 */
-    private TransactionTemplate transactionTemplate;
-
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void setTransactionTemplate(TransactionTemplate transactionTemplate) {
-        this.transactionTemplate = transactionTemplate;
-    }
 
     public WorkerTaskCallbackService(
             TaskService taskService,
@@ -102,7 +94,7 @@ public class WorkerTaskCallbackService {
             return terminalAck(taskId, task.taskStatus());
         }
         renewDelivery(taskId, deliveryToken, requireDelivery);
-        validateHeartbeatOwnership(task);
+        validateCallbackOwnership(task);
         validateWorkerType(task, request.workerType());
         WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "HEARTBEAT", request);
         if (duplicate != null) return duplicate;
@@ -157,16 +149,7 @@ public class WorkerTaskCallbackService {
             taskService.startTask(taskId);
             task = taskService.getTaskRef(taskId);
         }
-        boolean waitingPhase = isWaitingPhase(request.phase());
-        if (waitingPhase) {
-            artifactJobService.markWaiting(taskId, request.phase());
-        } else {
-            artifactJobService.markRunning(taskId);
-        }
-        if (waitingPhase) {
-            taskService.recordWaiting(taskId, request.phase(), request.message(), request.progressPercent(), request.metrics(), request.payload());
-            return new WorkerAckResponse(taskId, "WAITING", "");
-        }
+        artifactJobService.markRunning(taskId);
         taskService.recordProgress(taskId, request.phase(), request.message(), request.progressPercent(), request.metrics(), request.payload());
         return new WorkerAckResponse(taskId, "RUNNING", "");
     }
@@ -176,12 +159,12 @@ public class WorkerTaskCallbackService {
         return complete(taskId, request, "");
     }
 
-    // complete 路径不加方法级事务：下载/PDF 校验/staged 写入必须在数据库事务外执行，
-    // 认领与提交各自使用短事务（见 completeInternal）。
+    @Transactional
     public WorkerAckResponse complete(String taskId, WorkerCompleteRequest request, String idempotencyKey) {
         return completeInternal(taskId, request, idempotencyKey, "", false);
     }
 
+    @Transactional
     public WorkerAckResponse completeFromDelivery(
             String taskId,
             WorkerCompleteRequest request,
@@ -212,62 +195,28 @@ public class WorkerTaskCallbackService {
         if (requireDelivery) {
             requireTerminalIdempotencyKey(idempotencyKey);
         }
-        // 认领短事务：锁任务、复核所有权与终态、登记幂等回执；不执行任何远程 IO
-        WorkerAckResponse claimed = inShortTransaction(() -> {
-            lockTask(taskId);
-            TaskService.TaskRef locked = taskService.getTaskRef(taskId);
-            if (isTerminalStatus(locked.taskStatus())) {
-                return new WorkerAckResponse(taskId, "__TERMINAL__" + locked.taskStatus(), "");
-            }
-            validateCallbackOwnership(locked);
-            WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "COMPLETE", request, true);
-            if (duplicate != null) return duplicate;
-            if ("PENDING".equals(locked.taskStatus())) {
-                taskService.startTask(taskId);
-            }
-            return null;
-        });
-        if (claimed != null) {
-            if (claimed.status().startsWith("__TERMINAL__")) {
-                TaskService.TaskRef terminal = taskService.getTaskRef(taskId);
-                validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
-                artifactJobService.validateCandidateReplay(taskId, request);
-                return terminalAck(taskId, terminal.taskStatus());
-            }
-            return claimed;
+        lockTask(taskId);
+        task = taskService.getTaskRef(taskId);
+        if (isTerminalStatus(task.taskStatus())) {
+            validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
+            artifactJobService.validateCandidateReplay(taskId, request);
+            return terminalAck(taskId, task.taskStatus());
         }
-        // 准备段：下载、PDF 校验与 staged 写入都在数据库事务外；失败时 staged 对象
-        // 由 cleanupOrphanedStagedFiles 按无引用规则回收，不删除可能被并发准备共享的键
+        validateCallbackOwnership(task);
+        WorkerAckResponse duplicate = claimCallback(taskId, idempotencyKey, "COMPLETE", request);
+        if (duplicate != null) return duplicate;
+        if ("PENDING".equals(task.taskStatus())) {
+            taskService.startTask(taskId);
+            task = taskService.getTaskRef(taskId);
+        }
         List<ArtifactExportService.PreparedFile> preparedFiles =
                 artifactExportService.prepareForCompletion(taskId, request);
-        // ART-01：文件校验与 staged 写入同样在事务外完成，提交事务里只剩元数据写入
-        List<ArtifactExportService.StagedFile> stagedFiles =
-                artifactExportService.prepareCompletionStagedFiles(taskId, preparedFiles);
-        // 提交短事务：重新锁任务、复核所有权/终态/候选，版本、文件元数据、任务与回执同提交
-        return inShortTransaction(() -> {
-            lockTask(taskId);
-            TaskService.TaskRef locked = taskService.getTaskRef(taskId);
-            if (isTerminalStatus(locked.taskStatus())) {
-                validateTerminalCallback(taskId, idempotencyKey, "COMPLETE", request);
-                artifactJobService.validateCandidateReplay(taskId, request);
-                return terminalAck(taskId, locked.taskStatus());
-            }
-            validateCallbackOwnership(locked);
-            CompletionOutcome outcome = artifactJobService.completeFromWorker(taskId, request);
-            artifactExportService.commitStagedFiles(outcome.resultRef(), stagedFiles);
-            taskService.completeTask(taskId, outcome.phase(), outcome.message(), outcome.resultRef());
-            acknowledgeDelivery(taskId, deliveryToken, requireDelivery);
-            completeCallbackReceipt(taskId, idempotencyKey, outcome.resultRef());
-            return new WorkerAckResponse(taskId, "COMPLETED", outcome.resultRef());
-        });
-    }
-
-    /** 短事务执行；无事务管理器的测试构造下内联执行同段逻辑。 */
-    private <T> T inShortTransaction(java.util.function.Supplier<T> work) {
-        if (transactionTemplate == null) {
-            return work.get();
-        }
-        return transactionTemplate.execute(status -> work.get());
+        CompletionOutcome outcome = artifactJobService.completeFromWorker(taskId, request);
+        artifactExportService.publishPreparedFiles(outcome.resultRef(), preparedFiles);
+        taskService.completeTask(taskId, outcome.phase(), outcome.message(), outcome.resultRef());
+        acknowledgeDelivery(taskId, deliveryToken, requireDelivery);
+        completeCallbackReceipt(taskId, idempotencyKey, outcome.resultRef());
+        return new WorkerAckResponse(taskId, "COMPLETED", outcome.resultRef());
     }
 
     @Transactional
@@ -329,44 +278,12 @@ public class WorkerTaskCallbackService {
     public record CompletionOutcome(String phase, String message, String resultRef) {
     }
 
-    private boolean isWaitingPhase(String phase) {
-        return phase != null && phase.startsWith("WAITING_FOR_");
-    }
 
     private void validateWorkerType(TaskService.TaskRef task, String workerType) {
         if (!"artifact".equalsIgnoreCase(workerType == null ? "" : workerType.trim())) {
             throw new BusinessException(
                     "WORKER_CALLBACK_OWNER_MISMATCH",
                     "Worker type does not own this task",
-                    HttpStatus.CONFLICT
-            );
-        }
-    }
-
-    private void validateHeartbeatOwnership(TaskService.TaskRef task) {
-        if ("VIDEO_MATERIAL".equals(task.taskType())) {
-            validateVideoMaterialOwnership(task);
-            return;
-        }
-        validateCallbackOwnership(task);
-    }
-
-    private void validateVideoMaterialOwnership(TaskService.TaskRef task) {
-        if (!"VIDEO_LEARNING_REQUEST".equals(task.targetType())) {
-            throw new BusinessException(
-                    "WORKER_CALLBACK_TASK_TYPE_INVALID",
-                    "Task is not owned by an external worker",
-                    HttpStatus.CONFLICT
-            );
-        }
-        Integer matches = jdbcTemplate.queryForObject("""
-                select count(*) from video_learning_request
-                where id = ? and material_task_id = ? and workspace_id = ?
-                """, Integer.class, task.targetId(), task.taskId(), task.workspaceId());
-        if (matches == null || matches != 1) {
-            throw new BusinessException(
-                    "WORKER_CALLBACK_OWNER_MISMATCH",
-                    "Task target or workspace ownership does not match",
                     HttpStatus.CONFLICT
             );
         }
@@ -413,29 +330,13 @@ public class WorkerTaskCallbackService {
             String callbackType,
             Object request
     ) {
-        return claimCallback(taskId, idempotencyKey, callbackType, request, false);
-    }
-
-    /**
-     * 登记或复核幂等回执。proceedWhenUnfinished=true 时，回执存在且摘要一致但尚未写入
-     * 结果（认领后准备失败的重试路径）则返回 null 继续执行，不误报 DUPLICATE。
-     */
-    private WorkerAckResponse claimCallback(
-            String taskId,
-            String idempotencyKey,
-            String callbackType,
-            Object request,
-            boolean proceedWhenUnfinished
-    ) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             return null;
         }
         String normalizedKey = idempotencyKey.trim();
         String payloadDigest = callbackDigest(request);
         CallbackReceipt existing = findCallbackReceipt(taskId, normalizedKey);
-        if (existing != null) {
-            return replayOrConflict(taskId, callbackType, payloadDigest, existing, proceedWhenUnfinished);
-        }
+        if (existing != null) return replayOrConflict(taskId, callbackType, payloadDigest, existing);
         try {
             jdbcTemplate.update(
                     """
@@ -449,7 +350,7 @@ public class WorkerTaskCallbackService {
         } catch (DataIntegrityViolationException duplicate) {
             CallbackReceipt raced = findCallbackReceipt(taskId, normalizedKey);
             if (raced == null) throw duplicate;
-            return replayOrConflict(taskId, callbackType, payloadDigest, raced, proceedWhenUnfinished);
+            return replayOrConflict(taskId, callbackType, payloadDigest, raced);
         }
     }
 
@@ -476,26 +377,12 @@ public class WorkerTaskCallbackService {
             String payloadDigest,
             CallbackReceipt receipt
     ) {
-        return replayOrConflict(taskId, callbackType, payloadDigest, receipt, false);
-    }
-
-    private WorkerAckResponse replayOrConflict(
-            String taskId,
-            String callbackType,
-            String payloadDigest,
-            CallbackReceipt receipt,
-            boolean proceedWhenUnfinished
-    ) {
         if (!callbackType.equals(receipt.callbackType()) || receipt.payloadDigest() == null
                 || !payloadDigest.equals(receipt.payloadDigest())) {
             throw new BusinessException(
                     "WORKER_CALLBACK_IDEMPOTENCY_CONFLICT",
                     "Callback idempotency key is bound to different content",
                     HttpStatus.CONFLICT);
-        }
-        if (proceedWhenUnfinished && receipt.resultRef() == null) {
-            // 认领后尚未写入结果的回执：摘要一致，继续执行准备与提交
-            return null;
         }
         String resultRef = receipt.resultRef();
         if (resultRef == null) resultRef = taskService.getTask(taskId).resultRef();

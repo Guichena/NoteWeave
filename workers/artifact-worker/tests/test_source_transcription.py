@@ -46,33 +46,39 @@ def test_successful_transcription_calls_back_with_timestamped_text(sandbox: Path
     calls: list[dict[str, object]] = []
     delivered: list[tuple[str, dict[str, object]]] = []
 
-    def fake_tool(server: object, operation: dict[str, object]) -> dict[str, object]:
-        calls.append(operation)
-        arguments = operation["tool_arguments"]
-        output_dir = Path(str(arguments["output_dir"]))
-        output_dir.mkdir(parents=True, exist_ok=True)
-        transcript = output_dir / "source.json"
-        transcript.write_text(json.dumps({
-            "language": "zh", "duration": 125.0,
-            "segments": [{"start": 1.0, "end": 4.0, "text": "今天讨论产物生成"},
-                         {"start": 62.0, "end": 66.0, "text": "结论是先做音频纪要"}],
-        }, ensure_ascii=False), encoding="utf-8")
-        return {"ok": True, "artifacts": {"json_files": [str(transcript)]}}
+    def fake_tool(tool_name: str, arguments: dict[str, object]) -> dict[str, object]:
+        calls.append({"tool_name": tool_name, "arguments": arguments})
+        return {
+            "title": job.file_name,
+            "segments": [{"part": 1, "start_ms": 1000, "end_ms": 4000, "text": "今天讨论产物生成", "frames": []},
+                         {"part": 1, "start_ms": 62000, "end_ms": 66000, "text": "结论是先做音频纪要", "frames": []}],
+            "stats": {"duration_ms": 125000, "candidate_frames": 0, "kept_frames": 0, "transcript_origin": "ASR"},
+        }
+
+    # 预置迁移或重试时可能残留的旧中间文件，继续验证确认回调后的清理。
+    legacy_output = source_transcription._output_root(job)
+    legacy_output.mkdir(parents=True)
+    (legacy_output / "source.json").write_text("{}", encoding="utf-8")
 
     payload = run_transcription_job(job, call_tool=fake_tool,
-                                    post_callback=lambda snapshot, body: delivered.append((snapshot, body)) or True)
+                                    post_callback=lambda snapshot, body: delivered.append((snapshot, body)) or True,
+                                    llm_client=None)
 
-    # 通过系统 MCP 服务的转写工具处理，路径都在 MCP 沙箱内
-    assert calls[0]["tool_name"] == "transcribe_local_audio"
-    assert calls[0]["tool_arguments"]["input_path"] == str(job.media_path)
-    assert str(calls[0]["tool_arguments"]["output_dir"]).startswith(str(sandbox / "bilibili-render-pdf"))
+    # HTTP 媒体工具只接收共享输入卷内的相对引用，不再接收 Worker 的输出目录。
+    assert calls[0]["tool_name"] == "parse_media"
+    assert calls[0]["arguments"] == {
+        "file_ref": "source-transcriptions/snapshot-00000001/source.mp3", "title": job.file_name,
+    }
+    assert (sandbox / "inputs" / calls[0]["arguments"]["file_ref"]).resolve() == job.media_path.resolve()
     assert payload["status"] == "COMPLETED"
     assert payload["transcript_text"] == "[00:01] 今天讨论产物生成\n[01:02] 结论是先做音频纪要"
     assert payload["duration_seconds"] == 125.0
     assert payload["segment_count"] == 2
+    assert payload["media_document"]["segments"][1]["start_ms"] == 62000
     assert delivered == [("snapshot-00000001", payload)]
     # 原件和中间文件都会清理
     assert not job.media_path.parent.exists()
+    assert not legacy_output.exists()
 
 
 def test_failed_transcription_still_calls_back_so_the_source_does_not_hang(sandbox: Path) -> None:

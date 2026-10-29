@@ -5,60 +5,19 @@ import hashlib
 import hmac
 import base64
 import logging
-import os
 import re
-import socket
-from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Protocol
 from urllib import error, request
 from urllib.parse import urlencode, quote
 
 from pydantic import BaseModel
 
-from app.config import load_settings, resolve_mcp_sandbox_root
-from app.delivery_outbox import DeliveryOutbox, default_delivery_outbox
+from app.config import load_settings
 from app.error_sanitizer import sanitize_error_message
-from app.llm_client import build_default_llm_client, credential_safe_urlopen
-from app.acquisition_runtime import (
-    acknowledge_acquisition_operation, get_acquisition_result_payload,
-    list_acquisition_operations,
-)
-from app.capability_wait_queue import (
-    cache_waiting_task_delivery,
-    get_waiting_task,
-    list_waiting_tasks,
-    remove_waiting_task,
-    release_waiting_task_claim,
-    to_public_callback_operation,
-    wake_waiting_task,
-)
-from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult, ArtifactSectionDraft
-from app.candidate_file_manifest import build_required_files, build_video_deck_required_files
-from app.export_runtime import export_artifact_if_required, validate_frozen_video_scope
-from app.video_material_bundle import VideoMaterialBundleV1
-from app.video_material_task import VideoMaterialTaskInput
-from app.video_knowledge_plan import (
-    VideoKnowledgePlanV1, build_local_evidence_plan, plan_video_knowledge,
-)
-from app.video_deck_ir import VideoDeckIRV1
-from app.video_deck_render import render_original_video_deck
-from app.video_deck_preview import render_original_video_deck_previews
-from app.video_subtitle_material import subtitle_bundle_from_provider
-from app.video_visual_material import merge_captured_video_frames
-from app.video_frame_observation import verify_frame_observation_batch
+from app.llm_client import credential_safe_urlopen
+from app.models import ArtifactProgressEvent, ArtifactTaskInput, ArtifactTaskResult
 from app.material_resolver import select_frozen_windows
 from app.runner import run_artifact_task
-from app.execution_heartbeat import (
-    ArtifactExecutionSuperseded,
-    artifact_execution_heartbeat,
-    checkpoint_artifact_execution,
-    material_execution_lease,
-    stop_material_execution_heartbeat,
-)
-from app.system_mcp_executor import submit_system_mcp_acquisition_operation
-from app.registry import capability_names_match, is_frame_text_ocr_operation
-from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID
 
 
 logger = logging.getLogger(__name__)
@@ -71,18 +30,9 @@ class ArtifactWorkerExecutionResponse(BaseModel):
     result_title: str = ""
 
 
-class ArtifactAcquisitionAckExecutionResponse(BaseModel):
-    operation: dict[str, object]
-    receipt: dict[str, object]
-    resumed_tasks: list[ArtifactWorkerExecutionResponse]
-
-
 class ArtifactCallbackHttpError(RuntimeError):
-    def __init__(self, status_code: int, detail: str, code: str = "") -> None:
+    def __init__(self, status_code: int, detail: str) -> None:
         self.status_code = status_code
-        # NR08：结构化业务码（如 WORKER_CALLBACK_DELIVERY_STALE / IDEMPOTENCY_CONFLICT），
-        # 消费者据此区分「旧投递可跳过」与「业务冲突必须暴露」，不再把任意 409 当重放
-        self.code = code
         super().__init__(f"Java callback failed: {status_code} {detail}")
 
 
@@ -123,7 +73,6 @@ class JavaArtifactCallbackClient:
         self.internal_auth_token = internal_auth_token.strip()
         self.callback_secret = callback_secret.strip()
         self.delivery_token = delivery_token.strip()
-        self.callback_task_type = "ARTIFACT_JOB"
 
     def fetch_task_input(self, task_id: str) -> ArtifactTaskInput:
         response = self._request("GET", f"/internal/worker/artifact-tasks/{task_id}/input")
@@ -170,11 +119,6 @@ class JavaArtifactCallbackClient:
                 source.source_metadata["material_scan_next_cursor"] = cursor
         return task_input
 
-    def fetch_parent_material_input(self, task_id: str) -> VideoMaterialTaskInput:
-        response = self._request(
-            "GET", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/input")
-        return VideoMaterialTaskInput.model_validate(_unwrap_api_response(response))
-
     def retrieve_passages(self, task_id: str, query: str, limit: int, *, input_snapshot_id: str = "") -> dict[str, object]:
         # 只对服务不可用降级；认证、投递所有权和冻结输入资格失败必须传给调用方。
         try:
@@ -191,150 +135,27 @@ class JavaArtifactCallbackClient:
         return {"task_id": task_id, "input_snapshot_id": input_snapshot_id,
                 "passages": [], "degraded": True, "degradation_reasons": [reason]}
 
-    def publish_parent_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
-        digest = bundle.content_digest()
-        receipt = _unwrap_api_response(self._request(
-            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/bundle",
-            {"bundle": bundle.model_dump(mode="json", exclude_none=True), "content_digest": digest},
-        ))
-        if (receipt.get("task_id") != task_id or receipt.get("content_digest") != digest):
-            raise ValueError("Host parent material receipt differs from submitted Bundle")
-        return receipt
-
-    def publish_parent_plan(self, task_id: str, bundle_row_id: str,
-                            plan: VideoKnowledgePlanV1) -> dict[str, object]:
-        receipt = _unwrap_api_response(self._request(
-            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/knowledge-plan",
-            {"bundle_row_id": bundle_row_id, "plan": plan.model_dump(mode="json"),
-             "content_digest": plan.content_digest()},
-        ))
-        if receipt.get("bundle_row_id") != bundle_row_id \
-                or receipt.get("content_digest") != plan.content_digest():
-            raise ValueError("Host parent knowledge plan receipt differs from submitted Plan")
-        return receipt
-
-    def complete_parent_material(self, task_id: str, bundle_row_id: str, plan_id: str) -> None:
-        self._request(
-            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/complete",
-            {"bundle_id": bundle_row_id, "plan_id": plan_id}, task_id=task_id,
-            callback_task_type="VIDEO_MATERIAL",
-        )
-
-    def fail_parent_material(self, task_id: str, error_code: str) -> None:
-        self._request(
-            "POST", f"/internal/worker/video-material-tasks/{quote(task_id, safe='')}/fail",
-            {"error_code": error_code}, task_id=task_id,
-            callback_task_type="VIDEO_MATERIAL",
-        )
-
-    def publish_video_material(self, task_id: str, bundle: VideoMaterialBundleV1) -> dict[str, object]:
-        digest = bundle.content_digest()
-        receipt = _unwrap_api_response(self._request(
-            "POST", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material",
-            {"bundle": bundle.model_dump(mode="json", exclude_none=True), "content_digest": digest},
-        ))
-        if (receipt.get("task_id") != task_id or receipt.get("bundle_id") != bundle.bundle_id
-                or receipt.get("workspace_id") != bundle.workspace_id
-                or receipt.get("bundle_version") != bundle.bundle_version
-                or receipt.get("content_digest") != digest):
-            raise ValueError("Host video material receipt does not match the submitted bundle")
-        return receipt
-
-    def fetch_video_material(self, task_id: str, bundle_row_id: str = "") -> VideoMaterialBundleV1:
-        path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
-        if bundle_row_id:
-            path += f"/references/{quote(bundle_row_id, safe='')}"
-        material = _unwrap_api_response(self._request(
-            "GET", path
-        ))
-        return VideoMaterialBundleV1.model_validate(material)
-
-    def publish_video_knowledge_plan(
-        self, task_id: str, bundle_row_id: str, plan: VideoKnowledgePlanV1,
-    ) -> dict[str, object]:
-        receipt = _unwrap_api_response(self._request(
-            "POST", f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material/knowledge-plan",
-            {"bundle_row_id": bundle_row_id,
-             "plan": plan.model_dump(mode="json"), "content_digest": plan.content_digest()},
-        ))
-        if receipt.get("bundle_row_id") != bundle_row_id \
-                or receipt.get("content_digest") != plan.content_digest() \
-                or not receipt.get("id"):
-            raise ValueError("Host knowledge plan receipt does not match the submitted plan")
-        return receipt
-
-    def fetch_video_knowledge_plan(
-        self, task_id: str, bundle_row_id: str, *, referenced: bool = False,
-    ) -> VideoKnowledgePlanV1:
-        path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
-        if referenced:
-            path += f"/references/{quote(bundle_row_id, safe='')}/knowledge-plan"
-        else:
-            path += f"/knowledge-plan/{quote(bundle_row_id, safe='')}"
-        return VideoKnowledgePlanV1.model_validate(_unwrap_api_response(self._request("GET", path)))
-
-    def fetch_video_material_files(
-        self, task_id: str, bundle: VideoMaterialBundleV1, bundle_row_id: str = "",
-    ) -> dict[str, bytes]:
-        """Read immutable frame IDs from Host and verify every byte against the frozen Bundle."""
-        if len(bundle.files) > 32 or sum(file.size_bytes for file in bundle.files) > 100_000_000:
-            raise ValueError("video material file manifest exceeds Host limits")
-        content: dict[str, bytes] = {}
-        for file in bundle.files:
-            if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", file.file_id) \
-                    or file.size_bytes > 16_000_000:
-                raise ValueError("video material file ID or size is unsupported")
-            path = f"/internal/worker/artifact-tasks/{quote(task_id, safe='')}/video-material"
-            if bundle_row_id:
-                path += f"/references/{quote(bundle_row_id, safe='')}"
-            path += f"/files/{quote(file.file_id, safe='')}"
-            headers = {
-                **({"X-NoteWeave-Internal-Token": self.internal_auth_token}
-                   if self.internal_auth_token else {}),
-                **({"X-NoteWeave-Outbox-Delivery-Token": self.delivery_token}
-                   if self.delivery_token else {}),
-            }
-            req = request.Request(url=f"{self.java_base_url}{path}", method="GET", headers=headers)
-            try:
-                with credential_safe_urlopen(req, timeout=30) as response:
-                    if response.headers.get("Content-Type", "").split(";", 1)[0] != file.media_type:
-                        raise ValueError("Host material file media type differs from frozen manifest")
-                    content[file.file_id] = response.read(file.size_bytes + 1)
-            except error.HTTPError as exc:
-                detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
-                raise ArtifactCallbackHttpError(exc.code, detail) from exc
-            except error.URLError as exc:
-                raise RuntimeError(
-                    f"Java callback unavailable: {sanitize_error_message(str(exc.reason))}"
-                ) from exc
-        bundle.verify_file_bytes(content.__getitem__)
-        return content
-
-    def send_heartbeat(self, task_id: str, *, phase: str = "EXECUTING") -> dict[str, Any]:
-        # 不带幂等键。重复键会被当成重复回调，跳过 recordHeartbeat，配额租约就不会续。
-        # outbox 租约在幂等检查之前就续，但配额租约只在 recordHeartbeat 里续。
-        normalized_phase = (phase or "").strip() or "EXECUTING"
-        if len(normalized_phase) > 64:
-            normalized_phase = normalized_phase[:64]
-        task_type = (self.callback_task_type or "ARTIFACT_JOB").strip() or "ARTIFACT_JOB"
-        return self._request(
-            "POST",
-            f"/internal/worker/tasks/{task_id}/heartbeat",
-            {
-                "worker_type": "artifact",
-                "worker_instance_id": _artifact_worker_instance_id(),
-                "phase": normalized_phase,
-                "heartbeat_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-            task_id=task_id,
-            callback_task_type=task_type,
-        )
+    def read_artifact_frame(self, task_id: str, frame_id: str) -> bytes:
+        req = request.Request(
+            f"{self.java_base_url}/internal/worker/artifact-tasks/{quote(task_id, safe='')}/frames/{quote(frame_id, safe='')}",
+            headers={"Accept": "image/png, image/jpeg",
+                     **({"X-NoteWeave-Internal-Token": self.internal_auth_token} if self.internal_auth_token else {}),
+                     **({"X-NoteWeave-Outbox-Delivery-Token": self.delivery_token} if self.delivery_token else {})})
+        try:
+            with credential_safe_urlopen(req, timeout=30) as response:
+                if response.headers.get_content_type() not in {"image/png", "image/jpeg"}:
+                    raise ValueError("任务关键帧返回了不支持的图片类型")
+                content = response.read(16_000_001)
+                if not content or len(content) > 16_000_000:
+                    raise ValueError("任务关键帧图片大小无效")
+                return content
+        except error.HTTPError as exc:
+            raise ArtifactCallbackHttpError(exc.code, "任务关键帧不可读取") from exc
+        except error.URLError as exc:
+            raise ArtifactCallbackTransportError("任务关键帧读取服务不可用") from exc
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         payload = event.model_dump(mode="json")
-        # NR08：进度幂等键加入规范化载荷摘要——多个 WAITING_FOR_PROVIDER 阶段
-        # 的 provider 操作与请求载荷不同，只按 phase 生键会让第二阶段撞上第一阶段的
-        # 回执（同键不同摘要 → 409 中断）。同事件重试摘要稳定，幂等不受影响。
         self._request(
             "POST",
             f"/internal/worker/tasks/{task_id}/progress",
@@ -342,7 +163,7 @@ class JavaArtifactCallbackClient:
             idempotency_key=_callback_idempotency_key(
                 task_id,
                 "progress",
-                event.phase + ":" + _stable_progress_digest(payload),
+                event.phase,
             ),
             task_id=task_id,
         )
@@ -435,14 +256,8 @@ class JavaArtifactCallbackClient:
             with credential_safe_urlopen(req, timeout=30) as response:
                 text = response.read().decode("utf-8")
         except error.HTTPError as exc:
-            raw_body = exc.read().decode("utf-8", errors="replace")
-            error_code = ""
-            try:
-                error_code = str(json.loads(raw_body).get("code") or "")
-            except Exception:
-                error_code = ""
-            detail = sanitize_error_message(raw_body)
-            raise ArtifactCallbackHttpError(exc.code, detail, error_code) from exc
+            detail = sanitize_error_message(exc.read().decode("utf-8", errors="replace"))
+            raise ArtifactCallbackHttpError(exc.code, detail) from exc
         except error.URLError as exc:
             raise ArtifactCallbackTransportError(
                 f"Java 回调不可用：{sanitize_error_message(str(exc.reason))}"
@@ -450,129 +265,38 @@ class JavaArtifactCallbackClient:
         return json.loads(text) if text else {}
 
 
-def _prefer_superseded(exc: BaseException) -> None:
-    """Drop the local result when a heartbeat already lost the task."""
-    try:
-        checkpoint_artifact_execution()
-    except ArtifactExecutionSuperseded as superseded:
-        raise superseded from exc
-
-
-def run_artifact_task_with_callbacks(
-    task_id: str,
-    client: ArtifactCallbackClient | None = None,
-    delivery_token: str = "",
-) -> ArtifactWorkerExecutionResponse:
+def run_artifact_task_with_callbacks(task_id: str, client: ArtifactCallbackClient | None = None,
+                                     delivery_token: str = "") -> ArtifactWorkerExecutionResponse:
     settings = load_settings()
-    callback_client = client or JavaArtifactCallbackClient(
-        settings.java_base_url,
-        settings.internal_auth_token,
-        settings.callback_secret,
-        delivery_token,
-    )
-    with artifact_execution_heartbeat(
-        callback_client,
-        task_id,
-        interval_seconds=settings.artifact_heartbeat_interval_seconds,
-    ):
-        return _execute_artifact_task_callbacks(task_id, callback_client)
-
-
-def _execute_artifact_task_callbacks(
-    task_id: str,
-    callback_client: ArtifactCallbackClient,
-    delivery_outbox: DeliveryOutbox | None = None,
-) -> ArtifactWorkerExecutionResponse:
-    settings = load_settings()
-    outbox = delivery_outbox or default_delivery_outbox(settings)
-    # NR09：生成已完成的重投——跳过完整生成，只重发相同载荷的回调（宿主按幂等键
-    # 返回 DUPLICATE 或正常 ACK），不再重复调用模型
-    saved = outbox.load(task_id)
-    if saved is not None and saved.get("result"):
-        saved_events = [
-            ArtifactProgressEvent.model_validate(item)
-            for item in (saved.get("events") or [])
-        ]
-        saved_result = ArtifactTaskResult.model_validate(saved["result"])
-        return _finish_delivery(task_id, saved_events, saved_result, callback_client, outbox, None)
-    attempts = outbox.bump_attempts(task_id)
-    if attempts > settings.delivery_callback_budget:
-        # NR09：预算耗尽——按宿主终态协议上报失败后终止本投递；
-        # 上报本身失败（传输仍断）会继续抛错不提交，等传输恢复后重投再上报
-        exhausted = RuntimeError(
-            f"artifact delivery callback budget exhausted after {attempts} attempts")
-        if _report_execution_failure(callback_client, task_id, "WORKER_DELIVERY", exhausted):
-            setattr(exhausted, "artifact_failure_reported", True)
-        outbox.remove(task_id)
-        raise exhausted
+    callback_client = client or JavaArtifactCallbackClient(settings.java_base_url, settings.internal_auth_token,
+                                                           settings.callback_secret, delivery_token)
     task_input = callback_client.fetch_task_input(task_id)
     try:
-        referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
-        if referenced_id:
-            if not isinstance(callback_client, JavaArtifactCallbackClient):
-                raise ValueError("referenced video material requires a Host callback client")
-            bundle = callback_client.fetch_video_material(task_id, referenced_id)
-            validate_frozen_video_scope(task_input, bundle)
-            task_input.frozen_video_material = bundle.model_dump(mode="json")
-            if task_input.input_payload.skill_key in {
-                    "knowledge_blog", "interview_qa", "video_learning_deck"}:
-                plan = callback_client.fetch_video_knowledge_plan(
-                    task_id, referenced_id, referenced=True)
-                plan.verify_against_bundle(bundle)
-                task_input.frozen_video_knowledge_plan = plan.model_dump(mode="json")
         if isinstance(callback_client, JavaArtifactCallbackClient):
-            events, result = run_artifact_task(task_input, passage_search=lambda task_id, query, limit:
-                callback_client.retrieve_passages(task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id))
+            events, result = run_artifact_task(task_input,
+                passage_search=lambda task_id, query, limit: callback_client.retrieve_passages(
+                    task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id),
+                frame_reader=lambda frame_id: callback_client.read_artifact_frame(task_id, frame_id))
         else:
             events, result = run_artifact_task(task_input)
-        checkpoint_artifact_execution()
-    except ArtifactExecutionSuperseded:
-        # 任务被新代次接管：清除本地投递状态，重投由新代次语义处理
-        outbox.remove(task_id)
-        raise
     except Exception as exc:
-        _prefer_superseded(exc)
         if _report_execution_failure(callback_client, task_id, "WORKER_EXECUTION", exc):
             setattr(exc, "artifact_failure_reported", True)
-            outbox.remove(task_id)
         raise
-    # NR09：生成结果先落本地投递箱——后续回调传输失败时重投不再重新生成
-    outbox.save(
-        task_id,
-        [event.model_dump(mode="json") for event in events],
-        result.model_dump(mode="json"),
-        attempts,
-    )
-    return _finish_delivery(task_id, events, result, callback_client, outbox, task_input)
-
-
-def _finish_delivery(
-    task_id: str,
-    events: list[ArtifactProgressEvent],
-    result: ArtifactTaskResult,
-    callback_client: ArtifactCallbackClient,
-    outbox: DeliveryOutbox,
-    task_input: ArtifactTaskInput | None,
-) -> ArtifactWorkerExecutionResponse:
     try:
-        checkpoint_artifact_execution()
-        response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
-    except ArtifactExecutionSuperseded:
-        outbox.remove(task_id)
-        raise
+        for event in events:
+            callback_client.send_progress(task_id, event)
+        callback_client.send_complete(task_id, result)
+        return ArtifactWorkerExecutionResponse(task_id=task_id, status=result.job_snapshot.status,
+                                               progress_events=len(events), result_title=result.result_title)
     except ArtifactCallbackHttpError as exc:
-        _prefer_superseded(exc)
-        # 宿主拒收产物内容（内容 IR、候选、文件清单不合规）时重试也不会通过，必须上报失败；
-        # 否则消费者会把这个 409 当成旧投递跳过，任务会一直停在运行中
+        # 内容拒收需要上报失败，投递过期则由消费者按原协议处理。
         rejected_code = _rejected_artifact_content_code(exc)
         if rejected_code:
             setattr(exc, "error_code", rejected_code)
             if _report_execution_failure(callback_client, task_id, "WORKER_COMPLETION", exc):
                 setattr(exc, "artifact_failure_reported", True)
-                outbox.remove(task_id)
         raise
-    outbox.remove(task_id)
-    return response
 
 
 def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
@@ -581,591 +305,6 @@ def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
         return ""
     match = re.search(r'"code"\s*:\s*"(ARTIFACT_[A-Z_]+)"', str(exc))
     return match.group(1) if match else ""
-
-
-def run_video_material_task_with_callbacks(
-    task_id: str,
-    client: JavaArtifactCallbackClient | None = None,
-    delivery_token: str = "",
-) -> ArtifactWorkerExecutionResponse:
-    settings = load_settings()
-    callback_client = client or JavaArtifactCallbackClient(
-        settings.java_base_url, settings.internal_auth_token,
-        settings.callback_secret, delivery_token)
-    # 采集在 Kafka 处理函数返回后还要跑字幕、抽帧、画面观察。心跳必须跨过这些
-    # 后台阶段，否则 70 分钟 outbox 租约到期后任务会被重投。
-    _bind_material_callback_type(callback_client)
-    with material_execution_lease(
-        callback_client, task_id,
-        interval_seconds=settings.artifact_heartbeat_interval_seconds,
-    ):
-        try:
-            parent_input = callback_client.fetch_parent_material_input(task_id)
-            task_input = parent_input.to_acquisition_input()
-            events, result = run_artifact_task(task_input)
-            checkpoint_artifact_execution()
-            response = _emit_material_callbacks_for_result(
-                task_id, events, result, callback_client, task_input)
-        except ArtifactExecutionSuperseded:
-            stop_material_execution_heartbeat(task_id)
-            raise
-        except ArtifactCallbackHttpError as exc:
-            stop_material_execution_heartbeat(task_id)
-            _prefer_superseded(exc)
-            if _report_material_failure(callback_client, task_id):
-                setattr(exc, "artifact_failure_reported", True)
-            raise
-        except Exception as exc:
-            stop_material_execution_heartbeat(task_id)
-            _prefer_superseded(exc)
-            if _report_material_failure(callback_client, task_id):
-                setattr(exc, "artifact_failure_reported", True)
-            raise
-        if not _is_waiting_status(response.status):
-            stop_material_execution_heartbeat(task_id)
-        return response
-
-
-def _report_material_failure(client: JavaArtifactCallbackClient, task_id: str) -> bool:
-    try:
-        client.fail_parent_material(task_id, "VIDEO_MATERIAL_WORKER_FAILED")
-        return True
-    except ArtifactCallbackHttpError as exc:
-        if exc.status_code == 409:
-            return False
-        logger.warning("Video material failure callback rejected: %s",
-                       sanitize_error_message(str(exc)))
-        return False
-    except Exception:
-        logger.exception("Video material failure callback unavailable")
-        return False
-
-
-def _emit_material_callbacks_for_result(
-    task_id: str, events: list[ArtifactProgressEvent], result: ArtifactTaskResult,
-    client: JavaArtifactCallbackClient, task_input: ArtifactTaskInput,
-) -> ArtifactWorkerExecutionResponse:
-    if _is_waiting_status(result.job_snapshot.status):
-        _dispatch_system_provider_operations(result, client.java_base_url)
-    else:
-        bundle = _collect_parent_video_material(task_id, task_input)
-        receipt = client.publish_parent_material(task_id, bundle)
-        try:
-            plan = _plan_frozen_video_material(bundle)
-        except ValueError as exc:
-            logger.warning("Parent video knowledge planning failed for task %s: %s", task_id,
-                           sanitize_error_message(str(exc)))
-            plan = build_local_evidence_plan(bundle)
-        plan_receipt = client.publish_parent_plan(task_id, str(receipt["id"]), plan)
-        client.complete_parent_material(task_id, str(receipt["id"]), str(plan_receipt["id"]))
-    return ArtifactWorkerExecutionResponse(
-        task_id=task_id, status=result.job_snapshot.status,
-        progress_events=len(events), result_title="Video material")
-
-
-def _collect_parent_video_material(
-    task_id: str, task_input: ArtifactTaskInput,
-) -> VideoMaterialBundleV1:
-    capture_payload: dict[str, object] | None = None
-    subtitle_payload: dict[str, object] | None = None
-    observation_payload: dict[str, object] | None = None
-    has_capture_stage = has_observation_stage = False
-    for operation in list_acquisition_operations(task_id=task_id):
-        operation_key = operation.get("operation_key")
-        payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
-        if operation_key == "CAPTURE_FRAMES" \
-                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
-            has_capture_stage = True
-            if isinstance(payload, dict):
-                capture_payload = payload
-        elif is_frame_text_ocr_operation(operation_key) \
-                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
-            has_observation_stage = True
-            if isinstance(payload, dict):
-                observation_payload = payload
-        elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
-            subtitle_payload = payload
-    if subtitle_payload is None or (has_capture_stage and capture_payload is None):
-        raise ValueError("video material acquisition has incomplete provider receipts")
-    bundle = subtitle_bundle_from_provider(task_input, subtitle_payload)
-    if bundle is None:
-        raise ValueError("video transcript has no complete, verifiable subtitle material")
-    if capture_payload is not None:
-        bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
-    if has_observation_stage:
-        if observation_payload is None:
-            raise ValueError("video frame observation has no acknowledged receipt")
-        verify_frame_observation_batch(
-            task_id=task_id, files=bundle.files, payload=observation_payload)
-        bundle = VideoMaterialBundleV1.model_validate({
-            **bundle.model_dump(mode="json", exclude_none=True),
-            "frame_observations": observation_payload["frames"],
-        })
-    return bundle
-
-
-def resume_waiting_artifact_task_with_callbacks(
-    task_id: str,
-    *,
-    client: ArtifactCallbackClient | None = None,
-    request_id: str = "",
-    callback_receipt: dict[str, object] | None = None,
-    callback_operation: dict[str, object] | None = None,
-    delivery_token: str = "",
-) -> ArtifactWorkerExecutionResponse:
-    settings = load_settings()
-    callback_client = client or JavaArtifactCallbackClient(
-        settings.java_base_url,
-        settings.internal_auth_token,
-        settings.callback_secret,
-        delivery_token,
-    )
-    waiting_record = get_waiting_task(task_id)
-    task_input = (ArtifactTaskInput.model_validate(waiting_record["task_input"])
-                  if waiting_record is not None else None)
-    material_only = (
-        task_input is not None
-        and task_input.input_payload.writeback_mode == "MATERIAL_ONLY"
-    )
-    retrieval_options = {}
-    if task_input is not None and isinstance(callback_client, JavaArtifactCallbackClient) and callback_client.delivery_token:
-        retrieval_options["passage_search"] = lambda task_id, query, limit: callback_client.retrieve_passages(
-            task_id, query, limit, input_snapshot_id=task_input.input_snapshot_id)
-    if material_only:
-        # 下一段采集仍在本次恢复返回之后执行，沿用同一条心跳直到任务终态。
-        _bind_material_callback_type(callback_client)
-        lease_scope = material_execution_lease(
-            callback_client,
-            task_id,
-            interval_seconds=settings.artifact_heartbeat_interval_seconds,
-        )
-    else:
-        lease_scope = artifact_execution_heartbeat(
-            callback_client,
-            task_id,
-            interval_seconds=settings.artifact_heartbeat_interval_seconds,
-        )
-    with lease_scope:
-        try:
-            response = _resume_waiting_artifact_task(
-                task_id,
-                callback_client=callback_client,
-                task_input=task_input,
-                request_id=request_id,
-                callback_receipt=callback_receipt,
-                callback_operation=callback_operation,
-                retrieval_options=retrieval_options,
-            )
-        except Exception:
-            if material_only:
-                stop_material_execution_heartbeat(task_id)
-            raise
-        if material_only and not _is_waiting_status(response.status):
-            stop_material_execution_heartbeat(task_id)
-        return response
-
-
-def _bind_material_callback_type(client: object) -> None:
-    if isinstance(client, JavaArtifactCallbackClient):
-        client.callback_task_type = "VIDEO_MATERIAL"
-
-
-def _resume_waiting_artifact_task(
-    task_id: str,
-    *,
-    callback_client: ArtifactCallbackClient,
-    task_input: ArtifactTaskInput | None,
-    request_id: str,
-    callback_receipt: dict[str, object] | None,
-    callback_operation: dict[str, object] | None,
-    retrieval_options: dict[str, object],
-) -> ArtifactWorkerExecutionResponse:
-    try:
-        events, result = wake_waiting_task(
-            task_id,
-            request_id=request_id,
-            callback_receipt=callback_receipt,
-            callback_operation=callback_operation,
-            remove_on_success=False,
-            **retrieval_options,
-        )
-        checkpoint_artifact_execution()
-    except ArtifactExecutionSuperseded:
-        release_waiting_task_claim(task_id)
-        raise
-    except ValueError:
-        raise
-    except Exception as exc:
-        _prefer_superseded(exc)
-        if task_input is not None \
-                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
-            if isinstance(callback_client, JavaArtifactCallbackClient):
-                _report_material_failure(callback_client, task_id)
-        else:
-            _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
-        raise
-    try:
-        checkpoint_artifact_execution()
-        if not _is_waiting_status(result.job_snapshot.status):
-            cache_waiting_task_delivery(task_id, events, result)
-        if task_input is not None \
-                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
-            if not isinstance(callback_client, JavaArtifactCallbackClient):
-                raise ValueError("material task requires the Host callback client")
-            response = _emit_material_callbacks_for_result(
-                task_id, events, result, callback_client, task_input)
-        else:
-            response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
-    except ArtifactExecutionSuperseded:
-        release_waiting_task_claim(task_id)
-        raise
-    except ValueError as exc:
-        _prefer_superseded(exc)
-        if task_input is not None \
-                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
-            if isinstance(callback_client, JavaArtifactCallbackClient):
-                _report_material_failure(callback_client, task_id)
-        else:
-            _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
-        release_waiting_task_claim(task_id)
-        raise
-    except Exception as exc:
-        _prefer_superseded(exc)
-        if task_input is not None \
-                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY" \
-                and isinstance(callback_client, JavaArtifactCallbackClient):
-            if _report_material_failure(callback_client, task_id):
-                setattr(exc, "artifact_failure_reported", True)
-        release_waiting_task_claim(task_id)
-        raise
-    if not _is_waiting_status(result.job_snapshot.status):
-        remove_waiting_task(task_id)
-    return response
-
-
-def acknowledge_acquisition_operation_with_callbacks(
-    *,
-    callback_token: str,
-    final_status: str,
-    result_locator: str = "",
-    error_code: str = "",
-    error_message: str = "",
-    provider_payload: dict[str, object] | None = None,
-    client: ArtifactCallbackClient | None = None,
-    defer_resume: bool = False,
-) -> ArtifactAcquisitionAckExecutionResponse:
-    settings = load_settings()
-    callback_client = client or JavaArtifactCallbackClient(
-        settings.java_base_url,
-        settings.internal_auth_token,
-        settings.callback_secret,
-    )
-    ack_result = acknowledge_acquisition_operation(
-        callback_token=callback_token,
-        final_status=final_status,
-        result_locator=result_locator,
-        error_code=error_code,
-        error_message=error_message,
-        provider_payload=provider_payload,
-        auto_resume=False,
-    )
-    resumed_tasks: list[ArtifactWorkerExecutionResponse] = []
-    if not defer_resume and str(ack_result["receipt"].get("callback_status", "")).upper() == "ACKNOWLEDGED":
-        request_id = str(ack_result["operation"].get("request_id", ""))
-        capability_name = str(ack_result["operation"].get("capability_name", "")).strip().upper()
-        for record in _matching_waiting_tasks(request_id=request_id, capability_name=capability_name):
-            resumed_tasks.append(
-                resume_waiting_artifact_task_with_callbacks(
-                    str(record["task_id"]),
-                    client=callback_client,
-                    request_id=request_id,
-                    callback_receipt=ack_result["receipt"],
-                    callback_operation=ack_result["operation"],
-                )
-            )
-    return ArtifactAcquisitionAckExecutionResponse(
-        operation=to_public_callback_operation(ack_result["operation"]),
-        receipt=ack_result["receipt"],
-        resumed_tasks=resumed_tasks,
-    )
-
-
-def _is_waiting_status(status: str) -> bool:
-    return status.startswith("WAITING_FOR_")
-
-
-def _emit_callbacks_for_result(
-    task_id: str,
-    events: list[ArtifactProgressEvent],
-    result: ArtifactTaskResult,
-    callback_client: ArtifactCallbackClient,
-    task_input: ArtifactTaskInput | None = None,
-) -> ArtifactWorkerExecutionResponse:
-    for event in events:
-        callback_client.send_progress(task_id, event)
-    if _is_waiting_status(result.job_snapshot.status):
-        if isinstance(callback_client, JavaArtifactCallbackClient):
-            _dispatch_system_provider_operations(result, callback_client.java_base_url)
-    else:
-        _attach_frozen_video_material(task_id, task_input, result, callback_client)
-        callback_client.send_complete(task_id, result)
-    return ArtifactWorkerExecutionResponse(
-        task_id=task_id,
-        status=result.job_snapshot.status,
-        progress_events=len(events),
-        result_title=result.result_title,
-    )
-
-
-def _attach_frozen_video_material(
-    task_id: str, task_input: ArtifactTaskInput | None,
-    result: ArtifactTaskResult, callback_client: ArtifactCallbackClient,
-) -> None:
-    if task_input is None or not isinstance(callback_client, JavaArtifactCallbackClient):
-        return
-    referenced_id = str(task_input.input_payload.inputs.get("video_material_bundle_id") or "").strip()
-    if referenced_id:
-        bundle = callback_client.fetch_video_material(task_id, referenced_id)
-        candidate = result.result_payload.get("candidate")
-        if not isinstance(candidate, dict):
-            raise ValueError("referenced video material requires a Worker Candidate")
-        if bundle.frames and task_input.input_payload.skill_key == "bilibili_course_note_pdf":
-            contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
-            frame_paths = _stage_frozen_video_frames(task_id, referenced_id, bundle, contents)
-            _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)
-        if task_input.input_payload.skill_key == "video_learning_deck":
-            frozen = VideoMaterialBundleV1.model_validate(task_input.frozen_video_material)
-            plan = VideoKnowledgePlanV1.model_validate(task_input.frozen_video_knowledge_plan)
-            if frozen.content_digest() != bundle.content_digest():
-                raise ValueError("frozen deck material differs from the referenced Host bundle")
-            contents = callback_client.fetch_video_material_files(task_id, bundle, referenced_id)
-            ir = VideoDeckIRV1.model_validate(result.result_payload["video_deck_ir"])
-            pptx = render_original_video_deck(task_id, ir, bundle, plan, contents.__getitem__)
-            previews = render_original_video_deck_previews(pptx, ir)
-            candidate["required_files"] = build_video_deck_required_files(
-                str(result.result_payload["markdown"]), pptx, previews)
-            result.result_payload["export_trace"] = {
-                "status": "COMPILED", "format": "PPTX",
-                "file_name": pptx.name, "preview_count": len(previews),
-            }
-        candidate["video_material"] = {
-            "id": referenced_id, "bundle_id": bundle.bundle_id,
-            "bundle_version": bundle.bundle_version,
-            "content_digest": bundle.content_digest(),
-        }
-        return
-    capture_payload: dict[str, object] | None = None
-    subtitle_payload: dict[str, object] | None = None
-    observation_payload: dict[str, object] | None = None
-    has_capture_stage = False
-    has_observation_stage = False
-    for operation in list_acquisition_operations(task_id=task_id):
-        operation_key = operation.get("operation_key")
-        payload = get_acquisition_result_payload(str(operation.get("request_id", "")))
-        if operation_key == "CAPTURE_FRAMES" \
-                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
-            has_capture_stage = True
-            if isinstance(payload, dict):
-                capture_payload = payload
-        elif is_frame_text_ocr_operation(operation_key) \
-                and operation.get("server_id") == SYSTEM_BILIBILI_SERVER_ID:
-            has_observation_stage = True
-            if isinstance(payload, dict):
-                observation_payload = payload
-        elif operation_key == "EXTRACT_TRANSCRIPT" and isinstance(payload, dict):
-            subtitle_payload = payload
-    if subtitle_payload is None:
-        if has_capture_stage:
-            raise ValueError("video transcript stage has no acknowledged provider payload")
-        return
-    if has_capture_stage and capture_payload is None:
-        raise ValueError("frame capture stage is missing its acknowledged receipt")
-    bundle = subtitle_bundle_from_provider(task_input, subtitle_payload)
-    if bundle is None:
-        raise ValueError("acknowledged video transcript has no complete, verifiable subtitle material")
-    if capture_payload is not None:
-        bundle = merge_captured_video_frames(task_input, bundle, capture_payload)
-    if has_observation_stage:
-        if observation_payload is None:
-            raise ValueError("frame observation stage is missing its acknowledged receipt")
-        result.result_payload["frame_observation_digest"] = verify_frame_observation_batch(
-            task_id=task_id, files=bundle.files, payload=observation_payload)
-        bundle = VideoMaterialBundleV1.model_validate({
-            **bundle.model_dump(mode="json", exclude_none=True),
-            "frame_observations": observation_payload["frames"],
-        })
-    receipt = callback_client.publish_video_material(task_id, bundle)
-    candidate = result.result_payload.get("candidate")
-    if not isinstance(candidate, dict):
-        raise ValueError("video material requires a Worker Candidate")
-    _freeze_local_evidence_plan(task_id, result, callback_client, bundle, str(receipt["id"]))
-    if bundle.frames:
-        root = resolve_mcp_sandbox_root() / "bilibili-render-pdf" / "exports" / task_id
-        frame_paths = {file.file_id: root / f"{file.file_id}.png" for file in bundle.files}
-        _rerender_pdf_with_frozen_frames(task_input, result, bundle, frame_paths)
-    candidate["video_material"] = {
-        "id": receipt["id"], "bundle_id": receipt["bundle_id"],
-        "bundle_version": receipt["bundle_version"],
-        "content_digest": receipt["content_digest"],
-    }
-
-
-def _plan_frozen_video_material(bundle: VideoMaterialBundleV1) -> VideoKnowledgePlanV1:
-    client = build_default_llm_client()
-    if client is None:
-        return build_local_evidence_plan(bundle)
-    return plan_video_knowledge(bundle, client)
-
-
-def _freeze_local_evidence_plan(
-    task_id: str, result: ArtifactTaskResult, callback_client: ArtifactCallbackClient,
-    bundle: VideoMaterialBundleV1, bundle_row_id: str,
-) -> None:
-    try:
-        plan = callback_client.fetch_video_knowledge_plan(task_id, bundle_row_id)
-    except ArtifactCallbackHttpError as exc:
-        if exc.status_code != 404:
-            logger.warning("Knowledge plan lookup failed for task %s: %s", task_id,
-                           sanitize_error_message(str(exc)))
-            result.result_payload["knowledge_plan_gap"] = "HOST_PLAN_LOOKUP_UNAVAILABLE"
-            return
-        try:
-            plan = _plan_frozen_video_material(bundle)
-        except ValueError as exc:
-            logger.warning("Knowledge planning failed for task %s: %s", task_id,
-                           sanitize_error_message(str(exc)))
-            result.result_payload["knowledge_plan_gap"] = "KNOWLEDGE_PLANNING_FAILED"
-            return
-        try:
-            frozen = callback_client.publish_video_knowledge_plan(task_id, bundle_row_id, plan)
-        except ArtifactCallbackHttpError as exc:
-            logger.warning("Knowledge plan freeze failed for task %s: %s", task_id,
-                           sanitize_error_message(str(exc)))
-            result.result_payload["knowledge_plan_gap"] = "HOST_PLAN_FREEZE_UNAVAILABLE"
-            return
-        plan_id = str(frozen["id"])
-    else:
-        plan.verify_against_bundle(bundle)
-        plan_id = ""
-    result.result_payload["knowledge_plan"] = {
-        "schema_version": plan.schema_version,
-        "bundle_content_digest": plan.bundle_content_digest,
-        "content_digest": plan.content_digest(),
-        "plan_id": plan_id,
-        "mode": "LOCAL_EVIDENCE_INDEX" if all(
-            node.kind in {"TOPIC", "EVIDENCE_WINDOW"} for node in plan.nodes
-        ) else "FROZEN_PLAN",
-    }
-
-
-def _rerender_pdf_with_frozen_frames(
-    task_input: ArtifactTaskInput, result: ArtifactTaskResult,
-    bundle: VideoMaterialBundleV1, frame_paths: dict[str, Path],
-) -> None:
-    candidate = result.result_payload.get("candidate")
-    if not isinstance(candidate, dict):
-        raise ValueError("frozen frame PDF requires a Worker Candidate")
-    sections = [ArtifactSectionDraft.model_validate(item)
-                for item in result.result_payload.get("sections", [])]
-    headings = {section.heading.strip().casefold() for section in sections}
-    segments = {segment.segment_id: segment for segment in bundle.transcript_segments}
-    for node in bundle.knowledge_nodes:
-        if not node.frame_ids or node.title.strip().casefold() in headings:
-            continue
-        evidence = [segments[segment_id].corrected_text
-                    for segment_id in node.transcript_segment_ids]
-        sections.append(ArtifactSectionDraft(
-            heading=node.title,
-            body="\n\n".join(evidence) if evidence else
-                 f"Video frame evidence at {node.start_ms / 1000:.1f}–{node.end_ms / 1000:.1f} s.",
-            source_refs=[f"video-material:{bundle.bundle_id}:{node.node_id}"],
-        ))
-        headings.add(node.title.strip().casefold())
-    export_trace = export_artifact_if_required(
-        task_input=task_input, title=result.result_title,
-        sections=sections, video_material=bundle, frame_files=frame_paths,
-    )
-    if export_trace.get("status") != "COMPILED":
-        raise ValueError("frozen frame PDF did not compile")
-    result.result_payload["export_trace"] = export_trace
-    markdown = str(result.result_payload.get("markdown") or "")
-    candidate["required_files"] = build_required_files(markdown, export_trace)
-
-
-def _stage_frozen_video_frames(
-    task_id: str, bundle_row_id: str, bundle: VideoMaterialBundleV1,
-    contents: dict[str, bytes],
-) -> dict[str, Path]:
-    if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", bundle_row_id) \
-            or not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", task_id):
-        raise ValueError("frozen video material identity is unsafe for sandbox staging")
-    root = resolve_mcp_sandbox_root() / "inputs" / "video-material" / task_id / bundle_row_id
-    root.mkdir(parents=True, exist_ok=True)
-    paths: dict[str, Path] = {}
-    for file in bundle.files:
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,100}", file.file_id):
-            raise ValueError("frozen frame file ID is unsafe")
-        suffix = ".png" if file.media_type == "image/png" else ".jpg"
-        path = root / f"{file.file_id}{suffix}"
-        if path.is_symlink():
-            raise ValueError("frozen frame staging cannot follow a symlink")
-        content = contents[file.file_id]
-        if path.exists() and path.read_bytes() != content:
-            raise ValueError("frozen frame staging conflicts with existing bytes")
-        if not path.exists():
-            path.write_bytes(content)
-        paths[file.file_id] = path
-    return paths
-
-
-def _dispatch_system_provider_operations(
-    result: ArtifactTaskResult,
-    java_base_url: str,
-) -> list[dict[str, object]]:
-    receipt = result.result_payload.get("acquisition_receipt")
-    if not isinstance(receipt, dict):
-        return []
-    dispatches: list[dict[str, object]] = []
-    for source_receipt in receipt.get("source_receipts", []):
-        if not isinstance(source_receipt, dict):
-            continue
-        for operation in source_receipt.get("operations", []):
-            if not isinstance(operation, dict):
-                continue
-            if operation.get("status") != "WAITING_FOR_PROVIDER":
-                continue
-            if str(operation.get("server_id", "")) != SYSTEM_BILIBILI_SERVER_ID:
-                continue
-            dispatches.append(
-                submit_system_mcp_acquisition_operation(
-                    str(operation.get("request_id", "")),
-                    java_base_url=java_base_url,
-                )
-            )
-    return dispatches
-
-
-def _matching_waiting_tasks(
-    *,
-    request_id: str,
-    capability_name: str,
-) -> list[dict[str, object]]:
-    normalized_request_id = request_id.strip()
-    normalized_capability_name = capability_name.strip().upper()
-    matched_records: list[dict[str, object]] = []
-    for record in list_waiting_tasks():
-        blocked_operations = record.get("blocked_operations", [])
-        for operation in blocked_operations:
-            operation_request_id = str(operation.get("request_id", "")).strip()
-            operation_capability_name = str(operation.get("capability_name", "")).strip().upper()
-            if operation_request_id != normalized_request_id:
-                continue
-            if normalized_capability_name and operation_capability_name \
-                    and not capability_names_match(operation_capability_name, normalized_capability_name):
-                continue
-            matched_records.append(record)
-            break
-    return matched_records
 
 
 def _unwrap_api_response(response: dict[str, Any]) -> dict[str, Any]:
@@ -1190,19 +329,6 @@ def _callback_idempotency_key(
     return f"artifact-worker-{callback_type}-{digest}"
 
 
-def _stable_progress_digest(payload: dict) -> str:
-    """NR08：规范化（键排序/紧凑分隔）后的载荷摘要；同事件重试稳定，不同事件互异。"""
-    return hashlib.sha256(
-        json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()[:16]
-
-
-def _artifact_worker_instance_id() -> str:
-    raw = os.environ.get("HOSTNAME") or socket.gethostname() or "artifact-worker"
-    cleaned = re.sub(r"[^A-Za-z0-9._:-]", "-", raw).strip("-")[:120]
-    return cleaned or "artifact-worker"
-
-
 def _task_callback_token(secret: str, task_type: str, task_id: str) -> str:
     digest = hmac.new(
         secret.strip().encode("utf-8"),
@@ -1212,70 +338,25 @@ def _task_callback_token(secret: str, task_type: str, task_id: str) -> str:
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def failure_detail(trace: object, limit: int = 600) -> str:
-    """从节点失败轨迹里取出未通过的检查和校验错误，拼成一行摘要。"""
-    if not isinstance(trace, dict):
-        return ""
-    parts: list[str] = []
-    checks = trace.get("failed_checks") or (trace.get("verification") or {}).get("failed_checks") or []
-    for check in checks[:4] if isinstance(checks, list) else []:
-        if isinstance(check, dict):
-            name = check.get("check") or check.get("name") or check.get("rule") or ""
-            reason = check.get("reason") or check.get("message") or check.get("detail") or ""
-            parts.append(f"{name} {reason}".strip())
-        else:
-            parts.append(str(check))
-    parts.extend(f"{trace.get('node_id', '')} {error}".strip()
-                 for error in (trace.get("validation_errors") or [])[:2])
-    for step in (trace.get("execution_traces") or trace.get("steps") or [])[:3]:
-        if isinstance(step, dict):
-            parts.extend(str(error) for error in (step.get("validation_errors") or [])[:2])
-    text = "；".join(part for part in parts if part)
-    return text[:limit]
-
-
-def _report_execution_failure(
-    callback_client: ArtifactCallbackClient,
-    task_id: str,
-    phase: str,
-    exc: Exception,
-) -> bool:
-    try:
-        error_code = str(getattr(exc, "error_code", type(exc).__name__.upper()))
-        # 节点失败时只回报一句概括，排查不到是哪项检查没过；把未通过的检查摘要写进日志和失败说明
-        detail = failure_detail(getattr(exc, "trace", None))
-        if detail:
-            logger.warning("Artifact node failure detail: task_id=%s phase=%s detail=%s", task_id, phase, detail)
-        message = sanitize_error_message(f"{exc}：{detail}" if detail else str(exc))
-        try:
-            callback_client.send_fail(
-                task_id,
-                phase=phase,
-                error_code=error_code,
-                error_message=message,
-                retryable=is_retryable_failure(exc),
-            )
-        except TypeError:
-            # Keep test doubles and older callback adapters source-compatible.
-            callback_client.send_fail(
-                task_id,
-                phase=phase,
-                error_code=error_code,
-                error_message=message,
-            )
-        return True
-    except Exception:
-        logger.exception(
-            "Artifact execution failed and the failure callback could not be delivered: task_id=%s phase=%s",
-            task_id,
-            phase,
-        )
-        return False
-
-
 def is_retryable_failure(exc: Exception) -> bool:
     name = type(exc).__name__.upper()
     message = str(exc).lower()
     if name in {"ARTIFACTCONFIGURATIONREQUIREDERROR", "VALUEERROR", "JSONDECODEERROR"}:
         return False
     return not any(marker in message for marker in ("invalid input", "forbidden", "not configured"))
+
+
+def _report_execution_failure(callback_client: ArtifactCallbackClient, task_id: str, phase: str, exc: Exception) -> bool:
+    try:
+        error_code = str(getattr(exc, "error_code", type(exc).__name__.upper()))
+        message = sanitize_error_message(str(exc))
+        try:
+            callback_client.send_fail(task_id, phase=phase, error_code=error_code, error_message=message,
+                                      retryable=is_retryable_failure(exc))
+        except TypeError:
+            # 保留现有回调适配器的兼容签名。
+            callback_client.send_fail(task_id, phase=phase, error_code=error_code, error_message=message)
+        return True
+    except Exception:
+        logger.exception("产物执行失败且失败回调未确认：task_id=%s phase=%s", task_id, phase)
+        return False

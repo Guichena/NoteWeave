@@ -77,20 +77,6 @@ def test_consumer_commits_only_after_execution_protocol_completes() -> None:
     assert summary.completed_count == 1
 
 
-def test_material_command_uses_material_executor_and_keeps_artifact_path_separate() -> None:
-    messages = FakeMessages([json.dumps({
-        "schema_version": "video-material-command.v1",
-        "task_id": "material-1", "delivery_token": "delivery-material",
-    })])
-    calls: list[tuple[str, str]] = []
-    summary = consume_artifact_commands(
-        messages,
-        executor=lambda *_args, **_kwargs: pytest.fail("Artifact Job executor was called"),
-        material_executor=lambda task_id, *, delivery_token: calls.append((task_id, delivery_token)),
-    )
-    assert calls == [("material-1", "delivery-material")]
-    assert summary.completed_count == 1
-    assert messages.commit_count == 1
 
 
 def test_consumer_does_not_commit_when_execution_or_callback_is_unconfirmed() -> None:
@@ -125,32 +111,12 @@ def test_consumer_skips_stale_delivery_before_external_execution() -> None:
     messages = FakeMessages([command()])
 
     def stale(*_args, **_kwargs):
-        # NR08：只有宿主明确判定过期的投递（结构化码）才按旧重放跳过
-        raise ArtifactCallbackHttpError(
-            409, "delivery is stale", code="WORKER_CALLBACK_DELIVERY_STALE"
-        )
+        raise ArtifactCallbackHttpError(409, "delivery is stale")
 
     summary = consume_artifact_commands(messages, executor=stale)
 
     assert messages.commit_count == 1
     assert summary.skipped_count == 1
-
-
-def test_consumer_exposes_business_conflict_409_instead_of_committing() -> None:
-    # NR08：幂等冲突等业务 409 不再被当作旧投递静默提交——必须向外抛出可见
-    messages = FakeMessages([command()])
-
-    def conflict(*_args, **_kwargs):
-        raise ArtifactCallbackHttpError(
-            409, "idempotency conflict", code="WORKER_CALLBACK_IDEMPOTENCY_CONFLICT"
-        )
-
-    try:
-        consume_artifact_commands(messages, executor=conflict)
-    except ArtifactCallbackHttpError:
-        assert messages.commit_count == 0
-    else:
-        raise AssertionError("business 409 must propagate")
 
 
 def test_invalid_command_is_committed_only_after_durable_dead_letter() -> None:

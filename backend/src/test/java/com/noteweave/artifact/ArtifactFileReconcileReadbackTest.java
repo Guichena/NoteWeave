@@ -28,10 +28,7 @@ class ArtifactFileReconcileReadbackTest {
                 create table artifact_version(
                     id varchar(36) primary key, artifact_job_id varchar(36), version_no int,
                     title varchar(100), content_markdown clob, result_payload_json clob,
-                    origin_task_id varchar(36), delivery_status varchar(20), created_at timestamp default current_timestamp,
-                    reconcile_attempts int not null default 0,
-                    reconcile_next_attempt_at timestamp,
-                    reconcile_exhausted_at timestamp)
+                    origin_task_id varchar(36), delivery_status varchar(20), created_at timestamp default current_timestamp)
                 """);
         jdbc.execute("""
                 create table artifact_file(
@@ -72,13 +69,10 @@ class ArtifactFileReconcileReadbackTest {
         ArtifactExportService service = new ArtifactExportService(
                 jdbc, new ObjectMapper(), storage, workerExports,
                 mock(ArtifactSkillCatalogService.class), mock(ArtifactMemoryRevisionGuard.class),
-                mock(ArtifactContextV2ShadowSnapshotService.class),
                 mock(ResearchGeneratedSourceReadGate.class), properties);
 
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("DEGRADED");
-        // ART-02 之后失败会退避，这里手动把下一次尝试时间提前，验证的是「读回校验」本身
-        retryNow(jdbc);
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
         verify(storage, times(2)).write(eq("export"), eq("artifact/recovered.md"), eq(markdown));
@@ -97,7 +91,6 @@ class ArtifactFileReconcileReadbackTest {
         when(storage.read("export", "artifact/recovered.md")).thenReturn(markdown);
         when(storage.read("export", "artifact/source.md")).thenReturn(corrupted, source);
         when(workerExports.fetch("task", "source.md")).thenReturn(source);
-        retryNow(jdbc);
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
         verify(workerExports).fetch("task", "source.md");
@@ -107,14 +100,8 @@ class ArtifactFileReconcileReadbackTest {
         when(storage.read("export", "artifact/source.md")).thenReturn(corrupted);
         when(workerExports.fetch("task", "source.md"))
                 .thenThrow(new IllegalStateException("Worker export expired"));
-        retryNow(jdbc);
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("DEGRADED");
-    }
-
-    /** ART-02：补偿失败会退避，测试里把下一次尝试时间清空以立即重试。 */
-    private void retryNow(JdbcTemplate jdbc) {
-        jdbc.update("update artifact_version set reconcile_next_attempt_at = null where id = 'version'");
     }
 
     private String deliveryStatus(JdbcTemplate jdbc) {

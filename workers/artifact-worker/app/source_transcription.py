@@ -1,5 +1,5 @@
-"""资料转写：接收 Java Host 发来的音视频原件，通过系统 MCP 服务的 transcribe_local_audio
-工具（faster-whisper）生成带时间戳的文字稿，完成后回调 Java 的
+"""资料解析：接收 Java Host 发来的音视频或视频链接，通过独立 media-mcp
+生成带时间戳和关键帧的图文文档，完成后回调 Java 的
 /internal/worker/source-transcriptions/{snapshot_id}。
 
 转写在固定工作线程和有界队列中执行；完成结果落盘后回调，确认回调后才清理原件。
@@ -22,14 +22,14 @@ from typing import Callable
 from urllib import error, request
 
 from app.config import load_settings, resolve_mcp_sandbox_root
-from app.custom_mcp_executor import _call_custom_mcp_tool
+from app.media_mcp_client import call_media_tool
 from app.llm_client import LlmClient, build_default_llm_client
 from app.error_sanitizer import sanitize_error_message
-from app.system_mcp_registry import SYSTEM_BILIBILI_SERVER_ID, resolve_system_mcp_server
 
 logger = logging.getLogger(__name__)
 
 MEDIA_SUFFIXES = {
+    "application/vnd.noteweave.bilibili-link+json": ".json",
     "audio/mpeg": ".mp3",
     "audio/mp4": ".m4a",
     "audio/wav": ".wav",
@@ -50,12 +50,6 @@ _shutdown_requested = False
 _MAX_MEDIA_BYTES = 128 * 1024 * 1024
 _MAX_CHECKPOINT_BYTES = 64 * 1024 * 1024
 _RECOVERY_RETRY_SECONDS = 30
-# 宿主明确丢弃这次投递（例如已被更新代次取代）时，任务目录与文字稿保留，状态改成这个值：
-# 既不会被恢复流程重新投递，也不会被当成正常完成清掉。
-_ORPHANED_STATE = "ORPHANED_CALLBACK_DISCARDED"
-# 孤儿转写（宿主丢弃的回调）默认保留 30 天，给人工取回文字稿留窗口；可用
-# NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS 调整。
-_DEFAULT_ORPHAN_RETENTION_DAYS = 30
 
 
 @dataclass(frozen=True)
@@ -211,7 +205,7 @@ def _load_job(directory: Path, *, verify_media=True) -> TranscriptionJob:
     else:
         if (not isinstance(meta["task_id"], str) or not isinstance(meta["sha256"], str) or not re.fullmatch(r"[a-f0-9]{64}", meta["sha256"])
                 or type(meta["file_size"]) is not int or not 0 < meta["file_size"] <= _MAX_MEDIA_BYTES
-                or meta["state"] not in {"QUEUED", "RUNNING", "CALLBACK_PENDING", _ORPHANED_STATE}
+                or meta["state"] not in {"QUEUED", "RUNNING", "CALLBACK_PENDING"}
                 or type(meta["next_attempt_at"]) not in (int, float) or not math.isfinite(meta["next_attempt_at"]) or meta["next_attempt_at"] < 0):
             raise ValueError("转写检查点状态或摘要无效")
         for field in ("model", "language", "device"):
@@ -333,9 +327,6 @@ class TranscriptionPool:
                 meta = _strict_json(directory / "job.json")
                 if not isinstance(meta, dict):
                     raise ValueError("转写检查点必须为对象")
-                if meta.get("state") == _ORPHANED_STATE:
-                    # 被宿主丢弃的孤儿保留在原处，等保留策略或人工处理，不再重新转写
-                    continue
                 if meta.get("next_attempt_at", 0) > time.time():
                     continue
                 snapshot = meta.get("snapshot_id")
@@ -472,96 +463,35 @@ def accept_source_transcription(
     return {"accepted": True, "snapshot_id": snapshot_id, "duplicate": False}
 
 
+def accept_video_link(*, workspace_id: str, source_id: str, snapshot_id: str, task_id: str,
+                      source_url: str, parts: list[int], title: str, run_async: bool = True) -> dict:
+    """链接清单沿用原有任务目录、容量控制与回调检查点，不保存远程原视频。"""
+    from urllib.parse import urlsplit
+    parsed = urlsplit(source_url)
+    if (parsed.scheme != "https" or parsed.hostname != "www.bilibili.com" or parsed.username
+            or parsed.password or parsed.port not in (None, 443)
+            or not re.fullmatch(r"/video/(BV[0-9A-Za-z]{10}|av[0-9]+)/?", parsed.path)):
+        raise ValueError("视频链接无效")
+    if not parts or len(parts) > 1000 or len(set(parts)) != len(parts) or any(type(part) is not int or not 1 <= part <= 1000 for part in parts):
+        raise ValueError("所选分 P 无效")
+    return accept_source_transcription(workspace_id=workspace_id, source_id=source_id, snapshot_id=snapshot_id,
+        task_id=task_id, file_name="video-link.json", mime_type="application/vnd.noteweave.bilibili-link+json",
+        content=json.dumps({"source_url": source_url, "parts": sorted(parts), "title": title}, ensure_ascii=False).encode("utf-8"),
+        run_async=run_async)
+
+
 def recover_source_transcriptions() -> list[str]:
     """接纳首批磁盘任务；工作线程会持续补入后续 backlog。"""
-    purged = purge_orphaned_transcriptions()
-    if purged:
-        logger.info("已清理过期孤儿转写: count=%d", len(purged))
     pool = start_source_transcription_pool()
     recovered = pool.fill_backlog()
     pool.recovery_enabled = True
     return recovered
 
 
-def _orphan_retention_days() -> float:
-    raw = os.environ.get("NOTEWEAVE_TRANSCRIPTION_ORPHAN_RETENTION_DAYS", "")
-    if not raw:
-        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
-    try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("孤儿转写保留天数配置无效，回退默认值: value=%s", raw)
-        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
-    # NaN 与无穷在下面这个链式比较里都为假，一并回退默认值
-    if not 0 <= value < 1_000_000:
-        logger.warning("孤儿转写保留天数配置越界，回退默认值: value=%s", raw)
-        return float(_DEFAULT_ORPHAN_RETENTION_DAYS)
-    return value
-
-
-def purge_orphaned_transcriptions(*, retention_days: float | None = None, now: float | None = None) -> list[str]:
-    """清理超过保留期的孤儿转写（任务目录与文字稿输出），返回被清理的目录名。
-
-    只动状态为 ORPHANED 的任务目录，以及已经没有对应任务目录的遗留输出目录；
-    排队中、运行中、等待回调的任务一律不碰。
-    """
-    window = (retention_days if retention_days is not None else _orphan_retention_days()) * 86400
-    moment = time.time() if now is None else now
-    purged: list[str] = []
-    try:
-        jobs = _owned_jobs_root()
-    except ValueError:
-        return purged
-    if jobs.is_dir():
-        for directory in jobs.iterdir():
-            if not directory.is_dir() or directory.is_symlink():
-                continue
-            checkpoint = directory / "job.json"
-            try:
-                meta = _strict_json(checkpoint)
-            except (OSError, ValueError):
-                continue
-            if not isinstance(meta, dict) or meta.get("state") != _ORPHANED_STATE:
-                continue
-            if moment - checkpoint.stat().st_mtime < window:
-                continue
-            _remove_owned_tree(directory)
-            _remove_owned_tree(_output_dir_by_name(directory.name))
-            purged.append(directory.name)
-    outputs = _sandbox_root() / "bilibili-render-pdf" / "source-transcriptions"
-    if outputs.is_dir():
-        for directory in outputs.iterdir():
-            if not directory.is_dir() or directory.is_symlink():
-                continue
-            if (jobs / directory.name).exists():
-                continue
-            if moment - directory.stat().st_mtime < window:
-                continue
-            _remove_owned_tree(directory)
-            purged.append(directory.name)
-    return purged
-
-
-def _output_dir_by_name(name: str) -> Path:
-    return _sandbox_root() / "bilibili-render-pdf" / "source-transcriptions" / name
-
-
-def _remove_owned_tree(directory: Path) -> None:
-    """只删沙箱内、非符号链接的目录树。"""
-    try:
-        if directory.is_symlink() or not directory.is_dir():
-            return
-        if not directory.resolve().is_relative_to(_sandbox_root().resolve()):
-            return
-        shutil.rmtree(directory)
-    except OSError as exc:
-        logger.warning("清理孤儿转写目录失败: name=%s reason=%s", directory.name, sanitize_error_message(str(exc)))
-
-
 def run_transcription_job(
     job: TranscriptionJob,
     *,
-    call_tool: Callable[[object, dict[str, object]], dict[str, object]] = _call_custom_mcp_tool,
+    call_tool: Callable[[str, dict[str, object]], dict[str, object]] = call_media_tool,
     post_callback: Callable[[str, dict[str, object]], bool | CallbackAcknowledgement] | None = None,
     llm_client: LlmClient | None | bool = True,
 ) -> dict[str, object]:
@@ -598,52 +528,52 @@ def run_transcription_job(
     except Exception as exc:
         logger.warning("转写回调失败，保留检查点: snapshot=%s reason=%s", job.snapshot_id, sanitize_error_message(str(exc)))
         acknowledgement = False
-    accepted = acknowledgement is True or (
-        isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.accepted is True)
-    discarded = isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.discarded is True
-    if accepted:
+    confirmed = acknowledgement is True or (isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.confirmed)
+    if confirmed:
         _validate_owned(job)
         shutil.rmtree(job.media_path.parent)
         if output_dir.exists() and not output_dir.is_symlink() and output_dir.resolve().parent == output_dir.parent.resolve():
             shutil.rmtree(output_dir)
-    elif discarded:
-        # SRC-02：宿主丢弃说明这次投递已被更新代次取代，不代表文字稿没有价值——
-        # 它是这次转写唯一的产物，直接删掉等于把已经付费的结果丢掉。保留任务目录与文字稿，
-        # 状态标成孤儿，交给人工或后续保留策略处理；恢复流程不会重新投递它。
-        _atomic_json(job.media_path.parent / "job.json", _metadata(job, state=_ORPHANED_STATE))
-        logger.warning("转写回调被丢弃，保留文字稿并标记孤儿: snapshot=%s output=%s", job.snapshot_id, output_dir.name)
-        return {**payload, "callback_disposition": "DISCARDED_RETAINED", "retained_output": output_dir.name}
+    if isinstance(acknowledgement, CallbackAcknowledgement) and acknowledgement.discarded:
+        return {**payload, "callback_disposition": "DISCARDED"}
     return payload
 
 
 def _transcribe_payload(job, output_dir, call_tool, llm_client):
     try:
-        server = resolve_system_mcp_server(SYSTEM_BILIBILI_SERVER_ID)
-        result = call_tool(server, {
-            "tool_name": "transcribe_local_audio",
-            "tool_arguments": {
-                "input_path": str(job.media_path),
-                "output_dir": str(output_dir),
-                "model": job.model,
-                "language": job.language,
-                "device": job.device,
-                "skip_existing": False,
-                "json_output": True,
-            },
-        })
-        transcript = _read_transcript(result, expected_dir=output_dir)
-        lines = str(transcript["text"]).split("\n") if transcript["text"] else []
+        if job.mime_type == "application/vnd.noteweave.bilibili-link+json":
+            link = _strict_json(job.media_path)
+            document = call_tool("parse_video", {"source_url": link["source_url"], "parts": link["parts"]})
+        else:
+            reference = job.media_path.resolve().relative_to((_sandbox_root() / "inputs").resolve()).as_posix()
+            document = call_tool("parse_media", {"file_ref": reference, "title": job.file_name})
+        segments = document.get("segments")
+        stats = document.get("stats")
+        if not isinstance(segments, list) or not segments or not isinstance(stats, dict):
+            raise ValueError("媒体解析结果缺少片段或统计")
+        lines = []
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            # 没有语音的静态画面仍可通过实际 OCR 内容成为可检索资料。
+            if not text:
+                text = "\n".join(str(frame.get("caption", "")) + "\n" + str(frame.get("ocr_text", ""))
+                                 for frame in segment.get("frames", [])).strip() or "关键帧"
+            lines.append(f"[{_clock(segment['start_ms'] / 1000)}] {text}")
         corrector = build_default_llm_client() if llm_client is True else llm_client
         corrected_lines, corrected_count = correct_transcript(lines, corrector) if corrector else (lines, 0)
+        for segment, original, corrected in zip(segments, lines, corrected_lines):
+            if corrected != original and segment.get("text"):
+                segment["text"] = _TIMESTAMP.sub("", corrected, count=1)
         payload: dict[str, object] = {
             "workspace_id": job.workspace_id,
             "source_id": job.source_id,
             "status": "COMPLETED",
             "transcript_text": "\n".join(corrected_lines),
             "corrected_line_count": corrected_count,
-            "language": transcript["language"],
-            "duration_seconds": transcript["duration"],
-            "segment_count": transcript["segment_count"],
+            "language": job.language,
+            "duration_seconds": stats.get("duration_ms", 0) / 1000,
+            "segment_count": len(segments),
+            "media_document": document,
         }
         _validate_callback_payload(job, {**payload, **({"task_id": job.task_id} if job.task_id else {})})
     except Exception as exc:  # noqa: BLE001 - 任何失败都要回调 Java，避免资料停在转写中
@@ -662,6 +592,8 @@ def _validate_callback_payload(job, payload):
     import math
     identity_fields = {"workspace_id", "source_id", "status"} | ({"task_id"} if job.task_id else set())
     complete_fields = {"transcript_text", "corrected_line_count", "language", "duration_seconds", "segment_count"}
+    if "media_document" in payload:
+        complete_fields.add("media_document")
     failure_fields = {"error_code", "error_message"}
     if (not isinstance(payload, dict) or payload.get("workspace_id") != job.workspace_id or payload.get("source_id") != job.source_id
             or payload.get("task_id", "") != job.task_id or payload.get("status") not in {"COMPLETED", "FAILED"}):

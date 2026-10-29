@@ -1,0 +1,187 @@
+{
+  "markdown": "# 缓存学习材料\n\n## 摘要\n\n缓存有效期为30秒。\n\n## 核心发现\n\n缓存有效期为30秒。\n\n## 行动建议\n\n缓存有效期为30秒。",
+  "sections": [
+    {
+      "heading": "摘要",
+      "body": "缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    },
+    {
+      "heading": "核心发现",
+      "body": "缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    },
+    {
+      "heading": "行动建议",
+      "body": "缓存有效期为30秒。",
+      "source_refs": [
+        "缓存资料"
+      ]
+    }
+  ],
+  "content_ir": {
+    "schema_version": "artifact-content-v1",
+    "artifact_type": "DOC",
+    "title": "缓存学习材料",
+    "sections": [
+      {
+        "heading": "摘要",
+        "body": "缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      },
+      {
+        "heading": "核心发现",
+        "body": "缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      },
+      {
+        "heading": "行动建议",
+        "body": "缓存有效期为30秒。",
+        "source_refs": [
+          "缓存资料"
+        ]
+      }
+    ],
+    "markdown_sha256": "48536d8f6207d185c615a8d84ea160cc0ef9f328f9860d6029117a40b9870981",
+    "content_digest": "98bc626611bb62cf4a1612c0266efb3def8e45b2a06a9df3f7968323596708cb"
+  },
+  "ir": {
+    "schema_version": 1,
+    "kind": "DOC",
+    "title": "缓存学习材料",
+    "sections": [
+      {
+        "id": "u0",
+        "heading": "摘要",
+        "blocks": [
+          {
+            "id": "b1",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "t1",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "u1",
+        "heading": "核心发现",
+        "blocks": [
+          {
+            "id": "b1",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "t1",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "u2",
+        "heading": "行动建议",
+        "blocks": [
+          {
+            "id": "b1",
+            "type": "paragraph",
+            "statements": [
+              {
+                "id": "t1",
+                "text": "缓存有效期为30秒。",
+                "anchors": [
+                  "s0001"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "evidence": {
+    "sentences": [
+      {
+        "id": "s0001",
+        "text": "缓存有效期为30秒。",
+        "source_id": "source",
+        "source_snapshot_id": "snapshot",
+        "chunk_id": "chunk",
+        "title": "缓存资料"
+      },
+      {
+        "id": "s0002",
+        "text": "过期后重新读取数据。",
+        "source_id": "source",
+        "source_snapshot_id": "snapshot",
+        "chunk_id": "chunk",
+        "title": "缓存资料"
+      }
+    ]
+  },
+  "candidate": {
+    "candidate_id": "ad6d060ef8a6982634e1d2443f0818da7a1d718ae7480e35a099bae9df18481b",
+    "task_id": "pipeline-task",
+    "input_snapshot_id": "input",
+    "catalog_digest": "0dd1dffa30c1a40af4155ba00368c5a326cad5d22a2729b753b8e86b3035e07c",
+    "content_sha256": "48536d8f6207d185c615a8d84ea160cc0ef9f328f9860d6029117a40b9870981",
+    "content_ir_digest": "98bc626611bb62cf4a1612c0266efb3def8e45b2a06a9df3f7968323596708cb",
+    "required_files": [
+      {
+        "role": "PRIMARY_MARKDOWN",
+        "variant": "",
+        "sequence_no": 0,
+        "file_name": "content.md",
+        "media_type": "text/markdown; charset=UTF-8",
+        "size_bytes": 149,
+        "checksum_sha256": "48536d8f6207d185c615a8d84ea160cc0ef9f328f9860d6029117a40b9870981"
+      }
+    ]
+  },
+  "pipeline_stats": {
+    "version": 1,
+    "stages": {
+      "gather": {
+        "duration_ms": 0
+      },
+      "plan": {
+        "duration_ms": 0
+      },
+      "draft": {
+        "duration_ms": 0
+      },
+      "check": {
+        "duration_ms": 0
+      },
+      "render": {
+        "duration_ms": 0
+      }
+    },
+    "repair_calls": 0,
+    "deleted_units": []
+  },
+  "verification": {
+    "status": "PASS",
+    "contract_status": "PASS",
+    "evidence_status": "PASS",
+    "failed_checks": []
+  }
+}

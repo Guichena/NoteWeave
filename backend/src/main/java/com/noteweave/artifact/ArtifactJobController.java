@@ -24,16 +24,13 @@ public class ArtifactJobController {
 
     private final ArtifactJobService artifactJobService;
     private final ArtifactExportService artifactExportService;
-    private final ArtifactEditService artifactEditService;
 
     public ArtifactJobController(
             ArtifactJobService artifactJobService,
-            ArtifactExportService artifactExportService,
-            ArtifactEditService artifactEditService
+            ArtifactExportService artifactExportService
     ) {
         this.artifactJobService = artifactJobService;
         this.artifactExportService = artifactExportService;
-        this.artifactEditService = artifactEditService;
     }
 
     @PostMapping
@@ -101,11 +98,8 @@ public class ArtifactJobController {
         ));
     }
 
-    /**
-     * 回滚：控制器不再包长事务；staged 文件准备在事务外，
-     * 版本插入与文件元数据由服务在同一个短事务内提交。
-     */
     @PostMapping("/{artifactJobId}/versions/{versionNo}/rollback")
+    @Transactional
     public ApiResponse<ArtifactVersionDetailResponse> rollbackArtifactVersion(
             @PathVariable String workspaceId,
             @PathVariable String artifactJobId,
@@ -118,8 +112,9 @@ public class ArtifactJobController {
         List<ArtifactExportService.PreparedFile> preparedFiles =
                 artifactExportService.prepareRollbackFiles(sourceVersionId);
         ArtifactVersionDetailResponse rolledBack = artifactJobService.rollbackVersion(
-                workspaceId, artifactJobId, versionNo, request, preparedFiles
+                workspaceId, artifactJobId, versionNo, request
         );
+        artifactExportService.publishPreparedFiles(rolledBack.versionId(), preparedFiles);
         return ApiResponse.success(artifactJobService.getVersionDetail(
                 workspaceId, artifactJobId, rolledBack.versionNo()
         ));
@@ -132,21 +127,6 @@ public class ArtifactJobController {
             @PathVariable int versionNo
     ) {
         return ApiResponse.success(artifactJobService.saveVersionAsSource(workspaceId, artifactJobId, versionNo));
-    }
-
-    /**
-     * 版本正文编辑：只追加新的不可变版本；expectedBaseVersionNo 作为并发 CAS，
-     * requestId 是 workspace/job 范围内的幂等键。二进制产物版本不可编辑。
-     */
-    @PostMapping("/{artifactJobId}/versions/{versionNo}/edits")
-    ApiResponse<ArtifactVersionEditResponse> editArtifactVersion(
-            @PathVariable String workspaceId,
-            @PathVariable String artifactJobId,
-            @PathVariable int versionNo,
-            @Valid @RequestBody ArtifactVersionEditRequest request
-    ) {
-        return ApiResponse.success(artifactEditService.editVersion(
-                workspaceId, artifactJobId, versionNo, request));
     }
 
     @PostMapping("/{artifactJobId}/versions/{versionNo}/writeback")

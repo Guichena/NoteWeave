@@ -7,13 +7,17 @@ from urllib.error import URLError
 import pytest
 
 from app.callback import ArtifactCallbackHttpError, JavaArtifactCallbackClient
-from app.compiler import build_execution_plan
-from app.content_runtime import build_canonical_content_objects
-from app.generation_runtime import generate_artifact_sections
-from app.models import ArtifactTaskInput, ArtifactExecutionPlan
+from app.models import ArtifactTaskInput, CanonicalContentObject, ExecutionSpec
+from types import SimpleNamespace
 from app.retrieval_runtime import execute_retrieve_node
 from app.llm_client import FakeLlmClient
 import app.retrieval_runtime as retrieval_runtime
+
+
+def build_canonical_content_objects(task):
+    # 只构造检索函数的输入数据，不调用已退休的产物编译器。
+    return [CanonicalContentObject(cco_id=source.source_id, kind="SOURCE_TEXT", title=source.title,
+        plain_text=source.sample_text, source_trace=["source:" + source.source_id]) for source in task.source_scope]
 
 
 def fixture():
@@ -23,7 +27,10 @@ def fixture():
             "sample_text": "数据恢复通过日志重放完成。错误处理记录失败原因。"}],
         "control_pack": {"pack_type": "artifact", "target_key": "study_guide", "task_neighborhood": "ARTIFACT"},
         "input_payload": {"skill_key": "study_guide", "user_requirement": "解释数据恢复和错误处理"}})
-    plan = build_execution_plan(task)
+    plan = SimpleNamespace(outline=[], action_display_name="资料学习",
+        execution_spec=ExecutionSpec(goal=task.input_payload.user_requirement),
+        retrieval_node=SimpleNamespace(node_id="material_retrieve", node_kind="RETRIEVE",
+            max_passages_per_section=6, total_context_chars=24_000))
     plan.outline = ["数据恢复", "错误处理"]
     plan.execution_spec.focus_points = []
     return task, plan, build_canonical_content_objects(task)
@@ -168,14 +175,6 @@ def test_partial_replay_cannot_retrieve_or_generate_from_cached_material():
         execute_retrieve_node(task, plan, objects)
 
 
-def test_generation_receives_chapter_materials_and_retrieval_diagnostics():
-    task, plan, objects = fixture()
-    llm = FakeLlmClient({"artifact.generate": json.dumps({"sections": [
-        {"heading": h, "body": "冻结正文", "source_refs": ["资料"]} for h in plan.outline]})})
-    _, trace = generate_artifact_sections(task_input=task, plan=plan, canonical_content_objects=objects, llm_client=llm)
-    payload = llm.calls[0][1]
-    assert len(payload["section_materials"]) == 2 and trace["retrieval"]["node_kind"] == "RETRIEVE"
-    assert all(pack["used_chars"] <= pack["budget_chars"] for pack in payload["section_materials"])
 
 
 def test_host_retrieved_fact_reaches_generated_result_and_is_preserved_as_frozen_material():
@@ -185,10 +184,9 @@ def test_host_retrieved_fact_reaches_generated_result_and_is_preserved_as_frozen
     assert remote_fact not in task.source_scope[0].sample_text
     _, result = run_artifact_task(task, passage_search=lambda *args: response(task, remote_fact))
     assert remote_fact in result.result_payload["markdown"]
-    assert any(remote_fact in obj["plain_text"] and obj["metadata"].get("chunk_id") == "chunk-1"
-               for obj in result.result_payload["canonical_content_objects"])
-    assert result.result_payload["generation_trace"]["retrieval"]["unique_passage_count"] == 1
-    assert result.result_payload["node_traces"][0]["node_kind"] == "RETRIEVE"
+    assert any(remote_fact == sentence["text"] and sentence["chunk_id"] == "chunk-1"
+               for sentence in result.result_payload["evidence"]["sentences"])
+    assert len(result.result_payload["pipeline_stats"]["stages"]) == 5
 
 
 @pytest.mark.parametrize("status", [401, 403, 409])
@@ -230,12 +228,3 @@ def test_unrelated_runtime_error_is_not_hidden_by_retrieval_fallback():
     client._request = invalid
     with pytest.raises(RuntimeError, match="响应解析失败"):
         client.retrieve_passages("task", "查询", 6, input_snapshot_id="input")
-
-
-def test_old_checkpoint_gets_default_retrieval_node_without_recompiling_intent():
-    _, plan, _ = fixture()
-    raw = plan.model_dump()
-    raw.pop("retrieval_node")
-    restored = ArtifactExecutionPlan.model_validate(raw)
-    assert restored.retrieval_node.node_kind == "RETRIEVE"
-    assert restored.execution_spec.compilation_trace == plan.execution_spec.compilation_trace

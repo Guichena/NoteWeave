@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "noteweave:cards:v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "CARDS"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "front": {
+            "type": "string",
+            "minLength": 1
+          },
+          "back": {
+            "type": "object",
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "anchors": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "maxItems": 30
+              }
+            },
+            "required": [
+              "text",
+              "anchors"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "front",
+          "back"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 80
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "title",
+    "cards"
+  ],
+  "additionalProperties": false
+}

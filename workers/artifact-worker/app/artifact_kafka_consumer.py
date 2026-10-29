@@ -10,10 +10,8 @@ from typing import Protocol
 
 from pydantic import ValidationError
 
-from app.artifact_command_contract import ArtifactCommand, VideoMaterialCommand
-from app.callback import (ArtifactCallbackHttpError, run_artifact_task_with_callbacks,
-                          run_video_material_task_with_callbacks)
-from app.execution_heartbeat import ArtifactExecutionSuperseded
+from app.artifact_command_contract import ArtifactCommand
+from app.callback import ArtifactCallbackHttpError, run_artifact_task_with_callbacks
 from app.config import Settings, load_settings
 from app.error_sanitizer import sanitize_error_message
 
@@ -65,7 +63,6 @@ def consume_artifact_commands(
     messages: Iterable[object],
     *,
     executor: Callable[..., object] = run_artifact_task_with_callbacks,
-    material_executor: Callable[..., object] = run_video_material_task_with_callbacks,
     dead_letter_sink: DeadLetterSink | None = None,
     max_messages: int | None = None,
 ) -> ArtifactConsumeSummary:
@@ -89,31 +86,15 @@ def consume_artifact_commands(
             continue
 
         try:
-            selected_executor = material_executor if isinstance(command, VideoMaterialCommand) else executor
-            selected_executor(command.task_id, delivery_token=command.delivery_token)
-        except ArtifactExecutionSuperseded as exc:
-            # The host took the task back. Do not submit a result and do not
-            # run this delivery again; the outbox will redispatch if it still owns it.
-            logger.info(
-                "Artifact execution abandoned after heartbeat: task_id=%s reason=%s",
-                command.task_id,
-                exc.reason,
-            )
-            skipped += 1
-            _commit(messages)
-            continue
+            executor(command.task_id, delivery_token=command.delivery_token)
         except ArtifactCallbackHttpError as exc:
             if bool(getattr(exc, "artifact_failure_reported", False)):
                 completed += 1
                 _commit(messages)
                 continue
-            if (
-                exc.status_code == 409
-                and getattr(exc, "code", "") == "WORKER_CALLBACK_DELIVERY_STALE"
-            ):
-                # NR08：仅宿主明确判定为过期投递（WORKER_CALLBACK_DELIVERY_STALE）才按
-                # 旧 Kafka 重放跳过；幂等冲突/所有权不匹配等业务 409 必须暴露，
-                # 不能被当作旧投递静默提交
+            if exc.status_code == 409:
+                # The Java host no longer recognizes this delivery token. The
+                # message is an old Kafka replay and must not execute again.
                 skipped += 1
                 _commit(messages)
                 continue
@@ -249,15 +230,13 @@ class ArtifactKafkaConsumerRuntime:
         return self.failure is None and self.thread is not None and self.thread.is_alive()
 
 
-def _parse_command(message: object) -> ArtifactCommand | VideoMaterialCommand:
+def _parse_command(message: object) -> ArtifactCommand:
     value = getattr(message, "value", message)
     if isinstance(value, bytes):
         value = value.decode("utf-8")
     if not isinstance(value, str):
         raise TypeError(f"Unsupported Kafka message value type: {type(value).__name__}")
     payload = json.loads(value)
-    if isinstance(payload, dict) and payload.get("schema_version") == "video-material-command.v1":
-        return VideoMaterialCommand.model_validate(payload)
     return ArtifactCommand.model_validate(payload)
 
 

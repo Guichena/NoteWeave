@@ -23,14 +23,6 @@ public final class ArtifactSemanticVerificationFixture {
         verification.putIfAbsent("citation_recall", null);
         verification.putIfAbsent("citation_precision", null);
         verification.putIfAbsent("llm_calls", 0);
-        verification.putIfAbsent("statement_verification_version", "artifact-statement-verification.v1");
-        verification.putIfAbsent("verification_mode", "TEST_FIXTURE");
-        verification.putIfAbsent("sections", sections.stream().map(raw -> {
-            if (!(raw instanceof Map<?, ?> section)) throw new IllegalArgumentException("测试章节结构无效");
-            return Map.of("heading", section.get("heading"), "support", "SUPPORTED", "statements", List.of(
-                    Map.of("text", section.get("body"), "label", "NON_FACTUAL", "assessment_status", "ASSESSED",
-                            "sufficiently_supported", false, "citations", List.of())));
-        }).toList());
         payload.put("verification", verification);
     }
 }

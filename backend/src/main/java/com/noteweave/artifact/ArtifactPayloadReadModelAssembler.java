@@ -94,23 +94,13 @@ public class ArtifactPayloadReadModelAssembler {
         if (runtimeTracePayload.isEmpty()) {
             return null;
         }
-        ArtifactVerificationTraceResponse verification = convertTraceValue(
-                runtimeTracePayload.get("verification"),
-                ArtifactVerificationTraceResponse.class,
-                "ARTIFACT_RUNTIME_VERIFICATION_PARSE_FAILED",
-                "产物运行时 verification trace 解析失败"
-        );
-        // NR23：用户编辑过的正文不得继承旧正文的校验通过与引用指标——
-        // 旧 verification 属于原生成版本（其历史版本详情仍完整保留原诊断）；
-        // 编辑版本读模型返回显式 EDITED_UNVERIFIED 状态，重新核验后才出新结论
-        if ("USER_EDITED_UNVERIFIED".equals(payload.get("verification_state"))) {
-            verification = new ArtifactVerificationTraceResponse(
-                    "EDITED_UNVERIFIED", List.of(), List.of(), List.of(),
-                    List.of("正文已被用户编辑，原逐句校验结论已失效"),
-                    "USER_EDITED_UNVERIFIED", List.of(), null, null, List.of(), null, 0, null, null);
-        }
         return new ArtifactRuntimeTraceResponse(
-                verification,
+                convertTraceValue(
+                        runtimeTracePayload.get("verification"),
+                        ArtifactVerificationTraceResponse.class,
+                        "ARTIFACT_RUNTIME_VERIFICATION_PARSE_FAILED",
+                        "产物运行时 verification trace 解析失败"
+                ),
                 convertTraceValue(
                         runtimeTracePayload.get("generation_trace"),
                         ArtifactGenerationTraceResponse.class,
