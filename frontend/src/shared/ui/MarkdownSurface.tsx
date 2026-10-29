@@ -211,7 +211,7 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     "\\[\\[[^\\]]+\\]\\]",
     "\\*\\*[^*]+\\*\\*",
     "\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\)",
-    ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]"] : []),
+    ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]", PENDING_MARKER.source] : []),
     ...(numberedCitations ? ["\\[\\d{1,2}\\](?!\\()"] : [])
   ];
   const pattern = new RegExp(`(${parts.join("|")})`, "g");
@@ -260,6 +260,13 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     if (token.startsWith("**") && token.endsWith("**") && token.length > 4) {
       return <strong key={index}>{token.slice(2, -2)}</strong>;
     }
+    if (compactCitations && new RegExp(`^(?:${PENDING_MARKER.source})$`).test(token)) {
+      return (
+        <span key={index} className="research-pending-badge" title="这条内容只找到第三方资料或版本不一致的文档，尚未核实">
+          待核实
+        </span>
+      );
+    }
     if (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token)) {
       const evidenceId = token.slice(1, -1).replace(/^evidence[:-]/, "").trim();
       if (onEvidenceClick) {
@@ -305,3 +312,5 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
 }
 
 const TRAILING_PUNCTUATION = /^[。，、；：！？）」』》.,;:!?)]/;
+// 研究报告里线索的标注，显示成待核实标签（Worker 现在写（待核实），旧报告里是（未经核实））
+const PENDING_MARKER = /（待核实）|（未经核实）|（该项尚未完成核验）|\(unverified\)/;

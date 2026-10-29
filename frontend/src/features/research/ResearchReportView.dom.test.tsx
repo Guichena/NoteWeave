@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { localizeResearchAudit, ResearchReportView, splitResearchReport } from "./ResearchReportView";
+import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  localizeResearchAudit, parseReportSources, ResearchReportView, splitReportSections, splitResearchReport
+} from "./ResearchReportView";
+
+afterEach(cleanup);
 
 const report = `# Research report
 
@@ -67,5 +71,83 @@ describe("ResearchReportView", () => {
     expect(result.body).toContain("Latency is 50 ms [evidence-a]");
     expect(result.body).not.toContain("snapshot-a");
     expect(result.audit).toContain("snapshot-a");
+  });
+
+  const documentReport = `# 结论报告
+
+QUIC 的各条流相互独立 [evidence:aa]。
+
+**核验情况：** 已核验 3 项，未找到足够证据 2 项。
+
+## 直接回答
+
+HTTP/2 未解决 TCP 队头阻塞 [evidence:aa]，据 RFC 9000 的说明，丢包只影响所在的流（待核实）[evidence:bb]。
+
+## 补充说明（通用知识，未经本次检索核验）
+
+以下内容依据公开的通用技术知识补充，仅供参考。
+
+- TLS 1.3 的完整握手只需一个往返。
+
+## 局限与未解决项
+
+- 部分必答研究项未能核验
+
+## Citation audit
+
+### [1] RFC 9113: HTTP/2
+
+- Evidence: \`evidence:aa\`
+  - Exact quote: “TCP head-of-line blocking is not addressed by this protocol.”
+  - URL: https://www.rfc-editor.org/rfc/rfc9113.html
+
+### [2] RFC 9000
+
+- Evidence: \`evidence:bb\`
+  - Exact quote: “Streams are independent of each other.”
+  - URL: https://www.rfc-editor.org/rfc/rfc9000.html
+`;
+
+  it("renders the report as a document: summary with verification, numbered sections, labelled notes and sources", () => {
+    render(<ResearchReportView markdown={documentReport} onEvidenceClick={() => undefined} />);
+
+    const summary = screen.getByRole("region", { name: "摘要" });
+    expect(within(summary).getByText("已核验 3 项")).toBeTruthy();
+    expect(within(summary).getByText("证据不足 2 项")).toBeTruthy();
+    expect(document.querySelector(".research-doc-body")?.textContent).not.toContain("核验情况");
+
+    expect(document.querySelector(".research-doc-section.is-background")?.textContent).toContain("一个往返");
+    expect(document.querySelector(".research-doc-section.is-limits")).toBeTruthy();
+    expect(screen.getByText("待核实").className).toBe("research-pending-badge");
+
+    const sources = screen.getByRole("region", { name: "参考来源" });
+    expect(within(sources).getByRole("link", { name: "RFC 9113: HTTP/2" }).getAttribute("href")).toBe("https://www.rfc-editor.org/rfc/rfc9113.html");
+    expect(within(sources).getAllByText("rfc-editor.org")).toHaveLength(2);
+    expect(within(sources).getByText("Streams are independent of each other.")).toBeTruthy();
+  });
+
+  it("groups citations of the same page into one source", () => {
+    const audit = `### [1] Page
+
+- Evidence: \`evidence:a\`
+  - Exact quote: “one”
+  - URL: https://x.example/p
+
+### [2] Page
+
+- Evidence: \`evidence:b\`
+  - Exact quote: “two”
+  - URL: https://x.example/p
+`;
+    const sources = parseReportSources(audit);
+    expect(sources).toHaveLength(1);
+    expect(sources[0].entries.map((entry) => [entry.number, entry.evidenceId, entry.quote])).toEqual([[1, "a", "one"], [2, "b", "two"]]);
+    expect(splitReportSections(`## A
+
+x
+
+## 待核实的线索
+
+y`).sections.map((section) => section.kind)).toEqual(["default", "pending"]);
   });
 });

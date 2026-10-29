@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Ellipsis, FilePlus2, LoaderCircle, TriangleAlert } from "lucide-react";
+import { Download, Ellipsis, FilePlus2, LoaderCircle, Maximize2, Minimize2 } from "lucide-react";
 import { formatRelativeTime } from "../../shared/util/datetime";
 import type { ResearchRunDetail } from "./model";
+import { ResearchConversation } from "./ResearchConversation";
 import { ResearchEvidencePanel, type EvidenceSelection } from "./ResearchEvidencePanel";
 import { ResearchProcessTimeline, type ResearchRound } from "./ResearchProcessTimeline";
-import { ResearchReportView } from "./ResearchReportView";
+import { parseReportSources, ResearchReportView, splitReportSections, splitResearchReport } from "./ResearchReportView";
 import { ResearchStateTable } from "./ResearchStateTable";
 import { buildResearchTable } from "./researchTable";
 
@@ -76,6 +77,18 @@ export function ResearchRunView({
   const rounds = useMemo(() => buildRounds(run), [run]);
   const [tab, setTab] = useState<RunTab>(hasReport ? "report" : "table");
   const [selection, setSelection] = useState<EvidenceSelection | null>(null);
+  const [focused, setFocused] = useState(false);
+  // 对话里的报告卡片：取摘要的第一段（去掉引用标记）和来源数
+  const report = useMemo(() => {
+    if (!hasReport) return { summary: "", sourceCount: 0 };
+    const { body, audit } = splitResearchReport(stripLeadingTitle(run.final_report_markdown));
+    const summary = splitReportSections(body).summary.split(/\n\s*\n/)[0]
+      .replace(/\[evidence[:-][^\]]+\]/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+    return {
+      summary: summary.length > 110 ? `${summary.slice(0, 110)}…` : summary,
+      sourceCount: parseReportSources(audit).length
+    };
+  }, [hasReport, run.final_report_markdown]);
 
   // 切换到另一个研究时回到默认标签，并关闭证据面板。
   useEffect(() => {
@@ -142,107 +155,122 @@ export function ResearchRunView({
         </div>
       </header>
 
-      <dl className="research-run-metrics" aria-label="研究概况">
-        <div>
-          <dt>研究对象</dt>
-          <dd>{table.rows.length}</dd>
-        </div>
-        <div className="is-progress">
-          <dt>已验证字段</dt>
-          <dd>{verified}<small> / {table.counts.total}</small></dd>
-          <span className="research-run-bar" aria-hidden="true">
-            <i style={{ width: `${table.counts.total ? (verified / table.counts.total) * 100 : 0}%` }} />
-          </span>
-        </div>
-        <div>
-          <dt>待解决</dt>
-          <dd className={unresolved > 0 ? "is-warning" : undefined}>{unresolved}</dd>
-        </div>
-        <div>
-          <dt>证据</dt>
-          <dd>{table.evidenceById.size}</dd>
-        </div>
-        <div>
-          <dt>轮次</dt>
-          <dd>{rounds.length}</dd>
-        </div>
-      </dl>
+      <div className={`research-run-split${focused ? " is-focused" : ""}`}>
+        {focused ? null : (
+          <ResearchConversation
+            question={run.question}
+            state={state}
+            table={table}
+            rounds={rounds}
+            progressMessage={progressMessage}
+            reportTitle={hasReport ? title : ""}
+            reportSummary={report.summary}
+            sourceCount={report.sourceCount}
+            reportOpen={tab === "report"}
+            onOpenReport={() => setTab("report")}
+          />
+        )}
 
-      {state === "running" ? (
-        <p className="research-run-banner is-running">
-          <LoaderCircle size={15} className="is-spinning" aria-hidden="true" />
-          {progressMessage || "正在检索和核验证据，研究表会随每轮结果更新。"}
-        </p>
-      ) : state === "insufficient" ? (
-        <p className="research-run-banner is-warning">
-          <TriangleAlert size={15} aria-hidden="true" />
-          现有证据不足以形成可靠结论。可以在研究表中查看缺口，补充资料后重新研究。
-        </p>
-      ) : state === "failed" ? (
-        <p className="research-run-banner is-danger">
-          <TriangleAlert size={15} aria-hidden="true" />
-          研究运行失败，可以从最近的检查点恢复，或在审计详情中查看原因。
-        </p>
-      ) : null}
-
-      <div className="research-run-tabs" role="tablist" aria-label="研究内容">
-        {tabs.map((item) => (
+        <section className="research-doc-pane" aria-label="研究文档">
+        <div className="research-doc-toolbar">
+          <div className="research-run-tabs" role="tablist" aria-label="研究内容">
+            {tabs.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={tab === item.key}
+                disabled={item.disabled}
+                className={`research-tab${tab === item.key ? " is-active" : ""}`}
+                onClick={() => setTab(item.key)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
           <button
-            key={item.key}
             type="button"
-            role="tab"
-            aria-selected={tab === item.key}
-            disabled={item.disabled}
-            className={`research-tab${tab === item.key ? " is-active" : ""}`}
-            onClick={() => setTab(item.key)}
+            className="icon-button research-doc-focus"
+            aria-label={focused ? "退出全屏阅读" : "全屏阅读"}
+            title={focused ? "退出全屏阅读" : "全屏阅读"}
+            aria-pressed={focused}
+            onClick={() => setFocused((value) => !value)}
           >
-            {item.label}
+            {focused ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />}
           </button>
-        ))}
-      </div>
+        </div>
 
-      <div className="research-run-body">
-        <div className="research-run-content" role="tabpanel">
-          {tab === "report" && hasReport ? (
-            <ResearchReportView
-              markdown={stripLeadingTitle(run.final_report_markdown)}
-              activeEvidence={activeEvidence}
-              onEvidenceClick={(evidenceId) => setSelection({ kind: "evidence", evidenceId })}
+        <div className="research-run-body">
+          <div className="research-run-content" role="tabpanel">
+            {tab === "report" && hasReport ? (
+              <ResearchReportView
+                markdown={stripLeadingTitle(run.final_report_markdown)}
+                activeEvidence={activeEvidence}
+                onEvidenceClick={(evidenceId) => setSelection({ kind: "evidence", evidenceId })}
+              />
+            ) : tab === "process" ? (
+              <ResearchProcessTimeline
+                rounds={rounds}
+                counterfactual={run.counterfactual_summary ?? run.closed_loop_state?.counterfactual_summary ?? null}
+                checkpoints={checkpoints}
+                running={state === "running"}
+                canResume={!isBusy && state !== "running"}
+                onResume={onResume}
+              />
+            ) : (
+              <div className="research-table-tab">
+                <dl className="research-run-metrics" aria-label="研究概况">
+                  <div>
+                    <dt>研究对象</dt>
+                    <dd>{table.rows.length}</dd>
+                  </div>
+                  <div className="is-progress">
+                    <dt>已验证字段</dt>
+                    <dd>{verified}<small> / {table.counts.total}</small></dd>
+                    <span className="research-run-bar" aria-hidden="true">
+                      <i style={{ width: `${table.counts.total ? (verified / table.counts.total) * 100 : 0}%` }} />
+                    </span>
+                  </div>
+                  <div>
+                    <dt>待解决</dt>
+                    <dd className={unresolved > 0 ? "is-warning" : undefined}>{unresolved}</dd>
+                  </div>
+                  <div>
+                    <dt>证据</dt>
+                    <dd>{table.evidenceById.size}</dd>
+                  </div>
+                  <div>
+                    <dt>轮次</dt>
+                    <dd>{rounds.length}</dd>
+                  </div>
+                </dl>
+                <ResearchStateTable
+                  table={table}
+                  selectedCellId={selectedCellId}
+                  onSelectCell={(cell) => setSelection({ kind: "cell", cell })}
+                />
+              </div>
+            )}
+          </div>
+          {selection ? (
+            <button
+              type="button"
+              className="research-evidence-backdrop"
+              aria-label="点击背景关闭证据详情"
+              tabIndex={-1}
+              onClick={() => setSelection(null)}
             />
-          ) : tab === "process" ? (
-            <ResearchProcessTimeline
-              rounds={rounds}
-              counterfactual={run.counterfactual_summary ?? run.closed_loop_state?.counterfactual_summary ?? null}
-              checkpoints={checkpoints}
-              running={state === "running"}
-              canResume={!isBusy && state !== "running"}
-              onResume={onResume}
-            />
-          ) : (
-            <ResearchStateTable
+          ) : null}
+          {selection ? (
+            <ResearchEvidencePanel
               table={table}
-              selectedCellId={selectedCellId}
+              selection={selection}
+              onClose={() => setSelection(null)}
               onSelectCell={(cell) => setSelection({ kind: "cell", cell })}
             />
-          )}
+          ) : null}
         </div>
-        {selection ? (
-          <button
-            type="button"
-            className="research-evidence-backdrop"
-            aria-label="点击背景关闭证据详情"
-            tabIndex={-1}
-            onClick={() => setSelection(null)}
-          />
-        ) : null}
-        {selection ? (
-          <ResearchEvidencePanel
-            table={table}
-            selection={selection}
-            onClose={() => setSelection(null)}
-            onSelectCell={(cell) => setSelection({ kind: "cell", cell })}
-          />
-        ) : null}
+        </section>
       </div>
     </article>
   );

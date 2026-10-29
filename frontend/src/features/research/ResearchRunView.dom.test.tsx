@@ -117,9 +117,32 @@ describe("ResearchRunView", () => {
     const props = renderRun(buildRun());
 
     fireEvent.click(screen.getByRole("tab", { name: "过程" }));
-    expect(screen.getByText("建立 2 × 1 研究表")).toBeTruthy();
+    expect(within(screen.getByRole("tabpanel")).getByText("建立 2 × 1 研究表")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /从此恢复/ }));
 
     expect(props.onResume).toHaveBeenCalledWith(1);
+  });
+
+  it("研究过程按对话呈现，完成后给出报告卡片，报告以文档形式打开", () => {
+    renderRun(buildRun());
+
+    const thread = screen.getByRole("region", { name: "研究对话" });
+    expect(within(thread).getByText("如何选择向量检索方案？")).toBeTruthy();
+    expect(within(thread).getByText(/围绕 2 个研究对象/)).toBeTruthy();
+    expect(within(thread).getByText("第 1 轮")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /研究表/ }));
+    fireEvent.click(within(thread).getByRole("button", { name: "打开报告：向量检索方案选型" }));
+    expect(screen.getByRole("tab", { name: "报告" }).getAttribute("aria-selected")).toBe("true");
+    expect(within(screen.getByRole("region", { name: "研究文档" })).getByRole("heading", { name: /结论/ })).toBeTruthy();
+  });
+
+  it("全屏阅读时收起研究对话，再点一次恢复", () => {
+    renderRun(buildRun());
+
+    fireEvent.click(screen.getByRole("button", { name: "全屏阅读" }));
+    expect(screen.queryByRole("region", { name: "研究对话" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "退出全屏阅读" }));
+    expect(screen.getByRole("region", { name: "研究对话" })).toBeTruthy();
   });
 });
