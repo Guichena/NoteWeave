@@ -64,6 +64,10 @@ public class SourceService {
     void setDerivedObjectLifecycle(com.noteweave.storage.FileObjectLifecycleService derivedObjectLifecycle) {
         this.derivedObjectLifecycle = derivedObjectLifecycle;
     }
+    private SourceFrameService mediaFrames;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMediaFrames(SourceFrameService mediaFrames) { this.mediaFrames = mediaFrames; }
 
     public SourceService(
             JdbcTemplate jdbcTemplate,
@@ -136,7 +140,8 @@ public class SourceService {
                         parseTaskIds.get(sourceId),
                         stage.stage(),
                         stage.attempts(),
-                        stage.nextRetryAt()
+                        stage.nextRetryAt(),
+                        metadata != null && metadata.has("media_stats")
                 );
             }, workspaceId);
         } catch (RuntimeException exception) {
@@ -304,6 +309,7 @@ public class SourceService {
         }
         // 引用只在首次删除释放一次：重复/升级路径不会再进入这里
         if (releaseFileObject(workspaceId, source.fileObjectId())) cleanupObjectKeys.add(source.objectKey());
+        if (mediaFrames != null) mediaFrames.enqueueDeletion(workspaceId, sourceId);
         sourceCatalogVersionService.bump(workspaceId);
         String wikiTaskId = wikiCommandPort.requestSourceRetract(workspaceId, sourceId, source.title());
         eventPublisher.publishEvent(new SourceDeletedEvent(

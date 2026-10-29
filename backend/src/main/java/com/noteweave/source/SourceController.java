@@ -16,10 +16,45 @@ public class SourceController {
 
     private final SourceService sourceService;
     private final SourceReprocessService sourceReprocessService;
+    private final SourceLinkService links;
+    private final SourceFrameService frames;
+    private final com.noteweave.security.WorkspaceAccessGuard access;
 
-    public SourceController(SourceService sourceService, SourceReprocessService sourceReprocessService) {
+    public SourceController(SourceService sourceService, SourceReprocessService sourceReprocessService,
+                            SourceLinkService links, SourceFrameService frames,
+                            com.noteweave.security.WorkspaceAccessGuard access) {
         this.sourceService = sourceService;
         this.sourceReprocessService = sourceReprocessService;
+        this.links = links;
+        this.frames = frames;
+        this.access = access;
+    }
+
+    @PostMapping("/links/preview")
+    ApiResponse<SourceLinkWorkerClient.VideoInfo> previewLink(@PathVariable String workspaceId,
+            @org.springframework.web.bind.annotation.RequestBody SourceLinkService.LinkRequest request) {
+        return ApiResponse.success(links.preview(workspaceId, request.sourceUrl()));
+    }
+
+    @PostMapping("/links")
+    ApiResponse<java.util.Map<String, String>> createLink(@PathVariable String workspaceId,
+            @org.springframework.web.bind.annotation.RequestBody SourceLinkService.LinkRequest request) {
+        return ApiResponse.success(links.create(workspaceId, request));
+    }
+
+    @GetMapping("/{sourceId}/media")
+    ApiResponse<SourceMediaDocument> readMedia(@PathVariable String workspaceId, @PathVariable String sourceId) {
+        access.requirePermission(workspaceId, com.noteweave.security.WorkspacePermission.WORKSPACE_READ);
+        return ApiResponse.success(frames.readDocument(workspaceId, sourceId));
+    }
+
+    @GetMapping("/{sourceId}/frames/{frameId}")
+    org.springframework.http.ResponseEntity<byte[]> readFrame(@PathVariable String workspaceId,
+            @PathVariable String sourceId, @PathVariable String frameId) {
+        access.requirePermission(workspaceId, com.noteweave.security.WorkspacePermission.WORKSPACE_READ);
+        var image = frames.readFrame(workspaceId, sourceId, frameId);
+        return org.springframework.http.ResponseEntity.ok().contentType(org.springframework.http.MediaType.parseMediaType(image.mediaType()))
+                .header("Cache-Control", "private, no-store").body(image.content());
     }
 
     @GetMapping

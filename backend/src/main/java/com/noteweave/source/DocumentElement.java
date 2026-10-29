@@ -10,10 +10,25 @@ public record DocumentElement(
         BoundingBox bbox,
         @JsonProperty("heading_level") Integer headingLevel,
         @JsonProperty("text_origin") TextOrigin textOrigin,
-        @JsonProperty("ocr_confidence") Double ocrConfidence
+        @JsonProperty("ocr_confidence") Double ocrConfidence,
+        Integer part,
+        @JsonProperty("start_ms") Long startMs,
+        @JsonProperty("end_ms") Long endMs,
+        @JsonProperty("frame_ids") java.util.List<String> frameIds,
+        @JsonProperty("source_url") String sourceUrl
 ) {
     public DocumentElement {
         validateTextSource(textOrigin, ocrConfidence);
+        frameIds = frameIds == null ? java.util.List.of() : java.util.List.copyOf(frameIds);
+        if (part != null && (part < 1 || part > 1000 || startMs == null || endMs == null || startMs < 0 || endMs <= startMs)
+                || part == null && (startMs != null || endMs != null || !frameIds.isEmpty())) {
+            throw new IllegalArgumentException("音视频元素的分 P、时间范围或帧 ID 无效");
+        }
+    }
+
+    public DocumentElement(ElementType type, String text, Integer page, BoundingBox bbox, Integer level,
+                           TextOrigin origin, Double confidence) {
+        this(type, text, page, bbox, level, origin, confidence, null, null, null, java.util.List.of(), null);
     }
 
     public DocumentElement(ElementType elementType, String text, Integer page, BoundingBox bbox, Integer headingLevel) {

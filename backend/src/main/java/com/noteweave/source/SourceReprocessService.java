@@ -39,6 +39,10 @@ public class SourceReprocessService {
     private final ApplicationEventPublisher eventPublisher;
     private final SourceTopicNames topicNames;
     private com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer;
+    private SourceTranscriptionSubmissionService mediaSubmissions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setMediaSubmissions(SourceTranscriptionSubmissionService submissions) { this.mediaSubmissions = submissions; }
 
     public SourceReprocessService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
                                   WorkspaceAccessGuard workspaceAccessGuard, TaskCommandPort taskCommandPort,
@@ -175,11 +179,12 @@ public class SourceReprocessService {
                     select id from source_chunk where source_snapshot_id = ?)
                 """, snapshot.snapshotId());
         jdbcTemplate.update("delete from source_chunk where source_snapshot_id = ?", snapshot.snapshotId());
+        // 保留旧图片索引，待新图文结果提交时清理未复用的图片；重新处理期间不对外提供旧图文结果。
         jdbcTemplate.update("""
                 update source_snapshot
                 set parse_status = 'PENDING', index_status = 'PENDING', processing_stage = null,
                     embedding_task_id = null, embedding_batch_version = null,
-                    index_attempt_count = 0, next_index_retry_at = null
+                    index_attempt_count = 0, next_index_retry_at = null, media_document_json = null
                 where id = ?
                 """, snapshot.snapshotId());
         jdbcTemplate.update("""
@@ -190,7 +195,15 @@ public class SourceReprocessService {
                 """, sourceId, workspaceId);
         String taskId = taskCommandPort.createTask(workspaceId, "SOURCE_PARSE", "SOURCE", sourceId,
                 "PARSING", "重新处理：资料解析与切片");
-        if (messagingMode.isAsyncEnabled()) {
+        List<String[]> links = jdbcTemplate.query("select source_url, sha256 from source_snapshot where id = ? and source_url is not null",
+                (rs, n) -> new String[] {rs.getString(1), rs.getString(2)}, snapshot.snapshotId());
+        if (!links.isEmpty()) {
+            jdbcTemplate.update("update source_snapshot set processing_stage = 'TRANSCRIBING' where id = ?", snapshot.snapshotId());
+            String title = jdbcTemplate.queryForObject("select title from source where id = ?", String.class, sourceId);
+            taskCommandPort.startTask(taskId);
+            mediaSubmissions.enqueue(new SourceTranscriptionPort.Request(workspaceId, sourceId, snapshot.snapshotId(), title,
+                    SourceLinkService.LINK_MIME, taskId), snapshot.objectKey(), links.get(0)[1]);
+        } else if (messagingMode.isAsyncEnabled()) {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("taskId", taskId);
             payload.put("sourceId", sourceId);

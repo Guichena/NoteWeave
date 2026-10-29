@@ -121,7 +121,7 @@ public class ConversationContextCompilerV2Service {
     /**
      * Independent (conversation-less) context for a background task acting for a user. There is no
      * request session here: the caller must already have re-checked the actor's current Workspace ACL
-     * (e.g. VideoLearningRequestRepository.requireActorMayOperate) before calling.
+     * (由调用方完成所属对象的操作权限校验) before calling.
      */
     @Transactional(readOnly = true)
     public ContextProjectionV2 compileIndependentForVerifiedActor(String workspaceId, String actorId,

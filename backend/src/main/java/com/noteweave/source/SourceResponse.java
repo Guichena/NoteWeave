@@ -22,8 +22,16 @@ public record SourceResponse(
         @JsonProperty("processing_stage") String processingStage,
         // 检索索引已自动重试的次数，以及下次自动重试的时间；不会再自动重试时为空
         @JsonProperty("index_attempt_count") Integer indexAttemptCount,
-        @JsonProperty("next_index_retry_at") Instant nextIndexRetryAt
+        @JsonProperty("next_index_retry_at") Instant nextIndexRetryAt,
+        @JsonProperty("media_available") boolean mediaAvailable
 ) {
+    public SourceResponse(String sourceId, String title, String sourceType, String status, String parseStatus,
+                          String indexStatus, String generatedBy, String generatedRefId, Instant updatedAt,
+                          Integer chunkCount, Integer pageCount, String taskId, String processingStage,
+                          Integer indexAttemptCount, Instant nextIndexRetryAt) {
+        this(sourceId, title, sourceType, status, parseStatus, indexStatus, generatedBy, generatedRefId,
+                updatedAt, chunkCount, pageCount, taskId, processingStage, indexAttemptCount, nextIndexRetryAt, false);
+    }
     public SourceResponse(String sourceId, String title, String sourceType, String status, String parseStatus,
                           String indexStatus, String generatedBy, String generatedRefId, Instant updatedAt,
                           Integer chunkCount, Integer pageCount, String taskId) {

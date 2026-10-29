@@ -18,6 +18,30 @@ export type SourceAsset = {
   /** 检索索引已自动重试的次数与下次自动重试的时间。 */
   index_attempt_count?: number | null;
   next_index_retry_at?: string | null;
+  /** 当前快照是否有可展示的音视频图文解析结果。 */
+  media_available?: boolean;
+};
+
+export type SourceVideoInfo = {
+  title: string;
+  source_url: string;
+  duration_ms: number;
+  parts: Array<{ part: number; title: string; duration_ms: number }>;
+};
+
+export type SourceMediaFrame = {
+  frame_id: string;
+  at_ms: number;
+  image_ref: string;
+  caption: string;
+  ocr_text: string;
+};
+
+export type SourceMediaDocument = {
+  title: string;
+  source_url: string;
+  segments: Array<{ part: number; start_ms: number; end_ms: number; text: string; frames: SourceMediaFrame[] }>;
+  stats: { candidate_frames: number; kept_frames: number; transcript_origin: string; duration_ms: number; vision_status: string };
 };
 
 /** 重新处理的结果：从解析阶段（PARSE）或向量化阶段（INDEX）重新开始。 */

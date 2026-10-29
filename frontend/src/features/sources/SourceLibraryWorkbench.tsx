@@ -10,6 +10,7 @@ import { SourceLibraryRow, type RecoveryState } from "./SourceLibraryRow";
 import { buildSourcePipeline } from "./sourcePipeline";
 import { validateSourceFile } from "./sourceFiles";
 import { useSourceFormats } from "./useSourceFormats";
+import { SourceLinkForm } from "./SourceLinkForm";
 
 export { validateSourceFile };
 
@@ -192,6 +193,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
                   <SourceLibraryRow
                     key={source.source_id}
                     source={source}
+                    workspaceId={workspace?.workspace_id}
                     expanded={expandedId === source.source_id}
                     onToggle={() => setExpandedId((current) => current === source.source_id ? "" : source.source_id)}
                     busy={sourcesBusy}
@@ -261,6 +263,7 @@ export function SourceLibraryWorkbench(props: SourceLibraryWorkbenchProps) {
               </button>
             </details>
             {!workspace ? <p className="source-library-warning"><CircleAlert size={15} aria-hidden="true" />请先创建或选择工作台。</p> : null}
+            {workspace ? <SourceLinkForm key={workspace.workspace_id} workspaceId={workspace.workspace_id} refreshSources={refreshSources} /> : null}
           </section>
         </aside>
       </div>

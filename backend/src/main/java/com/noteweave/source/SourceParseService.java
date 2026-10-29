@@ -53,6 +53,12 @@ public class SourceParseService implements SourceParsePort {
     private SourceTranscriptionPort transcriptionPort;
     private SourceTranscriptionSubmissionService transcriptionSubmissions;
     private com.noteweave.task.TaskOutboxEnqueuer taskOutboxEnqueuer;
+    private SourceFrameService sourceFrames;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setSourceFrames(SourceFrameService sourceFrames) {
+        this.sourceFrames = sourceFrames;
+    }
 
     public SourceParseService(JdbcTemplate jdbcTemplate, DocumentChunker documentChunker,
                               SourceDocumentTextExtractor documentTextExtractor, ObjectMapper objectMapper,
@@ -155,12 +161,13 @@ public class SourceParseService implements SourceParsePort {
             jdbcTemplate.update("""
                     insert into source_chunk(id, workspace_id, source_id, source_snapshot_id, chunk_no, heading, content,
                                              token_estimate, location_info, page_start, page_end, structure_metadata_json,
-                                             text_origin, ocr_confidence)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                             text_origin, ocr_confidence, part, start_ms, end_ms, frame_ids_json, source_url)
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, chunkId, workspaceId, sourceId, snapshotId, i, chunk.headingPath(), chunk.content(),
                     Math.max(1, chunk.tokens()), chunk.location(i), chunk.pageStart(), chunk.pageEnd(),
                     chunk.structureMetadata() == null ? null : writeJson(chunk.structureMetadata()),
-                    chunk.textOrigin() == null ? null : chunk.textOrigin().name(), chunk.ocrConfidence());
+                    chunk.textOrigin() == null ? null : chunk.textOrigin().name(), chunk.ocrConfidence(),
+                    chunk.part(), chunk.startMs(), chunk.endMs(), writeJson(chunk.frameIds()), chunk.sourceUrl());
             List<String> windows = documentChunker.windows(chunk);
             for (int windowNo = 0; windowNo < windows.size(); windowNo++) {
                 jdbcTemplate.update("""
@@ -192,6 +199,15 @@ public class SourceParseService implements SourceParsePort {
         metadata.put("chunking", extracted.elements().isEmpty() ? "structure_aware_token_v2" : "typed_elements_token_v3");
         metadata.put("chunker_version", documentChunker.version());
         metadata.put("entry_strategy", "marginalia_structured_reading_funnel");
+        List<String> mediaDocuments = jdbcTemplate.queryForList(
+                "select media_document_json from source_snapshot where id = ? and media_document_json is not null", String.class, snapshotId);
+        if (!mediaDocuments.isEmpty()) {
+            try {
+                var media = objectMapper.readValue(mediaDocuments.get(0), SourceMediaDocument.class);
+                metadata.put("media_stats", media.stats());
+                metadata.put("source_url", media.sourceUrl());
+            } catch (IOException ex) { throw new IllegalArgumentException("音视频图文文档不可读取", ex); }
+        }
         jdbcTemplate.update("""
                 update source
                 set summary = ?, tags_json = ?, metadata_json = ?,
@@ -434,6 +450,47 @@ public class SourceParseService implements SourceParsePort {
         return Boolean.TRUE.equals(queued);
     }
 
+    /** 图文回调持久化图片与结构元素，随后复用既有切片和索引阶段。 */
+    public boolean acceptMediaDocument(String workspaceId, String sourceId, String snapshotId, SourceMediaDocument document) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(ignored -> {
+            SourceMeta meta = loadSourceMetaForProcessing(workspaceId, sourceId, snapshotId);
+            if (!meta.processable() || !SourcePipelineStages.STAGE_TRANSCRIBING.equals(meta.processingStage())) return false;
+            String expectedUrl = jdbcTemplate.queryForObject("select source_url from source_snapshot where id = ?", String.class, snapshotId);
+            if (expectedUrl != null && !expectedUrl.equals(document.sourceUrl())) {
+                throw new IllegalArgumentException("视频图文结果与提交链接不一致");
+            }
+            if (expectedUrl != null) {
+                String partsJson = jdbcTemplate.queryForObject("select selected_parts_json from source_snapshot where id = ?", String.class, snapshotId);
+                try {
+                    List<Integer> selected = objectMapper.readValue(partsJson, new com.fasterxml.jackson.core.type.TypeReference<List<Integer>>() {});
+                    if (document.segments().stream().anyMatch(segment -> !selected.contains(segment.part()))) {
+                        throw new IllegalArgumentException("解析结果包含未选择的分 P");
+                    }
+                } catch (IOException ex) { throw new IllegalArgumentException("所选分 P 记录不可读取", ex); }
+            }
+            SourceMediaDocument stored = sourceFrames.save(workspaceId, sourceId, snapshotId, findSourceParseTaskId(sourceId), document);
+            List<DocumentElement> elements = stored.segments().stream().map(segment -> new DocumentElement(
+                    DocumentElement.ElementType.TEXT, segment.body(), null, null, null, null, null,
+                    segment.part(), segment.startMs(), segment.endMs(),
+                    segment.frames().stream().map(SourceMediaDocument.Frame::frameId).toList(), stored.sourceUrl())).toList();
+            String text = stored.segments().stream().map(segment -> "[P%d %s] %s".formatted(segment.part(),
+                    mediaClock(segment.startMs()), segment.body())).collect(java.util.stream.Collectors.joining("\n"));
+            var extracted = new SourceDocumentTextExtractor.ExtractedDocument(text, meta.mimeType(), 0,
+                    elements, "MEDIA_MCP", false, List.of(), null);
+            persistParsedDocument(workspaceId, sourceId, snapshotId, meta.sha256(), extracted);
+            jdbcTemplate.update("update source_snapshot set media_document_json = ?, processing_stage = ? where id = ?",
+                    writeJson(stored), SourcePipelineStages.STAGE_CHUNKING, snapshotId);
+            return insertChunkOutbox(workspaceId, sourceId, snapshotId,
+                    SourcePipelineStages.extractedTextKey(workspaceId, sourceId, snapshotId), extracted,
+                    "音视频图文解析完成，保留 " + stored.stats().keptFrames() + " 张关键帧，等待切片");
+        }));
+    }
+
+    private static String mediaClock(long ms) {
+        long seconds = ms / 1000;
+        return "%02d:%02d:%02d".formatted(seconds / 3600, seconds / 60 % 60, seconds % 60);
+    }
+
     /** 最近一次资料解析任务，供转写失败时收尾。 */
     public String latestParseTaskId(String sourceId) {
         return findSourceParseTaskId(sourceId);
@@ -570,8 +627,10 @@ public class SourceParseService implements SourceParsePort {
                                                                            String snapshotId, SourceMeta meta,
                                                                            String textKey, String mimeType, int pageCount) {
         String key = parsedDocumentKey(workspaceId, sourceId, snapshotId);
-        // 转写稿继续使用原来的文字稿路径，不混入先前的文档结构。
-        if (!SourceMediaTypes.isMedia(meta.mimeType()) && storage.exists(SourcePipelineStages.BUCKET_DERIVED, key)) {
+        boolean hasMediaDocument = !jdbcTemplate.queryForList(
+                "select id from source_snapshot where id = ? and media_document_json is not null", String.class, snapshotId).isEmpty();
+        // 新媒体快照保存结构元素；旧转写稿仍使用原文字稿路径。
+        if ((!SourceMediaTypes.isMedia(meta.mimeType()) || hasMediaDocument) && storage.exists(SourcePipelineStages.BUCKET_DERIVED, key)) {
             Path file = null;
             try {
                 file = Files.createTempFile("noteweave-parsed-read-", ".json");

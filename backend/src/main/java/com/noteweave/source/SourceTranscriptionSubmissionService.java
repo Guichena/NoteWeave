@@ -39,6 +39,10 @@ public class SourceTranscriptionSubmissionService {
     void setFailureFinalizer(SourceParseFailureFinalizer failureFinalizer) {
         this.failureFinalizer = failureFinalizer;
     }
+    private SourceLinkWorkerClient linkWorker;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    void setLinkWorker(SourceLinkWorkerClient linkWorker) { this.linkWorker = linkWorker; }
 
     public SourceTranscriptionSubmissionService(JdbcTemplate jdbc, ObjectStorage storage,
             SourceTranscriptionPort port, PlatformTransactionManager transactionManager,
@@ -141,6 +145,16 @@ public class SourceTranscriptionSubmissionService {
     private void submit(Submission row) {
         Path file = null;
         try {
+            if (SourceLinkService.LINK_MIME.equals(row.request().mimeType())) {
+                if (!current(row)) { finish(row, "CANCELLED", null, 0); return; }
+                List<String[]> links = jdbc.query("select source_url, selected_parts_json from source_snapshot where id = ?",
+                        (rs, n) -> new String[] { rs.getString(1), rs.getString(2) }, row.request().snapshotId());
+                List<Integer> parts = new com.fasterxml.jackson.databind.ObjectMapper().readValue(links.get(0)[1],
+                        new com.fasterxml.jackson.core.type.TypeReference<List<Integer>>() {});
+                linkWorker.submit(row.request(), links.get(0)[0], parts, row.request().fileName());
+                finish(row, "SUBMITTED", null, 0);
+                return;
+            }
             file = Files.createTempFile("noteweave-transcription-submit-", ".bin");
             storage.readToFile("noteweave-source", row.objectKey(), file);
             var digest = java.security.MessageDigest.getInstance("SHA-256");

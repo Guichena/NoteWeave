@@ -220,6 +220,8 @@ services:
       NOTEWEAVE_RERANK_TIMEOUT_SECONDS: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:-5}
       NOTEWEAVE_RERANK_MAX_ATTEMPTS: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:-1}
       NOTEWEAVE_STORAGE_LOCAL_ROOT: /app/storage
+      NOTEWEAVE_SKILLS_DIR: /app/skills
+      NOTEWEAVE_SCHEMAS_DIR: /app/schemas
       NOTEWEAVE_WORKER_ARTIFACT_BASE_URL: http://artifact-worker-api:18092
       NOTEWEAVE_PARSE_ENABLED: ${NOTEWEAVE_PARSE_ENABLED:-true}
       NOTEWEAVE_PARSE_BASE_URL: http://parse-worker:8000
@@ -297,6 +299,8 @@ services:
       NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:-false}
     volumes:
       - noteweave_v2_backend_storage:/app/storage
+      - ./skills:/app/skills:ro
+      - ./schemas:/app/schemas:ro
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8081/actuator/health/liveness"]
       interval: 10s
@@ -415,7 +419,10 @@ services:
     container_name: noteweave-v2-artifact-worker-api
     restart: unless-stopped
     profiles: ["app"]
+    networks: [default, media]
     depends_on:
+      media-mcp:
+        condition: service_healthy
       backend:
         condition: service_healthy
       kafka:
@@ -436,24 +443,18 @@ services:
       NOTEWEAVE_ARTIFACT_CONSUMER_ENABLED: ${NOTEWEAVE_ARTIFACT_CONSUMER_ENABLED:-true}
       NOTEWEAVE_KAFKA_ARTIFACT_MAX_POLL_INTERVAL_SECONDS: ${NOTEWEAVE_KAFKA_ARTIFACT_MAX_POLL_INTERVAL_SECONDS:-4200}
       NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS: ${NOTEWEAVE_KAFKA_CONSUME_MAX_ATTEMPTS:-3}
-      NOTEWEAVE_ARTIFACT_REPOSITORY_BACKEND: file
-      NOTEWEAVE_ARTIFACT_REPOSITORY_FILE_PATH: /app/runtime/artifact-repository.json
-      NOTEWEAVE_ARTIFACT_CUSTOMIZATION_FILE_PATH: /app/runtime/artifact-customizations.json
-      NOTEWEAVE_ARTIFACT_RUNTIME_STATE_FILE_PATH: /app/runtime/artifact-runtime-state.json
-      NOTEWEAVE_ARTIFACT_WAIT_QUEUE_FILE_PATH: /app/runtime/artifact-wait-queue.json
       NOTEWEAVE_MCP_SANDBOX_ROOT: /app/runtime
-      NOTEWEAVE_DEBUG_ROUTES_ENABLED: ${NOTEWEAVE_ARTIFACT_DEBUG_ROUTES_ENABLED:-false}
+      NOTEWEAVE_MEDIA_MCP_URL: http://media-mcp:18094/mcp
+      NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN: ${NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN:?Set NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN}
+      NOTEWEAVE_MEDIA_MCP_TIMEOUT_SECONDS: ${NOTEWEAVE_MEDIA_MCP_TIMEOUT_SECONDS:-3660}
+      NOTEWEAVE_SKILLS_DIR: /app/skills
+      NOTEWEAVE_SCHEMAS_DIR: /app/schemas
       NOTEWEAVE_ARTIFACT_LLM_API_KEY: ${NOTEWEAVE_ARTIFACT_LLM_API_KEY:-}
       NOTEWEAVE_ARTIFACT_LLM_BASE_URL: ${NOTEWEAVE_ARTIFACT_LLM_BASE_URL:-https://api.siliconflow.cn/v1}
       NOTEWEAVE_ARTIFACT_LLM_MODEL: ${NOTEWEAVE_ARTIFACT_LLM_MODEL:-Pro/zai-org/GLM-5.2}
       NOTEWEAVE_ARTIFACT_LLM_TIMEOUT_SECONDS: ${NOTEWEAVE_ARTIFACT_LLM_TIMEOUT_SECONDS:-60}
-      NOTEWEAVE_ARTIFACT_LLM_INTENT_ENABLED: ${NOTEWEAVE_ARTIFACT_LLM_INTENT_ENABLED:-true}
       NOTEWEAVE_ARTIFACT_LLM_MAX_TOTAL_CALLS: ${NOTEWEAVE_ARTIFACT_LLM_MAX_TOTAL_CALLS:-64}
-      NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES: ${NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES:-2}
-      NOTEWEAVE_MCP_PROCESS_TIMEOUT_SECONDS: ${NOTEWEAVE_MCP_PROCESS_TIMEOUT_SECONDS:-3600}
-      # 执行期心跳。宿主用它续配额租约和 outbox 租约；间隔应小于配额租约（默认 300 秒）。
-      NOTEWEAVE_ARTIFACT_HEARTBEAT_INTERVAL_SECONDS: ${NOTEWEAVE_ARTIFACT_HEARTBEAT_INTERVAL_SECONDS:-60}
-      # 资料库音视频转写：MCP 转写工具使用的 faster-whisper 模型、语言提示和设备
+      # 资料解析任务池；转写模型和媒体处理依赖在 media-mcp 中配置。
       NOTEWEAVE_TRANSCRIPTION_MODEL: ${NOTEWEAVE_TRANSCRIPTION_MODEL:-small}
       NOTEWEAVE_TRANSCRIPTION_LANGUAGE: ${NOTEWEAVE_TRANSCRIPTION_LANGUAGE:-zh}
       NOTEWEAVE_TRANSCRIPTION_DEVICE: ${NOTEWEAVE_TRANSCRIPTION_DEVICE:-cpu}
@@ -464,10 +465,47 @@ services:
       NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK: ${NOTEWEAVE_ALLOW_PORTABLE_PDF_FALLBACK:-false}
     volumes:
       - noteweave_v2_artifact_worker_runtime:/app/runtime
-      # faster-whisper 模型缓存（系统 MCP 的 download_root），避免容器重建后重新下载
-      - noteweave_v2_whisper_models:/root/.codex/skills/bilibili-render-pdf/.cache
+      - ./skills:/app/skills:ro
+      - ./schemas:/app/schemas:ro
+      - ./workers/artifact-worker/templates:/app/templates:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18092/health', timeout=3).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  media-mcp:
+    profiles: ["app"]
+    build:
+      context: ./workers/media-mcp
+    container_name: noteweave-v2-media-mcp
+    restart: unless-stopped
+    networks: [media]
+    environment:
+      MEDIA_MCP_AUTH_TOKEN: ${NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN:?Set NOTEWEAVE_MEDIA_MCP_AUTH_TOKEN}
+      MEDIA_MCP_INPUT_ROOT: /worker-input/inputs
+      MEDIA_MCP_TIMEOUT_SECONDS: ${MEDIA_MCP_TIMEOUT_SECONDS:-3600}
+      MEDIA_MCP_MAX_DURATION_MS: ${MEDIA_MCP_MAX_DURATION_MS:-7200000}
+      MEDIA_MCP_MAX_CHARS: ${MEDIA_MCP_MAX_CHARS:-2000000}
+      MEDIA_MCP_MAX_FRAMES: ${MEDIA_MCP_MAX_FRAMES:-128}
+      MEDIA_MCP_MAX_CANDIDATES: ${MEDIA_MCP_MAX_CANDIDATES:-4096}
+      MEDIA_MCP_PHASH_THRESHOLD: ${MEDIA_MCP_PHASH_THRESHOLD:-8}
+      MEDIA_MCP_SCENE_THRESHOLD: ${MEDIA_MCP_SCENE_THRESHOLD:-0.3}
+      MEDIA_MCP_ASR_MODEL: ${MEDIA_MCP_ASR_MODEL:-small}
+      MEDIA_MCP_ASR_LANGUAGE: ${MEDIA_MCP_ASR_LANGUAGE:-zh}
+      MEDIA_MCP_ASR_DEVICE: ${MEDIA_MCP_ASR_DEVICE:-cpu}
+      MEDIA_MCP_MODEL_CACHE: /model-cache
+      MEDIA_MCP_BILIBILI_COOKIES_FILE: ${MEDIA_MCP_BILIBILI_COOKIES_FILE:-}
+      MEDIA_MCP_VISION_ENABLED: ${MEDIA_MCP_VISION_ENABLED:-false}
+      MEDIA_MCP_VISION_ENDPOINT: ${MEDIA_MCP_VISION_ENDPOINT:-https://vision.example.invalid/v1/chat/completions}
+      MEDIA_MCP_VISION_MODEL: ${MEDIA_MCP_VISION_MODEL:-placeholder}
+      MEDIA_MCP_VISION_API_KEY: ${MEDIA_MCP_VISION_API_KEY:-}
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-1}
+    volumes:
+      - noteweave_v2_artifact_worker_runtime:/worker-input:ro
+      - noteweave_v2_whisper_models:/model-cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18094/health', timeout=3).read()"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -500,6 +538,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+networks:
+  media:
+    driver: bridge
 
 volumes:
   noteweave_v2_mysql:

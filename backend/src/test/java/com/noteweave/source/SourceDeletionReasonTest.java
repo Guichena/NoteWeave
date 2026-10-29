@@ -424,7 +424,9 @@ class SourceDeletionReasonTest {
     void controllerShouldRejectInvalidReasonBeforeCallingService() {
         SourceService mockedService = mock(SourceService.class);
         SourceController controller = new SourceController(
-                mockedService, mock(SourceReprocessService.class));
+                mockedService, mock(SourceReprocessService.class),
+                mock(SourceLinkService.class), mock(SourceFrameService.class),
+                mock(com.noteweave.security.WorkspaceAccessGuard.class));
 
         assertThatThrownBy(() -> controller.deleteSource("workspace-1", "source-1", "SENSITIVE"))
                 .isInstanceOfSatisfying(BusinessException.class, exception -> {
