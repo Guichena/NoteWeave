@@ -49,11 +49,11 @@ class ResearchAgentHonestReportTextTest {
     }
 
     @Test
-    void limitationLinePointsToWhereTheLeadIsShown() {
+    void limitationLineSaysWhatKindOfSourceWasFound() {
         assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.SOURCED, "NO_SUPPORTED_CANDIDATE"))
-                .contains("未经核实的线索");
+                .contains("第三方资料", "待核实");
         assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.RELATED, "NO_SUPPORTED_CANDIDATE"))
-                .contains("相关材料");
+                .contains("相关背景材料");
         assertThat(ResearchAgentHonestReportService.leadText(null, "NO_SUPPORTED_CANDIDATE"))
                 .isEqualTo(ResearchAgentHonestReportService.reasonText("NO_SUPPORTED_CANDIDATE"));
     }

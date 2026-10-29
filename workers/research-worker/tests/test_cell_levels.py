@@ -131,7 +131,7 @@ def test_writer_receives_leads_and_unmarked_lead_sentences_get_an_unverified_not
     # 摘要只能引用已核验的资料
     assert "[evidence:k1]" not in result.narrative["executive_summary"]
     paragraph = result.narrative["sections"][0]["paragraphs"][1]
-    assert paragraph["text"].startswith("Kafka 只保证分区内有序（未经核实） [evidence:k1]")
+    assert paragraph["text"].startswith("Kafka 只保证分区内有序（待核实） [evidence:k1]")
     # 必须给出的对比表里，没核验的位置用线索补上并标明待核实
     row = result.narrative["comparison_table"]["rows"][0]
     assert any("（待核实）" in cell and "[evidence:k1]" in cell for cell in row["cells"])

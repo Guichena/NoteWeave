@@ -284,9 +284,9 @@ class ResearchAgentIncrementalFinalizationServiceTest {
 
         String report = honestReports.renderAndPersist(runId, decision);
 
-        assertThat(report).contains("## 未经核实的线索", "Coverage above 75% found 30% more defects [evidence-1]",
-                "找到了有出处的线索但未通过核验");
-        assertThat(report.indexOf("## 未经核实的线索")).isLessThan(report.indexOf("## 局限与未解决项"));
+        assertThat(report).contains("## 待核实的线索", "Coverage above 75% found 30% more defects [evidence-1]",
+                "只找到第三方资料或版本不一致的文档");
+        assertThat(report.indexOf("## 待核实的线索")).isLessThan(report.indexOf("## 局限与未解决项"));
     }
 
     @Test

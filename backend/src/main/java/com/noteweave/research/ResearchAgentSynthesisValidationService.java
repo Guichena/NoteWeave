@@ -23,6 +23,9 @@ class ResearchAgentSynthesisValidationService {
     private static final Pattern PERCENT_WORD = Pattern.compile("(\\d)\\s*(?:per\\s?cent\\b|％)", Pattern.CASE_INSENSITIVE);
     private static final Pattern STATEMENT = Pattern.compile(
             ".+?(?:[。！？!?]|\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
+    /** 与 Worker 成文的标题一致（narrative_report.BACKGROUND_HEADING_*），前端按它们给这一节单独的样式。 */
+    static final String BACKGROUND_HEADING_ZH = "## 补充说明（通用知识，未经本次检索核验）";
+    static final String BACKGROUND_HEADING_EN = "## Background notes (general knowledge, not verified by this research)";
 
     void validate(
             Set<String> targetCells,
@@ -174,6 +177,26 @@ class ResearchAgentSynthesisValidationService {
             throw invalid("Reader report comparison table is required");
         }
         validateComparisonTable(comparisonTable, byKey, markdown, trustedContext);
+        validateBackgroundNotes(maps(narrative.get("background_notes")), markdown);
+    }
+
+    /**
+     * 通用知识补充只回答证据没有覆盖的规划要点，单独成节并注明未经本次检索核验；
+     * 它不能借用证据编号冒充已核验的结论，也不能混进正文其他小节。
+     */
+    private void validateBackgroundNotes(List<Map<String, Object>> notes, String markdown) {
+        if (notes.isEmpty()) return;
+        int section = Math.max(markdown.indexOf(BACKGROUND_HEADING_ZH), markdown.indexOf(BACKGROUND_HEADING_EN));
+        if (section < 0) throw invalid("Background notes are missing their labelled section");
+        int next = markdown.indexOf("\n## ", section + 1);
+        String body = markdown.substring(section, next < 0 ? markdown.length() : next);
+        for (Map<String, Object> note : notes) {
+            String text = text(note.get("text"));
+            if (text.isBlank() || text.length() > 300 || text.contains("evidence:")) {
+                throw invalid("Background note is empty, too long or cites evidence");
+            }
+            if (!body.contains(text)) throw invalid("Background note is outside its labelled section");
+        }
     }
 
     private void validateComparisonTable(

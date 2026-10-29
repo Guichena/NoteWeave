@@ -564,7 +564,78 @@ def test_omitted_cell_falls_back_to_its_quote_when_the_value_has_an_unsupported_
             "evidence_keys": ["evidence:survey"], "guarded": False,
             "evidence_quotes": [{"evidence_key": "evidence:survey", "quote": "[Survey] the mean productivity of WFH was 60.6 percent"}]}
 
-    text = _omitted_cell_text(cell, [cell], True)
+    text, keys = _omitted_cell_text(cell, [cell], True)
     # 结论里的 60% 原文中没有，补段改用原文，并去掉原文前的标题
     assert text == "Japanese survey：the mean productivity of WFH was 60.6 percent"
-    assert _cited_text_supported(text, [cell], ["evidence:survey"], [cell])
+    assert keys == ["evidence:survey"]
+    assert _cited_text_supported(text, [cell], keys, [cell])
+
+
+def test_omitted_cell_joins_wrapped_quote_lines_and_cites_only_that_quote() -> None:
+    from app.narrative_report import _omitted_cell_text
+
+    quote = "The list of supported symmetric encryption algorithms has been" + chr(10) + "      pruned of all legacy ones."
+    cell = {"cell_key": "tls", "candidate_value": "已移除 1 类算法", "entity_label": "TLS 1.3",
+            "evidence_keys": ["evidence:a", "evidence:b", "evidence:c"], "guarded": False,
+            "evidence_quotes": [{"evidence_key": "evidence:b", "quote": quote}]}
+
+    text, keys = _omitted_cell_text(cell, [cell], True)
+    # 网页原文的换行和缩进合成一行，段末只引用这句原文自己的证据
+    assert text == "TLS 1.3：The list of supported symmetric encryption algorithms has been pruned of all legacy ones."
+    assert keys == ["evidence:b"]
+
+
+def test_summary_keeps_its_supported_sentences_instead_of_copying_the_first_body_sentence() -> None:
+    from app.narrative_report import _supported_summary
+
+    cells = [
+        {"cell_key": "jdk:ga", "candidate_value": "Virtual threads are final in JDK 21", "entity_label": "JDK",
+         "evidence_keys": ["evidence:ga"], "guarded": False,
+         "evidence_quotes": [{"evidence_key": "evidence:ga", "quote": "JEP 444 delivers virtual threads in JDK 21"}]},
+        {"cell_key": "jdk:pin", "candidate_value": "Pinning is fixed in JDK 24", "entity_label": "JDK",
+         "evidence_keys": ["evidence:pin"], "guarded": False,
+         "evidence_quotes": [{"evidence_key": "evidence:pin", "quote": "JEP 491 removes pinning in JDK 24"}]},
+    ]
+    summary = ("虚拟线程在 JDK 21 正式发布 [evidence:ga]。"
+               "JDK 25 修复了 synchronized 导致的固定问题 [evidence:pin]。"
+               "JEP 491 在 JDK 24 去掉了这一限制 [evidence:pin]。")
+
+    # 第二句的 25 在原文中没有，只删这一句，其余两句保留
+    assert _supported_summary(summary, cells) == "虚拟线程在 JDK 21 正式发布 [evidence:ga]。JEP 491 在 JDK 24 去掉了这一限制 [evidence:pin]。"
+    # 没有一句带引用的结论时返回空，由调用方改用正文里的结论
+    assert _supported_summary("两者各有取舍。", cells) == ""
+
+
+def test_background_notes_answer_only_planned_points_in_their_own_labelled_section() -> None:
+    client = FakeLlmClient({"research.synthesis": json.dumps({
+        "title": "延迟测量结果",
+        "executive_summary": "2.1 版的实测延迟为 50 ms [evidence-a]。",
+        "sections": [{"heading": "直接回答", "paragraphs": [{
+            "text": "2.1 版的实测延迟为 50 ms。", "cell_keys": ["latency"], "evidence_keys": ["evidence-a"]}]}],
+        "limitations": [],
+        "unanswered_points": ["延迟受哪些因素影响"],
+        "background_notes": [
+            {"point": "延迟受哪些因素影响", "text": "网络往返和排队通常是延迟的主要来源。"},
+            {"point": "规划里没有的要点", "text": "不应出现。"},
+            {"point": "延迟受哪些因素影响", "text": "同一要点的第二条不保留。"},
+        ],
+    }, ensure_ascii=False)})
+    synthesis_input = {**INPUT, "required_points": ["延迟是多少", "延迟受哪些因素影响"]}
+
+    result = NarrativeReportPolisher(client).polish(synthesis_input)
+
+    assert result.narrative["background_notes"] == [
+        {"point": "延迟受哪些因素影响", "text": "网络往返和排队通常是延迟的主要来源。"}]
+    section = result.markdown.index("## 补充说明（通用知识，未经本次检索核验）")
+    assert result.markdown.index("- 网络往返和排队通常是延迟的主要来源。") > section
+    # 补充说明排在局限之前，后端只截掉局限一节，这一节随正文保留
+    assert section < result.markdown.index("## 局限")
+    assert "不应出现" not in result.markdown
+
+
+def test_background_notes_never_carry_evidence_citations() -> None:
+    from app.narrative_report import _background_notes
+
+    notes = _background_notes([{"point": "p", "text": "据资料 [evidence:x] 所说。"}, {"point": "p", "text": "x" * 301}],
+                              ["p"], [], None)
+    assert notes == []

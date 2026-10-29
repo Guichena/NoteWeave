@@ -435,4 +435,42 @@ class ResearchAgentSynthesisValidationServiceTest {
                 "# Report\nThe measured latency is 50 ms. [evidence-a]\n" + prose + " [evidence-b]",
                 leadNarrative(prose), "", false, true)).isInstanceOf(BusinessException.class);
     }
+
+    @Test
+    void backgroundNotesMustStayUncitedInsideTheirLabelledSection() {
+        String note = "网络往返和排队通常是延迟的主要来源。";
+        String body = "# Report\nThe measured latency is 50 ms. [evidence-a]\n\n";
+        String labelled = body + ResearchAgentSynthesisValidationService.BACKGROUND_HEADING_ZH + "\n\n- " + note + "\n";
+        validator.validate(Set.of("cell-a"), cellA(), claimA(), labelled, noteNarrative(note), "", false, true);
+
+        // 混进正文、没有标明未经核验时拒收
+        assertThatThrownBy(() -> validator.validate(Set.of("cell-a"), cellA(), claimA(), body + note + "\n",
+                noteNarrative(note), "", false, true)).isInstanceOf(BusinessException.class);
+        // 借用证据编号冒充已核验的结论时拒收
+        String cited = "网络往返是延迟的主要来源 [evidence:abc]。";
+        assertThatThrownBy(() -> validator.validate(Set.of("cell-a"), cellA(), claimA(),
+                body + ResearchAgentSynthesisValidationService.BACKGROUND_HEADING_ZH + "\n\n- " + cited + "\n",
+                noteNarrative(cited), "", false, true)).isInstanceOf(BusinessException.class);
+    }
+
+    private static List<Map<String, Object>> cellA() {
+        return List.of(Map.of("cell_key", "cell-a", "candidate_value", "Latency is 50 ms",
+                "evidence_keys", List.of("evidence-a"), "guarded", false));
+    }
+
+    private static List<Map<String, Object>> claimA() {
+        return List.of(Map.of("cell_key", "cell-a", "claim_text", "Latency is 50 ms",
+                "evidence_keys", List.of("evidence-a"), "guarded", false));
+    }
+
+    private static Map<String, Object> noteNarrative(String note) {
+        return Map.of(
+                "schema_version", "research-reader-report.v1",
+                "title", "Report",
+                "executive_summary", "Verified findings.",
+                "sections", List.of(Map.of("heading", "Result", "paragraphs", List.of(
+                        Map.of("text", "The measured latency is 50 ms.", "cell_keys", List.of("cell-a"),
+                                "evidence_keys", List.of("evidence-a"))))),
+                "background_notes", List.of(Map.of("point", "延迟受哪些因素影响", "text", note)));
+    }
 }

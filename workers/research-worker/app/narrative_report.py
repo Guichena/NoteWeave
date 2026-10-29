@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, replace
 
@@ -73,6 +74,8 @@ class NarrativeReportPolisher:
                 },
                 "limitations": ["known limitations only"],
                 "unanswered_points": ["exact required_points text with no evidence-backed answer"],
+                "background_notes": [{"point": "exact required_points text that no cell answers",
+                                      "text": "one or two sentences of well-established general knowledge"}],
             },
             "rules": [
                 "Use only facts present in frozen_cells.",
@@ -98,7 +101,8 @@ class NarrativeReportPolisher:
                 "sources and the conditions that explain the difference before giving the conclusion.",
                 "executive_summary is the bottom line: one or two sentences that answer research_question with the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
-                "instead of answering.",
+                "instead of answering, and never copy a sentence that also appears in the sections: the summary "
+                "states the overall conclusion, the sections give the supporting details.",
                 "Every factual summary sentence must cite its own frozen evidence inline. Unknown citations "
                 "or unsupported numbers invalidate the summary; do not use tentative evidence there.",
                 "The first section must be headed '直接回答' (or 'Direct answer' for an English question) and give "
@@ -130,9 +134,12 @@ class NarrativeReportPolisher:
                 "SOURCED means there is an answering quote, but the full cell is not verified: it may be a "
                 "partial answer from an official source, a secondary source, or an unresolved version match. "
                 "Do not call a source third-party just because its cell is tentative. RELATED means the quote is related background that does not directly "
-                "answer. When no frozen cell answers a part of the question, you may write a SOURCED tentative "
-                "cell's finding in the body or the comparison table, citing it like other cells, and the same "
-                "sentence must say it is unverified, for example '已找到的资料显示（该项尚未完成核验），……'. "
+                "answer. When no frozen cell answers a part of the question, write a SOURCED tentative "
+                "cell's finding in the body or the comparison table as a plain statement attributed to its source, "
+                "citing it like other cells and marking it once with （待核实） (or '(unverified)' in English), for "
+                "example '据 RFC 9000 的说明，QUIC 的各条流相互独立（待核实）[evidence:ab12]。'. Do not add sentences "
+                "that cast doubt on or deny the tentative finding itself, such as saying it is not an official record "
+                "or cannot be confirmed; the marker already tells the reader. "
                 "Only describe a source as third-party when the source information establishes that. Use RELATED cells "
                 "only as background. Never use tentative cells in executive_summary and never let them contradict "
                 "or replace a frozen cell.",
@@ -145,6 +152,15 @@ class NarrativeReportPolisher:
                 "For every required point not answered by the report, copy its exact text into unanswered_points. "
                 "Required points are research questions, not verified facts; never use them as evidence. "
                 "Preserve all known limitations even when other parts of the same column are answered.",
+                "background_notes are only for required_points that neither frozen_cells nor tentative_cells "
+                "answer. For such a point you may write one or two sentences of well-established general technical "
+                "knowledge you are certain about, in the language of research_question (for example how many round "
+                "trips a TLS 1.3 handshake needs, which workload a database is designed for, what an ownership "
+                "system checks), and copy the point's exact text into point. Do not write statistics, study results, "
+                "paper titles, authors or years, release dates, or which release introduced a feature, unless you are "
+                "certain; leave the point out instead. Background notes never cite evidence keys, never repeat or "
+                "contradict the cells, and never appear in executive_summary, the sections or the table; the report "
+                "shows them in a separate section marked as general knowledge not verified by this research.",
             ],
             "frozen_cells": _prompt_cells(cells),
             "tentative_cells": _prompt_cells(leads),
@@ -223,7 +239,8 @@ def _prompt_cells(cells: list[dict[str, object]]) -> list[dict[str, object]]:
 
 _LEAD_LEVELS = ("SOURCED", "RELATED")
 # 成文引用未经核实的线索时句子里要有的说明，没有时由程序补上
-_UNVERIFIED_MARKERS = ("未经核实", "待核实", "未核实", "第三方", "unverified", "third-party", "third party")
+_UNVERIFIED_MARKERS = ("未经核实", "待核实", "未核实", "尚未完成核验", "未通过核验", "第三方", "unverified",
+                       "third-party", "third party")
 
 
 def _validated_leads(synthesis_input: dict[str, object], verified_keys: set[str]) -> list[dict[str, object]]:
@@ -260,7 +277,7 @@ def _mark_unverified(text: str, lead_keys: set[str], chinese: bool) -> str:
         return text
     if any(marker in text.casefold() for marker in _UNVERIFIED_MARKERS):
         return text
-    marker = "（未经核实）" if chinese else " (unverified)"
+    marker = "（待核实）" if chinese else " (unverified)"
     first = min(text.index(f"[{key}]") for key in lead_keys if f"[{key}]" in text)
     return text[:first].rstrip() + marker + " " + text[first:]
 
@@ -352,12 +369,13 @@ def _normalize_narrative(
     covered_cells = {key for section in sections for paragraph in section["paragraphs"] for key in paragraph["cell_keys"]}
     omitted = [cell for cell in cells if cell["cell_key"] not in covered_cells]
     if omitted:
-        sections.append({"heading": "补充核验结果" if chinese else "Additional verified findings", "paragraphs": [
-            {"text": _omitted_cell_text(cell, cells, chinese),
-             "cell_keys": [cell["cell_key"]], "evidence_keys": list(cell["evidence_keys"])} for cell in omitted]})
+        sections.append({"heading": "其他已核验要点" if chinese else "Additional verified findings", "paragraphs": [
+            dict(zip(("text", "evidence_keys"), _omitted_cell_text(cell, cells, chinese)),
+                 cell_keys=[cell["cell_key"]]) for cell in omitted]})
     if not summary_supported:
-        # 摘要有误时只替换摘要，已经逐句校验的正文继续保留。
-        summary = _verified_summary(sections, cells, chinese)
+        # 摘要有误时先只删掉通不过核对的句子；一句都不剩才取正文里第一句有据的结论，
+        # 那样摘要会与直接回答的第一句重复，读起来像复制。已经逐句校验的正文继续保留。
+        summary = _supported_summary(summary, cells) or _verified_summary(sections, cells, chinese)
     comparison_table = _normalize_comparison_table(
         payload.get("comparison_table"), cells_by_key, trusted_context
     )
@@ -384,7 +402,44 @@ def _normalize_narrative(
         "sections": sections,
         "comparison_table": comparison_table,
         "limitations": limitations,
+        "background_notes": _background_notes(payload.get("background_notes"), required_points or [], sections,
+                                              comparison_table),
     }
+
+
+_BACKGROUND_NOTE_CHARS = 300
+# 后端校验与前端样式按这两个标题识别通用知识补充一节，改动时要一起改
+BACKGROUND_HEADING_ZH = "## 补充说明（通用知识，未经本次检索核验）"
+BACKGROUND_HEADING_EN = "## Background notes (general knowledge, not verified by this research)"
+BACKGROUND_NOTE_ZH = "以下内容依据公开的通用技术知识补充，本次检索没有找到可以逐句核验的原文，仅供参考。"
+BACKGROUND_NOTE_EN = "These notes come from general technical knowledge; this research found no source text to verify them."
+
+
+def _background_notes(raw: object, required_points: list[str], sections: list[dict[str, object]],
+                      comparison_table: object) -> list[dict[str, str]]:
+    """通用知识补充：只收规划要点里原样存在的点，每点一条，不带证据引用，不超过 300 字。
+
+    离线对照（fix22 的 40 份报告，同一评分模型空缓存重评）里，两边都评分成功的 24 题加上这一节后
+    通过从 10 题到 14 题、要点覆盖多 4 个，事实与引用分持平；人工核对 131 条补写里有 4 到 5 条错误或过时，
+    集中在某个版本新增了哪些功能、论文年份这类细节，所以提示词禁止这类内容，报告里单独成节并注明未经核验。
+    """
+    if not isinstance(raw, list):
+        return []
+    body = " ".join(str(paragraph["text"]) for section in sections for paragraph in section["paragraphs"])
+    notes: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        point = str(item.get("point") or "").strip()
+        text = " ".join(str(item.get("text") or "").split())
+        if (point not in required_points or point in seen or not text or len(text) > _BACKGROUND_NOTE_CHARS
+                or _INLINE_CITATION.search(text) or "evidence:" in text or text in body
+                or (isinstance(comparison_table, dict) and text in json.dumps(comparison_table, ensure_ascii=False))):
+            continue
+        seen.add(point)
+        notes.append({"point": point, "text": text})
+    return notes
 
 
 def _verified_restatement(statement: str, paragraph: str, bound_cells: list[dict[str, object]],
@@ -427,18 +482,42 @@ def _with_cited_cells(cell_keys: list[str], cited: list[str], cells_by_key: dict
     return extended
 
 
-def _omitted_cell_text(cell: dict[str, object], cells: list[dict[str, object]], chinese: bool) -> str:
-    """正文没写到的已核验单元格补成一段：先用结论；结论里的数字在原文中写法不同、通不过逐句核对时改用原文，
-    补出的段落同样要能通过 Java 侧校验，否则整篇报告会被拒收。"""
+def _omitted_cell_text(cell: dict[str, object], cells: list[dict[str, object]], chinese: bool) -> tuple[str, list[str]]:
+    """正文没写到的已核验单元格补成一段，返回文字和这段引用的证据：先用结论；结论里的数字在原文中写法不同、
+    通不过逐句核对时改用原文，补出的段落同样要能通过 Java 侧校验，否则整篇报告会被拒收。
+
+    原文按网页排版常带换行和缩进，合成一行；段末只引用这句结论或原文自己的证据，不把整格的证据都堆在后面。
+    """
     prefix = f"{cell['entity_label']}：" if cell.get("entity_label") else ""
     suffix = ("（证据仍有分歧）" if chinese else " (evidence still disputed)") if cell["guarded"] else ""
-    text = prefix + str(cell["candidate_value"]) + suffix
-    keys = list(cell["evidence_keys"])
-    if _cited_text_supported(text, [cell], keys, cells):
-        return text
+    keys = [str(key) for key in cell["evidence_keys"]]  # type: ignore[union-attr]
     quotes = cell.get("evidence_quotes") or []
+    first_key = str(quotes[0]["evidence_key"]) if quotes else keys[0]
+    text = prefix + " ".join(str(cell["candidate_value"]).split()) + suffix
+    if _cited_text_supported(text, [cell], [first_key], cells):
+        return text, [first_key]
+    if _cited_text_supported(text, [cell], keys, cells):
+        return text, keys
     quote = re.sub(r"^\[[^\]]*\]\s*", "", str(quotes[0]["quote"])) if quotes else str(cell["candidate_value"])
-    return prefix + quote + suffix
+    return prefix + " ".join(quote.split()) + suffix, [first_key] if quotes else keys
+
+
+def _supported_summary(summary: str, cells: list[dict[str, object]]) -> str:
+    """模型摘要里能通过核对的句子按原顺序保留，引用合计不超过两个（与 Java 侧摘要校验一致）。"""
+    allowed = {key for cell in cells for key in cell["evidence_keys"]}  # type: ignore[union-attr]
+    kept: list[str] = []
+    refs: set[str] = set()
+    for statement in _STATEMENT.findall(summary):
+        statement = statement.strip()
+        own = set(_INLINE_CITATION.findall(statement))
+        if (not _INLINE_CITATION.sub("", statement).strip(" .。！？!?") or own - allowed or len(refs | own) > 2
+                or (_TYPED_TOKEN.search(_INLINE_CITATION.sub("", statement)) and not own)
+                or not _cited_text_supported(statement, cells, sorted(own), cells)):
+            continue
+        kept.append(statement)
+        refs |= own
+    text = "".join(kept).strip()
+    return text if refs else ""
 
 
 def _verified_summary(sections: list[dict[str, object]], cells: list[dict[str, object]], chinese: bool) -> str:
@@ -627,6 +706,13 @@ def _render_markdown(narrative: dict[str, object]) -> str:
                 citations = " ".join(f"[{key}]" for key in row["evidence_keys"])
                 cells[-1] = f"{cells[-1]} {citations}".strip()
             lines.append("| " + " | ".join(_escape_table_cell(item) for item in cells) + " |")
+        lines.append("")
+    notes = narrative.get("background_notes")
+    if isinstance(notes, list) and notes:
+        chinese = _writes_chinese(str(narrative["title"]))
+        lines.extend([BACKGROUND_HEADING_ZH if chinese else BACKGROUND_HEADING_EN, "",
+                      BACKGROUND_NOTE_ZH if chinese else BACKGROUND_NOTE_EN, ""])
+        lines.extend(f"- {note['text']}" for note in notes)
         lines.append("")
     limitations = narrative.get("limitations")
     if isinstance(limitations, list) and limitations:

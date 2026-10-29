@@ -156,10 +156,10 @@ class ResearchAgentHonestReportService {
                     .append(markdown(lead.value())).append(' ').append(citations).append('\n');
         }
         if (sourced.isEmpty() && related.isEmpty()) return listed;
-        report.append("## 未经核实的线索\n\n");
+        report.append("## 待核实的线索\n\n");
         if (!sourced.isEmpty()) {
-            report.append("以下内容找到了原文出处，但没有通过自动核验，例如只找到第三方资料，")
-                    .append("或结论中的数字、版本与引用片段对不上。仅供参考，请以引用的原文为准。\n\n")
+            report.append("以下内容有原文出处，但只找到第三方资料，或数字、版本与官方文档对不上，")
+                    .append("暂未核实。可作参考，请以引用的原文为准。\n\n")
                     .append(sourced).append('\n');
         }
         if (!related.isEmpty()) {
@@ -171,8 +171,8 @@ class ResearchAgentHonestReportService {
     }
 
     static String leadText(String level, String reasonCode) {
-        if (ResearchCellLevels.SOURCED.equals(level)) return "找到了有出处的线索但未通过核验，已在正文或未经核实的线索中注明";
-        if (ResearchCellLevels.RELATED.equals(level)) return "只找到相关材料，没有直接回答，已在正文或相关材料中列出";
+        if (ResearchCellLevels.SOURCED.equals(level)) return "只找到第三方资料或版本不一致的文档，正文中已标注待核实";
+        if (ResearchCellLevels.RELATED.equals(level)) return "只找到相关背景材料，没有直接回答这一项";
         return reasonText(reasonCode);
     }
 
