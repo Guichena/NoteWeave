@@ -34,7 +34,7 @@ def _display_units(text: str) -> int:
 def _title_font_size(title: str) -> int:
     units = _display_units(title)
     if units > 80:
-        raise ValueError("video deck title exceeds fixed template width")
+        return 18
     return 30 if units <= 45 else 24 if units <= 70 else 20
 
 
@@ -42,12 +42,12 @@ def _body_font_size(claims: list[str]) -> int:
     text = claims or [""]
     width_pt = TEXT_BOX[2] / 12700
     height_pt = TEXT_BOX[3] / 12700
-    for size in (18, 16, 14):
+    for size in (18, 16, 14, 12, 11, 10):
         lines = sum(max(1, math.ceil(_display_units(claim) * size * 0.6 / width_pt))
                     for claim in text) + 2 * (len(text) - 1)
         if lines * size * 1.35 <= height_pt:
             return size
-    raise ValueError("video deck claims exceed fixed template height")
+    return 10
 
 
 def _fit_image(width: int, height: int) -> tuple[int, int, int, int]:

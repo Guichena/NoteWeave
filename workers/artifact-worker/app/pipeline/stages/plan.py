@@ -3,10 +3,12 @@
 from app.pipeline.schemas import schema_errors
 from app.pipeline.stages import call_model
 
+MAX_ATTEMPTS = 2
 
-def plan(task, skill, options, evidence, client):
+
+def _schema(skill):
     text = {"type": "string", "minLength": 1}
-    schema = {"type": "object", "properties": {"title": text,
+    return {"type": "object", "properties": {"title": text,
         "units": {"type": "array", "minItems": 1, "maxItems": 80, "items": {"type": "object", "properties": {
             "id": text, "heading": text, "anchors": {"type": "array", "minItems": 1, "items": text},
             "frame_ids": {"type": "array", "maxItems": 8, "uniqueItems": True, "items": text}},
@@ -14,10 +16,10 @@ def plan(task, skill, options, evidence, client):
         "columns": {"type": "array", "minItems": 1, "maxItems": 30, "items": {"type": "object", "properties": {
             "id": text, "label": text}, "required": ["id", "label"], "additionalProperties": False}}},
         "required": ["title", "units"] + (["columns"] if skill.kind == "TABLE" else []), "additionalProperties": False}
-    value = call_model(client, skill, "plan", {"requirement": task.input_payload.user_requirement,
-                       "contract": skill.contract, "options": options, "evidence": evidence,
-                       "control_pack": task.control_pack.model_dump(mode="json")}, schema)
-    if schema_errors(value, schema):
+
+
+def _verify(value, skill, options, evidence):
+    if schema_errors(value, _schema(skill)):
         raise ValueError("产物骨架结构不合规")
     identifiers = {s["id"] for s in evidence["sentences"]}
     unit_ids = [u["id"] for u in value["units"]]
@@ -44,4 +46,25 @@ def plan(task, skill, options, evidence, client):
         columns = value["columns"]
         if not bounds["min"] <= len(columns) <= bounds["max"] or len({c["id"] for c in columns}) != len(columns):
             raise ValueError("数据表骨架列定义不符合契约")
-    return value
+
+
+def plan(task, skill, options, evidence, client):
+    schema = _schema(skill)
+    inputs = {"requirement": task.input_payload.user_requirement,
+              "contract": skill.contract, "options": options, "evidence": evidence,
+              "control_pack": task.control_pack.model_dump(mode="json")}
+    failure = ""
+    for _ in range(MAX_ATTEMPTS):
+        current = dict(inputs)
+        if failure:
+            current["repair_hint"] = (
+                f"上一版骨架未通过校验：{failure}。请重新输出完整 JSON 骨架，"
+                "并严格遵守契约里的数量、章节与关键帧要求。"
+            )
+        try:
+            value = call_model(client, skill, "plan", current, schema)
+            _verify(value, skill, options, evidence)
+            return value
+        except ValueError as exc:
+            failure = str(exc)
+    raise ValueError(failure)

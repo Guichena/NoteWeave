@@ -41,8 +41,8 @@ class ArtifactFrameworkCleanupMigrationTest {
         var database = database();
         String location = "filesystem:" + migrations.toAbsolutePath();
         Flyway.configure().dataSource(database).locations(location).load().migrate();
-        Files.copy(source.resolve("V200__remove_legacy_artifact_framework.sql"),
-                migrations.resolve("V200__remove_legacy_artifact_framework.sql"));
+        Files.copy(source.resolve("V220__remove_legacy_artifact_framework.sql"),
+                migrations.resolve("V220__remove_legacy_artifact_framework.sql"));
         assertThatThrownBy(() -> Flyway.configure().dataSource(database).locations(location).load().migrate())
                 .isInstanceOf(FlywayException.class).hasMessageContaining("200");
         assertThat(Flyway.configure().dataSource(database).locations(location).outOfOrder(true).load().migrate().migrationsExecuted)
