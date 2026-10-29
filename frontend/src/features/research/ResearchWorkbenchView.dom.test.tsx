@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ResearchWorkbenchView } from "./ResearchWorkbenchView";
 
 vi.mock("./ResearchComposer", () => ({
+  RESEARCH_EXAMPLES: [],
   ResearchComposer: ({ onStart }: { onStart: () => void }) => (
     <div>
       <p>研究输入</p>
@@ -14,10 +15,11 @@ vi.mock("./ResearchComposer", () => ({
 }));
 
 vi.mock("./ResearchRunView", () => ({
-  ResearchRunView: ({ run, onOpenAudit }: { run: { question: string }; onOpenAudit: () => void }) => (
-    <article>
+  ResearchRunView: ({ run, onOpenAudit, onBack }: { run: { question: string }; onOpenAudit: () => void; onBack: () => void }) => (
+    <article aria-label="完整报告页">
       <h2>{run.question}</h2>
       <button type="button" onClick={onOpenAudit}>审计详情</button>
+      <button type="button" onClick={onBack}>返回对话</button>
     </article>
   )
 }));
@@ -56,7 +58,9 @@ function renderView({
           researchRuns: run ? [runSummary] : [],
           currentResearchRunId: run?.research_run_id ?? "",
           openResearchRunHistoryItem,
-          startDeepResearch
+          startDeepResearch,
+          researchQuestion: "",
+          setResearchQuestion: vi.fn()
         },
         report: { currentResearchRun: run },
         statusPanel: { latestResearchTask: null },
@@ -91,6 +95,18 @@ describe("ResearchWorkbenchView", () => {
     fireEvent.click(screen.getByRole("button", { name: /Test research question/ }));
     expect(openResearchRunHistoryItem).toHaveBeenCalledWith(runSummary);
     expect(screen.getByRole("heading", { name: "Test research question" })).toBeTruthy();
+  });
+
+  it("研究默认以对话呈现，从报告消息进入完整报告页后可以返回对话", () => {
+    const markdown = ["# 报告", "", "结论 [evidence:e1]。", "", "## 直接回答", "", "细节 [evidence:e1]。"].join("\n");
+    renderView({ run: { ...currentResearchRun, final_report_markdown: markdown } as any });
+
+    expect(screen.getByRole("region", { name: "研究对话" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /查看完整报告/ }));
+    expect(screen.getByRole("article", { name: "完整报告页" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "返回对话" }));
+    expect(screen.getByRole("region", { name: "研究对话" })).toBeTruthy();
   });
 
   it("通过 portal 渲染审计详情，并支持点击背景或 Esc 关闭", async () => {

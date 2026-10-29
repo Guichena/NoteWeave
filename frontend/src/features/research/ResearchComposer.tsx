@@ -1,4 +1,4 @@
-import { ArrowUp, SlidersHorizontal } from "lucide-react";
+import { ArrowUp, BookOpen, Globe, Layers, SlidersHorizontal } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { ResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
 import { isResearchSourceReady } from "./launch";
@@ -9,9 +9,9 @@ type ResearchComposerProps = ResearchWorkbenchViewProps["sidebar"] & {
 };
 
 const MODES = [
-  { value: "WEB_ONLY", label: "仅网络", hint: "从网络检索并核验证据" },
-  { value: "WEB_PLUS_SEEDS", label: "网络 + 资料", hint: "网络检索，并结合所选资料" },
-  { value: "SOURCES_ONLY", label: "仅资料", hint: "只使用所选资料，不联网" }
+  { value: "WEB_ONLY", label: "仅网络", hint: "从网络检索并逐项核验证据", icon: Globe },
+  { value: "WEB_PLUS_SEEDS", label: "网络 + 资料", hint: "网络检索，并结合所选资料", icon: Layers },
+  { value: "SOURCES_ONLY", label: "仅资料", hint: "只使用所选资料，不联网", icon: BookOpen }
 ] as const;
 
 const DEPTHS = [
@@ -29,12 +29,13 @@ const TYPES = [
   { value: "CONCEPT_RESEARCH", label: "概念研究" }
 ];
 
-const EXAMPLES = [
+export const RESEARCH_EXAMPLES = [
   "中文资料问答场景下，Elasticsearch、Milvus 与 pgvector 该如何选型？",
   "长期记忆在 Agent 产品中如何避免污染后续事实？",
   "对比主流开源 RAG 框架的检索与评测能力"
 ];
 
+/** 研究输入框：与问答页的输入框同一套样式，固定在对话底部；资料模式、研究设置都收在工具栏里。 */
 export function ResearchComposer(props: ResearchComposerProps) {
   const {
     isBusy,
@@ -75,37 +76,63 @@ export function ResearchComposer(props: ResearchComposerProps) {
   }
 
   return (
-    <div className="research-composer">
-      <div className="research-composer-intro">
-        <h2>想研究什么问题？</h2>
-        <p>研究会拆成一张研究表，逐项检索和核验，每条结论都能追溯到证据。</p>
-      </div>
+    <div className="composer-dock research-composer-dock">
+      {usesSources ? (
+        readySources.length > 0 ? (
+          <div className="research-scope-picker" role="group" aria-label="研究资料范围">
+            {readySources.map((source) => {
+              const active = selectedResearchSourceIds.includes(source.source_id);
+              return (
+                <button
+                  key={source.source_id}
+                  type="button"
+                  aria-pressed={active}
+                  className={`research-scope-chip${active ? " is-active" : ""}`}
+                  onClick={() => toggleResearchScope(source.source_id)}
+                  disabled={isBusy}
+                  title={source.title}
+                >
+                  {source.title}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="research-composer-hint is-warning">工作台还没有解析完成的资料，可以改用「仅网络」模式。</p>
+        )
+      ) : null}
 
-      <div className="research-composer-box">
+      <div className={`composer-box${isBusy ? " is-busy" : ""}`}>
         <textarea
           id="research-question-input"
           aria-label="研究问题"
           value={researchQuestion}
           onChange={(event) => setResearchQuestion(event.target.value)}
           onKeyDown={handleKeyDown}
-          rows={3}
+          rows={1}
           placeholder="写清楚要研究的问题、对比对象或判断标准"
         />
-        <div className="research-composer-toolbar">
-          <div className="research-mode-switch" role="radiogroup" aria-label="资料获取模式">
-            {MODES.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                role="radio"
-                aria-checked={researchRetrievalMode === item.value}
-                className={`research-mode-option${researchRetrievalMode === item.value ? " is-active" : ""}`}
-                onClick={() => setResearchRetrievalMode(item.value)}
-                disabled={isBusy}
-              >
-                {item.label}
-              </button>
-            ))}
+        <div className="composer-toolbar">
+          <div className="answer-mode-switch" role="radiogroup" aria-label="资料获取模式">
+            {MODES.map((item) => {
+              const Icon = item.icon;
+              const selected = researchRetrievalMode === item.value;
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  title={item.hint}
+                  className={`answer-mode-segment${selected ? " is-active" : ""}`}
+                  onClick={() => setResearchRetrievalMode(item.value)}
+                  disabled={isBusy}
+                >
+                  <Icon size={14} aria-hidden="true" />
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
           <details className="research-composer-settings">
             <summary><SlidersHorizontal size={15} aria-hidden="true" />设置</summary>
@@ -145,54 +172,20 @@ export function ResearchComposer(props: ResearchComposerProps) {
           </details>
           <button
             type="button"
-            className="research-start-button"
+            className="composer-send-button"
             aria-label="启动 Deep Research"
             title="开始研究"
             onClick={onStart}
             disabled={!canStart}
           >
-            <ArrowUp size={18} aria-hidden="true" />
+            {isBusy ? <span className="composer-send-spinner" aria-hidden="true" /> : <ArrowUp size={18} aria-hidden="true" />}
           </button>
         </div>
       </div>
-
-      <p className="research-composer-hint">
-        {mode.hint}
-        {usesSources && readySources.length > 0 ? `，已选 ${readySelectedCount} 份资料` : ""}
+      <p className="composer-footnote">
+        深度研究：{mode.hint}
+        {usesSources && readySources.length > 0 ? `，已选 ${readySelectedCount} 份资料` : ""}，每条结论都能追溯到原文
       </p>
-
-      {usesSources ? (
-        readySources.length > 0 ? (
-          <div className="research-scope-picker" role="group" aria-label="研究资料范围">
-            {readySources.map((source) => {
-              const active = selectedResearchSourceIds.includes(source.source_id);
-              return (
-                <button
-                  key={source.source_id}
-                  type="button"
-                  aria-pressed={active}
-                  className={`research-scope-chip${active ? " is-active" : ""}`}
-                  onClick={() => toggleResearchScope(source.source_id)}
-                  disabled={isBusy}
-                  title={source.title}
-                >
-                  {source.title}
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="research-composer-hint is-warning">工作台还没有解析完成的资料，可以改用「仅网络」模式。</p>
-        )
-      ) : null}
-
-      {!researchQuestion.trim() ? (
-        <div className="research-examples" aria-label="示例问题">
-          {EXAMPLES.map((example) => (
-            <button key={example} type="button" className="research-example" onClick={() => setResearchQuestion(example)}>{example}</button>
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }

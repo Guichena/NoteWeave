@@ -1,7 +1,7 @@
 import { lazy, memo, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ResearchWorkbenchViewProps as BuiltResearchWorkbenchViewProps } from "./buildResearchWorkbenchProps";
-import { ResearchComposer } from "./ResearchComposer";
+import { ResearchChatView } from "./ResearchChatView";
 import { ResearchRunList } from "./ResearchRunList";
 import { ResearchRunView } from "./ResearchRunView";
 
@@ -22,6 +22,8 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   detail
 }: ResearchWorkbenchViewProps) {
   const [composing, setComposing] = useState(false);
+  // 研究默认以对话呈现；从报告消息点进完整报告页后，切换研究或新建研究时回到对话
+  const [reportOpen, setReportOpen] = useState(false);
   // 记录发起研究时所在的运行；出现新的运行 ID 说明启动成功，此时离开输入页。
   const launchedFromRef = useRef<string | null>(null);
   const run = report.currentResearchRun;
@@ -33,6 +35,10 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
     if (launchedFrom === null || !currentRunId || currentRunId === launchedFrom) return;
     launchedFromRef.current = null;
     setComposing(false);
+  }, [currentRunId]);
+
+  useEffect(() => {
+    setReportOpen(false);
   }, [currentRunId]);
 
   useEffect(() => {
@@ -57,6 +63,7 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         onNewResearch={() => {
           launchedFromRef.current = null;
           setComposing(true);
+          setReportOpen(false);
         }}
         onOpenRun={(summary) => {
           launchedFromRef.current = null;
@@ -65,26 +72,32 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
         }}
       />
 
-      <div className="research-main">
-        {showComposer || !run ? (
-          <ResearchComposer
-            {...sidebar}
-            isBusy={isBusy}
-            onStart={() => {
-              launchedFromRef.current = currentRunId || "";
-              void sidebar.startDeepResearch();
-            }}
-          />
-        ) : (
+      <div className={`research-main${reportOpen && run && !showComposer ? " is-report" : ""}`}>
+        {reportOpen && run && !showComposer ? (
           <ResearchRunView
             run={run}
             progressMessage={progressMessage}
             isBusy={isBusy}
+            onBack={() => setReportOpen(false)}
             onExport={() => void report.exportResearchReportMarkdown()}
             onSaveAsSource={() => void report.saveResearchReportAsSource()}
             onRefresh={() => void report.refreshCurrentResearchRun()}
             onOpenAudit={() => detail.setResearchDetailOpen(true)}
             onResume={(checkpointNo) => void detail.resumeResearchFromCheckpoint(checkpointNo)}
+          />
+        ) : (
+          <ResearchChatView
+            run={showComposer ? null : run}
+            progressMessage={progressMessage}
+            isBusy={isBusy}
+            composer={sidebar}
+            onStart={() => {
+              launchedFromRef.current = currentRunId || "";
+              void sidebar.startDeepResearch();
+            }}
+            onOpenReport={() => setReportOpen(true)}
+            onExport={() => void report.exportResearchReportMarkdown()}
+            onSaveAsSource={() => void report.saveResearchReportAsSource()}
           />
         )}
       </div>

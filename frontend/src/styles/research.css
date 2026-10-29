@@ -131,99 +131,259 @@
   background: var(--muted);
 }
 
-/* ---------- 新研究输入 ---------- */
+/* ---------- 研究对话：与问答页同一套对话与输入框样式 ---------- */
 
-.research-composer {
+.research-main:not(.is-report) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.research-chat {
+  flex: 1 1 auto;
+  height: 100%;
+}
+
+.research-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.research-chat-title .research-run-state {
+  flex: none;
+}
+
+.research-chat-answer {
   display: grid;
-  gap: 14px;
-  width: 100%;
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 12vh 24px 48px;
+  gap: 12px;
+  color: var(--ink);
+  font-size: var(--text-base);
+  line-height: 1.75;
 }
 
-.research-composer-intro {
+.research-chat-plan {
   display: grid;
-  gap: 8px;
-  margin-bottom: 10px;
-  text-align: center;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
 }
 
-.research-composer-intro h2 {
-  font-family: var(--font-display);
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-display);
-  letter-spacing: -0.02em;
-}
-
-.research-composer-intro p {
+.research-chat-plan > span:not(.research-chat-chips) {
   color: var(--muted);
-  font-size: var(--text-md);
-  text-wrap: balance;
+  font-size: var(--text-2xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
 }
 
-.research-composer-box {
+.research-chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.research-chat-chips span {
+  max-width: 100%;
+  padding: 1px 10px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  line-height: 1.8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-chat-activity > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  list-style: none;
+}
+
+.research-chat-activity > summary::-webkit-details-marker {
+  display: none;
+}
+
+.research-chat-activity > summary:hover {
+  background: var(--surface-3);
+}
+
+.research-chat-activity ol {
+  display: grid;
+  gap: 0;
+  margin: 10px 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.research-chat-activity li {
+  position: relative;
+  display: grid;
+  gap: 1px;
+  padding: 0 0 12px 20px;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.research-chat-activity li::before {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  content: "";
+}
+
+.research-chat-activity li:not(:last-child)::after {
+  position: absolute;
+  top: 16px;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.research-chat-activity strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.research-chat-activity span,
+.research-chat-activity small {
+  color: var(--muted);
+}
+
+.research-chat-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+/* 对话里的报告消息 */
+.research-report-message {
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: var(--surface);
-  box-shadow: var(--shadow-composer);
-  transition: border-color var(--duration) var(--ease);
+  box-shadow: var(--shadow-sm);
 }
 
-.research-composer-box:focus-within {
-  border-color: var(--border-strong);
+.research-report-message > header {
+  display: grid;
+  gap: 4px;
+  padding: 18px 22px 0;
 }
 
-.research-composer-box textarea {
-  display: block;
-  width: 100%;
-  min-height: 88px;
-  padding: 16px 18px 4px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font-size: var(--text-base);
-  line-height: 1.6;
-  resize: none;
-}
-
-.research-composer-box textarea:focus {
-  outline: none;
-  box-shadow: none;
-}
-
-.research-composer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px 10px 14px;
-}
-
-.research-mode-switch {
+.research-report-message-kicker {
   display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: var(--radius-pill);
+  align-items: center;
+  gap: 6px;
+  color: var(--accent-ink);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.05em;
+}
+
+.research-report-message h3 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.research-report-message-summary {
+  margin: 0 22px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--surface));
+  font-size: var(--text-base);
+  line-height: 1.8;
+}
+
+.research-report-message-section {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  max-height: 300px;
+  padding: 0 22px;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+
+.research-report-message-section h4 {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.research-report-message-body {
+  font-size: var(--text-base);
+  line-height: 1.85;
+}
+
+.research-report-message > footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 10px 22px;
+  border-top: 1px solid var(--border-soft);
   background: var(--surface-2);
 }
 
-.research-mode-switch button {
-  padding: 4px 12px;
-  border-radius: var(--radius-pill);
+.research-report-message-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.research-report-message-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.research-report-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.research-report-message-open {
+  min-height: 34px;
+  padding: 0 14px;
   font-size: var(--text-sm);
-  transition: background var(--duration) var(--ease), color var(--duration) var(--ease);
 }
 
-.research-mode-switch button:hover:not(:disabled) {
-  color: var(--ink);
+/* 研究输入框：沿用问答页的 composer-box，资料范围放在输入框上方 */
+.research-composer-dock .research-scope-picker {
+  margin-bottom: 8px;
 }
 
-.research-mode-switch button.is-active {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-xs);
-  font-weight: 550;
+.research-composer-dock .composer-toolbar {
+  flex-wrap: wrap;
 }
 
 .research-composer-settings {
@@ -234,10 +394,11 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  height: 30px;
+  padding: 0 10px;
   border-radius: var(--radius-pill);
   color: var(--muted);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
   cursor: pointer;
   list-style: none;
 }
@@ -252,9 +413,10 @@
   color: var(--ink);
 }
 
+/* 输入框贴着页面底部，设置面板向上展开 */
 .research-settings-panel {
   position: absolute;
-  top: calc(100% + 8px);
+  bottom: calc(100% + 10px);
   left: 0;
   z-index: 20;
   display: grid;
@@ -274,28 +436,8 @@
   gap: 10px;
 }
 
-.research-start-button {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  margin-left: auto;
-  border-radius: 50%;
-  background: var(--primary);
-  color: var(--on-primary);
-  transition: background var(--duration) var(--ease), opacity var(--duration) var(--ease);
-}
-
-.research-start-button:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
-
-.research-start-button:disabled {
-  opacity: 0.3;
-}
-
 .research-composer-hint {
+  margin-bottom: 8px;
   color: var(--muted);
   font-size: var(--text-xs);
   text-align: center;
@@ -330,25 +472,21 @@
   color: var(--accent-ink);
 }
 
-.research-examples {
-  display: grid;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-.research-examples button {
-  padding: 11px 14px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  color: var(--ink-2);
+/* 完整报告页的返回对话 */
+.research-run-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 4px -8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--muted);
   font-size: var(--text-sm);
-  text-align: left;
-  transition: background var(--duration) var(--ease), border-color var(--duration) var(--ease);
 }
 
-.research-examples button:hover {
-  border-color: var(--border);
+.research-run-back:hover {
   background: var(--hover);
+  color: var(--ink);
 }
 
 /* ---------- 运行页：标题与概况 ---------- */
@@ -1232,256 +1370,8 @@
 }
 
 /* ---------- 研究对话与报告文档 ----------
- * 参照 Gemini、ChatGPT 的 Deep Research：左侧是研究对话（问题、计划、每轮检索、报告卡片），
- * 右侧把报告排成一份文档（摘要、分节、对比表、待核实与通用知识补充、参考来源）。 */
-
-.research-run-split {
-  display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
-  align-items: start;
-  gap: 20px;
-}
-
-.research-run-split.is-focused {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-/* 研究对话 */
-
-.research-thread {
-  position: sticky;
-  top: 0;
-  display: grid;
-  align-content: start;
-  gap: 14px;
-  max-height: calc(100dvh - 140px);
-  padding: 4px 6px 16px 0;
-  overflow-y: auto;
-  font-size: var(--text-sm);
-  line-height: 1.65;
-}
-
-.research-thread-message {
-  display: flex;
-  gap: 10px;
-  min-width: 0;
-}
-
-.research-thread-message.is-user {
-  justify-content: flex-end;
-}
-
-.research-thread-message.is-user p {
-  max-width: 92%;
-  padding: 10px 14px;
-  border-radius: 18px 18px 6px 18px;
-  background: var(--surface-3);
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
-
-.research-thread-avatar {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent-soft), var(--tint-violet));
-  color: var(--accent-ink);
-}
-
-.research-thread-content {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-  padding-top: 2px;
-  color: var(--ink-2);
-}
-
-.research-thread-plan {
-  display: grid;
-  gap: 6px;
-  padding: 12px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-}
-
-.research-thread-plan > span {
-  color: var(--muted);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-.research-thread-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.research-thread-chips span {
-  max-width: 100%;
-  padding: 1px 9px;
-  overflow: hidden;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.research-thread-chips span.is-more {
-  background: transparent;
-  color: var(--muted);
-}
-
-.research-thread-steps {
-  display: grid;
-  gap: 0;
-  margin: 0 0 0 36px;
-  padding: 0;
-  list-style: none;
-}
-
-.research-thread-steps li {
-  position: relative;
-  display: flex;
-  gap: 10px;
-  padding: 0 0 12px;
-}
-
-.research-thread-steps li:not(:last-child)::before {
-  position: absolute;
-  top: 22px;
-  bottom: 0;
-  left: 10px;
-  width: 1px;
-  background: var(--border);
-  content: "";
-}
-
-.research-thread-step-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 21px;
-  height: 21px;
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--muted);
-}
-
-.research-thread-steps li > div {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.research-thread-steps strong {
-  color: var(--ink);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
-.research-thread-steps span,
-.research-thread-steps small {
-  color: var(--muted);
-  font-size: var(--text-xs);
-}
-
-.research-thread .research-run-banner {
-  margin-left: 36px;
-}
-
-.research-thread-done {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--ink);
-}
-
-.research-thread-done svg {
-  color: var(--success);
-}
-
-.research-thread-doc {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  width: 100%;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-xs);
-  color: var(--ink);
-  text-align: left;
-  transition: border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
-}
-
-.research-thread-doc:hover,
-.research-thread-doc.is-open {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-  box-shadow: var(--shadow-sm);
-}
-
-.research-thread-doc > svg {
-  flex: none;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-.research-thread-doc-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 38px;
-  height: 46px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent-ink);
-}
-
-.research-thread-doc-main {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.research-thread-doc-main strong {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  line-height: 1.45;
-}
-
-.research-thread-doc-main small {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--text-xs);
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.research-thread-doc-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
-}
-
-.research-thread-doc-meta span {
-  padding: 0 7px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  font-size: var(--text-2xs);
-}
+ * 完整报告页：报告排成一份文档（摘要、分节、对比表、待核实与通用知识补充、参考来源），
+ * 研究对话见上方的研究对话一节。 */
 
 /* 文档面板 */
 
@@ -1514,10 +1404,6 @@
 
 .research-doc-toolbar .research-run-tabs {
   border-bottom: 0;
-}
-
-.research-doc-focus {
-  margin-bottom: 4px;
 }
 
 .research-table-tab {
@@ -1981,16 +1867,6 @@ a.research-source-title:hover {
   cursor: help;
 }
 
-@media (max-width: 1080px) {
-  .research-run-split {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .research-thread {
-    position: static;
-    max-height: none;
-  }
-}
 
 /* ---------- Detail modal ---------- */
 
@@ -2415,10 +2291,6 @@ a.research-source-title:hover {
   .research-workbench {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .research-composer {
-    padding-top: 6vh;
   }
 
   .research-run-header {

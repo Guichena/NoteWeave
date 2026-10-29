@@ -76,10 +76,4 @@ describe("ResearchComposer", () => {
     expect(startButton().disabled).toBe(false);
   });
 
-  it("问题为空时提供示例问题", () => {
-    const { props } = renderComposer({ researchQuestion: "" });
-
-    fireEvent.click(screen.getByRole("button", { name: /Elasticsearch、Milvus 与 pgvector/ }));
-    expect(props.setResearchQuestion).toHaveBeenCalledWith(expect.stringContaining("pgvector"));
-  });
 });
