@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { WorkbenchShell } from "./features/shell/WorkbenchShell";
 import { useShellBusy } from "./features/shell/useShellBusy";
 import { useWorkbenchNavigation } from "./features/shell/useWorkbenchNavigation";
-import { type AppView, parseAppLocation } from "./features/shell/viewRoute";
+import { type AppView, navigateAppView, parseAppLocation } from "./features/shell/viewRoute";
 import { useWorkspaceSession } from "./features/workspace/useWorkspaceSession";
 import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPanel";
 import { isSourceReady, type SourceAsset } from "./features/sources/model";
@@ -90,6 +90,10 @@ export function App() {
     clearResearchScope: () => undefined as void
   });
   const researchHydratedRef = useRef(false);
+  // 从对话里的研究消息跳到研究页时要打开的研究，研究页据此直接显示这次研究的完整报告
+  const [researchReportRunId, setResearchReportRunId] = useState<string | null>(null);
+  const researchReportRunIdRef = useRef<string | null>(null);
+  researchReportRunIdRef.current = researchReportRunId;
   const sourceParseSyncKeysRef = useRef(new Set<string>());
 
   const appendSystemMessage = useCallback((content: string) => {
@@ -276,7 +280,7 @@ export function App() {
       return;
     }
     researchHydratedRef.current = true;
-    void loadResearchHistory().catch((error) => {
+    void loadResearchHistory(researchReportRunIdRef.current ?? undefined).catch((error) => {
       if (!isAbortError(error)) {
         setStatus(error instanceof Error ? error.message : "Research 工作台加载失败");
       }
@@ -341,7 +345,11 @@ export function App() {
     ? buildWikiWorkbenchProps(wiki, workspace, wikiBusy || isBusy)
     : null;
   const researchProps = view === "research"
-    ? buildResearchWorkbenchProps(research, workspace, sources, researchBusy || isBusy, () => navigateWorkbenchView("library"))
+    ? {
+      ...buildResearchWorkbenchProps(research, workspace, sources, researchBusy || isBusy, () => navigateWorkbenchView("library")),
+      reportRunId: researchReportRunId,
+      onReportRunOpened: () => setResearchReportRunId(null)
+    }
     : null;
   const artifactRailProps = view === "chat"
     ? buildArtifactRailProps({
@@ -376,6 +384,13 @@ export function App() {
       artifactRailProps,
       onOpenSourceLibrary: () => navigateWorkbenchView("library"),
       onOpenWikiPage: (title) => void wiki.openWikiPageByTitle(title),
+      onOpenResearchRun: (researchRunId) => {
+        // 不走 openResearchWorkbench：它会不带编号再加载一次研究列表，和下面按编号的加载互相覆盖
+        researchReportRunIdRef.current = researchRunId;
+        setResearchReportRunId(researchRunId);
+        setView("research");
+        navigateAppView("research");
+      },
       uploadBusy
     })
     : null;

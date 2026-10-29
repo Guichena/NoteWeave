@@ -133,6 +133,54 @@ describe("ChatWorkbench notebook surface", () => {
   });
 });
 
+describe("ChatWorkbench deep research", () => {
+  it("深度研究开关打开后这一轮发起研究，不需要已建索引的资料", () => {
+    const setDeepResearch = vi.fn();
+    const { rerender } = render(<ChatWorkbench {...buildProps({ sources: [], question: "对比 Kafka 与 Pulsar", setDeepResearch })} />);
+
+    const toggle = screen.getByRole("button", { name: "深度研究" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(toggle);
+    expect(setDeepResearch).toHaveBeenCalledWith(true);
+
+    rerender(<ChatWorkbench {...buildProps({ sources: [], question: "对比 Kafka 与 Pulsar", setDeepResearch, deepResearch: true })} />);
+    const send = screen.getByRole("button", { name: "开始深度研究" }) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    expect(screen.getByText(/会带上这段对话的上文/)).toBeTruthy();
+  });
+
+  it("研究轮次在对话里显示研究进度与报告，查看完整报告跳到研究页", async () => {
+    const onOpenResearchRun = vi.fn();
+    const loadResearchRun = vi.fn(async () => ({
+      research_run_id: "run-9",
+      question: "对比 Kafka 与 Pulsar",
+      status: "COMPLETED",
+      completion_terminal_state: "COMPLETED",
+      final_report_title: "Kafka 与 Pulsar 的顺序保证",
+      final_report_markdown: ["# 报告", "", "Kafka 只在分区内有序 [evidence:e1]。", "", "## 直接回答", "", "细节 [evidence:e1]。"].join("\n"),
+      saved_report_source: null,
+      closed_loop_state: { rows: [], cells: [], source_evidence: [], loop_rounds: [] },
+      research_process_summary: { search_read_timeline: { rounds: [] } }
+    }));
+    render(<ChatWorkbench {...buildProps({
+      messages: [
+        { role: "user", content: "对比 Kafka 与 Pulsar" },
+        { role: "assistant", content: "", researchRunId: "run-9", answerStatus: "GENERATING" }
+      ],
+      loadResearchRun,
+      onOpenResearchRun
+    })} />);
+
+    const report = await screen.findByRole("article", { name: "研究报告：Kafka 与 Pulsar 的顺序保证" });
+    expect(loadResearchRun).toHaveBeenCalledWith("run-9");
+    // 问答页的研究消息只保留跳到完整报告的入口
+    expect(screen.queryByRole("button", { name: "导出报告" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /查看完整报告/ }));
+    expect(onOpenResearchRun).toHaveBeenCalledWith("run-9");
+    expect(report).toBeTruthy();
+  });
+});
+
 function buildProps(overrides: Record<string, unknown> = {}) {
   return {
     mode: "qa",

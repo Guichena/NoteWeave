@@ -1037,6 +1037,39 @@ details[open] > summary .message-sources-peek {
   opacity: 0.5;
 }
 
+/* 深度研究开关：打开后这一轮发起深度研究，研究进度与报告作为一条消息出现在对话里 */
+.composer-research-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  transition: background var(--duration) var(--ease), color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+.composer-research-toggle:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.composer-research-toggle.is-active {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 550;
+}
+
+.composer-research-toggle:disabled {
+  opacity: 0.5;
+}
+
 /* ============================================================
  * Responsive
  * ============================================================ */

@@ -5,7 +5,11 @@ import { ResearchChatView } from "./ResearchChatView";
 import { ResearchRunList } from "./ResearchRunList";
 import { ResearchRunView } from "./ResearchRunView";
 
-export type ResearchWorkbenchViewProps = BuiltResearchWorkbenchViewProps;
+export type ResearchWorkbenchViewProps = BuiltResearchWorkbenchViewProps & {
+  /** 从问答页的研究消息跳过来时要直接打开完整报告的研究 */
+  reportRunId?: string | null;
+  onReportRunOpened?: () => void;
+};
 
 // 审计详情面向排查问题的场景，按需加载。
 const LazyResearchDetailWorkbench = lazy(() => import("./ResearchDetailWorkbench").then((module) => ({
@@ -19,7 +23,9 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   sidebar,
   report,
   statusPanel,
-  detail
+  detail,
+  reportRunId = null,
+  onReportRunOpened
 }: ResearchWorkbenchViewProps) {
   const [composing, setComposing] = useState(false);
   // 研究默认以对话呈现；从报告消息点进完整报告页后，切换研究或新建研究时回到对话
@@ -40,6 +46,14 @@ export const ResearchWorkbenchView = memo(function ResearchWorkbenchView({
   useEffect(() => {
     setReportOpen(false);
   }, [currentRunId]);
+
+  // 问答页的研究消息点了查看完整报告：等这次研究加载出来后直接打开完整报告页
+  useEffect(() => {
+    if (!reportRunId || run?.research_run_id !== reportRunId) return;
+    setComposing(false);
+    setReportOpen(true);
+    onReportRunOpened?.();
+  }, [reportRunId, run?.research_run_id, onReportRunOpened]);
 
   useEffect(() => {
     if (!detail.researchDetailOpen) return;

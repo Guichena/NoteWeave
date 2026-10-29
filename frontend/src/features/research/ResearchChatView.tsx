@@ -77,8 +77,7 @@ export function ResearchChatView({
 }: ResearchChatViewProps) {
   const conversationRef = useRef<HTMLDivElement>(null);
   const state = run ? resolveRunState(run) : null;
-  const table = useMemo(() => buildResearchTable(run?.closed_loop_state), [run?.closed_loop_state]);
-  const rounds = useMemo(() => (run ? buildRounds(run) : []), [run]);
+  const roundCount = run?.research_process_summary?.search_read_timeline?.rounds?.length ?? 0;
   const hasReport = Boolean(run?.final_report_markdown?.trim());
   const title = run ? run.final_report_title || run.question : "深度研究";
 
@@ -86,7 +85,7 @@ export function ResearchChatView({
   useEffect(() => {
     const element = conversationRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [run?.research_run_id, rounds.length, hasReport, progressMessage]);
+  }, [run?.research_run_id, roundCount, hasReport, progressMessage]);
 
   return (
     <section className="chat-panel research-chat" aria-label="研究对话">
@@ -128,72 +127,15 @@ export function ResearchChatView({
 
             <div className="bubble message-row assistant">
               <BrandMark className={`message-avatar${state === "running" ? " is-thinking" : ""}`} size={26} />
-              <div className="message-content research-chat-answer">
-                <p>
-                  {table.rows.length
-                    ? `我会围绕 ${table.rows.length} 个研究对象、${table.columns.length} 个方面检索资料，逐项核对原文后再写成报告。`
-                    : "正在拆解问题，制定研究计划。"}
-                </p>
-                {table.rows.length ? (
-                  <div className="research-chat-plan">
-                    <span>研究对象</span>
-                    <span className="research-chat-chips">{table.rows.map((row) => <span key={row.id}>{row.title}</span>)}</span>
-                    {table.columns.length ? <span>研究方面</span> : null}
-                    {table.columns.length ? (
-                      <span className="research-chat-chips">{table.columns.map((column) => <span key={column.key}>{column.label}</span>)}</span>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {rounds.length ? (
-                  <details className="research-chat-activity" open={state === "running"}>
-                    <summary>
-                      <Search size={14} aria-hidden="true" />
-                      研究过程 · {rounds.length} 轮检索 · 阅读 {rounds.reduce((total, round) => total + round.read_window_count, 0)} 个网页
-                    </summary>
-                    <ol aria-label="研究过程">
-                      {rounds.map((round) => (
-                        <li key={round.round_no}>
-                          <strong>第 {round.round_no} 轮</strong>
-                          <span>
-                            检索 {round.search_queries.length || round.search_hit_count} 次 · 阅读 {round.read_window_count} 个网页 · 摘录 {round.evidence_card_count} 条证据
-                          </span>
-                          {round.note ? <small>{round.note}</small> : null}
-                        </li>
-                      ))}
-                    </ol>
-                  </details>
-                ) : null}
-
-                {state === "running" ? (
-                  <p className="research-chat-progress">
-                    <span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>
-                    {progressMessage || "正在检索和核验证据"}
-                  </p>
-                ) : state === "insufficient" ? (
-                  <p className="research-run-banner is-warning">
-                    <TriangleAlert size={15} aria-hidden="true" />
-                    现有证据不足以形成可靠结论，下面只整理了找到的部分。
-                  </p>
-                ) : state === "failed" ? (
-                  <p className="research-run-banner is-danger">
-                    <TriangleAlert size={15} aria-hidden="true" />
-                    研究运行失败，可以在完整报告页的过程中从最近的检查点恢复。
-                  </p>
-                ) : null}
-
-                {hasReport && run ? (
-                  <ResearchReportMessage
-                    run={run}
-                    verified={table.counts.verified}
-                    total={table.counts.total}
-                    canSave={!isBusy && !run.saved_report_source && state !== "insufficient"}
-                    saved={Boolean(run.saved_report_source)}
-                    onOpenReport={onOpenReport}
-                    onExport={onExport}
-                    onSaveAsSource={onSaveAsSource}
-                  />
-                ) : null}
+              <div className="message-content">
+                <ResearchRunTurn
+                  run={run}
+                  progressMessage={progressMessage}
+                  canSave={!isBusy && !run.saved_report_source && state !== "insufficient"}
+                  onOpenReport={onOpenReport}
+                  onExport={onExport}
+                  onSaveAsSource={onSaveAsSource}
+                />
               </div>
             </div>
           </div>
@@ -205,6 +147,96 @@ export function ResearchChatView({
   );
 }
 
+type ResearchRunTurnProps = {
+  run: ResearchRunDetail;
+  progressMessage?: string;
+  canSave?: boolean;
+  onOpenReport: () => void;
+  onExport?: () => void;
+  onSaveAsSource?: () => void;
+};
+
+/**
+ * 一次深度研究在对话里的助手消息：研究计划、可展开的研究过程、进行中的进度，完成后是报告消息。
+ * 研究页的对话和问答页里用深度研究发起的轮次都用它渲染。
+ */
+export function ResearchRunTurn({ run, progressMessage = "", canSave = false, onOpenReport, onExport, onSaveAsSource }: ResearchRunTurnProps) {
+  const state = resolveRunState(run);
+  const table = useMemo(() => buildResearchTable(run.closed_loop_state), [run.closed_loop_state]);
+  const rounds = useMemo(() => buildRounds(run), [run]);
+  const hasReport = Boolean(run.final_report_markdown?.trim());
+
+  return (
+    <div className="research-chat-answer">
+      <p>
+        {table.rows.length
+          ? `我会围绕 ${table.rows.length} 个研究对象、${table.columns.length} 个方面检索资料，逐项核对原文后再写成报告。`
+          : "正在拆解问题，制定研究计划。"}
+      </p>
+      {table.rows.length ? (
+        <div className="research-chat-plan">
+          <span>研究对象</span>
+          <span className="research-chat-chips">{table.rows.map((row) => <span key={row.id}>{row.title}</span>)}</span>
+          {table.columns.length ? <span>研究方面</span> : null}
+          {table.columns.length ? (
+            <span className="research-chat-chips">{table.columns.map((column) => <span key={column.key}>{column.label}</span>)}</span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {rounds.length ? (
+        <details className="research-chat-activity" open={state === "running"}>
+          <summary>
+            <Search size={14} aria-hidden="true" />
+            研究过程 · {rounds.length} 轮检索 · 阅读 {rounds.reduce((total, round) => total + round.read_window_count, 0)} 个网页
+          </summary>
+          <ol aria-label="研究过程">
+            {rounds.map((round) => (
+              <li key={round.round_no}>
+                <strong>第 {round.round_no} 轮</strong>
+                <span>
+                  检索 {round.search_queries.length || round.search_hit_count} 次 · 阅读 {round.read_window_count} 个网页 · 摘录 {round.evidence_card_count} 条证据
+                </span>
+                {round.note ? <small>{round.note}</small> : null}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+
+      {state === "running" ? (
+        <p className="research-chat-progress">
+          <span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>
+          {progressMessage || "正在检索和核验证据"}
+        </p>
+      ) : state === "insufficient" ? (
+        <p className="research-run-banner is-warning">
+          <TriangleAlert size={15} aria-hidden="true" />
+          现有证据不足以形成可靠结论，下面只整理了找到的部分。
+        </p>
+      ) : state === "failed" ? (
+        <p className="research-run-banner is-danger">
+          <TriangleAlert size={15} aria-hidden="true" />
+          研究运行失败，可以在完整报告页的过程中从最近的检查点恢复。
+        </p>
+      ) : null}
+
+      {hasReport && run ? (
+        <ResearchReportMessage
+          run={run}
+          verified={table.counts.verified}
+          total={table.counts.total}
+          canSave={canSave}
+          saved={Boolean(run.saved_report_source)}
+          onOpenReport={onOpenReport}
+          onExport={onExport}
+          onSaveAsSource={onSaveAsSource}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 type ResearchReportMessageProps = {
   run: ResearchRunDetail;
   verified: number;
@@ -212,8 +244,9 @@ type ResearchReportMessageProps = {
   canSave: boolean;
   saved: boolean;
   onOpenReport: () => void;
-  onExport: () => void;
-  onSaveAsSource: () => void;
+  /** 问答页里的研究消息不传，只保留跳到完整报告的入口 */
+  onExport?: () => void;
+  onSaveAsSource?: () => void;
 };
 
 /** 对话里的报告消息：摘要与第一节（直接回答），底部是核验情况和跳到完整报告的入口；点引用角标也打开完整报告。 */
@@ -250,19 +283,23 @@ function ResearchReportMessage({ run, verified, total, canSave, saved, onOpenRep
           {sections.length > 1 ? <span>共 {sections.length} 节</span> : null}
         </span>
         <span className="research-report-message-actions">
-          <button type="button" className="icon-button" aria-label="导出报告" title="导出报告" onClick={onExport}>
-            <Download size={15} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={saved ? "已存入资料库" : "存入资料库"}
-            title={saved ? "已存入资料库" : "存入资料库"}
-            onClick={onSaveAsSource}
-            disabled={!canSave}
-          >
-            <FilePlus2 size={15} aria-hidden="true" />
-          </button>
+          {onExport ? (
+            <button type="button" className="icon-button" aria-label="导出报告" title="导出报告" onClick={onExport}>
+              <Download size={15} aria-hidden="true" />
+            </button>
+          ) : null}
+          {onSaveAsSource ? (
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={saved ? "已存入资料库" : "存入资料库"}
+              title={saved ? "已存入资料库" : "存入资料库"}
+              onClick={onSaveAsSource}
+              disabled={!canSave}
+            >
+              <FilePlus2 size={15} aria-hidden="true" />
+            </button>
+          ) : null}
           <button type="button" className="primary-action research-report-message-open" onClick={onOpenReport}>
             查看完整报告<ArrowRight size={15} aria-hidden="true" />
           </button>

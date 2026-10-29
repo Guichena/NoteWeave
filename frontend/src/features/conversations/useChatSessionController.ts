@@ -75,6 +75,8 @@ export function useChatSessionController({
   const [sourceDraftContent, setSourceDraftContent] = useState("");
   const [sourceDraftRewriteMode, setSourceDraftRewriteMode] = useState("");
   const [selectedQaSourceIds, setSelectedQaSourceIds] = useState<string[]>([]);
+  // 输入框上的深度研究开关：打开时这一轮发起深度研究，发送后自动关闭，之后的追问照常问答
+  const [deepResearch, setDeepResearch] = useState(false);
   const [conversationStreamConnected, setConversationStreamConnected] = useState(false);
 
   // NR12：草稿绑定作用域——工作台/会话切换后旧草稿不得在新作用域提交。
@@ -363,7 +365,55 @@ export function useChatSessionController({
   }
 
   async function sendMessage() {
+    if (deepResearch) {
+      await sendDeepResearchPrompt(question);
+      return;
+    }
     await sendConversationPrompt(question);
+  }
+
+  /**
+   * 在当前对话里发起深度研究：后端把这一轮的问答记作研究轮次并启动研究，研究会带上这段对话的上文；
+   * 助手消息按研究编号展示进度与报告，研究完成后报告正文写回这条消息，之后的普通追问能看到它。
+   */
+  async function sendDeepResearchPrompt(content: string) {
+    if (!conversation) {
+      setStatus("请先创建工作台和会话");
+      return;
+    }
+    const trimmed = content.trim();
+    if (!trimmed) {
+      return;
+    }
+    await run("深度研究", async () => {
+      setMessages((current) => [...current, { role: "user", content: trimmed }]);
+      let sent;
+      try {
+        sent = await answersApi.send(conversation.conversation_id, {
+          content: trimmed,
+          answer_mode: "DEEP_RESEARCH",
+          client_request_id: `research-${Date.now()}`,
+          source_scope_source_ids: selectedQaSourceIds
+        });
+      } catch (error) {
+        setMessages((current) => {
+          const rollbackIndex = current.map((message) => message.role === "user" && message.content === trimmed)
+            .lastIndexOf(true);
+          return rollbackIndex < 0 ? current : current.filter((_, index) => index !== rollbackIndex);
+        });
+        throw error;
+      }
+      setQuestion((current) => (current.trim() === trimmed ? "" : current));
+      setDeepResearch(false);
+      if (sent.research_run_id) {
+        setMessages((current) => [...current, {
+          role: "assistant",
+          content: "",
+          researchRunId: sent.research_run_id ?? undefined,
+          answerStatus: "GENERATING"
+        }]);
+      }
+    }, "chat");
   }
 
   /** 用触发这条回答的用户问题重新提问，并告诉后端这是对原回答的重新生成。 */
@@ -438,6 +488,8 @@ export function useChatSessionController({
     saveNoteAnswerAsSource,
     sendMessage,
     sendConversationPrompt,
+    deepResearch,
+    setDeepResearch,
     regenerateAnswer,
     cancelAnswer,
     sendAnswerFeedback

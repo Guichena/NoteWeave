@@ -31,6 +31,8 @@ export type ConversationMessage = {
   answer_run_id?: string | null;
   /** 引用文本，格式为 `标题 | 摘录`。 */
   citations?: string[];
+  /** 深度研究轮次的助手消息对应的研究运行，对话里据此展示研究进度与报告。 */
+  research_run_id?: string | null;
 };
 
 export type CreateConversationInput = {

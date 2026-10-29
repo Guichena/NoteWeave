@@ -74,6 +74,22 @@ describe("WorkspaceSessionLoader", () => {
     });
   });
 
+  it("恢复深度研究轮次的研究编号，刷新后对话里仍显示研究进度与报告", async () => {
+    const port = createPort({
+      conversations: [conversation("research")],
+      messages: [{
+        ...message(1, "ASSISTANT", "研究报告已完成：Kafka 与 Pulsar"),
+        requested_turn_mode: "DEEP_RESEARCH",
+        research_run_id: "research-1"
+      }]
+    });
+    const loader = new WorkspaceSessionLoader(port as never);
+
+    await expect(loader.restoreWorkspace(workspace("workspace"))).resolves.toMatchObject({
+      messages: [{ role: "assistant", researchRunId: "research-1" }]
+    });
+  });
+
   it("paginates complete message history", async () => {
     const firstPage = Array.from({ length: 200 }, (_, index) => message(index + 1));
     const listMessages = vi.fn()

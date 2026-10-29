@@ -109,6 +109,33 @@ describe("ResearchWorkbenchView", () => {
     expect(screen.getByRole("region", { name: "研究对话" })).toBeTruthy();
   });
 
+  it("从问答页的研究消息跳过来时直接打开这次研究的完整报告", () => {
+    const onReportRunOpened = vi.fn();
+    render(
+      <ResearchWorkbenchView
+        {...({
+          isBusy: false,
+          sidebar: {
+            researchRuns: [runSummary],
+            currentResearchRunId: "run-1",
+            openResearchRunHistoryItem: vi.fn(),
+            startDeepResearch: vi.fn(),
+            researchQuestion: "",
+            setResearchQuestion: vi.fn()
+          },
+          report: { currentResearchRun: currentResearchRun },
+          statusPanel: { latestResearchTask: null },
+          detail: { researchDetailOpen: false, currentResearchRun, setResearchDetailOpen: vi.fn() },
+          reportRunId: "run-1",
+          onReportRunOpened
+        } as any)}
+      />
+    );
+
+    expect(screen.getByRole("article", { name: "完整报告页" })).toBeTruthy();
+    expect(onReportRunOpened).toHaveBeenCalled();
+  });
+
   it("通过 portal 渲染审计详情，并支持点击背景或 Esc 关闭", async () => {
     const setResearchDetailOpen = vi.fn();
     const { container } = renderView({ detailOpen: true, setResearchDetailOpen });

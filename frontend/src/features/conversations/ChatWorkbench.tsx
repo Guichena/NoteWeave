@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, Files, Layers3, LibraryBig, Square } from "lucide-react";
+import { ArrowUp, Files, FlaskConical, Layers3, LibraryBig, Square } from "lucide-react";
 import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
@@ -7,6 +7,7 @@ import { BrandMark } from "../shell/BrandMark";
 import { MessageBubble, type AnswerFeedbackSender, type EvidenceLoader } from "../answers/MessageBubble";
 import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
+import type { ResearchRunDetail } from "../research/model";
 import { type SourceAsset } from "../sources/model";
 import { type Workspace } from "../workspace/model";
 import { AnswerModeSelector } from "./AnswerModeSelector";
@@ -14,6 +15,11 @@ import { ChatSourcesPane } from "./ChatSourcesPane";
 
 const LazyArtifactRail = lazy(() => import("../artifacts/ArtifactRail").then((module) => ({
   default: module.ArtifactRail
+})));
+
+// 对话里的深度研究轮次按需加载研究组件，普通问答不增加首屏体积
+const LazyResearchTurnMessage = lazy(() => import("../research/ResearchTurnMessage").then((module) => ({
+  default: module.ResearchTurnMessage
 })));
 
 type PanelTab = "sources" | "studio";
@@ -53,6 +59,11 @@ export type ChatWorkbenchProps = {
   onRegenerateAnswer?: (answerRunId: string) => void;
   /** 停止正在生成的回答；后端取消接口已有，界面此前没有入口。 */
   onCancelAnswer?: (answerRunId: string) => void;
+  /** 输入框上的深度研究开关，打开时这一轮发起深度研究 */
+  deepResearch?: boolean;
+  setDeepResearch?: (value: boolean) => void;
+  loadResearchRun?: (researchRunId: string) => Promise<ResearchRunDetail>;
+  onOpenResearchRun?: (researchRunId: string) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
@@ -80,7 +91,11 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     onOpenWikiPage,
     onAnswerFeedback,
     onRegenerateAnswer,
-    onCancelAnswer
+    onCancelAnswer,
+    deepResearch = false,
+    setDeepResearch,
+    loadResearchRun,
+    onOpenResearchRun
   } = props;
   const composerBusy = chatBusy;
   // 当前正在生成的回答：用于在发送按钮旁提供停止入口
@@ -106,12 +121,13 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
   const searchableSources = sources.filter(isSourceSearchable);
   const readableOnlySourceCount = sources.filter(isSourceReadableOnly).length;
   const scopeCount = selectedQaSourceIds.length > 0 ? selectedQaSourceIds.length : searchableSources.length;
-  const qaUnavailable = mode === "qa" && searchableSources.length === 0;
+  // 深度研究默认联网检索，不依赖工作台里已建索引的资料
+  const qaUnavailable = !deepResearch && mode === "qa" && searchableSources.length === 0;
   const composerActionLabel = qaUnavailable
     ? "等待可检索资料"
     : composerBusy
       ? "回答中…"
-      : `发送到 ${currentRouteLabel}`;
+      : deepResearch ? "开始深度研究" : `发送到 ${currentRouteLabel}`;
   const scopeSummary = mode !== "qa"
     ? `${sources.length} 个来源`
     : searchableSources.length > 0
@@ -262,13 +278,23 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                 <div key={`${message.role}-${index}`} className={`bubble message-row ${message.role}`}>
                   {message.role === "assistant" ? <BrandMark className="message-avatar" size={26} /> : null}
                   <div className="message-content">
-                    <MessageBubble
-                      message={message}
-                      loadEvidence={loadAnswerEvidence}
-                      onOpenWikiPage={onOpenWikiPage}
-                      onFeedback={onAnswerFeedback}
-                      onRegenerate={onRegenerateAnswer}
-                    />
+                    {message.researchRunId && loadResearchRun ? (
+                      <Suspense fallback={<span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>}>
+                        <LazyResearchTurnMessage
+                          researchRunId={message.researchRunId}
+                          loadRun={loadResearchRun}
+                          onOpenReport={(researchRunId) => onOpenResearchRun?.(researchRunId)}
+                        />
+                      </Suspense>
+                    ) : (
+                      <MessageBubble
+                        message={message}
+                        loadEvidence={loadAnswerEvidence}
+                        onOpenWikiPage={onOpenWikiPage}
+                        onFeedback={onAnswerFeedback}
+                        onRegenerate={onRegenerateAnswer}
+                      />
+                    )}
                   </div>
                 </div>
               ))}
@@ -293,11 +319,25 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
               onChange={(event) => setQuestion(event.target.value)}
               onKeyDown={handleComposerKeyDown}
               rows={1}
-              placeholder={qaUnavailable ? qaUnavailableNote : modeQuestionPlaceholder(mode)}
+              placeholder={deepResearch
+                ? "描述要深入研究的问题，会检索网页、逐项核对原文后写成带引用的报告"
+                : qaUnavailable ? qaUnavailableNote : modeQuestionPlaceholder(mode)}
               disabled={!conversation}
             />
             <div className="composer-toolbar">
-              <AnswerModeSelector mode={mode} setMode={setMode} disabled={composerBusy} />
+              <AnswerModeSelector mode={mode} setMode={setMode} disabled={composerBusy || deepResearch} />
+              {setDeepResearch ? (
+                <button
+                  type="button"
+                  className={`composer-research-toggle${deepResearch ? " is-active" : ""}`}
+                  aria-pressed={deepResearch}
+                  title="这一轮发起深度研究：拆成研究表逐项检索、核对原文后写成报告；之后的追问照常问答"
+                  onClick={() => setDeepResearch(!deepResearch)}
+                  disabled={composerBusy}
+                >
+                  <FlaskConical size={14} aria-hidden="true" />深度研究
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="composer-scope"
@@ -334,7 +374,9 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
             </div>
           </div>
           <p className="composer-footnote">
-            {activeRoute.label}：{activeRoute.description}
+            {deepResearch
+              ? "深度研究：会带上这段对话的上文，逐项检索并核对原文，通常需要十几分钟；完成后可以接着追问"
+              : `${activeRoute.label}：${activeRoute.description}`}
           </p>
         </div>
       </div>

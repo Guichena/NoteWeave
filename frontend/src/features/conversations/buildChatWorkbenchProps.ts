@@ -1,4 +1,5 @@
 import { answersApi } from "../answers/api";
+import { researchApi } from "../research/api";
 import type { SourceAsset } from "../sources/model";
 import type { Workspace } from "../workspace/model";
 import type { Conversation } from "./model";
@@ -17,6 +18,8 @@ type BuildChatWorkbenchPropsInput = {
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
   onOpenSourceLibrary: () => void;
   onOpenWikiPage?: (title: string) => void;
+  /** 对话里的研究消息点查看完整报告时，跳到研究页并打开这次研究的完整报告 */
+  onOpenResearchRun?: (researchRunId: string) => void;
   uploadBusy?: boolean;
 };
 
@@ -33,6 +36,7 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     artifactRailProps,
     onOpenSourceLibrary,
     onOpenWikiPage,
+    onOpenResearchRun,
     uploadBusy = false
   } = input;
 
@@ -63,6 +67,12 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
       ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId)
       : undefined,
     onAnswerFeedback: workspace ? chat.sendAnswerFeedback : undefined,
+    deepResearch: chat.deepResearch,
+    setDeepResearch: chat.setDeepResearch,
+    loadResearchRun: workspace
+      ? (researchRunId) => researchApi.getRun(workspace.workspace_id, researchRunId)
+      : undefined,
+    onOpenResearchRun,
     onRegenerateAnswer: chatBusy ? undefined : (answerRunId) => void chat.regenerateAnswer(answerRunId),
     onCancelAnswer: chatBusy ? (answerRunId) => void chat.cancelAnswer(answerRunId) : undefined
   };

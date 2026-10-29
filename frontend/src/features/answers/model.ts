@@ -20,6 +20,8 @@ export type SendAnswerResponse = {
   stream_url: string;
   answer_run_id: string;
   answer_stream_url: string;
+  /** 用深度研究发起的一轮返回研究运行，此时没有回答流 */
+  research_run_id?: string | null;
   retrieval_degraded: boolean;
   retrieval_degradation_reasons: string[];
 };

@@ -53,7 +53,7 @@ public class ResearchAgentIncrementalFinalizationService {
             }
             persistEvidenceManifest(run, run.markdown(), loadVerifiedCells(run.id()));
             researchCollectionService.materialize(run.id());
-            projectConversationReport(run, run.title());
+            projectConversationReport(run, run.title(), run.markdown());
             return new FinalizationReceipt(run.id(), artifact.id(), artifact.digest(), run.title(), run.markdown(), true);
         }
         if (!"RUNNING".equals(run.status())) throw new BusinessException("RESEARCH_AGENT_FINALIZATION_GATE_REJECTED", "Run is not finalizable");
@@ -100,7 +100,7 @@ public class ResearchAgentIncrementalFinalizationService {
         }
         persistEvidenceManifest(run, markdown, cells);
         researchCollectionService.materialize(run.id());
-        projectConversationReport(run, title);
+        projectConversationReport(run, title, markdown);
         faultInjector.checkpoint(ResearchAgentIncrementalFinalizationFaultInjector.Stage.AFTER_RUN_REPORT_WRITE);
         taskService.completeTask(run.taskId(), "RESEARCH_REPORTED", title, runId);
         jdbcTemplate.update("insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json) values (?, ?, 'INCREMENTAL_FINALIZED', ?, ?)", Ids.newId(), runId, title, "{\"cell_count\":" + cells.size() + "}");
@@ -125,9 +125,9 @@ public class ResearchAgentIncrementalFinalizationService {
                 """, rs -> rs.next() ? new SynthesisCandidate(rs.getString(1), rs.getString(2)) : null, runId);
     }
 
-    private void projectConversationReport(RunRow run, String title) {
+    private void projectConversationReport(RunRow run, String title, String markdown) {
         conversationResearchProjectionService.projectCompletedReport(
-                run.workspaceId(), run.conversationId(), run.answerMessageId(), run.id(), title);
+                run.workspaceId(), run.conversationId(), run.answerMessageId(), run.id(), title, markdown);
     }
 
     private String sha256(String value) {
