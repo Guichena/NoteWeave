@@ -631,6 +631,8 @@ def test_background_notes_answer_only_planned_points_in_their_own_labelled_secti
     # 补充说明排在局限之前，后端只截掉局限一节，这一节随正文保留
     assert section < result.markdown.index("## 局限")
     assert "不应出现" not in result.markdown
+    # 已在通用知识补充里回答的要点不再列进局限
+    assert not any("延迟受哪些因素影响" in item for item in result.narrative["limitations"])
 
 
 def test_background_notes_never_carry_evidence_citations() -> None:

@@ -388,10 +388,15 @@ def _normalize_narrative(
         comparison_table = _cells_table(cells, question_chinese=chinese,
                                         leads=[lead for lead in leads if lead["evidence_level"] == "SOURCED"])
     # 已知缺口始终保留；模型只能补充规划里原样存在的未回答要点，不能自行编造局限。
+    # 已在通用知识补充里回答的要点不再重复列出：那一节的标题已经说明未经本次检索核验，
+    # 规划要点又多是英文，在中文报告的局限里原样列出读起来很突兀。
     limitations = list(dict.fromkeys(known_limitations))
     allowed_points = set(required_points or [])
+    background_notes = _background_notes(payload.get("background_notes"), required_points or [], sections,
+                                         comparison_table)
+    noted_points = {note["point"] for note in background_notes}
     for point in _clean_strings(payload.get("unanswered_points")):
-        if point in allowed_points:
+        if point in allowed_points and point not in noted_points:
             limitation = f"尚未找到足够证据回答：{point}" if chinese else f"Insufficient evidence to answer: {point}"
             if limitation not in limitations:
                 limitations.append(limitation)
@@ -402,8 +407,7 @@ def _normalize_narrative(
         "sections": sections,
         "comparison_table": comparison_table,
         "limitations": limitations,
-        "background_notes": _background_notes(payload.get("background_notes"), required_points or [], sections,
-                                              comparison_table),
+        "background_notes": background_notes,
     }
 
 
