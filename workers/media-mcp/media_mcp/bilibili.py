@@ -28,6 +28,8 @@ def video_url(raw: str, part: int | None = None) -> str:
 
 def command(settings: Settings, *arguments: str) -> list[str]:
     result = [sys.executable, "-m", "yt_dlp", "--no-warnings", "--socket-timeout", "20", "--retries", "1"]
+    if settings.proxy:
+        result += ["--proxy", settings.proxy]
     if settings.cookies_file:
         result += ["--cookies", settings.cookies_file]
     return result + list(arguments)

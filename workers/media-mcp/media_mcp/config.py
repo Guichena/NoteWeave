@@ -32,6 +32,7 @@ class Settings:
     vision_model: str
     vision_api_key: str
     cookies_file: str
+    proxy: str
 
     @classmethod
     def load(cls) -> "Settings":
@@ -56,4 +57,5 @@ class Settings:
             os.environ.get("MEDIA_MCP_VISION_MODEL", "placeholder"),
             os.environ.get("MEDIA_MCP_VISION_API_KEY", ""),
             os.environ.get("MEDIA_MCP_BILIBILI_COOKIES_FILE", ""),
+            os.environ.get("MEDIA_MCP_PROXY", ""),
         )
