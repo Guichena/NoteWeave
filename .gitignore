@@ -15,6 +15,7 @@ node_modules/
 *.bak
 
 .env
+.env*
 .venv/
 .conda/
 reference/*
