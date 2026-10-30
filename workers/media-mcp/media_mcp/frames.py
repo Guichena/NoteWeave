@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -16,9 +17,14 @@ from .config import Settings
 from .process import remaining, run
 
 
-def ocr(path: Path, deadline: float) -> str:
+def ocr(path: Path, deadline: float, settings: Settings) -> str:
     # 从旧 observe_staged_frame 复制 TSV 行聚合方式；实际图片仍做解码和大小校验。
-    output = run(["tesseract", str(path), "stdout", "-l", "eng+chi_sim", "tsv"], path.parent, deadline)
+    # 单帧超时兜底：个别画面会让 tesseract 布局分析爆炸，不能因此拖死整次解析。
+    try:
+        output = run(["tesseract", str(path), "stdout", "-l", "eng+chi_sim", "tsv"], path.parent,
+                     min(deadline, time.monotonic() + settings.ocr_timeout))
+    except TimeoutError:
+        return ""
     if len(output.encode("utf-8")) > 1_000_000:
         raise ValueError("关键帧 OCR 输出超过上限")
     grouped: dict[tuple, list[str]] = {}
@@ -50,7 +56,7 @@ def describe(image_ref: str, text: str, deadline: float, settings: Settings) -> 
 
 def _caption(image_path: Path, image_ref: str, deadline: float, settings: Settings) -> tuple[str, str]:
     """单帧的 OCR 与画面描述，供并发执行。"""
-    text = ocr(image_path, deadline)
+    text = ocr(image_path, deadline, settings)
     return text, describe(image_ref, text, deadline, settings)
 
 

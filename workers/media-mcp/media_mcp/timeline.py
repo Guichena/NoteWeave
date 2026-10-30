@@ -6,8 +6,11 @@ def align(segments: list[dict], frames: list[dict], part: int, duration_ms: int)
     rows = []
     for segment in segments:
         start, end = segment["start_ms"], segment["end_ms"]
-        if type(start) is not int or type(end) is not int or not 0 <= start < end <= duration_ms + 1000:
+        if type(start) is not int or type(end) is not int:
             raise ValueError("转写段时间范围无效")
+        # ASR 偶尔产出零长或超出末尾的片段，跳过该段而不是让整次解析失败。
+        if not 0 <= start < end <= duration_ms + 1000:
+            continue
         if start >= duration_ms:
             continue
         rows.append({"part": part, "start_ms": start, "end_ms": min(end, duration_ms),
