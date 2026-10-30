@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
@@ -47,6 +48,12 @@ def describe(image_ref: str, text: str, deadline: float, settings: Settings) -> 
         return str(response.json()["choices"][0]["message"]["content"]).strip()[:4000]
 
 
+def _caption(image_path: Path, image_ref: str, deadline: float, settings: Settings) -> tuple[str, str]:
+    """单帧的 OCR 与画面描述，供并发执行。"""
+    text = ocr(image_path, deadline)
+    return text, describe(image_ref, text, deadline, settings)
+
+
 def capture(path: Path, directory: Path, part: int, duration_ms: int, deadline: float, settings: Settings) -> tuple[list[dict], int]:
     directory.mkdir()
     # 保留首帧，其他候选由场景变化筛选；showinfo 记录实际 PTS，不能用抽样序号推算。
@@ -60,7 +67,7 @@ def capture(path: Path, directory: Path, part: int, duration_ms: int, deadline: 
         raise ValueError("场景候选帧数量超过上限")
     if len(images) != len(timestamps) or not images:
         raise ValueError("无法取得带真实时间戳的关键帧")
-    frames = []
+    kept = []
     previous = None
     total_bytes = 0
     for index, (image_path, stamp) in enumerate(zip(images, timestamps)):
@@ -74,16 +81,26 @@ def capture(path: Path, directory: Path, part: int, duration_ms: int, deadline: 
         if previous is not None and value - previous < settings.phash_threshold:
             continue
         previous = value
-        if len(frames) >= settings.max_frames:
-            raise ValueError("保留关键帧数量超过上限")
+        if len(kept) >= settings.max_frames:
+            # 场景切换密集的视频（MV、快剪）会产生大量候选帧。这里截断而不是让整次解析失败，
+            # 已保留的帧按时间顺序覆盖开头，足够支撑摘要与讲义。
+            break
         data = image_path.read_bytes()
         total_bytes += len(data)
         if total_bytes > 48_000_000:
             raise ValueError("关键帧图片总大小超过上限")
-        image_ref = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
-        text = ocr(image_path, deadline)
-        # 图片摘要参与 ID，重新解析后不能把旧素材中的帧 ID 指向另一张图片。
-        frame_id = f"f_{part}_{index:06d}_{hashlib.sha256(data).hexdigest()[:16]}"
-        frames.append({"frame_id": frame_id, "at_ms": min(round(float(stamp) * 1000), duration_ms - 1),
-                       "image_ref": image_ref, "caption": describe(image_ref, text, deadline, settings), "ocr_text": text})
+        kept.append({"frame_id": f"f_{part}_{index:06d}_{hashlib.sha256(data).hexdigest()[:16]}",
+                     "at_ms": min(round(float(stamp) * 1000), duration_ms - 1),
+                     "image_ref": "data:image/png;base64," + base64.b64encode(data).decode("ascii"),
+                     "path": image_path})
+    frames = []
+    if kept:
+        # OCR 与画面描述都是外部调用，串行时 128 帧要二十多分钟，这里按配置并发执行。
+        workers = max(1, min(settings.vision_concurrency, len(kept)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = [future.result() for future in
+                       [pool.submit(_caption, item["path"], item["image_ref"], deadline, settings) for item in kept]]
+        for item, (text, caption) in zip(kept, results):
+            frames.append({"frame_id": item["frame_id"], "at_ms": item["at_ms"],
+                           "image_ref": item["image_ref"], "caption": caption, "ocr_text": text})
     return frames, len(images)

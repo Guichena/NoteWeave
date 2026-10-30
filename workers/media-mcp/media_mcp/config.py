@@ -31,6 +31,7 @@ class Settings:
     vision_endpoint: str
     vision_model: str
     vision_api_key: str
+    vision_concurrency: int
     cookies_file: str
     proxy: str
     download_interval: int
@@ -58,6 +59,7 @@ class Settings:
             os.environ.get("MEDIA_MCP_VISION_ENDPOINT", "https://vision.example.invalid/v1/chat/completions"),
             os.environ.get("MEDIA_MCP_VISION_MODEL", "placeholder"),
             os.environ.get("MEDIA_MCP_VISION_API_KEY", ""),
+            integer("MEDIA_MCP_VISION_CONCURRENCY", 8, 1, 16),
             os.environ.get("MEDIA_MCP_BILIBILI_COOKIES_FILE", ""),
             os.environ.get("MEDIA_MCP_PROXY", ""),
             integer("MEDIA_MCP_DOWNLOAD_INTERVAL_SECONDS", 120, 0, 3600),
