@@ -62,6 +62,41 @@ def video_info(raw: str, directory: Path, deadline: float, settings: Settings) -
 _download_lock = threading.Lock()
 _last_download_at = 0.0
 
+# playurl 会把同一路流分发到多个 CDN 镜像，主镜像对部分出口 IP 返回 567，
+# 而备用镜像（如 Akamai）正常。这里只接受 B 站自己的媒体域名。
+_STREAM_HOSTS = ("bilivideo.com", "bilivideo.cn", "akamaized.net", "hdslb.com", "bilibili.com")
+_CODEC_PRIORITY = {7: 0, 13: 1, 12: 2}
+_BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
+
+def _to_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _stream_url(stream) -> str:
+    return (stream.get("baseUrl") or stream.get("base_url") or "") if isinstance(stream, dict) else ""
+
+
+def _backup_urls(stream) -> list[str]:
+    if not isinstance(stream, dict):
+        return []
+    return [url for url in (stream.get("backupUrl") or stream.get("backup_url") or [])
+            if isinstance(url, str) and url]
+
+
+def _pick_video(streams: list[dict]) -> dict:
+    """优先 1080p 以内、编码兼容性最好的那一档。"""
+    ordered = sorted(streams, key=lambda stream: (
+        _to_int(stream.get("id")),
+        -_CODEC_PRIORITY.get(_to_int(stream.get("codecid"), -1), 3),
+        _to_int(stream.get("bandwidth"))))
+    within = [stream for stream in ordered if _to_int(stream.get("id")) <= 80]
+    return (within or ordered)[-1]
+
 
 def _download_once(url: str, directory: Path, deadline: float, settings: Settings) -> None:
     run(command(settings, "--no-playlist", "--max-filesize", "1G", "--merge-output-format", "mp4",
@@ -69,8 +104,85 @@ def _download_once(url: str, directory: Path, deadline: float, settings: Setting
                 "-o", str(directory / "video.%(ext)s"), url), directory, deadline)
 
 
+def _playurl(url: str, directory: Path, deadline: float, settings: Settings) -> dict:
+    """借 yt-dlp 的签名能力取一份完整的 playurl 响应。"""
+    pages = directory / "pages"
+    pages.mkdir(exist_ok=True)
+    run(command(settings, "--write-pages", "--skip-download", "--no-playlist", url), pages, deadline)
+    for dump in sorted(pages.glob("*playurl*")):
+        raw = dump.read_text(encoding="utf-8", errors="replace")
+        start = raw.find("{")
+        if start < 0:
+            continue
+        try:
+            document = json.loads(raw[start:])
+        except json.JSONDecodeError:
+            continue
+        data = document.get("data") or {}
+        if data.get("dash"):
+            return data
+    raise ValueError("未取到视频播放信息")
+
+
+def _fetch(urls: list[str], target: Path, deadline: float, limit: int) -> None:
+    """按主地址、备用地址的顺序逐个尝试。"""
+    failure = "没有可用地址"
+    for url in urls:
+        parsed = urlsplit(url)
+        host = parsed.hostname or ""
+        if parsed.scheme != "https" or not any(host == suffix or host.endswith("." + suffix)
+                                               for suffix in _STREAM_HOSTS):
+            continue
+        try:
+            written = 0
+            with httpx.Client(timeout=min(60, remaining(deadline)), follow_redirects=True) as client:
+                with client.stream("GET", url, headers={"Referer": "https://www.bilibili.com/",
+                                                        "User-Agent": _BROWSER_UA}) as response:
+                    response.raise_for_status()
+                    with target.open("wb") as handle:
+                        for block in response.iter_bytes():
+                            remaining(deadline)
+                            written += len(block)
+                            if written > limit:
+                                raise ValueError("媒体超过大小上限")
+                            handle.write(block)
+            if written:
+                return
+            failure = "响应为空"
+        except (httpx.HTTPError, ValueError) as error:
+            failure = f"{type(error).__name__}: {error}"[:200]
+            target.unlink(missing_ok=True)
+    raise ValueError(f"媒体下载失败（{failure}）")
+
+
+def _download_via_mirrors(url: str, directory: Path, deadline: float, settings: Settings) -> None:
+    pages = directory / "pages"
+    try:
+        dash = _playurl(url, directory, deadline, settings).get("dash") or {}
+        videos = [stream for stream in (dash.get("video") or []) if _stream_url(stream)]
+        audios = [stream for stream in (dash.get("audio") or []) if _stream_url(stream)]
+        if not videos or not audios:
+            raise ValueError("播放信息缺少可下载的音视频流")
+        video = _pick_video(videos)
+        audio = max(audios, key=lambda stream: (_to_int(stream.get("id")), _to_int(stream.get("bandwidth"))))
+        video_path = directory / "_v.mp4"
+        audio_path = directory / "_a.m4a"
+        _fetch([_stream_url(video)] + _backup_urls(video), video_path, deadline, 1_073_741_824)
+        _fetch([_stream_url(audio)] + _backup_urls(audio), audio_path, deadline, 268_435_456)
+        run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+             "-i", str(video_path), "-i", str(audio_path), "-c", "copy",
+             "-movflags", "+faststart", str(directory / "video.mp4")], directory, deadline)
+        video_path.unlink(missing_ok=True)
+        audio_path.unlink(missing_ok=True)
+    finally:
+        if pages.exists():
+            for dump in pages.iterdir():
+                dump.unlink(missing_ok=True)
+            pages.rmdir()
+
+
 def download(url: str, directory: Path, deadline: float, settings: Settings) -> Path:
-    """串行下载并强制最小间隔：B 站对同一出口 IP 的连续下载会返回 567/412。"""
+    """串行下载并强制最小间隔；主地址被 CDN 拒绝时改走备用镜像。"""
     global _last_download_at
     with _download_lock:
         if _last_download_at:
@@ -84,10 +196,17 @@ def download(url: str, directory: Path, deadline: float, settings: Settings) -> 
                 break
             except ValueError:
                 attempt += 1
-                if attempt > settings.download_retries:
-                    raise
                 for stale in directory.glob("video.*"):
                     stale.unlink(missing_ok=True)
+                if attempt == 1:
+                    # yt-dlp 只认 playurl 的主地址，主地址被拒时重试没有意义，直接换镜像。
+                    try:
+                        _download_via_mirrors(url, directory, deadline, settings)
+                        break
+                    except ValueError:
+                        pass
+                if attempt > settings.download_retries:
+                    raise
                 time.sleep(min(60 * attempt, remaining(deadline)))
         _last_download_at = time.monotonic()
     files = [path for path in directory.glob("video.*") if path.suffix in {".mp4", ".mkv", ".webm", ".flv"}]
