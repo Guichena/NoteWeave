@@ -30,26 +30,33 @@ class ArtifactFrameworkCleanupMigrationTest {
     }
 
     @Test
-    void existingV210NeedsOnlyOneOutOfOrderUpgradeAndThenUsesDefaultAgain(@TempDir Path migrations) throws Exception {
+    void missingEditReceiptMigrationsApplyOutOfOrderWithoutMovingTheCurrentVersion(@TempDir Path migrations) throws Exception {
+        // V203 改的是 V200 创建的表。旧库如果没有 V200，就不能先执行 V203。
         try (var files = Files.list(source)) {
-            for (Path file : files.filter(p -> p.toString().endsWith(".sql")).toList()) {
-                if (!file.getFileName().toString().startsWith("V200__")) {
-                    Files.copy(file, migrations.resolve(file.getFileName()));
+            for (Path file : files.filter(path -> path.toString().endsWith(".sql")).toList()) {
+                String name = file.getFileName().toString();
+                if (name.startsWith("V200__") || name.startsWith("V203__")) {
+                    continue;
                 }
+                Files.copy(file, migrations.resolve(name));
             }
         }
         var database = database();
         String location = "filesystem:" + migrations.toAbsolutePath();
-        Flyway.configure().dataSource(database).locations(location).load().migrate();
-        Files.copy(source.resolve("V220__remove_legacy_artifact_framework.sql"),
-                migrations.resolve("V220__remove_legacy_artifact_framework.sql"));
+        var baseline = Flyway.configure().dataSource(database).locations(location).load();
+        baseline.migrate();
+        String baselineVersion = baseline.info().current().getVersion().getVersion();
+        Files.copy(source.resolve("V200__memory_artifact_edit_receipt.sql"),
+                migrations.resolve("V200__memory_artifact_edit_receipt.sql"));
+        Files.copy(source.resolve("V203__memory_edit_receipt_v2.sql"),
+                migrations.resolve("V203__memory_edit_receipt_v2.sql"));
         assertThatThrownBy(() -> Flyway.configure().dataSource(database).locations(location).load().migrate())
                 .isInstanceOf(FlywayException.class).hasMessageContaining("200");
         assertThat(Flyway.configure().dataSource(database).locations(location).outOfOrder(true).load().migrate().migrationsExecuted)
-                .isEqualTo(1);
+                .isEqualTo(2);
         var normal = Flyway.configure().dataSource(database).locations(location).load();
         assertThat(normal.migrate().migrationsExecuted).isZero();
-        assertThat(normal.info().current().getVersion().getVersion()).isEqualTo("210");
+        assertThat(normal.info().current().getVersion().getVersion()).isEqualTo(baselineVersion);
         verifyCurrentTables(new JdbcTemplate(database));
     }
 

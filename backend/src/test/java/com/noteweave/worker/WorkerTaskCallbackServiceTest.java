@@ -158,21 +158,16 @@ class WorkerTaskCallbackServiceTest {
                 eq("workspace-1")
         )).thenReturn(1);
 
-        WorkerAckResponse response = service.heartbeatFromDelivery(
+        assertThatThrownBy(() -> service.heartbeatFromDelivery(
                 "task-1",
                 new WorkerHeartbeatRequest("artifact", "worker-1", "EXECUTING", "2026-10-21T00:00:00Z"),
                 "",
                 "delivery-1"
-        );
+        )).isInstanceOf(BusinessException.class)
+                .extracting(error -> ((BusinessException) error).code())
+                .isEqualTo("WORKER_CALLBACK_TASK_TYPE_INVALID");
 
-        assertThat(response.status()).isEqualTo("HEARTBEAT_RECORDED");
-        verify(outbox).renewTaskMessage(
-                "noteweave.artifact.job",
-                "task-1",
-                "delivery-1",
-                OutboxDispatchPolicy.ARTIFACT_LEASE_DURATION
-        );
-        verify(taskService).recordHeartbeat(eq("task-1"), eq("EXECUTING"), eq("artifact heartbeat"), any());
+        verify(taskService, never()).recordHeartbeat(anyString(), anyString(), anyString(), any());
         verifyNoInteractions(artifactJobService);
     }
 
@@ -225,7 +220,7 @@ class WorkerTaskCallbackServiceTest {
                 ""
         )).isInstanceOf(BusinessException.class)
                 .extracting(error -> ((BusinessException) error).code())
-                .isEqualTo("WORKER_CALLBACK_OWNER_MISMATCH");
+                .isEqualTo("WORKER_CALLBACK_TASK_TYPE_INVALID");
 
         verify(taskService, never()).recordHeartbeat(anyString(), anyString(), anyString(), any());
     }

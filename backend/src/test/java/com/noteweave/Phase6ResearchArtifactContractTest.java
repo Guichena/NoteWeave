@@ -4547,9 +4547,6 @@ void completedArtifactVersionShouldWriteBackToNoteAndRejectWikiThroughJavaHost()
                 .andReturn();
         String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("workspace_id").asText();
-        jdbcTemplate.update(
-                "update workspace set retrieval_strategy_v2_enabled = true where id = ?",
-                workspaceId);
         return workspaceId;
     }
 
