@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -57,10 +59,37 @@ def video_info(raw: str, directory: Path, deadline: float, settings: Settings) -
             "source_url": url.split("?")[0], "duration_ms": sum(part["duration_ms"] for part in parts), "parts": parts}
 
 
-def download(url: str, directory: Path, deadline: float, settings: Settings) -> Path:
+_download_lock = threading.Lock()
+_last_download_at = 0.0
+
+
+def _download_once(url: str, directory: Path, deadline: float, settings: Settings) -> None:
     run(command(settings, "--no-playlist", "--max-filesize", "1G", "--merge-output-format", "mp4",
                 "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
                 "-o", str(directory / "video.%(ext)s"), url), directory, deadline)
+
+
+def download(url: str, directory: Path, deadline: float, settings: Settings) -> Path:
+    """串行下载并强制最小间隔：B 站对同一出口 IP 的连续下载会返回 567/412。"""
+    global _last_download_at
+    with _download_lock:
+        if _last_download_at:
+            wait = settings.download_interval - (time.monotonic() - _last_download_at)
+            if wait > 0:
+                time.sleep(min(wait, remaining(deadline)))
+        attempt = 0
+        while True:
+            try:
+                _download_once(url, directory, deadline, settings)
+                break
+            except ValueError:
+                attempt += 1
+                if attempt > settings.download_retries:
+                    raise
+                for stale in directory.glob("video.*"):
+                    stale.unlink(missing_ok=True)
+                time.sleep(min(60 * attempt, remaining(deadline)))
+        _last_download_at = time.monotonic()
     files = [path for path in directory.glob("video.*") if path.suffix in {".mp4", ".mkv", ".webm", ".flv"}]
     if len(files) != 1 or not 0 < files[0].stat().st_size <= 1_073_741_824:
         raise ValueError("下载的视频缺失或超过 1 GiB 上限")

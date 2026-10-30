@@ -33,6 +33,8 @@ class Settings:
     vision_api_key: str
     cookies_file: str
     proxy: str
+    download_interval: int
+    download_retries: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -58,4 +60,6 @@ class Settings:
             os.environ.get("MEDIA_MCP_VISION_API_KEY", ""),
             os.environ.get("MEDIA_MCP_BILIBILI_COOKIES_FILE", ""),
             os.environ.get("MEDIA_MCP_PROXY", ""),
+            integer("MEDIA_MCP_DOWNLOAD_INTERVAL_SECONDS", 120, 0, 3600),
+            integer("MEDIA_MCP_DOWNLOAD_RETRIES", 2, 0, 5),
         )
