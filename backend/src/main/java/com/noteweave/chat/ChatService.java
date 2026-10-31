@@ -67,6 +67,7 @@ public class ChatService {
     private final EvidenceSufficiencyJudge evidenceSufficiencyJudge;
     private final ContextV2RolloutService contextV2Rollout;
     private final ContextV2ShadowSnapshotService contextV2Snapshots;
+    private final ResearchReportGrounding reportGrounding;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -86,7 +87,8 @@ public class ChatService {
             QueryRewriteService queryRewriteService,
             EvidenceSufficiencyJudge evidenceSufficiencyJudge,
             ContextV2RolloutService contextV2Rollout,
-            ContextV2ShadowSnapshotService contextV2Snapshots
+            ContextV2ShadowSnapshotService contextV2Snapshots,
+            ResearchReportGrounding reportGrounding
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -106,6 +108,7 @@ public class ChatService {
         this.evidenceSufficiencyJudge = evidenceSufficiencyJudge;
         this.contextV2Rollout = contextV2Rollout;
         this.contextV2Snapshots = contextV2Snapshots;
+        this.reportGrounding = reportGrounding;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -251,6 +254,21 @@ public class ChatService {
                     "显式资料范围当前仅支持 QA 回答模式"
             );
         }
+        // NR21：WEB 渠道仍没有检索实现，明确拒绝而不是静默回退为工作台检索
+        if (retrievalConfig.channels().contains("WEB")) {
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "WEB 检索通道尚未开放：请使用工作台检索（WORKSPACE）、研究报告（REPORT）或显式 NONE 关闭检索",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        boolean reportChannel = retrievalConfig.channels().contains("REPORT");
+        if (reportChannel && mode != AnswerMode.QA) {
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "研究报告取证（REPORT）目前只支持问答模式",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        Set<String> reportScope = reportGrounding.resolve(workspaceId, conversationId, retrievalConfig);
         Map<String, String> attributes = new LinkedHashMap<>();
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CURRENT_QUESTION, conversationContext.currentQuestion());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT, request.content());
@@ -270,6 +288,8 @@ public class ChatService {
                         !conversationContext.contextApplied()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
+        attributes.put(QaAnswerModeStrategy.ATTRIBUTE_WORKSPACE_CHANNEL,
+                Boolean.toString(!reportChannel || retrievalConfig.channels().contains("WORKSPACE")));
         if (conversationContext.contextApplied()) {
             attributes.put(ConversationWindow.ATTRIBUTE, conversationContext.retrievalQuestion());
         }
@@ -280,27 +300,15 @@ public class ChatService {
                 rewrite.standaloneQuery(),
                 sourceScope,
                 attributes,
-                Instant.now()
+                Instant.now(),
+                reportScope
         );
         AnswerModeStrategy strategy = answerModeStrategyRegistry.require(mode);
-        // NR21：REPORT/WEB 渠道当前没有实现检索通道——接受后按默认工作台检索是
-        // 静默回退。未实现组合明确拒绝（HTTP 409），支持组合（NONE / WORKSPACE）
-        // 按声明执行；WEB 唯一入口是 AUTO 且不得携带 groundingRefs，同样拒绝。
-        if (retrievalConfig.channels().contains("REPORT") || retrievalConfig.channels().contains("WEB")) {
-            throw new BusinessException(
-                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
-                    "REPORT/WEB 检索通道尚未开放：请使用默认工作台检索（AUTO+WORKSPACE）"
-                            + "或显式 NONE 关闭检索",
-                    org.springframework.http.HttpStatus.CONFLICT);
-        }
-        if (!retrievalConfig.groundingRefs().isEmpty()) {
-            // groundingRefs 依赖 REPORT 通道；上一分支已拒绝 REPORT，这里兜底显式报错
-            throw new BusinessException(
-                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
-                    "groundingRefs 依赖尚未开放的 REPORT 检索通道",
-                    org.springframework.http.HttpStatus.CONFLICT);
-        }
         RetrievalPlan strategyPlan = strategy.plan(context);
+        if (!reportScope.isEmpty()) {
+            strategyPlan = reportGrounding.withReportStep(
+                    strategyPlan, context, retrievalConfig.channels().contains("WORKSPACE"));
+        }
         RetrievalPlan plan = "NONE".equals(retrievalConfig.strategy())
                 ? new RetrievalPlan("none-v1", mode, List.of(), strategyPlan.budget())
                 : strategyPlan;

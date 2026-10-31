@@ -53,14 +53,37 @@ public class KnowledgeCitationReadGate {
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
         parameters.addAll(ids);
-        List<String> sourceIds = jdbc.queryForList("""
-                select source_id from citation
+        List<String> sourceIds = new ArrayList<>();
+        Set<String> researchRunIds = new LinkedHashSet<>();
+        int[] found = {0};
+        jdbc.query("""
+                select source_id, research_run_id from citation
                 where workspace_id = ? and id in (%s)
                 """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
-                String.class, parameters.toArray());
-        if (sourceIds.size() != ids.size()) {
+                (RowCallbackHandler) rs -> {
+                    found[0]++;
+                    String researchRunId = rs.getString("research_run_id");
+                    // 研究报告引用没有工作台资料，按所属研究报告的依赖闭包校验
+                    if (rs.getString("source_id") == null && researchRunId != null && !researchRunId.isBlank()) {
+                        researchRunIds.add(researchRunId);
+                    } else {
+                        sourceIds.add(rs.getString("source_id"));
+                    }
+                }, parameters.toArray());
+        if (found[0] != ids.size()) {
             throw new BusinessException("KNOWLEDGE_CITATION_REVOKED",
                     "知识引用的资料已撤销或不属于当前工作台", HttpStatus.CONFLICT);
+        }
+        for (String researchRunId : researchRunIds) {
+            if (!eligibilityPort.assessGeneratedDependenciesDetailed(
+                    workspaceId, "research_agent", researchRunId, AccessPurpose.CURRENT_EVIDENCE)
+                    .allAllowed(AccessPurpose.CURRENT_EVIDENCE)) {
+                throw new BusinessException("KNOWLEDGE_CITATION_REVOKED",
+                        "知识引用的研究报告依赖的资料已撤销", HttpStatus.CONFLICT);
+            }
+        }
+        if (sourceIds.isEmpty()) {
+            return;
         }
         Map<String, EligibilityDecision> decisions = eligibilityPort.assess(
                 workspaceId,

@@ -287,6 +287,7 @@ class KnowledgeGovernanceServiceTest {
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null,
+                    research_run_id varchar(36),
                     title varchar(300),
                     quote_text varchar(1000),
                     page_no int,

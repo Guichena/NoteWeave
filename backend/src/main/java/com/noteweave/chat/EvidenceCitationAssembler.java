@@ -2,6 +2,7 @@ package com.noteweave.chat;
 
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.PromptSpec;
+import com.noteweave.answer.strategy.ResearchReportEvidence;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import java.util.ArrayList;
@@ -27,12 +28,22 @@ public class EvidenceCitationAssembler {
         for (int index = 0; index < citations.size(); index++) {
             AssembledCitation citation = citations.get(index);
             String citationId = Ids.newId();
-            jdbcTemplate.update("""
-                    insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
-                    values (?, ?, ?, ?, ?, ?, ?, (select sc.page_start from source_chunk sc where sc.id = ?), ?)
-                    """, citationId, workspaceId, citation.sourceId(), citation.sourceSnapshotId(),
-                    citation.passageId(), citation.title(), trim(citation.quoteText(), 360), citation.passageId(),
-                    citation.location());
+            if (citation.researchRunId() != null) {
+                // 研究报告引用的网页原文没有工作台资料，按研究运行编号和证据键记录出处
+                jdbcTemplate.update("""
+                        insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text,
+                                             location_info, research_run_id, research_evidence_key)
+                        values (?, ?, null, null, null, ?, ?, ?, ?, ?)
+                        """, citationId, workspaceId, trim(citation.title(), 300), trim(citation.quoteText(), 360),
+                        citation.location(), citation.researchRunId(), citation.passageId());
+            } else {
+                jdbcTemplate.update("""
+                        insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
+                        values (?, ?, ?, ?, ?, ?, ?, (select sc.page_start from source_chunk sc where sc.id = ?), ?)
+                        """, citationId, workspaceId, citation.sourceId(), citation.sourceSnapshotId(),
+                        citation.passageId(), citation.title(), trim(citation.quoteText(), 360), citation.passageId(),
+                        citation.location());
+            }
             jdbcTemplate.update("""
                     insert into message_citation(id, message_id, citation_id, sort_order)
                     values (?, ?, ?, ?)
@@ -83,6 +94,27 @@ public class EvidenceCitationAssembler {
                 }
                 continue;
             }
+            if (ResearchReportEvidence.KIND.equals(evidence.kind())) {
+                String researchRunId = ResearchReportEvidence.researchRunId(evidence);
+                if (isBlank(researchRunId) || isBlank(evidence.passageId())) {
+                    throw new BusinessException(
+                            "EVIDENCE_CITATION_UNSUPPORTED",
+                            "Research evidence requires run id and evidence key: " + evidenceId
+                    );
+                }
+                result.add(new AssembledCitation(
+                        evidenceId,
+                        null,
+                        null,
+                        evidence.passageId(),
+                        evidence.metadata().getOrDefault("raw_title", evidence.title()),
+                        evidence.metadata().getOrDefault(ResearchReportEvidenceRetriever.METADATA_QUOTE,
+                                evidence.excerpt()),
+                        evidence.location(),
+                        researchRunId
+                ));
+                continue;
+            }
             if (!"PASSAGE".equals(evidence.kind())
                     || isBlank(evidence.sourceId())
                     || isBlank(evidence.sourceSnapshotId())
@@ -99,7 +131,8 @@ public class EvidenceCitationAssembler {
                     evidence.passageId(),
                     evidence.metadata().getOrDefault("raw_title", evidence.title()),
                     evidence.excerpt(),
-                    evidence.location()
+                    evidence.location(),
+                    null
             ));
         }
         return List.copyOf(result);
@@ -123,7 +156,8 @@ public class EvidenceCitationAssembler {
             String passageId,
             String title,
             String quoteText,
-            String location
+            String location,
+            String researchRunId
     ) {
     }
 }

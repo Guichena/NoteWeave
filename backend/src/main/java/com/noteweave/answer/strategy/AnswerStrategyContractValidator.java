@@ -31,6 +31,9 @@ public class AnswerStrategyContractValidator {
         String expectedSourceIds = context.sourceScope().stream().sorted()
                 .collect(java.util.stream.Collectors.joining(","));
         boolean matchedSourceScope = context.sourceScope().isEmpty();
+        String expectedReportIds = context.reportScope().stream().sorted()
+                .collect(java.util.stream.Collectors.joining(","));
+        int reportSteps = 0;
         for (RetrievalPlan.Step step : plan.steps()) {
             if (step == null
                     || isBlank(step.channel())
@@ -38,6 +41,19 @@ public class AnswerStrategyContractValidator {
                     || !Double.isFinite(step.weight())
                     || step.weight() <= 0
                     || !context.workspaceId().equals(step.filters().get("workspace_id"))) {
+                throw invalidPlan();
+            }
+            // REPORT 步骤只取本轮声明的研究报告，其他步骤不能携带研究范围
+            String reportIds = step.filters().get(ResearchReportEvidence.FILTER_RESEARCH_RUN_IDS);
+            if (ResearchReportEvidence.CHANNEL.equals(step.channel())) {
+                if (expectedMode != AnswerMode.QA || expectedReportIds.isEmpty()
+                        || !expectedReportIds.equals(reportIds)) {
+                    throw invalidPlan();
+                }
+                reportSteps++;
+                continue;
+            }
+            if (reportIds != null && !reportIds.isBlank()) {
                 throw invalidPlan();
             }
             String sourceIds = step.filters().get("source_ids");
@@ -53,6 +69,9 @@ public class AnswerStrategyContractValidator {
         }
         if (!context.sourceScope().isEmpty()
                 && (expectedMode != AnswerMode.QA || !matchedSourceScope)) {
+            throw invalidPlan();
+        }
+        if (reportSteps != (context.reportScope().isEmpty() ? 0 : 1)) {
             throw invalidPlan();
         }
     }

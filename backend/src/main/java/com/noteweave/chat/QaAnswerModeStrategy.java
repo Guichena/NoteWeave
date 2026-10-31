@@ -6,6 +6,7 @@ import com.noteweave.answer.strategy.AnswerModeStrategy;
 import com.noteweave.answer.strategy.AnswerPolicy;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.PromptSpec;
+import com.noteweave.answer.strategy.ResearchReportEvidence;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
 import com.noteweave.retrieval.QueryRewrite;
@@ -29,6 +30,8 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
     public static final String ATTRIBUTE_HAS_CHAT_CONTROLS = "has_chat_controls";
     public static final String ATTRIBUTE_CHAT_CONTROL_SECTION = "chat_control_section";
     public static final String ATTRIBUTE_TEMPLATE_LABEL = "template_label";
+    /** 本轮是否检索工作台资料；只依据研究报告追问时为 false。 */
+    public static final String ATTRIBUTE_WORKSPACE_CHANNEL = "workspace_channel";
 
     @Override
     public AnswerMode supports() {
@@ -125,12 +128,18 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         if (bundle.evidence().isEmpty()) {
             return new PromptSpec(
                     "Answer only from selected workspace evidence.",
-                    "当前工作台资料中暂未检索到足够依据，可先上传相关资料后再提问。",
+                    context.reportScope().isEmpty()
+                            ? "当前工作台资料中暂未检索到足够依据，可先上传相关资料后再提问。"
+                            : workspaceChannel(context)
+                            ? "研究报告引用的原文和当前工作台资料中都没有找到足够依据，可以换个问法，或者发起新的深度研究。"
+                            : "研究报告引用的原文中没有找到足够依据，可以换个问法，或者发起新的深度研究。",
                     List.of(),
                     bundle.retrievalPlanVersion(),
                     true
             );
         }
+        boolean hasReportEvidence = bundle.evidence().stream()
+                .anyMatch(item -> ResearchReportEvidence.KIND.equals(item.kind()));
         String questionType = context.attributes().getOrDefault(ATTRIBUTE_QUESTION_TYPE, "general");
         boolean contextApplied = Boolean.parseBoolean(
                 context.attributes().getOrDefault(ATTRIBUTE_CONTEXT_APPLIED, "false"));
@@ -161,14 +170,23 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         if ("comparison".equals(questionType)) {
             answer.append("- 这是比较类问题，请按相同维度比较不同对象。\n");
         }
+        if (hasReportEvidence) {
+            answer.append("- 标注为研究报告引用的片段，是之前深度研究时核对过的网页原文，和其他资料一样按编号引用；")
+                    .append("不同片段说法不一致时如实说明分歧。\n");
+        }
         answer.append("\n内部检索边界：").append(retrievalBoundary(context)).append("。不要在回答中提及。\n\n");
         ConversationWindow.append(answer, context);
         // 编号与引用卡片的顺序一致（引用按证据顺序保存），回答里的 [n] 直接对应第 n 张引用卡片
         answer.append("资料片段：\n");
         for (int index = 0; index < bundle.evidence().size(); index++) {
             EvidenceBundle.Evidence item = bundle.evidence().get(index);
-            answer.append("[").append(index + 1).append("] 《").append(item.title()).append("》：")
-                    .append(trim(item.excerpt(), 900)).append("\n");
+            answer.append("[").append(index + 1).append("] 《").append(item.title()).append("》");
+            if (ResearchReportEvidence.KIND.equals(item.kind())) {
+                answer.append("（研究报告《")
+                        .append(item.metadata().getOrDefault(ResearchReportEvidenceRetriever.METADATA_REPORT_TITLE, ""))
+                        .append("》引用的网页）");
+            }
+            answer.append("：").append(trim(item.excerpt(), 900)).append("\n");
         }
         answer.append("\n")
                 .append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
@@ -193,9 +211,17 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
     }
 
     private String retrievalBoundary(AnswerContext context) {
-        if (context.sourceScope().isEmpty()) {
-            return "当前 workspace 内已解析资料";
+        String workspace = context.sourceScope().isEmpty()
+                ? "当前 workspace 内已解析资料"
+                : "用户显式选择的 " + context.sourceScope().size() + " 份资料";
+        if (context.reportScope().isEmpty()) {
+            return workspace;
         }
-        return "用户显式选择的 " + context.sourceScope().size() + " 份资料";
+        String reports = context.reportScope().size() + " 份研究报告引用的网页原文";
+        return workspaceChannel(context) ? reports + "，以及" + workspace : reports;
+    }
+
+    private boolean workspaceChannel(AnswerContext context) {
+        return Boolean.parseBoolean(context.attributes().getOrDefault(ATTRIBUTE_WORKSPACE_CHANNEL, "true"));
     }
 }

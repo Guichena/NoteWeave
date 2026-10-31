@@ -470,6 +470,7 @@ class KnowledgeQueryServiceTest {
                 create table citation(
                     id varchar(36) primary key,
                     source_id varchar(36) not null,
+                    research_run_id varchar(36),
                     title varchar(300) not null,
                     quote_text varchar(1000) not null,
                     page_no int,

@@ -2,10 +2,13 @@ package com.noteweave.infra;
 
 import com.noteweave.answer.strategy.EvidenceOwnershipPort;
 import com.noteweave.answer.strategy.EvidenceOwnershipPort.EvidenceIdentity;
+import com.noteweave.answer.strategy.ResearchReportEvidence;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -31,7 +34,39 @@ public class JdbcEvidenceOwnershipAdapter implements EvidenceOwnershipPort {
         Set<EvidenceIdentity> current = new LinkedHashSet<>();
         current.addAll(findCurrentPassages(workspaceId, identities));
         current.addAll(findCurrentKnowledgeVersions(workspaceId, identities));
+        current.addAll(findCurrentResearchEvidence(workspaceId, identities));
         return Set.copyOf(current);
+    }
+
+    // 研究证据：所属研究运行仍在本工作台且已完成，证据键在该运行的证据表里存在
+    private List<EvidenceIdentity> findCurrentResearchEvidence(
+            String workspaceId,
+            List<EvidenceIdentity> identities
+    ) {
+        Map<String, List<String>> keysByRun = new LinkedHashMap<>();
+        identities.stream()
+                .filter(identity -> ResearchReportEvidence.KIND.equals(identity.kind()))
+                .filter(identity -> !identity.researchRunId().isBlank() && !identity.passageId().isBlank())
+                .forEach(identity -> keysByRun.computeIfAbsent(identity.researchRunId(), ignored -> new ArrayList<>())
+                        .add(identity.passageId()));
+        List<EvidenceIdentity> current = new ArrayList<>();
+        keysByRun.forEach((researchRunId, keys) -> {
+            List<String> distinctKeys = keys.stream().distinct().toList();
+            List<Object> parameters = new ArrayList<>(distinctKeys.size() + 2);
+            parameters.add(workspaceId);
+            parameters.add(researchRunId);
+            parameters.addAll(distinctKeys);
+            current.addAll(jdbcTemplate.query("""
+                    select se.evidence_key
+                    from source_evidence se
+                    join research_run rr on rr.id = se.research_run_id
+                    where rr.workspace_id = ? and rr.id = ? and rr.status = 'COMPLETED'
+                      and se.evidence_key in (%s)
+                    """.formatted(placeholders(distinctKeys.size())), (rs, rowNum) -> new EvidenceIdentity(
+                    ResearchReportEvidence.KIND, "", "", rs.getString("evidence_key"), "", "", researchRunId
+            ), parameters.toArray()));
+        });
+        return current;
     }
 
     private List<EvidenceIdentity> findCurrentPassages(

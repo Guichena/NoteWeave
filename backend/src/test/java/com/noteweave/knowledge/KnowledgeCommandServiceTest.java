@@ -401,6 +401,7 @@ class KnowledgeCommandServiceTest {
                     id varchar(36) primary key,
                     workspace_id varchar(36) not null default 'workspace',
                     source_id varchar(36) not null,
+                    research_run_id varchar(36),
                     source_snapshot_id varchar(36),
                     source_chunk_id varchar(36),
                     title varchar(300),

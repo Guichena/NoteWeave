@@ -265,6 +265,7 @@ public class NoteRecallRepository {
                 join message_citation mc on mc.message_id = m.id
                 join citation c on c.id = mc.citation_id
                 where m.workspace_id = ? and m.role = 'ASSISTANT'
+                  and c.source_id is not null
                 """, (rs, rowNum) -> new MessageCitationPair(
                 rs.getString("message_id"),
                 rs.getString("source_id")

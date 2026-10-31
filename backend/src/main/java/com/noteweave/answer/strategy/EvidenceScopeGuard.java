@@ -31,6 +31,22 @@ public class EvidenceScopeGuard {
                 requireKnowledge(item);
                 continue;
             }
+            if (ResearchReportEvidence.KIND.equals(item.kind())) {
+                requireResearchEvidence(context, item);
+                continue;
+            }
+            throw violation();
+        }
+    }
+
+    // 研究证据只能来自本轮声明的研究报告，且必须带证据键
+    private void requireResearchEvidence(AnswerContext context, EvidenceBundle.Evidence evidence) {
+        String researchRunId = ResearchReportEvidence.researchRunId(evidence);
+        if (isBlank(researchRunId)
+                || isBlank(evidence.passageId())
+                || !context.reportScope().contains(researchRunId)
+                || !ResearchReportEvidence.evidenceId(researchRunId, evidence.passageId())
+                .equals(evidence.evidenceId())) {
             throw violation();
         }
     }
