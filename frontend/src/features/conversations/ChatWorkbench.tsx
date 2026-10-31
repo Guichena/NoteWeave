@@ -1,5 +1,5 @@
 import { lazy, memo, Suspense, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, Files, FlaskConical, Layers3, LibraryBig, Square } from "lucide-react";
+import { ArrowUp, Files, FlaskConical, Layers3, LibraryBig, ScrollText, Square } from "lucide-react";
 import { isSourceReadableOnly, isSourceSearchable } from "../sources/model";
 import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
@@ -64,6 +64,10 @@ export type ChatWorkbenchProps = {
   setDeepResearch?: (value: boolean) => void;
   loadResearchRun?: (researchRunId: string) => Promise<ResearchRunDetail>;
   onOpenResearchRun?: (researchRunId: string) => void;
+  /** 这段对话里的研究编号；问答打开依据研究报告时，用报告引用过的网页原文作答 */
+  reportRefs?: string[];
+  reportGrounding?: boolean;
+  setReportGrounding?: (value: boolean) => void;
 };
 
 export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchProps) {
@@ -95,7 +99,10 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     deepResearch = false,
     setDeepResearch,
     loadResearchRun,
-    onOpenResearchRun
+    onOpenResearchRun,
+    reportRefs = [],
+    reportGrounding = false,
+    setReportGrounding
   } = props;
   const composerBusy = chatBusy;
   // 当前正在生成的回答：用于在发送按钮旁提供停止入口
@@ -121,8 +128,11 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
   const searchableSources = sources.filter(isSourceSearchable);
   const readableOnlySourceCount = sources.filter(isSourceReadableOnly).length;
   const scopeCount = selectedQaSourceIds.length > 0 ? selectedQaSourceIds.length : searchableSources.length;
+  // 依据研究报告的问答只在问答模式可用；研究报告本身就是证据来源，不要求工作台有已建索引的资料
+  const reportAvailable = mode === "qa" && !deepResearch && reportRefs.length > 0 && Boolean(setReportGrounding);
+  const reportGrounded = reportAvailable && reportGrounding;
   // 深度研究默认联网检索，不依赖工作台里已建索引的资料
-  const qaUnavailable = !deepResearch && mode === "qa" && searchableSources.length === 0;
+  const qaUnavailable = !deepResearch && !reportGrounded && mode === "qa" && searchableSources.length === 0;
   const composerActionLabel = qaUnavailable
     ? "等待可检索资料"
     : composerBusy
@@ -321,6 +331,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
               rows={1}
               placeholder={deepResearch
                 ? "描述要深入研究的问题，会检索网页、逐项核对原文后写成带引用的报告"
+                : reportGrounded ? "接着追问研究报告，会依据报告引用过的网页原文回答"
                 : qaUnavailable ? qaUnavailableNote : modeQuestionPlaceholder(mode)}
               disabled={!conversation}
             />
@@ -336,6 +347,18 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                   disabled={composerBusy}
                 >
                   <FlaskConical size={14} aria-hidden="true" />深度研究
+                </button>
+              ) : null}
+              {reportAvailable ? (
+                <button
+                  type="button"
+                  className={`composer-research-toggle${reportGrounding ? " is-active" : ""}`}
+                  aria-pressed={reportGrounding}
+                  title="打开时，问答依据这段对话里研究报告引用过的网页原文作答，并标注出处"
+                  onClick={() => setReportGrounding?.(!reportGrounding)}
+                  disabled={composerBusy}
+                >
+                  <ScrollText size={14} aria-hidden="true" />依据研究报告
                 </button>
               ) : null}
               <button
@@ -376,7 +399,9 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
           <p className="composer-footnote">
             {deepResearch
               ? "深度研究：会带上这段对话的上文，逐项检索并核对原文，通常需要十几分钟；完成后可以接着追问"
-              : `${activeRoute.label}：${activeRoute.description}`}
+              : reportGrounded
+                ? `依据研究报告：引用报告里核对过的网页原文${searchableSources.length > 0 ? "，同时检索工作台资料" : ""}`
+                : `${activeRoute.label}：${activeRoute.description}`}
           </p>
         </div>
       </div>

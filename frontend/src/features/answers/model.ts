@@ -5,6 +5,10 @@ export type SendAnswerInput = {
   source_scope_source_ids?: string[];
   /** 重新生成时带上原回答的 run ID，后端据此记录用户对原回答不满意。 */
   regenerated_from?: string;
+  /** 依据研究报告追问时为 AUTO，通道里带 REPORT，grounding_refs 是允许取证的研究运行。 */
+  retrieval_strategy?: "AUTO";
+  retrieval_channels?: Array<"WORKSPACE" | "REPORT">;
+  grounding_refs?: string[];
 };
 
 export type AnswerFeedbackRating = "POSITIVE" | "NEGATIVE";

@@ -69,6 +69,9 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     onAnswerFeedback: workspace ? chat.sendAnswerFeedback : undefined,
     deepResearch: chat.deepResearch,
     setDeepResearch: chat.setDeepResearch,
+    reportRefs: chat.reportRefs,
+    reportGrounding: chat.reportGrounding,
+    setReportGrounding: chat.setReportGrounding,
     loadResearchRun: workspace
       ? (researchRunId) => researchApi.getRun(workspace.workspace_id, researchRunId)
       : undefined,

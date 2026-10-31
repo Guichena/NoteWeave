@@ -52,6 +52,14 @@ type MessageBubbleProps = {
   onRegenerate?: (answerRunId: string) => void;
 };
 
+function hostOf(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
 export function MessageBubble(props: MessageBubbleProps) {
   if (props.message.role !== "assistant" || !props.message.answerMode) {
     return <div className="bubble-body">{props.message.content}</div>;
@@ -99,6 +107,11 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
         <strong>{view.title}</strong>
         {view.kindLabel || view.location ? (
           <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
+        ) : null}
+        {view.url ? (
+          <a className="message-source-link" href={view.url} target="_blank" rel="noreferrer noopener">
+            {hostOf(view.url)}
+          </a>
         ) : null}
         {view.quote ? <p>{view.quote}</p> : null}
         {view.ocrNote ? (

@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatWorkbench } from "./ChatWorkbench";
+import { researchReportRefs } from "./useChatSessionController";
 
 const scrollHeightDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
 
@@ -178,6 +179,47 @@ describe("ChatWorkbench deep research", () => {
     fireEvent.click(screen.getByRole("button", { name: /查看完整报告/ }));
     expect(onOpenResearchRun).toHaveBeenCalledWith("run-9");
     expect(report).toBeTruthy();
+  });
+
+  it("对话里有研究报告时，问答可以依据报告作答，不需要工作台资料", () => {
+    const setReportGrounding = vi.fn();
+    const props = { sources: [], question: "重平衡时顺序会怎样？", reportRefs: ["run-9"], setReportGrounding };
+    const { rerender } = render(<ChatWorkbench {...buildProps({ ...props, reportGrounding: true })} />);
+
+    const toggle = screen.getByRole("button", { name: "依据研究报告" });
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect((screen.getByRole("button", { name: "发送到 问答" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByText(/引用报告里核对过的网页原文/)).toBeTruthy();
+
+    fireEvent.click(toggle);
+    expect(setReportGrounding).toHaveBeenCalledWith(false);
+
+    // 关掉之后回到普通问答：没有可检索资料时不能发送
+    rerender(<ChatWorkbench {...buildProps({ ...props, reportGrounding: false })} />);
+    expect((screen.getByRole("button", { name: "等待可检索资料" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("其他回答模式和没有研究的对话不显示研究报告开关", () => {
+    const { rerender } = render(<ChatWorkbench {...buildProps({ mode: "note", reportRefs: ["run-9"],
+      reportGrounding: true, setReportGrounding: vi.fn() })} />);
+    expect(screen.queryByRole("button", { name: "依据研究报告" })).toBeNull();
+
+    rerender(<ChatWorkbench {...buildProps({ reportRefs: [], reportGrounding: true, setReportGrounding: vi.fn() })} />);
+    expect(screen.queryByRole("button", { name: "依据研究报告" })).toBeNull();
+  });
+});
+
+describe("researchReportRefs", () => {
+  it("取对话里最近的研究编号，去重且最多 3 个", () => {
+    expect(researchReportRefs([
+      { role: "assistant", content: "", researchRunId: "r1" },
+      { role: "user", content: "追问" },
+      { role: "assistant", content: "", researchRunId: "r2" },
+      { role: "assistant", content: "", researchRunId: "r3" },
+      { role: "assistant", content: "", researchRunId: "r2" },
+      { role: "assistant", content: "", researchRunId: "r4" }
+    ])).toEqual(["r4", "r2", "r3"]);
+    expect(researchReportRefs([{ role: "assistant", content: "普通回答" }])).toEqual([]);
   });
 });
 

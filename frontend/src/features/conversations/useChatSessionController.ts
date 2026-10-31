@@ -7,7 +7,7 @@ import { AnswerRunWaitTimeoutError,
   reduceAnswerRunState
 } from "../answers/store";
 import { answersApi } from "../answers/api";
-import type { AnswerFeedbackInput, AnswerRunState } from "../answers/model";
+import type { AnswerFeedbackInput, AnswerRunState, SendAnswerInput } from "../answers/model";
 import {
   type Message,
   updateAssistantMessageByRun,
@@ -77,6 +77,9 @@ export function useChatSessionController({
   const [selectedQaSourceIds, setSelectedQaSourceIds] = useState<string[]>([]);
   // 输入框上的深度研究开关：打开时这一轮发起深度研究，发送后自动关闭，之后的追问照常问答
   const [deepResearch, setDeepResearch] = useState(false);
+  // 对话里有深度研究时，问答默认依据这些研究报告引用过的网页原文作答（REPORT 通道），可以在输入框关掉
+  const [reportGrounding, setReportGrounding] = useState(true);
+  const reportRefs = researchReportRefs(messages);
   const [conversationStreamConnected, setConversationStreamConnected] = useState(false);
 
   // NR12：草稿绑定作用域——工作台/会话切换后旧草稿不得在新作用域提交。
@@ -97,11 +100,23 @@ export function useChatSessionController({
     setSelectedQaSourceIds([]);
     setLastNoteAssistantMessageId("");
     setLastNoteAnswerContent("");
+    setReportGrounding(true);
   }, [draftScopeKey]);
 
   function setMode(nextMode: AnswerMode) {
     setModeState(nextMode);
     writeAnswerModePreference(nextMode);
+  }
+
+  // 问答依据研究报告时声明 REPORT 通道和研究编号；工作台有可检索资料时同时检索资料，两组证据各自排序
+  function reportRetrieval(): Pick<SendAnswerInput, "retrieval_strategy" | "retrieval_channels" | "grounding_refs"> {
+    if (!reportGrounding || reportRefs.length === 0) return {};
+    const withWorkspace = sources.some(isSourceSearchable);
+    return {
+      retrieval_strategy: "AUTO",
+      retrieval_channels: withWorkspace ? ["WORKSPACE", "REPORT"] : ["REPORT"],
+      grounding_refs: reportRefs
+    };
   }
 
   useEffect(() => {
@@ -289,6 +304,7 @@ export function useChatSessionController({
           answer_mode: turnMode.toUpperCase(),
           client_request_id: `${turnMode}-${Date.now()}`,
           source_scope_source_ids: turnMode === "qa" ? selectedQaSourceIds : [],
+          ...(turnMode === "qa" ? reportRetrieval() : {}),
           ...(options.regeneratedFrom ? { regenerated_from: options.regeneratedFrom } : {})
         });
       } catch (error) {
@@ -490,6 +506,9 @@ export function useChatSessionController({
     sendConversationPrompt,
     deepResearch,
     setDeepResearch,
+    reportRefs,
+    reportGrounding,
+    setReportGrounding,
     regenerateAnswer,
     cancelAnswer,
     sendAnswerFeedback
@@ -497,3 +516,15 @@ export function useChatSessionController({
 }
 
 export type ChatSessionController = ReturnType<typeof useChatSessionController>;
+
+/** 这段对话里深度研究轮次的研究编号，最近的在前，最多 3 个；未完成的研究由后端跳过并记降级原因。 */
+export function researchReportRefs(messages: Message[]): string[] {
+  const refs: string[] = [];
+  for (let index = messages.length - 1; index >= 0 && refs.length < 3; index -= 1) {
+    const researchRunId = messages[index].researchRunId;
+    if (messages[index].role === "assistant" && researchRunId && !refs.includes(researchRunId)) {
+      refs.push(researchRunId);
+    }
+  }
+  return refs;
+}

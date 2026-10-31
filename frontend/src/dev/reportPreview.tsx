@@ -76,6 +76,21 @@ function QaPreview({ run, deepResearch, setDeepResearch, onOpenReport }: {
   run: ResearchRunDetail; deepResearch: boolean; setDeepResearch: (value: boolean) => void; onOpenReport: () => void;
 }) {
   const [question, setQuestion] = useState("");
+  const [reportGrounding, setReportGrounding] = useState(true);
+  // 依据研究报告的追问：引用是报告核对过的网页原文，证据清单里带网页地址
+  const followUpEvidence = {
+    run_id: "preview-answer",
+    evidence: [
+      { rank: 1, evidence_id: `research-evidence:${run.research_run_id}:a1`, kind: "RESEARCH_EVIDENCE",
+        source_id: null, passage_id: "a1", knowledge_item_id: null, title: "Apache Kafka Documentation",
+        excerpt: "报告结论：Kafka 只在单个分区内保证顺序\n网页原文：Kafka only provides a total order over records within a partition.",
+        location: "https://kafka.apache.org/documentation/#intro_concepts_and_terms", character_cost: 120 },
+      { rank: 2, evidence_id: `research-evidence:${run.research_run_id}:b2`, kind: "RESEARCH_EVIDENCE",
+        source_id: null, passage_id: "b2", knowledge_item_id: null, title: "Pulsar Concepts: Topics",
+        excerpt: "报告结论：Pulsar 的单分区主题按发布顺序投递\n网页原文：Messages published to a non-partitioned topic are delivered in order.",
+        location: "https://pulsar.apache.org/docs/concepts-messaging/", character_cost: 110 }
+    ]
+  };
   const props = {
     mode: "qa", setMode: () => undefined, sources: [], chatBusy: false, uploadBusy: false,
     workspace: { workspace_id: "preview", name: "预览工作台", status: "ACTIVE" },
@@ -83,9 +98,15 @@ function QaPreview({ run, deepResearch, setDeepResearch, onOpenReport }: {
       { role: "user", content: run.question },
       { role: "assistant", content: "", researchRunId: run.research_run_id, answerStatus: "COMPLETED" },
       { role: "user", content: "按这份报告，如果我需要严格全局有序该怎么选？" },
-      { role: "assistant", answerMode: "qa", answerStatus: "COMPLETED",
-        content: "按上面的研究结论，两者都只在单个分区内保证顺序。需要全局有序时只能使用单分区主题，代价是失去水平扩展能力。" }
+      { role: "assistant", answerMode: "qa", answerStatus: "COMPLETED", answerRunId: "preview-answer",
+        citations: [
+          "Apache Kafka Documentation | Kafka only provides a total order over records within a partition.",
+          "Pulsar Concepts: Topics | Messages published to a non-partitioned topic are delivered in order."
+        ],
+        content: "两者都只在单个分区内保证顺序 [1][2]。需要全局有序时，只能把主题设成单分区，代价是失去水平扩展能力 [1]。" }
     ],
+    reportRefs: [run.research_run_id], reportGrounding, setReportGrounding,
+    loadAnswerEvidence: async () => followUpEvidence,
     question, setQuestion, currentRouteLabel: "问答", selectedQaSourceIds: [], setSelectedQaSourceIds: () => undefined,
     toggleQaScope: () => undefined, sendMessage: () => undefined,
     conversation: { conversation_id: "preview", title: "消息队列选型讨论" }, conversationCount: 1,

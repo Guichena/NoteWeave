@@ -29,6 +29,7 @@ describe("evidenceKindLabel", () => {
     expect(evidenceKindLabel({ evidence_id: "passage:c1", kind: "PASSAGE" })).toBe("原文段落");
     expect(evidenceKindLabel({ evidence_id: "note-window:c1:3", kind: "PASSAGE" })).toBe("阅读窗口");
     expect(evidenceKindLabel({ evidence_id: "knowledge-version:v1", kind: "KNOWLEDGE_VERSION" })).toBe("Wiki 页面");
+    expect(evidenceKindLabel({ evidence_id: "research-evidence:r1:abc", kind: "RESEARCH_EVIDENCE" })).toBe("研究报告引用");
   });
 });
 
@@ -47,8 +48,19 @@ describe("buildCitationViews", () => {
 
   it("没有证据清单时只展示引用文本", () => {
     expect(buildCitationViews(["A 文档 | 摘录"], null)).toEqual([
-      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "", graphPath: [], ocrNote: "", ocrLowConfidence: false }
+      { index: 1, title: "A 文档", quote: "摘录", kindLabel: "", location: "", url: "", graphPath: [], ocrNote: "", ocrLowConfidence: false }
     ]);
+  });
+
+  it("研究报告引用的网页地址做成链接，不再当定位文字重复显示", () => {
+    const views = buildCitationViews(["Kafka 文档 | Kafka only orders within a partition."], [
+      evidence({ evidence_id: "research-evidence:r1:abc", kind: "RESEARCH_EVIDENCE", source_id: null,
+        title: "Kafka 文档", location: "https://kafka.apache.org/documentation/#semantics" })
+    ]);
+
+    expect(views[0]).toMatchObject({
+      kindLabel: "研究报告引用", location: "", url: "https://kafka.apache.org/documentation/#semantics"
+    });
   });
 
   it("OCR 片段标注置信度，低于阈值时要求核对原文", () => {

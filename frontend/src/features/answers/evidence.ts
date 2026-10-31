@@ -52,19 +52,27 @@ export type CitationView = {
   /** OCR 置信度低于阈值，需要提醒核对原文。 */
   ocrLowConfidence: boolean;
   location: string;
+  /** 研究报告引用的网页地址，可以直接打开原文。 */
+  url: string;
 };
 
-// 三种回答模式产出的证据 ID 前缀不同，用来区分证据来自哪条检索链路。
+// 各检索链路产出的证据 ID 前缀不同，用来区分证据来自哪条检索链路。
 const KIND_BY_PREFIX: Array<[prefix: string, label: string]> = [
   ["passage:", "原文段落"],
   ["note-window:", "阅读窗口"],
-  ["knowledge-version:", "Wiki 页面"]
+  ["knowledge-version:", "Wiki 页面"],
+  ["research-evidence:", "研究报告引用"]
 ];
 
 export function evidenceKindLabel(evidence: Pick<AnswerEvidence, "evidence_id" | "kind">) {
   const match = KIND_BY_PREFIX.find(([prefix]) => evidence.evidence_id.startsWith(prefix));
   if (match) return match[1];
+  if (evidence.kind === "RESEARCH_EVIDENCE") return "研究报告引用";
   return evidence.kind === "KNOWLEDGE_VERSION" ? "Wiki 页面" : "原文段落";
+}
+
+function webUrl(location: string | null) {
+  return location && /^https?:\/\//i.test(location) ? location : "";
 }
 
 /** 引用文本的格式为 `标题 | 摘录`，旧数据可能只有标题。 */
@@ -99,7 +107,9 @@ export function buildCitationViews(citations: string[], manifest: AnswerEvidence
       title: title || matched?.title || `来源 ${index}`,
       quote: quote || matched?.excerpt || "",
       kindLabel: matched ? evidenceKindLabel(matched) : "",
-      location: readableLocation(matched?.location ?? null),
+      // 网页地址单独做成链接，不再重复显示成定位文字
+      location: webUrl(matched?.location ?? null) ? "" : readableLocation(matched?.location ?? null),
+      url: webUrl(matched?.location ?? null),
       graphPath: matched?.graph_path ?? [],
       ...describeOcr(matched)
     };

@@ -767,6 +767,20 @@ details[open] > summary .message-sources-peek {
   font-size: var(--text-2xs);
 }
 
+.message-source-link {
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent-ink);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-source-link:hover {
+  text-decoration: underline;
+}
+
 .message-source-body p {
   display: -webkit-box;
   margin-top: 4px;
