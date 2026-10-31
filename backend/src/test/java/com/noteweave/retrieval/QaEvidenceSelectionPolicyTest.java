@@ -75,14 +75,13 @@ class QaEvidenceSelectionPolicyTest {
                 new ScoredItem("b-low", "b", 12, 2_000),
                 new ScoredItem("c-too-large", "c", 30, 9_000)
         );
-        List<ScoredItem> retrieverSelected = QaEvidenceSelectionPolicy.select(
-                        candidates,
-                        QaEvidenceSelectionPolicy.DEFAULT_EVIDENCE_LIMIT,
-                        ScoredItem::sourceId,
-                        ScoredItem::evidenceId)
-                .stream()
-                .map(QaEvidenceSelectionPolicy.Selection::item)
-                .toList();
+        // QA 检索器自己产出最终顺序（selectFinalBundle），公共预算器只截断、不再按分数重排
+        List<ScoredItem> retrieverSelected = QaEvidenceSelectionPolicy.selectFinalBundle(
+                candidates,
+                ScoredItem::sourceId,
+                ScoredItem::evidenceId,
+                ScoredItem::score,
+                ScoredItem::characters);
         List<EvidenceBundle.Evidence> onlineSelected = new EvidenceBudgeter().select(
                 retrieverSelected.stream().map(this::evidence).toList(),
                 new RetrievalPlan.Budget(

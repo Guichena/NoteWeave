@@ -27,8 +27,9 @@ class RetrievalOrchestratorTest {
                     RetrievalPlan plan,
                     RetrievalPlan.Step step
             ) {
+                // 检索器按自己的选择顺序返回，预算器只截断，不按 fusedScore 重排
                 return EvidenceRetrievalResult.success(
-                        List.of(evidence("low", 1), evidence("high", 9), evidence("mid", 5)));
+                        List.of(evidence("high", 9), evidence("mid", 5), evidence("low", 1)));
             }
         };
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
@@ -72,7 +73,7 @@ class RetrievalOrchestratorTest {
     }
 
     @Test
-    void shouldEnforcePerChannelCandidateLimitBeforeGlobalRanking() {
+    void shouldEnforcePerChannelCandidateLimitAndKeepTheRetrieversOrder() {
         EvidenceRetriever retriever = retriever(List.of(
                 evidence("first", 1), evidence("second", 2), evidence("excluded-high", 99)));
         RetrievalOrchestrator orchestrator = new RetrievalOrchestrator(List.of(retriever));
@@ -86,7 +87,37 @@ class RetrievalOrchestratorTest {
         EvidenceBundle bundle = orchestrator.execute(context(), plan);
 
         assertThat(bundle.evidence()).extracting(EvidenceBundle.Evidence::evidenceId)
-                .containsExactly("second", "first");
+                .containsExactly("first", "second");
+    }
+
+    @Test
+    void shouldKeepStepOrderAcrossChannelsInsteadOfComparingTheirScores() {
+        EvidenceRetriever report = new EvidenceRetriever() {
+            @Override
+            public String channel() {
+                return "report";
+            }
+
+            @Override
+            public EvidenceRetrievalResult retrieve(AnswerContext context, RetrievalPlan plan, RetrievalPlan.Step step) {
+                return EvidenceRetrievalResult.success(List.of(evidence("report-a", 1), evidence("report-b", 2)));
+            }
+        };
+        EvidenceRetriever passages = retriever(List.of(evidence("passage-a", 99), evidence("passage-b", 98)));
+        RetrievalOrchestrator orchestrator = new RetrievalOrchestrator(List.of(report, passages));
+        RetrievalPlan plan = new RetrievalPlan(
+                "fixture-v1",
+                AnswerMode.QA,
+                List.of(new RetrievalPlan.Step("report", 2, 1, Map.of()),
+                        new RetrievalPlan.Step("fixture", 2, 1, Map.of())),
+                new RetrievalPlan.Budget(3, 1000, 0, 0)
+        );
+
+        EvidenceBundle bundle = orchestrator.execute(context(), plan);
+
+        // 不同通道的分数量纲不同，按计划步骤分组，组内保持各自顺序
+        assertThat(bundle.evidence()).extracting(EvidenceBundle.Evidence::evidenceId)
+                .containsExactly("report-a", "report-b", "passage-a");
     }
 
     @Test
