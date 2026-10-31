@@ -69,6 +69,23 @@ public class ResearchReportGrounding {
         return new LinkedHashSet<>(recent);
     }
 
+    /**
+     * 还原出工作台检索的原计划：去掉 REPORT 步骤和版本后缀。QA 检索器按原计划核对自己的检索配置，
+     * 加入研究报告不放宽它对步骤数、版本号的严格校验。不含 REPORT 步骤的计划原样返回。
+     */
+    public static RetrievalPlan workspacePlan(RetrievalPlan plan) {
+        if (plan == null || !plan.version().endsWith(PLAN_VERSION_SUFFIX)) {
+            return plan;
+        }
+        return new RetrievalPlan(
+                plan.version().substring(0, plan.version().length() - PLAN_VERSION_SUFFIX.length()),
+                plan.mode(),
+                plan.steps().stream()
+                        .filter(step -> !ResearchReportEvidence.CHANNEL.equals(step.channel()))
+                        .toList(),
+                plan.budget());
+    }
+
     /** 在策略计划前加入 REPORT 步骤；只用 REPORT 通道时去掉工作台检索步骤。 */
     public RetrievalPlan withReportStep(RetrievalPlan base, AnswerContext context, boolean includeWorkspace) {
         List<RetrievalPlan.Step> steps = new ArrayList<>();

@@ -43,7 +43,8 @@ public class ResearchReportEvidenceRetriever implements EvidenceRetriever {
     static final String METADATA_REPORT_TITLE = "report_title";
     /** 引用卡片只展示网页原文，不带报告结论前缀。 */
     static final String METADATA_QUOTE = "citation_quote";
-    private static final Pattern INLINE = Pattern.compile("\\[evidence:([0-9a-f]{16,64})]");
+    // 证据键带 evidence: 前缀，与 source_evidence.evidence_key、报告引用核对（ResearchReportCitations）一致
+    private static final Pattern INLINE = Pattern.compile("\\[(evidence:[0-9a-f]{16,64})]");
     private static final String AUDIT_HEADING = "\n## Citation audit";
     // 与 QA 生成提示对单条片段的截断长度一致，预算按实际进入提示的文字计费
     static final int EXCERPT_LIMIT = 900;

@@ -29,9 +29,10 @@ import org.springframework.test.web.servlet.MockMvc;
 @ActiveProfiles("test")
 class ResearchReportGroundingContractTest {
 
-    private static final String KEY_ORDERING = "a1b2c3d4e5f60718";
-    private static final String KEY_REBALANCE = "b1b2c3d4e5f60718";
-    private static final String KEY_AUDIT_ONLY = "c1b2c3d4e5f60718";
+    // 与线上 source_evidence.evidence_key 相同的格式：带 evidence: 前缀，报告正文里写成 [evidence:...]
+    private static final String KEY_ORDERING = "evidence:a1b2c3d4e5f60718a1b2c3d4e5f60718a1b2c3d4";
+    private static final String KEY_REBALANCE = "evidence:b1b2c3d4e5f60718a1b2c3d4e5f60718a1b2c3d4";
+    private static final String KEY_AUDIT_ONLY = "evidence:c1b2c3d4e5f60718a1b2c3d4e5f60718a1b2c3d4";
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper mapper;
@@ -170,17 +171,17 @@ class ResearchReportGroundingContractTest {
         String markdown = String.join("\n",
                 "# Kafka 与 Pulsar 的顺序保证",
                 "",
-                "Kafka 只在单个分区内保证顺序 [evidence:" + KEY_ORDERING + "]。",
+                "Kafka 只在单个分区内保证顺序 [" + KEY_ORDERING + "]。",
                 "",
                 "## 直接回答",
                 "",
-                "消费者组重平衡期间分区会重新分配，未提交的位移可能导致重复消费 [evidence:" + KEY_REBALANCE + "]。",
+                "消费者组重平衡期间分区会重新分配，未提交的位移可能导致重复消费 [" + KEY_REBALANCE + "]。",
                 "",
                 "## Citation audit",
                 "",
-                "### [3] 只在核对小节出现",
+                "### [3] 只在核对小节出现 [" + KEY_AUDIT_ONLY + "]",
                 "",
-                "- Evidence: `evidence:" + KEY_AUDIT_ONLY + "`");
+                "- Evidence: `" + KEY_AUDIT_ONLY + "`");
         jdbc.update("""
                 update research_run
                 set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?, source_scope_json = ?

@@ -8,9 +8,14 @@ import com.noteweave.answer.strategy.AnswerContext;
 import com.noteweave.answer.strategy.AnswerMode;
 import com.noteweave.answer.strategy.AnswerStrategyContractValidator;
 import com.noteweave.answer.strategy.EvidenceBudgeter;
+import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.EvidenceOwnershipGuard;
+import com.noteweave.answer.strategy.EvidenceRetrievalResult;
+import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.EvidenceScopeGuard;
+import com.noteweave.answer.strategy.ResearchReportEvidence;
 import com.noteweave.answer.strategy.RetrievalOrchestrator;
+import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.chat.QaPassageRetriever.RetrievalResult;
 import com.noteweave.chat.QaPassageRetriever.RetrievedChunk;
 import com.noteweave.retrieval.QaRetrievalStrategyProfile;
@@ -76,6 +81,50 @@ class QaAnswerPipelineContractTest {
         assertThat(citations).extracting(
                         EvidenceCitationAssembler.AssembledCitation::evidenceId)
                 .containsExactlyElementsOf(prompt.referencedEvidenceIds());
+    }
+
+    @Test
+    void shouldKeepTheStrictQaProfileCheckWhenTheTurnAlsoGroundsOnAResearchReport() {
+        QaPassageRetriever passageRetriever = mock(QaPassageRetriever.class);
+        when(passageRetriever.retrieveWithDiagnostics(
+                "workspace", "query", Set.of("source"), QaRetrievalStrategyProfile.CURRENT))
+                .thenReturn(new RetrievalResult(List.of(chunk("selected", 9)), false, List.of(), Map.of()));
+        String key = "evidence:0123456789abcdef0123456789abcdef";
+        EvidenceRetriever report = new EvidenceRetriever() {
+            @Override
+            public String channel() {
+                return ResearchReportEvidence.CHANNEL;
+            }
+
+            @Override
+            public EvidenceRetrievalResult retrieve(AnswerContext context, RetrievalPlan plan, RetrievalPlan.Step step) {
+                return EvidenceRetrievalResult.success(List.of(new EvidenceBundle.Evidence(
+                        ResearchReportEvidence.evidenceId("run-1", key), ResearchReportEvidence.KIND,
+                        null, null, key, null, null, "Kafka 文档", "网页原文：ordering", "https://kafka.apache.org",
+                        1, 1, 0, ResearchReportEvidence.accessScope("run-1"), Instant.now(),
+                        "research_report_citation", 20, Map.of())));
+            }
+        };
+        RetrievalOrchestrator orchestrator = new RetrievalOrchestrator(
+                List.of(new QaPassageEvidenceRetriever(passageRetriever), report),
+                new EvidenceBudgeter(),
+                new SimpleMeterRegistry(),
+                new EvidenceScopeGuard(),
+                new EvidenceOwnershipGuard((workspaceId, identities) -> Set.copyOf(identities)));
+        QaAnswerModeStrategy strategy = new QaAnswerModeStrategy();
+        AnswerContext context = new AnswerContext("workspace", "conversation", "message", "query",
+                Set.of("source"), Map.of(), Instant.now(), Set.of("run-1"));
+        RetrievalPlan qaPlan = strategy.plan(context);
+        RetrievalPlan plan = new ResearchReportGrounding(mock(JdbcTemplate.class))
+                .withReportStep(qaPlan, context, true);
+
+        new AnswerStrategyContractValidator().validatePlan(AnswerMode.QA, context, plan);
+        var bundle = orchestrator.execute(context, plan);
+
+        // QA 检索器按原计划核对配置，报告证据排在工作台资料前面
+        assertThat(ResearchReportGrounding.workspacePlan(plan)).isEqualTo(qaPlan);
+        assertThat(bundle.evidence()).extracting(EvidenceBundle.Evidence::evidenceId)
+                .containsExactly(ResearchReportEvidence.evidenceId("run-1", key), "passage:selected");
     }
 
     private RetrievedChunk chunk(String id, int score) {

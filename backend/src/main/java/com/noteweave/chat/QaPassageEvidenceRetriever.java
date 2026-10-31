@@ -35,7 +35,9 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan plan,
             RetrievalPlan.Step step
     ) {
-        QaRetrievalStrategyProfile profile = QaRetrievalStrategyProfile.fromPlan(plan, step);
+        // 依据研究报告追问时计划里多一个 REPORT 步骤，按工作台检索的原计划核对配置
+        QaRetrievalStrategyProfile profile = QaRetrievalStrategyProfile.fromPlan(
+                ResearchReportGrounding.workspacePlan(plan), step);
         RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
         QaPassageRetriever.RetrievalResult retrieval = channels.legacySingleQuery()
                 ? passageRetriever.retrieveWithDiagnostics(
