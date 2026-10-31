@@ -113,7 +113,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
     @Test
     void productionDefaultBundlesCellsOfOneEntityIntoOneTaskWithAPerCellBudget() {
         // 生产默认值：同一研究对象的普通单元格共用一次检索与阅读，模型调用预算按单元格数放大
-        coordinator.setMaxCellsPerTask(3);
+        coordinator.setMaxCellsPerTask(6);
         try {
             ResearchAgentTaskCoordinatorService.CoordinatorReceipt receipt = coordinator.planAndEnqueue(runId);
 
@@ -124,7 +124,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
                     .contains("entity-1:method", "entity-1:evidence");
             assertThat(ResearchAgentTaskCoordinatorService.deepCellBudget(2))
                     .containsEntry("llm_calls", 66L)
-                    .containsEntry("search_calls", 3L)
+                    .containsEntry("search_calls", 6L)
                     .containsEntry("evidence_cards", 12L);
         } finally {
             coordinator.setMaxCellsPerTask(1);
@@ -1106,10 +1106,10 @@ class ResearchAgentTaskCoordinatorServiceTest {
                         "candidate_merges_accepted", "candidate_merges_rejected");
                 assertThat(reserved.get("llm_calls")).isEqualTo(34L);
                 assertThat(reserved)
-                        .containsEntry("search_calls", 3L)
-                        .containsEntry("fetch_calls", 3L)
-                        .containsEntry("read_calls", 3L)
-                        .containsEntry("extract_calls", 3L);
+                        .containsEntry("search_calls", 6L)
+                        .containsEntry("fetch_calls", 6L)
+                        .containsEntry("read_calls", 6L)
+                        .containsEntry("extract_calls", 6L);
             } catch (Exception exception) {
                 throw new AssertionError(exception);
             }

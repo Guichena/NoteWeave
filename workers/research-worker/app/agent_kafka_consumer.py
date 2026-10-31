@@ -437,7 +437,7 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
             executors["EVIDENCE_AUDIT"] = EvidenceAuditExecutor(worker_instance_id)
             enabled_roles.add("EVIDENCE_AUDIT")
         if settings.research_agent_synthesis_enabled:
-            executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id, upload_client=client)
+            executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id)
             enabled_roles.add("SYNTHESIS")
         if settings.research_agent_wide_discovery_enabled:
             executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id, client,
@@ -587,6 +587,14 @@ def _report_failure_or_stop(reporter: AgentDeliveryFailureReporter | None, comma
         return
     try:
         reporter.report_delivery_failure(command, record)
+    except AgentTaskApiError as exc:
+        # 后端明确拒绝（例如任务已换了新的投递记录，这条旧消息的失败对不上）时重试不会成功，
+        # 不提交偏移会让 Worker 反复在同一条消息上退出；只有网络错误和服务端错误才停下等待重新投递
+        if 400 <= exc.status_code < 500 and exc.status_code != 429:
+            logger.warning("Agent delivery failure projection rejected task_id=%s status=%s code=%s",
+                           command.agent_task_id, exc.status_code, exc.error_code)
+            return
+        raise DeadLetterPublishError("Agent delivery failure projection failed; offset not committed") from (cause or exc)
     except Exception as exc:
         raise DeadLetterPublishError("Agent delivery failure projection failed; offset not committed") from (cause or exc)
 

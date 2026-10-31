@@ -276,50 +276,13 @@ class ResearchPlanningServiceTest {
     }
 
     @Test
-    void strictPlanningCannotDropExtraColumnsToFitTheBudget() {
-        enableExplicitRequirements();
-        var task = planningTask();
-        var proposal = explicitPlan(List.of("PostgreSQL"), java.util.stream.IntStream.range(0, 9)
-                .mapToObj(index -> "Dimension " + index).toList());
-        List<String> before = cellKeys();
-        assertThatThrownBy(() -> planning.applyResult(task, result("PLANNED", proposal)))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("不能截断所需维度");
-        assertThat(cellKeys()).isEqualTo(before);
-        assertThat(planStatus()).isEqualTo("PLANNING");
-    }
-
-    @Test
-    void strictPlanningCannotDropSubjectsWithAnAllEntitiesRequirement() {
-        enableExplicitRequirements();
-        var task = planningTask();
-        var proposal = explicitPlan(java.util.stream.IntStream.range(0, 20).mapToObj(index -> "Entity " + index).toList(),
-                List.of("d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"));
-        List<String> before = cellKeys();
-        assertThatThrownBy(() -> planning.applyResult(task, result("PLANNED", proposal)))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("不能截断所需对象");
-        assertThat(cellKeys()).isEqualTo(before);
-    }
-
-    @Test
-    void strictPlanningEnforcesTheEffortTierWithoutLosingExplicitRequirements() {
-        enableExplicitRequirements();
-        var task = planningTask();
-        var proposal = explicitPlan(List.of("PostgreSQL", "MySQL"), List.of("d1", "d2", "d3", "d4"));
-        proposal.put("effort_tier", "SIMPLE");
-        assertThatThrownBy(() -> planning.applyResult(task, result("PLANNED", proposal)))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("投入等级");
-        assertThat(planStatus()).isEqualTo("PLANNING");
-    }
-
-    @Test
     void fallbackDiagnosticsAreRecordedAndReadableOnlyInTheRunWorkspace() {
         var task = planningTask();
         var fallback = result("FALLBACK", null);
         fallback.put("planning_diagnostics", Map.of("schema_version", "research-planning-diagnostics.v1",
                 "unrecognized_field", "不应保存到诊断接口", "attempts", List.of(Map.of("attempt", 1, "status", "REJECTED",
                 "problems", List.of("user_requirements[0].dimension=Sources 没有对应维度"),
-                "dimension_labels", List.of("Status", "Version"), "raw_response", "不应保存模型原文",
-                "requirement_bindings", List.of(Map.of("index", 0, "dimension", "Sources", "extra", "不应保存"))))));
+                "dimension_labels", List.of("Status", "Version"), "raw_response", "不应保存模型原文"))));
         planning.applyResult(task, fallback);
 
         JsonNode diagnostics = objectMapper.valueToTree(planning.readPlan(workspaceId, runId).get("planning_diagnostics"));
@@ -335,94 +298,18 @@ class ResearchPlanningServiceTest {
         assertThat(planning.readPlan(workspaceId, runId).get("planning_diagnostics")).isEqualTo(Map.of());
     }
 
-    private void enableExplicitRequirements() {
-        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?",
-                "{\"requirement_coverage_v1\":true,\"requirement_definition_version\":2,\"requirement_state_version\":3}", runId);
-    }
-
-    private Map<String, Object> explicitPlan(List<String> entities, List<String> dimensions) {
-        Map<String, Object> proposal = plan(entities, dimensions);
-        proposal.put("user_requirements", List.of(Map.of("text", "核对 JSON 索引能力", "question_quote", "JSON indexing",
-                "dimension", dimensions.get(0), "entities", List.of(), "completion_mode", "SINGLE",
-                "minimum_count", 1, "count_expression", "")));
-        return proposal;
-    }
-
     @Test
-    void manualRevisionPreservesExplicitDefinitionsAndExpertPoints() {
-        enableExplicitRequirements();
+    void manualRevisionPreservesExpertPoints() {
         var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600, true);
-        var proposal = explicitPlan(List.of("PostgreSQL"), List.of("Index types", "Usage"));
+        var proposal = plan(List.of("PostgreSQL"), List.of("Index types", "Usage"));
         proposal.put("required_points", List.of("支持的索引形式"));
         reviewing.applyResult(planningTask(), result("PLANNED", proposal));
         reviewing.revise(workspaceId, runId, Map.of("entities", List.of(Map.of("label", "PostgreSQL"), Map.of("label", "MySQL")),
                 "dimensions", List.of(Map.of("label", "Index types"), Map.of("label", "Usage"), Map.of("label", "Limits"))));
 
         JsonNode brief = objectMapper.valueToTree(reviewing.readPlan(workspaceId, runId).get("brief"));
-        assertThat(brief.path("requirement_definition_version").asInt()).isEqualTo(2);
-        assertThat(brief.path("requirement_definitions").size()).isEqualTo(1);
-        assertThat(brief.path("requirement_definitions").get(0).path("question_quote").asText()).isEqualTo("JSON indexing");
         assertThat(brief.path("required_points").toString()).contains("支持的索引形式");
         assertThat(cellKeys()).hasSize(6);
-    }
-
-    @Test
-    void manualRevisionCannotDeleteMandatoryColumnsOrSubjects() {
-        enableExplicitRequirements();
-        var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600, true);
-        reviewing.applyResult(planningTask(), result("PLANNED", explicitPlan(List.of("PostgreSQL", "MySQL"), List.of("Index types", "Usage"))));
-        List<String> before = cellKeys();
-
-        assertThatThrownBy(() -> reviewing.revise(workspaceId, runId, Map.of("entities", List.of(Map.of("label", "PostgreSQL"), Map.of("label", "MySQL")),
-                "dimensions", List.of(Map.of("label", "Limits"), Map.of("label", "Usage")))))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("研究维度");
-        assertThatThrownBy(() -> reviewing.revise(workspaceId, runId, Map.of("entities", List.of(Map.of("label", "PostgreSQL")),
-                "dimensions", List.of(Map.of("label", "Index types"), Map.of("label", "Usage")))))
-                .isInstanceOf(BusinessException.class).hasMessageContaining("原研究对象");
-        assertThat(cellKeys()).isEqualTo(before);
-        assertThat(planStatus()).isEqualTo("REVIEW");
-    }
-
-    @Test
-    void manualRevisionPreservesExplicitQuantityAndItsOriginalExpression() {
-        enableExplicitRequirements();
-        jdbcTemplate.update("update research_run set question = ? where id = ?", "Compare at least three features", runId);
-        var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600, true);
-        var proposal = plan(List.of("PostgreSQL"), List.of("Features", "Usage"));
-        proposal.put("user_requirements", List.of(Map.of("text", "核对至少三个不同特性", "question_quote", "at least three features",
-                "dimension", "Features", "entities", List.of(), "completion_mode", "DISTINCT_FACTS", "minimum_count", 3,
-                "count_expression", "at least three features")));
-        reviewing.applyResult(planningTask(), result("PLANNED", proposal));
-        reviewing.revise(workspaceId, runId, Map.of("entities", List.of(Map.of("label", "PostgreSQL")),
-                "dimensions", List.of(Map.of("label", "Features"), Map.of("label", "Usage"), Map.of("label", "Limits"))));
-
-        JsonNode brief = objectMapper.valueToTree(reviewing.readPlan(workspaceId, runId).get("brief"));
-        JsonNode requirement = brief.path("requirement_definitions").get(0);
-        assertThat(requirement.path("minimum_count").asInt()).isEqualTo(3);
-        assertThat(requirement.path("count_expression").asText()).isEqualTo("at least three features");
-    }
-
-    @Test
-    void manualRevisionDoesNotLoseOrUpgradeAnIncompletePlanningAudit() {
-        jdbcTemplate.update("update research_run set agent_feature_flags_json = ? where id = ?",
-                "{\"requirement_coverage_v1\":true,\"requirement_definition_version\":2,\"requirement_state_version\":5}", runId);
-        var reviewing = new ResearchPlanningService(jdbcTemplate, objectMapper, coordinator, canonicalizer, true, 3600, true);
-        var task = planningTask();
-        var planned = result("PLANNED", explicitPlan(List.of("PostgreSQL"), List.of("Index types", "Usage")));
-        List<Map<String, Object>> clauses = objectMapper.convertValue(planning.planningInput(runId).get("requested_clauses"),
-                new com.fasterxml.jackson.core.type.TypeReference<>() { });
-        var audit = Map.of("schema_version", "research-planning-completeness.v1", "complete", false, "model_calls", 0,
-                "clauses", clauses.stream().map(clause -> Map.of("clause_id", clause.get("clause_id"),
-                        "status", "NOT_CHECKED", "requirement_indexes", List.of())).toList());
-        planned.put("planning_completeness", audit);
-        reviewing.applyResult(task, planned);
-        reviewing.revise(workspaceId, runId, Map.of("entities", List.of(Map.of("label", "PostgreSQL")),
-                "dimensions", List.of(Map.of("label", "Index types"), Map.of("label", "Usage"))));
-
-        JsonNode brief = objectMapper.valueToTree(reviewing.readPlan(workspaceId, runId).get("brief"));
-        assertThat(brief.path("planning_completeness").path("complete").asBoolean(true)).isFalse();
-        assertThat(brief.path("planning_completeness")).isEqualTo(objectMapper.valueToTree(audit));
-        assertThat(brief.path("requested_clauses").size()).isEqualTo(clauses.size());
     }
 
     private List<String> cellKeys() {

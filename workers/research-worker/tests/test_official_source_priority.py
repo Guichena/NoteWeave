@@ -148,6 +148,23 @@ def test_major_version_doc_path_is_compared_but_other_numbers_are_not() -> None:
         "https://www.postgresql.org/docs/16/gin.html"]
 
 
+def test_unversioned_entity_prefers_current_docs_over_pages_pinned_to_an_old_release() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["envoyproxy.io"], "entity_label": "Envoy"})
+
+    def hit(url: str, quality: str = "OFFICIAL_DOC") -> SimpleNamespace:
+        return SimpleNamespace(url=url, source_domain=url.split("/")[2], source_quality=quality, adapter="serper")
+
+    ordered = _prioritize_authoritative_hits(snapshot, [
+        hit("https://www.envoyproxy.io/docs/envoy/v1.5.0/intro/arch_overview/load_balancing"),
+        hit("https://blog.example.com/envoy-load-balancing", "SECONDARY_SOURCE"),
+        hit("https://www.envoyproxy.io/docs/envoy/latest/intro/arch_overview/upstream/load_balancing/overview"),
+    ])
+
+    # 旧版官方文档只排到当前文档之后，仍在二手来源之前
+    assert [item.url.split("/")[2] + ("/latest" if "/latest/" in item.url else "") for item in ordered] == [
+        "www.envoyproxy.io/latest", "www.envoyproxy.io", "blog.example.com"]
+
+
 def test_site_query_uses_the_english_search_intent_instead_of_a_chinese_label() -> None:
     llm = _Llm({"queries": [{"query": "MySQL 8.4 JSON index", "intent": "direct"}]})
     column = CellColumn("operators", "可加速的查询运算符", search_intents=("JSON operators that use indexes",))
@@ -193,3 +210,86 @@ def test_secondary_only_cell_stays_unverified_even_after_repair_when_official_so
 
     no_request = SimpleNamespace(query_policy={"research_brief": {"current_question": "微服务是否提高交付速度？"}})
     assert _prefer_primary_cards(no_request, cards, [blog]) == cards
+
+
+def _lb_windows() -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(window_id="w-doc", adapter="external_url", source_domain="docs.atlas.example",
+                        source_quality="OFFICIAL_DOC", url="https://docs.atlas.example/load-balancing.html"),
+        SimpleNamespace(window_id="w-blog", adapter="external_url", source_domain="blog.example",
+                        source_quality="GENERAL_WEB", url="https://blog.example/atlas-load-balancing"),
+    ]
+
+
+def _lb_snapshot(question: str = "Atlas 支持哪些负载均衡算法？") -> SimpleNamespace:
+    return SimpleNamespace(query_policy={"authoritative_domains": ["docs.atlas.example"], "entity_label": "Atlas",
+                                         "research_brief": {"current_question": question}})
+
+
+def test_secondary_answer_is_kept_when_the_official_card_only_touches_the_column() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    official = _card("w-doc", "Weights above 1 switch Atlas to random host selection")
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    column = SimpleNamespace(key="col-a", label="Load balancing algorithms")
+    llm = _Llm({"answering_indices": [1], "coverage": [{"requirement_index": 0, "claim_indices": [1]}]})
+    retained: list[object] = []
+
+    # 先按来源档次筛掉博客时，只剩没回答这一列的官方卡片，单元格会成为缺口
+    assert _answering_column_cards(_lb_snapshot(), column, [official, blog], _lb_windows(), llm, retained) == [blog]
+    assert retained == []
+
+
+def test_secondary_answers_are_dropped_only_when_official_cards_answer_every_requirement() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    official = _card("w-doc", "Round robin is the default policy")
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    one = SimpleNamespace(key="col-a", label="Default policy")
+    both = SimpleNamespace(key="col-a", label="Policies", requirements=["Default policy", "Supported policies"])
+
+    complete = _Llm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(_lb_snapshot(), one, [official, blog], _lb_windows(), complete, []) == [official]
+
+    partial = _Llm({"answering_indices": [0, 1], "coverage": [{"requirement_index": 0, "claim_indices": [0]},
+                                                              {"requirement_index": 1, "claim_indices": [1]}]})
+    assert _answering_column_cards(_lb_snapshot(), both, [official, blog], _lb_windows(), partial, []) == [official, blog]
+
+
+def test_required_official_sources_keep_secondary_answers_as_sourced_leads_only() -> None:
+    from app.deep_cell_executor import _answering_column_cards
+    from tests.test_cell_levels import _card
+
+    blog = _card("w-blog", "Atlas supports round robin, least request and ring hash")
+    column = SimpleNamespace(key="col-a", label="Load balancing algorithms")
+    llm = _Llm({"answering_indices": [0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    retained: list[object] = []
+
+    kept = _answering_column_cards(_lb_snapshot("请引用官方文档说明 Atlas 的负载均衡算法"), column, [blog],
+                                   _lb_windows(), llm, retained)
+
+    assert kept == []
+    assert [card.relation_type for card in retained] == ["WEAK_SUPPORT"]
+    assert retained[0].support_score > 0
+
+
+def test_every_query_gets_one_page_before_more_official_pages_of_another_query() -> None:
+    snapshot = SimpleNamespace(query_policy={"authoritative_domains": ["postgresql.org"], "entity_label": "PostgreSQL 17"})
+
+    def hit(url: str, query: str) -> SimpleNamespace:
+        host = url.split("/")[2]
+        return SimpleNamespace(url=url, source_domain=host, adapter="serper", query=query,
+                               source_quality="OFFICIAL_DOC" if host.endswith("postgresql.org") else "SECONDARY_SOURCE")
+
+    hits = [hit("https://www.postgresql.org/docs/17/app-pgbasebackup.html", "pg_basebackup incremental"),
+            hit("https://www.postgresql.org/docs/17/app-pgcombinebackup.html", "pg_basebackup incremental"),
+            hit("https://www.postgresql.org/docs/17/backup-manifest.html", "pg_basebackup incremental"),
+            hit("https://blog.example.com/pg17-incremental", "incremental backup summarize_wal prerequisite")]
+
+    ordered = _prioritize_authoritative_hits(snapshot, hits)
+
+    # 只有二手来源的检索词也先读到一篇，排在同一条官方检索词的其余页面之前
+    assert [item.url.split("/")[-1] for item in ordered] == [
+        "app-pgbasebackup.html", "pg17-incremental", "app-pgcombinebackup.html", "backup-manifest.html"]

@@ -75,3 +75,47 @@ def test_quote_extends_to_the_next_sentence_that_names_the_tool_in_the_claim() -
     _, unchanged = _extend_quote_for_claim(text, text.find(quote), quote, "用 pg_restore_incremental 恢复")
     assert unchanged == quote
     assert _grounded_claim("用 pg_restore_incremental 恢复", quote) == quote
+
+
+def test_quote_ending_with_a_colon_extends_to_the_list_that_follows() -> None:
+    from app.extractor import _extend_quote_past_colon
+
+    text = ("Intro.\nCurrently, Milvus supports the following two reranking strategies:\n\n"
+            "- WeightedRanker: averages the scores.\n- RRFRanker: reciprocal rank fusion.\n\n## Next section\nTail.")
+    quote = "Currently, Milvus supports the following two reranking strategies:"
+
+    start, extended = _extend_quote_past_colon(text, text.find(quote), quote)
+
+    assert extended == quote + "\n\n- WeightedRanker: averages the scores.\n- RRFRanker: reciprocal rank fusion."
+    assert text[start:start + len(extended)] == extended
+    # 不以冒号结尾的引用不变；冒号后紧接标题时也不变
+    plain = "- WeightedRanker: averages the scores."
+    assert _extend_quote_past_colon(text, text.find(plain), plain)[1] == plain
+    headed = "Strategies:\n## Next\nBody."
+    assert _extend_quote_past_colon(headed, 0, "Strategies:")[1] == "Strategies:"
+
+
+def test_quote_ending_with_a_colon_stops_at_the_last_complete_line_within_the_limit() -> None:
+    from app.extractor import _MAX_EXTENDED_QUOTE_CHARS, _extend_quote_past_colon
+
+    items = "".join(f"Allow logical replication feature number {index} from standby servers\n\n" for index in range(40))
+    text = "PostgreSQL 16 contains many new features and enhancements, including:\n\n" + items
+    quote = "PostgreSQL 16 contains many new features and enhancements, including:"
+
+    _, extended = _extend_quote_past_colon(text, 0, quote)
+
+    assert len(extended) <= _MAX_EXTENDED_QUOTE_CHARS
+    assert extended.endswith("from standby servers")
+    assert "feature number 0 " in extended and text.startswith(extended)
+
+
+def test_quote_ending_with_a_chinese_colon_extends_to_the_sentence_that_follows() -> None:
+    from app.extractor import _extend_quote_past_colon
+
+    text = "目前，Milvus 支持以下两种重排策略：加权评分与倒数排序融合。" + "后文说明各策略的参数与适用场景。" * 60
+    quote = "目前，Milvus 支持以下两种重排策略："
+
+    _, extended = _extend_quote_past_colon(text, 0, quote)
+
+    assert extended.startswith(quote + "加权评分与倒数排序融合。")
+    assert extended.endswith("。") and text.startswith(extended)

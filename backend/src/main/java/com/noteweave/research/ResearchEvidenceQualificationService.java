@@ -203,12 +203,6 @@ class ResearchEvidenceQualificationService {
         // as a candidate-only validation row. Pinned by
         // ResearchAgentEvidenceEnforcementNegativeTest (DR-112 group 5).
         if (evidence.isEmpty()) reasons.add("QUALIFIED_SOURCE_REQUIRED");
-        var sourceScope = ResearchSourceScopePolicy.scope(ResearchSourceScopePolicy.contract(task.executionContextJson(), objectMapper), candidate.cellKey());
-        for (var item : evidence) {
-            var source = authority.get(item.evidenceKey());
-            if (source != null) reasons.addAll(((List<?>) ResearchSourceScopePolicy.evaluate(sourceScope, source.sourceUrl(), source.sourceTitle(), item.quoteText(), source.scopeText())
-                    .get("reason_codes")).stream().map(String::valueOf).toList());
-        }
         if (task.candidateQuorum() == 1) {
             Boolean highRisk = jdbcTemplate.queryForObject("select high_risk from research_cell where research_run_id = ? and cell_key = ?",
                     Boolean.class, task.runId(), candidate.cellKey());

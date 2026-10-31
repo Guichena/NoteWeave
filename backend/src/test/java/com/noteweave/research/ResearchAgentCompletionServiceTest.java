@@ -431,6 +431,17 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldCommitOneEntityTaskCoveringFiveCells() {
+        // 后端把同一研究对象最多 6 个单元格放进一个深挖任务，完成提交不能再按 3 个单元格判为快照过期
+        Fixture fixture = fixture(5);
+        ResearchAgentCompletionReceipt receipt = completionService.complete(fixture.taskId(), envelope(fixture, true));
+
+        assertThat(receipt.candidateCount()).isEqualTo(5);
+        assertThat(receipt.acceptedMerges()).extracting(ResearchAgentCompletionReceipt.MergeReceipt::cellKey)
+                .containsExactlyInAnyOrderElementsOf(fixture.cellKeys());
+    }
+
+    @Test
     void shouldAtomicallyCommitExecutionAggregateChildrenCellsBudgetTaskOutboxAndBindings() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope envelope = envelope(fixture, true);

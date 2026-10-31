@@ -24,8 +24,9 @@ public class ResearchAgentCompletionCanonicalizer {
     public static final String SCHEMA_VERSION = "research-agent-completion.v1";
     public static final String SCHEMA_VERSION_V2 = "research-agent-completion.v2";
     public static final int MAX_CANONICAL_BYTES = 262_144;
-    public static final int MAX_EVIDENCE = 12;
-    public static final int MAX_CANDIDATES = 3;
+    // 一个深挖任务最多 6 个单元格，每个单元格最多 6 条证据、1 个候选；与 Worker 的完成协议一致
+    public static final int MAX_EVIDENCE = 36;
+    public static final int MAX_CANDIDATES = 6;
     public static final Set<String> WORKER_USAGE_KEYS = Set.of(
             "llm_calls", "search_calls", "fetch_calls", "read_calls", "extract_calls",
             "evidence_cards", "candidates_submitted"
@@ -50,7 +51,7 @@ public class ResearchAgentCompletionCanonicalizer {
     );
     public static final Set<String> EXTRACTION_DIAGNOSTICS_KEYS = Set.of(
             "schema_version", "termination_reason", "accepted_count", "rejected_count",
-            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report", "claim_clusters", "requirement_coverage", "fact_selection", "source_scope_checks", "runtime_metrics"
+            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report", "claim_clusters"
     );
     public static final Set<String> EXTRACTION_PROVIDER_RECEIPT_KEYS = Set.of(
             "purpose", "transport", "model", "call_count", "response_digest", "response_chars"
@@ -213,10 +214,6 @@ public class ResearchAgentCompletionCanonicalizer {
             }
         }
         if (envelope.extractionDiagnostics() != null) {
-            if (envelope.extractionDiagnostics().containsKey("runtime_metrics")) ResearchRuntimeMetricsService.validate(new ObjectMapper().valueToTree(envelope.extractionDiagnostics().get("runtime_metrics")));
-            if (envelope.extractionDiagnostics().containsKey("source_scope_checks")) ResearchSourceScopeChecks.validate(envelope.extractionDiagnostics().get("source_scope_checks"));
-            if (envelope.extractionDiagnostics().containsKey("fact_selection"))
-                ResearchDeferredMaterialService.validate(envelope.extractionDiagnostics().get("fact_selection"));
             validateExtractionDiagnostics(envelope.extractionDiagnostics());
             if (envelope.extractionDiagnostics().containsKey("execution_report")) {
                 ResearchRepairExecutionService.validateReport(envelope.extractionDiagnostics().get("execution_report"));
@@ -300,8 +297,6 @@ public class ResearchAgentCompletionCanonicalizer {
     }
 
     void validateExtractionDiagnostics(Map<String, Object> diagnostics) {
-        if (diagnostics.containsKey("requirement_coverage"))
-            ResearchRequirementCoverageService.validateProposal(diagnostics.get("requirement_coverage"));
         if (!diagnostics.keySet().containsAll(EXTRACTION_DIAGNOSTICS_REQUIRED_KEYS)
                 || !EXTRACTION_DIAGNOSTICS_KEYS.containsAll(diagnostics.keySet())) {
             throw invalid("extraction_diagnostics contains missing or unknown fields");

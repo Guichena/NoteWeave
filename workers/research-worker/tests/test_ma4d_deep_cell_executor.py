@@ -213,72 +213,6 @@ def test_deep_cell_should_emit_v2_extraction_diagnostics_for_a_zero_card_reason(
     assert diagnostics.rejection_counts == {}
 
 
-@pytest.mark.parametrize("limit,recheck_calls", [(4, 0), (8, 1)])
-def test_coverage_recheck_keeps_source_budget_and_is_included_in_completion_usage(monkeypatch, limit, recheck_calls):
-    import app.deep_cell_executor as module
-    import app.source_scope_checks as source_scope
-    from app.research_agent_completion_contract import canonical_json_digest
-
-    requirement_id = "req:" + "a" * 48
-    contract = {"schema_version": "research-requirement-contract.v2", "requirement_answer_policy_version": 1,
-        "requirements": [{"requirement_id": requirement_id, "text": "Identify the method", "cell_key": "entity-1:method",
-                          "scope_type": "CELL", "scope": {}, "mandatory": True}],
-        "facts": [{"cell_key": "entity-1:method", "claim_text": "The method is documented.", "evidence_keys": ["previous"],
-                   "evidence_quotes": [{"evidence_key": "previous", "quote": "The method is documented."}]}]}
-    contract["contract_digest"] = canonical_json_digest(contract)
-    payload = _snapshot(); payload.pop("snapshot_digest")
-    payload["budget"] = {"llm_calls": limit}
-    payload["query_policy"].update(completion_runtime_version=1, requirement_contract=contract)
-    payload["snapshot_digest"] = snapshot_digest(payload)
-
-    class CountingClient:
-        max_total_calls = limit
-        max_attempts = 1
-        purpose_options = {}
-        calls = []
-
-        def complete_json(self, purpose, _payload):
-            assert len(self.calls) < self.max_total_calls
-            self.calls.append(purpose)
-            return json.dumps({"observations": [{"requirement_id": requirement_id, "evidence_keys": ["previous"], "complete": True}]})
-
-        def usage_summary(self):
-            return {"provider_call_count": len(self.calls)}
-
-    client = CountingClient()
-    monkeypatch.setattr(module, "_build_execution_llm", lambda *_: client)
-    monkeypatch.setattr(module, "_plan_queries_for_cell", lambda snapshot, plan, llm: (plan, {}))
-
-    def extraction(*args, coverage_out, selection_out):
-        for _ in range(client.max_total_calls):
-            client.complete_json("research.extract", {})
-        coverage_out.append({"requirement_id": requirement_id, "evidence_keys": ["previous"], "complete": False})
-        return _extraction_result(), [], []
-
-    def check_sources(snapshot, clusters, evidence, windows, llm, budget=3):
-        assert budget == 3
-        for _ in range(budget):
-            llm.complete_json("research.source.scope", {})
-        return {"schema_version": "research-source-scope-checks.v1", "checks": [], "model_calls": budget}
-
-    monkeypatch.setattr(module, "_extract_per_target_column", extraction)
-    monkeypatch.setattr(source_scope, "check_source_scopes", check_sources)
-
-    class EmptyToolchain(_Toolchain):
-        def fetch(self, *_args, **_kwargs):
-            return []
-
-        def read(self, *_args, **_kwargs):
-            return []
-
-    completion = module.DeepCellExecutor(_Permit(), "worker-a", toolchain=EmptyToolchain())(_command(), _claim(payload))
-    assert client.calls.count("research.requirement_coverage.recheck") == recheck_calls
-    assert client.calls.count("research.source.scope") == 3
-    assert completion.budget_usage.llm_calls == len(client.calls) == limit
-    assert completion.extraction_diagnostics.runtime_metrics["provider_call_count"] == limit
-    assert completion.extraction_diagnostics.requirement_coverage["observations"][0]["complete"] == bool(recheck_calls)
-
-
 def test_domain_allowlist_should_keep_official_subdomains_and_workspace_hits_only() -> None:
     from app.deep_cell_executor import _filter_external_hits_by_domain
     from app.task_snapshot_contract import ResearchAgentTaskSnapshot
@@ -1058,18 +992,18 @@ def test_bundled_cells_extract_one_column_at_a_time_with_distinct_evidence_keys(
 
 
 def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
-    from app.deep_cell_executor import DeepCellExecutor
+    from app.deep_cell_executor import MAX_EVIDENCE_PER_COMPLETION, DeepCellExecutor
     from app.deterministic_fake_toolchain import DeterministicFakeToolchain
 
     class ManyCardsToolchain(DeterministicFakeToolchain):
-        """每个单元格抽出 6 张卡，三个单元格合计 18 张，超过一次完成的证据上限 12。"""
+        """每个单元格抽出 8 张卡，三个单元格合计 24 张，超过一次完成的证据上限 18。"""
 
         def extract(self, task_input, plan, windows, *, llm_client):
             result = super().extract(task_input, plan, windows, llm_client=llm_client)
             cards = tuple(
                 card.model_copy(update={"evidence_id": f"{card.evidence_id}-{index}",
                                         "claim_text": f"{card.claim_text} variant {index}"})
-                for card in result.accepted_cards for index in range(6)
+                for card in result.accepted_cards for index in range(8)
             )
             return result.model_copy(update={"accepted_cards": cards})
 
@@ -1085,7 +1019,7 @@ def test_three_cell_bundle_stays_inside_the_completion_contract() -> None:
     completion = DeepCellExecutor(_Permit(), "worker-a", toolchain=ManyCardsToolchain(), enable_llm=False)(
         _command(), _claim(snapshot))
 
-    assert len(completion.evidence) <= 12
+    assert len(completion.evidence) <= MAX_EVIDENCE_PER_COMPLETION
     assert {candidate.cell_key for candidate in completion.candidates} == {
         "entity-1:method", "entity-1:result", "entity-1:cost"}
     # 没有模型时每张卡自成一簇，三个单元格合计超过 6 个簇，按单元格计数后仍能通过完成协议
@@ -1145,6 +1079,27 @@ def test_answer_check_drops_claims_that_do_not_give_the_asked_value() -> None:
     assert _keep_answering_cards(snapshot, column, cards, CheckLlm()) == [cards[1]]
     # 模型不可用时保留原结论
     assert _keep_answering_cards(snapshot, column, cards, None) == cards
+
+
+def test_answer_check_sees_the_research_question_so_evidence_columns_know_the_claim() -> None:
+    from types import SimpleNamespace
+
+    from app.deep_cell_executor import _keep_answering_cards
+
+    payloads = []
+
+    class CheckLlm:
+        def complete_json(self, purpose, payload):
+            payloads.append(payload)
+            return '{"answering_indices": [], "coverage": []}'
+
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Subject", "query": "服务端渲染是否必然改善 Core Web Vitals？"})
+    column = SimpleNamespace(label="支持的证据与来源", description="")
+    cards = [SimpleNamespace(claim_text="实验室高分不代表现场表现好", quote_text="a good Lab score, and not do well")]
+
+    assert _keep_answering_cards(snapshot, column, cards, CheckLlm()) == []
+    assert payloads[0]["research_question"] == "服务端渲染是否必然改善 Core Web Vitals？"
+    assert any("supporting column" in line for line in payloads[0]["policy"])
 
 
 def test_window_rejected_by_the_archive_is_dropped_instead_of_failing_the_task() -> None:

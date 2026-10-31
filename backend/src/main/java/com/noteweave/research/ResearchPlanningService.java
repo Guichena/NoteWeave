@@ -143,14 +143,6 @@ public class ResearchPlanningService {
         input.put("max_cells", MAX_CELLS);
         input.put("answer_formats", ANSWER_FORMATS.stream().sorted().toList());
         input.put("effort_tiers", EFFORT_TIERS.stream().sorted().toList());
-        var requirements = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        input.put("requirement_coverage_enabled", requirements.enabled(runId) && requirements.definitionsRequired(runId));
-        if (requirements.answerPolicy(runId)) input.put(ResearchAnswerPolicy.FLAG, 1);
-        if (ResearchCompletionGapPolicy.enabled(jdbcTemplate,runId)) input.put(ResearchCompletionGapPolicy.FLAG, 1);
-        if (requirements.fullCompletion(runId)) {
-            input.put("completion_runtime_version", 1);
-            input.put("requested_clauses",ResearchPlanningCompleteness.clauses(String.valueOf(input.get("question"))));
-        }
         String digest = canonicalizer.domainSeparatedDigest(DIGEST_DOMAIN, input);
         input.put("input_digest", digest);
         return Map.copyOf(input);
@@ -179,15 +171,8 @@ public class ResearchPlanningService {
             log.info("Ignore late planning result for run {} in status {}", task.runId(), planStatus(task.runId()));
             return;
         }
-        ValidatedPlan plan = validate(mapValue(result.get("plan")), text(frozenInput.get("question")),
-                Boolean.TRUE.equals(frozenInput.get("requirement_coverage_enabled")), Integer.valueOf(1).equals(frozenInput.get(ResearchCompletionGapPolicy.FLAG)));
+        ValidatedPlan plan = validate(mapValue(result.get("plan")));
         recordPlanningDiagnostics(task.runId(), result.get("planning_diagnostics"));
-        if (objectMapper.valueToTree(frozenInput).path("completion_runtime_version").asInt() == 1) {
-            Map<String,Object> brief = new LinkedHashMap<>(plan.brief());
-            brief.put("planning_completeness",result.get("planning_completeness"));
-            brief.put("requested_clauses",frozenInput.get("requested_clauses"));
-            plan = new ValidatedPlan(plan.entities(),plan.columns(),plan.authoritativeDomains(),plan.effortTier(),plan.researchType(),Map.copyOf(brief),plan.perspectives(),plan.reasonCodes(),plan.notApplicable());
-        }
         replaceMatrix(task.runId(), plan, PLANNER_VERSION, stringList(result.get("degradation_reasons")));
         if (reviewSeconds > 0) {
             jdbcTemplate.update("""
@@ -251,17 +236,9 @@ public class ResearchPlanningService {
             if (!(number instanceof Integer || number instanceof Long) || ((Number) number).longValue() < 1
                     || ((Number) number).longValue() > 3
                     || !Set.of("ACCEPTED", "REJECTED", "UNAVAILABLE").contains(text(attempt.get("status")))) continue;
-            List<Map<String, Object>> bindings = new ArrayList<>();
-            for (Map<String, Object> binding : listOfMaps(attempt.get("requirement_bindings")).stream().limit(24).toList()) {
-                Object index = binding.get("index");
-                if (!(index instanceof Integer || index instanceof Long) || ((Number) index).longValue() < 0
-                        || ((Number) index).longValue() >= 24) continue;
-                bindings.add(Map.of("index", ((Number) index).intValue(), "dimension", clean(text(binding.get("dimension")), 120)));
-            }
             attempts.add(Map.of("attempt", ((Number) number).intValue(), "status", text(attempt.get("status")),
                     "problems", stringList(attempt.get("problems")).stream().limit(10).map(item -> clean(item, 500)).toList(),
-                    "dimension_labels", stringList(attempt.get("dimension_labels")).stream().limit(12).map(item -> clean(item, 120)).toList(),
-                    "requirement_bindings", bindings));
+                    "dimension_labels", stringList(attempt.get("dimension_labels")).stream().limit(12).map(item -> clean(item, 120)).toList()));
         }
         jdbcTemplate.update("""
                 insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
@@ -291,21 +268,8 @@ public class ResearchPlanningService {
         Map<String, Object> merged = new LinkedHashMap<>(previous);
         merged.put("entities", plan.get("entities"));
         merged.put("dimensions", plan.get("dimensions"));
-        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        boolean requireExplicit = coverage.enabled(runId) && coverage.definitionsRequired(runId);
-        if (requireExplicit) merged.put("user_requirements", restoreRequirements(previous, plan));
         merged.put("required_points", mapValue(previous.get("brief")).getOrDefault("required_points", List.of()));
-        String question = jdbcTemplate.queryForObject("select question from research_run where id = ?", String.class, runId);
-        ValidatedPlan validated = validate(merged, question, requireExplicit, ResearchCompletionGapPolicy.enabled(jdbcTemplate,runId));
-        if (requireExplicit) {
-            Map<String, Object> brief = new LinkedHashMap<>(validated.brief());
-            Map<String, Object> previousBrief = mapValue(previous.get("brief"));
-            for (String key : List.of("planning_completeness", "requested_clauses"))
-                if (previousBrief.containsKey(key)) brief.put(key, previousBrief.get(key));
-            validated = new ValidatedPlan(validated.entities(), validated.columns(), validated.authoritativeDomains(),
-                    validated.effortTier(), validated.researchType(), Map.copyOf(brief), validated.perspectives(),
-                    validated.reasonCodes(), validated.notApplicable());
-        }
+        ValidatedPlan validated = validate(merged);
         Integer revisions = jdbcTemplate.queryForObject("""
                 select count(*) from research_matrix_plan
                 where research_run_id = ? and planner_version like 'user-revision.%'
@@ -313,51 +277,8 @@ public class ResearchPlanningService {
         replaceMatrix(runId, validated, "user-revision." + ((revisions == null ? 0 : revisions) + 1), List.of());
     }
 
-    private List<Map<String, Object>> restoreRequirements(Map<String, Object> previous, Map<String, Object> revised) {
-        Map<String, String> columns = new LinkedHashMap<>(), entities = new LinkedHashMap<>();
-        for (Map<String, Object> column : listOfMaps(previous.get("columns"))) columns.put(text(column.get("key")), text(column.get("label")));
-        for (Map<String, Object> entity : listOfMaps(previous.get("rows"))) entities.put(text(entity.get("key")), text(entity.get("label")));
-        Set<String> nextColumns = new LinkedHashSet<>(), nextEntities = new LinkedHashSet<>();
-        for (Map<String, Object> column : listOfMaps(revised.get("dimensions"))) nextColumns.add(normalizedKey(text(column.get("label"))));
-        for (Map<String, Object> entity : listOfMaps(revised.get("entities"))) nextEntities.add(normalizedKey(text(entity.get("label"))));
-        List<Map<String, Object>> definitions = listOfMaps(mapValue(previous.get("brief")).get("requirement_definitions"));
-        if (definitions.isEmpty()) throw invalid("当前规划缺少显式需求，需重新规划后再修改表格");
-        List<Map<String, Object>> requirements = new ArrayList<>();
-        for (Map<String, Object> definition : definitions) {
-            String dimension = columns.get(text(definition.get("dimension_key")));
-            if (dimension == null || !nextColumns.contains(normalizedKey(dimension)))
-                throw invalid("修改后缺少显式需求所需的研究维度，请保留原维度后重试");
-            List<String> keys = stringList(definition.get("entity_keys"));
-            List<String> subjects = new ArrayList<>();
-            for (String key : keys) {
-                String subject = entities.get(key);
-                if (subject == null || !nextEntities.contains(normalizedKey(subject)))
-                    throw invalid("修改后缺少显式需求适用的研究对象，请保留原对象后重试");
-                subjects.add(subject);
-            }
-            if (keys.isEmpty() && entities.values().stream().anyMatch(label -> !nextEntities.contains(normalizedKey(label))))
-                throw invalid("适用于全部对象的显式需求仍需要原研究对象，请保留原对象后重试");
-            String mode = text(definition.get("completion_mode")), expression = text(definition.get("count_expression"));
-            if (Set.of("DISTINCT_FACTS", "DISTINCT_ENTITIES").contains(mode) && expression.isBlank())
-                throw invalid("旧规划缺少数量要求的原文依据，需重新规划后再修改表格");
-            Map<String, Object> restored = new LinkedHashMap<>(definition);
-            restored.put("dimension", dimension); restored.put("entities", subjects); restored.put("count_expression", expression);
-            requirements.add(restored);
-        }
-        return requirements;
-    }
-
     ValidatedPlan validate(Map<String, Object> plan) {
-        return validate(plan, "", false);
-    }
-
-    private ValidatedPlan validate(Map<String, Object> plan, String originalQuestion, boolean requireExplicit) {
-        return validate(plan, originalQuestion, requireExplicit, false);
-    }
-
-    private ValidatedPlan validate(Map<String, Object> plan, String originalQuestion, boolean requireExplicit, boolean structured) {
         List<String> reasons = new ArrayList<>();
-        boolean preserveExplicit = requireExplicit || !listOfMaps(plan.get("user_requirements")).isEmpty();
         List<ValidatedEntity> entities = new ArrayList<>();
         Set<String> entityLabels = new LinkedHashSet<>();
         for (Map<String, Object> raw : listOfMaps(plan.get("entities"))) {
@@ -375,7 +296,6 @@ public class ResearchPlanningService {
             String label = clean(text(raw.get("label")), MAX_COLUMN_LABEL_CHARS);
             if (label.isBlank() || !columnLabels.add(normalizedKey(label))) continue;
             if (columns.size() >= MAX_COLUMNS) {
-                if (preserveExplicit) throw invalid("规划超过维度上限，请保留显式需求并重新规划，不能截断所需维度");
                 reasons.add("COLUMNS_TRUNCATED");
                 break;
             }
@@ -394,7 +314,6 @@ public class ResearchPlanningService {
         if (columns.size() < MIN_COLUMNS) throw invalid("Planning result needs at least two dimensions");
         int maxRows = Math.min(MAX_ROWS, MAX_CELLS / columns.size());
         if (entities.size() > maxRows) {
-            if (preserveExplicit) throw invalid("规划超过对象或单元格上限，请保留显式需求并重新规划，不能截断所需对象");
             entities = new ArrayList<>(entities.subList(0, maxRows));
             reasons.add("ROWS_TRUNCATED");
         }
@@ -404,11 +323,6 @@ public class ResearchPlanningService {
                 .filter(domain -> DOMAIN.matcher(domain).matches())
                 .distinct().limit(MAX_DOMAINS).toList();
         String effortTier = text(plan.get("effort_tier")).toUpperCase(Locale.ROOT);
-        if (preserveExplicit) {
-            int tierCells = "SIMPLE".equals(effortTier) ? 6 : "COMPLEX".equals(effortTier) ? 24 : 12;
-            if (entities.size() * columns.size() > tierCells || "SIMPLE".equals(effortTier) && entities.size() > 2)
-                throw invalid("规划超过投入等级允许的对象或单元格数量，请保留显式需求并重新规划");
-        }
         Map<String, Object> rawBrief = mapValue(plan.get("brief"));
         Map<String, Object> brief = new LinkedHashMap<>();
         brief.put("objective", clean(text(rawBrief.get("objective")), MAX_TEXT_CHARS));
@@ -422,10 +336,6 @@ public class ResearchPlanningService {
         brief.put("required_points", stringList(plan.get("required_points")).stream()
                 .map(item -> clean(item, MAX_TEXT_CHARS)).filter(item -> !item.isBlank())
                 .distinct().limit(6).toList());
-        List<Map<String, Object>> definitions = ResearchRequirementDefinitions.validate(
-                plan.get("user_requirements"), originalQuestion, columns, entities, requireExplicit, structured);
-        brief.put("requirement_definitions", definitions);
-        brief.put("requirement_definition_version", requireExplicit ? 2 : 1);
         List<Map<String, Object>> perspectives = listOfMaps(plan.get("perspectives")).stream().limit(6)
                 .map(item -> Map.<String, Object>of(
                         "name", clean(text(item.get("name")), MAX_COLUMN_LABEL_CHARS),
@@ -444,13 +354,6 @@ public class ResearchPlanningService {
             if (entityKey != null && columnKey != null) notApplicable.add(entityKey + ":" + columnKey);
         }
         if (notApplicable.size() >= entities.size() * columns.size()) notApplicable.clear();
-        // 用户明确要求的对象和维度不能被不适用标记移出研究范围。
-        if (requireExplicit) for (Map<String, Object> definition : definitions) {
-            if (!"CELL".equals(definition.get("scope_type"))) continue;
-            List<?> bound = (List<?>) definition.get("entity_keys");
-            for (ValidatedEntity entity : entities) if (bound.isEmpty() || bound.contains(entity.key()))
-                notApplicable.remove(entity.key() + ":" + definition.get("dimension_key"));
-        }
         return new ValidatedPlan(List.copyOf(entities), List.copyOf(columns), domains,
                 EFFORT_TIERS.contains(effortTier) ? effortTier : "STANDARD",
                 clean(text(plan.get("research_type")), 64), Map.copyOf(brief), perspectives, List.copyOf(reasons),

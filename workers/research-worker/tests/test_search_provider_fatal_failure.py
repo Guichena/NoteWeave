@@ -218,3 +218,25 @@ def test_deepseek_goes_first_whenever_its_key_is_configured(monkeypatch) -> None
     monkeypatch.setenv("NOTEWEAVE_RESEARCH_DEEPSEEK_SEARCH_API_KEY", "key-1")
 
     assert [adapter.provider_name for adapter in _build_external_search_adapters()] == ["deepseek", "wikipedia"]
+
+
+def test_site_scoped_query_also_asks_the_backup_provider_for_official_pages(monkeypatch) -> None:
+    from app.search_adapters import SearchQueryPlanItem
+
+    items = [SearchQueryPlanItem(query="OpenID Connect ID Token", family="direct", lane="general", priority=1),
+             SearchQueryPlanItem(query="OpenID Connect Core ID Token site:openid.net", family="verified_evidence",
+                                 lane="general", priority=2)]
+    monkeypatch.setattr("app.search_adapters.build_search_query_plan", lambda plan, remaining_budget=None: items)
+    task_input = _task_input()
+    deepseek = _PerQueryTransport([], empty_calls=0)
+    tavily = _Transport(results=[_hit("https://openid.net/specs/openid-connect-core-1_0.html")])
+    composite = CompositeSearchAdapter([_adapter("deepseek", deepseek), _adapter("tavily_mcp", tavily)], mode="fallback")
+
+    hits = composite.search(task_input, build_research_plan(task_input))
+
+    # 普通检索词仍只用 DeepSeek；带 site: 的定向检索词两个渠道各问一次
+    assert deepseek.calls == 2
+    assert tavily.calls == 1
+    assert "https://openid.net/specs/openid-connect-core-1_0.html" in [hit.url for hit in hits]
+    official = next(hit for hit in hits if hit.provider == "tavily_mcp")
+    assert official.provider_fallback_reason == ""

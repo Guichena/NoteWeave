@@ -57,10 +57,8 @@ class DiscoveryExecutor:
                 raise ValueError("检索词不能重复")
         planned = model_json(llm, "research.discovery.queries", {"question": data["question"], "table": data.get("table", {}),
             "previous_queries": data.get("previous_queries", []), "query_limit": limit,
-            "requirement_definitions": data.get("requirement_definitions", []),
-            "missing_requirements": data.get("missing_requirements", []),
-            "policy": "Find missing entities and dimensions. Prioritize unmet explicit requirements and distinct-entity counts; "
-                      "search for additional qualifying entities rather than repeating known ones. Return only queries as an array of short natural-language search queries."}, validate_queries) if limit else None
+            "policy": "Find missing entities and dimensions. Search for additional qualifying entities rather than "
+                      "repeating known ones. Return only queries as an array of short natural-language search queries."}, validate_queries) if limit else None
         if planned:
             queries = [q.strip() for q in planned["queries"]]
         else:
@@ -127,8 +125,6 @@ class DiscoveryExecutor:
                     seen.add(key)
         discovered = model_json(llm, "research.discover", {"question": data["question"], "table": data.get("table", {}),
             "observations": observations, "prior_proposals": data.get("prior_proposals", []),
-            "requirement_definitions": data.get("requirement_definitions", []),
-            "missing_requirements": data.get("missing_requirements", []),
             "policy": "Propose missing ENTITY, DIMENSION or SEARCH_QUERY items. Every proposal must cite exact snippet text via supports (observation_key, quote_text). Return only proposals; return an empty array when unsupported or already covered."}, validate_discovery)
         generation_mode = "LLM" if discovered else "RULE"
         if discovered is None:

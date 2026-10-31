@@ -20,7 +20,7 @@ def test_role_profiles_are_independent_and_fail_closed() -> None:
     assert deep.profile_key == "deep-cell-v1"
     assert deep.model_purpose == "deep_cell_extract"
     assert deep.temperature == 0.1
-    assert deep.max_llm_calls == 98
+    assert deep.max_llm_calls == 194
     assert deep.allowed_tools == frozenset({"search", "fetch", "read", "extract"})
     assert deep.require_independent_sources is False
 

@@ -231,6 +231,9 @@ class McpSearchTransport:
 DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
 # DeepSeek 搜索的 query 最长 128 个字符
 DEEPSEEK_MAX_QUERY_CHARS = 128
+_SITE_SCOPE = re.compile(r"(?<!\S)site:\S+", re.I)
+# fallback 模式下带 site: 的定向检索词最多交给几个渠道
+SCOPED_QUERY_PROVIDERS = 2
 
 
 class DeepSeekSearchTransport(HttpJsonSearchTransport):
@@ -255,6 +258,7 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
                 query = body[:DEEPSEEK_MAX_QUERY_CHARS - len(suffix) - 1].rstrip() + " " + suffix
         results = super().search(query[:DEEPSEEK_MAX_QUERY_CHARS], limit, page)
         mapped: list[dict[str, object]] = []
+        foreign: list[dict[str, object]] = []
         seen: set[str] = set()
         for item in results:
             try:
@@ -262,19 +266,20 @@ class DeepSeekSearchTransport(HttpJsonSearchTransport):
             except (TypeError, ValueError):
                 score = 0.0
             url = _safe_result_url(str(item.get("url") or ""))
-            # 同一页面的不同分块去锚点后网址相同，只保留排在前面的一条；外语版本的文档与中英文版内容重复，直接跳过
-            if not url or url in seen or _foreign_locale(url):
+            # 同一页面的不同分块去锚点后网址相同，只保留排在前面的一条
+            if not url or url in seen:
                 continue
             seen.add(url)
             title = " ".join(str(item.get("title") or "").split()) or (urllib.parse.urlsplit(url).hostname or url)
-            mapped.append({
+            # 其他语言版本的页面多与中英文版重复，排到最后；但它可能是唯一的原始来源，不能直接丢掉
+            (foreign if _foreign_locale(url) else mapped).append({
                 "title": title[:280],
                 "url": url,
                 "snippet": item.get("summary") or item.get("snippet") or "",
                 "score": score,
                 "date": item.get("date") or "",
             })
-        return mapped
+        return mapped + foreign
 
     def _headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"}
@@ -664,10 +669,15 @@ class CompositeSearchAdapter:
             remaining = global_limit - len(merged)
             query_limit = max(1, (remaining + len(queries) - index - 1) // (len(queries) - index))
             attempted: list[str] = []
+            # 定向官方来源的检索词再问下一个渠道一次：DeepSeek 搜索对规范、官方文档常返回邮件列表附件、
+            # 标准商店页面，规范原文排不进前几条；每个任务通常只有一条这样的检索词，额外计费有限
+            wanted = SCOPED_QUERY_PROVIDERS if _SITE_SCOPE.search(query_item.query) else 1
+            answered = 0
             for adapter in external_adapters:
                 if adapter.last_fatal_failure or adapter.provider_name in unavailable:
                     continue
-                query_hits = adapter.search_query(plan, query_item.query, query_limit,
+                query_hits = adapter.search_query(plan, query_item.query,
+                                                  query_limit if not answered else max(1, query_limit // 2),
                                                   rank_offset=len(merged))
                 attempted.append(adapter.provider_name)
                 if adapter.query_fatal_failure:
@@ -677,7 +687,8 @@ class CompositeSearchAdapter:
                 if not query_hits:
                     continue
                 retained[adapter.provider_name] = True
-                reason = f"{', '.join(attempted[:-1])} returned no results for this query" if len(attempted) > 1 else ""
+                reason = (f"{', '.join(attempted[:-1])} returned no results for this query"
+                          if len(attempted) > 1 and not answered else "")
                 merged = _merge_hits(merged, [
                     hit.model_copy(update={
                         "provider_attempts": attempted,
@@ -687,7 +698,9 @@ class CompositeSearchAdapter:
                     })
                     for hit in _prioritize_hits_for_recovery(plan, query_hits)
                 ], global_limit)
-                break
+                answered += 1
+                if answered >= wanted:
+                    break
         return merged
 
     def _search_with_merge(

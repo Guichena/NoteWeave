@@ -24,8 +24,6 @@ class EvidenceAuditExecutor:
 
     def __call__(self, command: ResearchAgentCommand, claim: AgentTaskClaim):
         snapshot = require_trusted_claim_snapshot(claim)
-        import time
-        metric_started = time.monotonic()
         if snapshot.role != "EVIDENCE_AUDIT" or command.research_run_id != snapshot.research_run_id:
             raise ValueError("EvidenceAuditExecutor requires an authoritative EVIDENCE_AUDIT snapshot")
         audit_input = snapshot.query_policy.get("audit_input")
@@ -101,9 +99,6 @@ class EvidenceAuditExecutor:
         }
         if has_semantics:
             role_result["semantic_checks"] = checks
-        if snapshot.query_policy.get("completion_runtime_version") == 1:
-            from app.runtime_metrics import runtime_metrics
-            role_result["runtime_metrics"] = runtime_metrics(llm, [], metric_started)
         require_execution_active()
         return _role_completion(claim, snapshot.snapshot_digest, self.worker_instance_id, role_result, llm_calls=_llm_provider_call_count(llm))
 

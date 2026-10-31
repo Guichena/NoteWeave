@@ -359,7 +359,8 @@ def test_url_fetch_adapter_with_transport_should_use_snapshot_content() -> None:
     assert document.transport_fallback_code == ""
     assert document.transport_attempt_count == 1
     assert document.snapshot_archive_ready is True
-    assert transport.calls == [(hit.url, hit.query, 4000)]
+    # 第一行是找到这一页的检索词，其余各行是各列的检索意图，供长页面按列各截一段
+    assert [(url, query.splitlines()[0], budget) for url, query, budget in transport.calls] == [(hit.url, hit.query, 4000)]
 
 
 def test_url_fetch_adapter_with_composite_transport_should_record_fallback_chain() -> None:
@@ -475,6 +476,52 @@ def test_composite_fetch_should_isolate_one_adapter_failure_from_other_hits() ->
     documents = adapter.fetch(task_input, plan, [_url_hit(), _workspace_hit()])
 
     assert [document.hit_id for document in documents] == ["hit-workspace"]
+
+
+class _BlockedFirstTransport:
+    """前几个网址返回 403、其余正常读出正文的抓取链路，记录实际抓过的网址。"""
+
+    def __init__(self, blocked: set[str]) -> None:
+        self.blocked = blocked
+        self.read_urls: list[str] = []
+
+    def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
+        del query, token_budget
+        self.read_urls.append(url)
+        if url in self.blocked:
+            return {"text": "", "fetch_failure_code": "NON_RETRYABLE_HTTP_403", "fetch_attempts": ["HTTP"]}
+        return {"text": f"Body of {url} about verifier loops.", "snapshot_key": "snapshot:" + url,
+                "fetch_attempts": ["HTTP"]}
+
+
+def test_blocked_pages_do_not_use_up_the_reading_budget() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+    plan.stop_contract["tool_response_retention_budget"] = 2
+    hits = [_url_hit(f"hit-{index}", index) for index in range(1, 6)]
+    transport = _BlockedFirstTransport({"https://example.com/hit-1", "https://example.com/hit-2"})
+
+    documents = CompositeFetchAdapter([UrlFetchAdapter(transport=transport)], max_concurrency=2).fetch(
+        task_input, plan, hits)
+
+    readable = [document.hit_id for document in documents if document.fetch_status == "FETCHED"]
+    assert readable == ["hit-3", "hit-4"]
+    # 抓取失败的记录照常保留，第五个命中不再抓
+    assert [document.hit_id for document in documents] == ["hit-1", "hit-2", "hit-3", "hit-4"]
+    assert "https://example.com/hit-5" not in transport.read_urls
+
+
+def test_backfill_stops_at_twice_the_reading_budget_when_every_page_is_blocked() -> None:
+    task_input = _build_task_input()
+    plan = build_research_plan(task_input)
+    plan.stop_contract["tool_response_retention_budget"] = 2
+    hits = [_url_hit(f"hit-{index}", index) for index in range(1, 7)]
+    transport = _BlockedFirstTransport({hit.url for hit in hits})
+
+    documents = CompositeFetchAdapter([UrlFetchAdapter(transport=transport)]).fetch(task_input, plan, hits)
+
+    assert len(documents) == 4
+    assert len(transport.read_urls) == 4
 
 
 def test_requirement_targeted_fetch_should_prioritize_matching_query() -> None:
@@ -604,3 +651,19 @@ def test_long_spec_page_keeps_its_header_with_the_identifier_and_release() -> No
     assert selected.startswith("JEP 491")
     assert "Release 24" in selected
     assert "release their carrier" in selected
+
+
+def test_long_page_keeps_a_passage_for_each_column_of_the_task() -> None:
+    filler = "Unrelated reference prose about directives and modules. "
+    text = ("Module ngx_http_upstream_module example configuration. " + filler * 60
+            + "The server directive accepts max_fails and fail_timeout parameters. " + filler * 200
+            + "The least_conn directive and the ip_hash directive select a load balancing method. " + filler * 100)
+    query = "nginx max_fails fail_timeout\n负载均衡算法 nginx load balancing method least_conn ip_hash"
+
+    selected = _select_query_relevant_text(text, query, token_budget=800)
+    only_hit_query = _select_query_relevant_text(text, query.splitlines()[0], token_budget=800)
+
+    assert "max_fails and fail_timeout" in selected
+    assert "least_conn directive and the ip_hash directive" in selected
+    assert "least_conn directive" not in only_hit_query
+    assert len(selected) <= 800 * 6 + 8

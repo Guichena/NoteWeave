@@ -29,6 +29,31 @@ class ResearchAgentSynthesisValidationServiceTest {
     }
 
     @Test
+    void acceptsComparisonSentenceThatNamesBothSubjectsAndCitesOneOfThem() {
+        validateMultiCellReport("Verified findings.", List.of(
+                paragraph("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg"), List.of("evidence:pg")),
+                validParagraphs().get(1)), Map.of());
+    }
+
+    @Test
+    void percentWrittenAsAWordInTheQuoteSupportsThePercentSign() {
+        String prose = "居家办公的主观生产力均值为60.6% [evidence:survey]。";
+        java.util.function.Function<String, Map<String, Object>> report = text -> Map.of(
+                "schema_version", "research-reader-report.v1", "title", "Report", "executive_summary", "Verified findings.",
+                "sections", List.of(Map.of("heading", "Survey", "paragraphs", List.of(paragraph(
+                        text, List.of("survey"), List.of("evidence:survey"))))));
+        List<Map<String, Object>> cells = List.of(Map.of("cell_key", "survey", "candidate_value", "主观生产力均值为60.6%",
+                "entity_label", "Japanese survey", "evidence_keys", List.of("evidence:survey"), "evidence_quotes", List.of(Map.of(
+                        "evidence_key", "evidence:survey", "quote", "the mean subjective productivity of WFH was 60.6 percent"))));
+        List<Map<String, Object>> claims = List.of(Map.of("cell_key", "survey", "claim_text", "主观生产力均值为60.6%",
+                "evidence_keys", List.of("evidence:survey")));
+        validator.validate(Set.of("survey"), cells, claims, prose, report.apply(prose), "", false, true);
+        String invented = "居家办公的主观生产力均值为61% [evidence:survey]。";
+        assertThatThrownBy(() -> validator.validate(Set.of("survey"), cells, claims, invented, report.apply(invented), "", false, true))
+                .isInstanceOf(BusinessException.class).hasMessageContaining("61%");
+    }
+
+    @Test
     void rejectsBorrowingNumbersFromAnotherSentenceCitation() {
         assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
                 paragraph("PostgreSQL 17 supports GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql].",

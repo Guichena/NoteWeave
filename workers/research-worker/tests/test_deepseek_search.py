@@ -123,7 +123,7 @@ def test_fragments_are_removed_so_double_hash_urls_stay_valid() -> None:
             == "https://www.postgresql.org/docs/17/app-pgbasebackup.html")
 
 
-def test_chunk_duplicates_and_foreign_locale_pages_are_skipped(monkeypatch) -> None:
+def test_chunk_duplicates_are_skipped_and_foreign_locale_pages_are_ranked_last(monkeypatch) -> None:
     urls = [
         "https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html#1",
         "https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html#3",
@@ -140,10 +140,13 @@ def test_chunk_duplicates_and_foreign_locale_pages_are_skipped(monkeypatch) -> N
     monkeypatch.setattr("app.search_adapters.credential_safe_urlopen", fake_urlopen)
     rows = DeepSeekSearchTransport("key-1").search("q", 10)
 
+    # 其他语言版本可能是唯一的原始来源，只排到最后，不丢弃
     assert [row["url"] for row in rows] == [
         "https://docs.aws.amazon.com/lambda/latest/dg/snapstart.html",
         "https://docs.amazonaws.cn/en_us/lambda/latest/dg/snapstart.md",
         "https://techdocs.broadcom.com/tw/zh-tw/vmware-cis/vsphere/drs.html",
+        "https://docs.aws.amazon.com/ko_kr/lambda/latest/dg/snapstart.html",
+        "https://docs.aws.amazon.com/pt_br/lambda/latest/dg/snapstart.html",
     ]
 
 

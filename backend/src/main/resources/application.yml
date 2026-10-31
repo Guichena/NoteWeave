@@ -72,13 +72,6 @@ noteweave:
       research-active-enabled: ${NOTEWEAVE_CONTEXT_V2_RESEARCH_ACTIVE_ENABLED:false}
       artifact-active-enabled: ${NOTEWEAVE_CONTEXT_V2_ARTIFACT_ACTIVE_ENABLED:false}
   research:
-    requirement-coverage-v1: ${NOTEWEAVE_RESEARCH_REQUIREMENT_COVERAGE_V1:false}
-    requirement-shadow-mode: ${NOTEWEAVE_RESEARCH_REQUIREMENT_SHADOW_MODE:false}
-    requirement-fact-accumulation: ${NOTEWEAVE_RESEARCH_REQUIREMENT_FACT_ACCUMULATION:true}
-    requirement-driven-scheduling: ${NOTEWEAVE_RESEARCH_REQUIREMENT_DRIVEN_SCHEDULING:true}
-    synthesis-retention:
-      enabled: ${NOTEWEAVE_RESEARCH_SYNTHESIS_RETENTION_ENABLED:false}
-      days: ${NOTEWEAVE_RESEARCH_SYNTHESIS_RETENTION_DAYS:7}
     strict-research-evidence-validation: ${NOTEWEAVE_RESEARCH_STRICT_EVIDENCE_VALIDATION:false}
     intent-matrix-v2: ${NOTEWEAVE_RESEARCH_INTENT_MATRIX_V2:true}
     # 由 PLANNING 角色调用模型规划研究表格；关闭后直接使用规则生成的表格
@@ -95,8 +88,8 @@ noteweave:
     wide-discovery-precision-threshold: ${NOTEWEAVE_RESEARCH_WIDE_DISCOVERY_PRECISION_THRESHOLD:0.90}
     distributed-replay-observation: ${NOTEWEAVE_RESEARCH_DISTRIBUTED_REPLAY_OBSERVATION:false}
     agent:
-      # 一个深挖任务最多覆盖同一研究对象的几个普通单元格（检索与阅读共用，抽取逐个进行）
-      max-cells-per-task: ${NOTEWEAVE_RESEARCH_AGENT_MAX_CELLS_PER_TASK:3}
+      # 一个深挖任务最多覆盖同一研究对象的几个普通单元格（检索与阅读共用，抽取逐个进行），取值 1 到 6
+      max-cells-per-task: ${NOTEWEAVE_RESEARCH_AGENT_MAX_CELLS_PER_TASK:6}
       # 高风险单元格的两路独立取证，默认关闭
       high-risk-quorum-enabled: ${NOTEWEAVE_RESEARCH_AGENT_HIGH_RISK_QUORUM_ENABLED:false}
       # 允许宽搜索的规划投入等级，逗号分隔，ANY 表示不限制

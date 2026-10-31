@@ -56,7 +56,8 @@ def test_rule_queries_cover_all_columns_before_a_broad_query_uses_the_budget():
     assert {key for spec in result.specs for key in spec.column_keys} == {"0", "1", "2"}
 
 
-@pytest.mark.parametrize("label", ["Rust 2024 edition", "Rust edition 2024", "PEP 703", "RFC 9110"])
+@pytest.mark.parametrize("label", ["Rust 2024 edition", "Rust edition 2024", "PEP 703", "RFC 9110",
+                                   "Git SHA-256 object format", "AES-128 encryption", "HTTP/2", "UTF-8 strings"])
 def test_edition_years_and_specification_identifiers_are_not_runtime_versions(label):
     assert not _entity_versions(label)
     assert _version_mismatch(_entity_versions(label), SimpleNamespace(
@@ -66,6 +67,8 @@ def test_edition_years_and_specification_identifiers_are_not_runtime_versions(la
 def test_runtime_versions_still_reject_other_documentation_versions():
     assert _version_mismatch(_entity_versions("PostgreSQL 17"), SimpleNamespace(
         url="https://www.postgresql.org/docs/16/backup.html")) == 1
+    assert _entity_versions("OAuth 2.1") == {"2.1"}
+    assert _entity_versions("TLS 1.3 handshake") == {"1.3"}
 
 
 @pytest.mark.parametrize("coverage,complete", [
@@ -74,18 +77,17 @@ def test_runtime_versions_still_reject_other_documentation_versions():
     ([{"requirement_index": True, "claim_indices": [0]}], False),
     ([], False),
 ])
-def test_partial_column_answer_stays_sourced_instead_of_completing_the_cell(coverage, complete):
+def test_legacy_partial_column_answer_is_submitted_for_verification(coverage, complete):
+    # 未启用需求覆盖时没有跨轮累计：直接回答了列中某一部分的事实照常提交核验，不降为线索
     snapshot = SimpleNamespace(query_policy={"entity_label": "Atlas"})
     column = SimpleNamespace(key="status", label="Status", description="Initial release status\nCurrent release status")
     card = _card("w", "Atlas was initially experimental")
     llm = _SequenceLlm({"answering_indices": [0], "coverage": coverage})
     partial = []
     accepted = _keep_answering_cards(snapshot, column, [card], llm, partial_out=partial)
-    assert bool(accepted) is complete
-    if not complete:
-        retained = _retained_cards([card], [card], accepted, partial)
-        assert retained[0].relation_type == "WEAK_SUPPORT"
-        assert retained[0].support_score > 0
+    assert accepted == [card]
+    assert partial == []
+    assert _retained_cards([card], [card], accepted, partial) == []
 
 
 def test_invalid_answer_check_keeps_the_source_without_verifying_the_cell():
@@ -105,10 +107,10 @@ def test_structured_requirements_survive_flattening_the_description_between_serv
     column = SimpleNamespace(key="status", **specs["status"])
     llm = _SequenceLlm({"answering_indices": [0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     partial = []
-    assert _keep_answering_cards(SimpleNamespace(query_policy={}), column, [_card("w", "Initial finding")], llm,
-                                 partial_out=partial) == []
+    card = _card("w", "Initial finding")
+    assert _keep_answering_cards(SimpleNamespace(query_policy={}), column, [card], llm, partial_out=partial) == [card]
     assert [item["text"] for item in llm.calls[0][1]["requirements"]] == ["Initial status", "Current status"]
-    assert len(partial) == 1
+    assert partial == []
 
 
 def test_answer_check_receives_source_versions_and_dates_for_current_status():
@@ -190,12 +192,36 @@ def test_summary_cannot_keep_a_claim_after_removing_invalid_citations(summary):
 @pytest.mark.parametrize("text,refs", [
     ("PostgreSQL indexes virtual columns [evidence:mysql].", ["evidence:mysql"]),
     ("The supported version is 17 [evidence:mysql].", ["evidence:mysql"]),
-    ("A fabricated finding [evidence:unknown] [evidence:pg].", ["evidence:pg"]),
-    ("PostgreSQL 17 uses GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql].", ["evidence:pg", "evidence:mysql"]),
 ])
 def test_paragraph_cannot_borrow_a_different_entity_or_citations_facts(text, refs):
+    result = _normalize_narrative(_narrative(text, refs), _cells(), [])
+    # 借来的对象或数字不保留，这句换成所引单元格核验过的结论
+    assert result["sections"][0]["paragraphs"][0]["text"] == "Virtual column indexes [evidence:mysql]."
+    assert "PostgreSQL indexes" not in str(result) and "version is 17" not in str(result)
+
+
+def test_paragraph_with_an_unknown_citation_is_not_kept():
     with pytest.raises(ValueError):
-        _normalize_narrative(_narrative(text, refs), _cells(), [])
+        _normalize_narrative(_narrative("A fabricated finding [evidence:unknown] [evidence:pg].", ["evidence:pg"]),
+                             _cells(), [])
+
+
+def test_sentence_borrowing_another_citations_number_is_replaced_by_that_cells_verified_value():
+    text = "PostgreSQL 17 uses GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql]."
+    result = _normalize_narrative(_narrative(text, ["evidence:pg", "evidence:mysql"]), _cells(), [])
+    paragraph = result["sections"][0]["paragraphs"][0]
+    # 17 只在 PostgreSQL 的原文里，MySQL 一句借用了它；这句换成 MySQL 单元格核验过的结论，其余照常保留
+    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]."
+    assert paragraph["cell_keys"] == ["pg", "mysql"]
+    assert paragraph["evidence_keys"] == ["evidence:pg", "evidence:mysql"]
+
+
+def test_unsupported_sentence_is_dropped_when_its_cells_value_is_already_written():
+    text = ("PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]. "
+            "MySQL supports version 17 [evidence:mysql].")
+    result = _normalize_narrative(_narrative(text, ["evidence:pg", "evidence:mysql"]), _cells(), [])
+    paragraph = result["sections"][0]["paragraphs"][0]
+    assert paragraph["text"] == "PostgreSQL 17 uses GIN [evidence:pg]. Virtual column indexes [evidence:mysql]."
 
 
 def test_missing_body_coverage_is_repaired_with_the_actual_verified_finding():
@@ -259,3 +285,25 @@ def test_sentence_final_numbers_are_checked_before_english_punctuation():
                                        "evidence_quotes": [{"evidence_key": "evidence:count", "quote": "Count is 5."}]}]})
     assert _cited_text_supported("Count is 5. [evidence:count]", cells, ["evidence:count"], cells)
     assert not _cited_text_supported("Count is 99. [evidence:count]", cells, ["evidence:count"], cells)
+
+
+def test_cell_value_is_the_claim_the_answer_check_ranks_most_direct():
+    from app.deep_cell_executor import _candidate_payload, _trusted_evidence_payload
+
+    detail = _card("w1", "Failed upstreams are skipped for fail_timeout seconds", support=0.95)
+    answer = _card("w2", "Round robin is the default load balancing method", support=0.8)
+    llm = _SequenceLlm({"answering_indices": [1, 0], "coverage": [{"requirement_index": 0, "claim_indices": [1]}]})
+
+    ranked = _keep_answering_cards(SimpleNamespace(query_policy={}), SimpleNamespace(label="Load balancing method"),
+                                   [detail, answer], llm)
+
+    assert ranked == [answer, detail]
+    snapshot = SimpleNamespace(task_id="task-1", lease_epoch=1, fencing_token=1,
+                               target_cells=[SimpleNamespace(cell_id="entity-a:col-a", expected_version=1)])
+    windows = [SimpleNamespace(window_id=window_id, snapshot_status="EXTERNAL_ARCHIVED", query="q", read_focus="f",
+                               url=f"https://docs.example/{window_id}", source_domain="docs.example", lineage_digest="")
+               for window_id in ("w1", "w2")]
+    candidates = _candidate_payload(snapshot, ranked, _trusted_evidence_payload(snapshot, ranked, windows),
+                                    windows=windows)
+    # 按证据数与抽取可信度挑时会选中可信度更高的旁支事实
+    assert [item["candidate_value"] for item in candidates] == [answer.claim_text]

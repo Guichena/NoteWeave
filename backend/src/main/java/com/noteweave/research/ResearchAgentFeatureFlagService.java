@@ -21,16 +21,6 @@ class ResearchAgentFeatureFlagService {
     static final String WORKER_SYNTHESIS = "worker_synthesis_v1";
     static final String WIDE_DISCOVERY = "wide_discovery_v1";
     static final String WIDE_DISCOVERY_AUTO_ACCEPT = "wide_discovery_auto_accept";
-    static final String REQUIREMENT_COVERAGE = "requirement_coverage_v1";
-
-    @Value("${noteweave.research.requirement-coverage-v1:false}")
-    private boolean requirementCoverage;
-    @Value("${noteweave.research.requirement-shadow-mode:false}")
-    private boolean requirementShadow;
-    @Value("${noteweave.research.requirement-fact-accumulation:true}")
-    private boolean factAccumulation;
-    @Value("${noteweave.research.requirement-driven-scheduling:true}")
-    private boolean drivenScheduling;
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -67,23 +57,10 @@ class ResearchAgentFeatureFlagService {
     }
 
     String captureJson() {
-        Map<String, Object> captured = new LinkedHashMap<>(current);
-        captured.put(REQUIREMENT_COVERAGE, requirementCoverage);
-        captured.put("requirement_definition_version", 2);
-        captured.put("requirement_state_version", 5);
-        captured.put(ResearchAnswerPolicy.FLAG, 1);
-        captured.put(ResearchCompletionGapPolicy.FLAG, 1);
-        captured.put("completion_budget_reserves", Map.of("SYNTHESIS",16,"EVIDENCE_AUDIT",80,"COUNTERFACTUAL",68));
-        captured.put("completion_search_reserves",Map.of("COUNTERFACTUAL",12));
-        captured.put("completion_budget_limits",ResearchDiscoveryBudget.LIMITS);
-        captured.put("requirement_shadow_mode",requirementShadow);
-        captured.put("requirement_fact_accumulation",factAccumulation);
-        captured.put("requirement_driven_scheduling",drivenScheduling);
-        return Json.write(objectMapper, captured);
+        return Json.write(objectMapper, current);
     }
 
     boolean currentEnabled(String key) {
-        if (REQUIREMENT_COVERAGE.equals(key)) return requirementCoverage;
         return Boolean.TRUE.equals(current.get(key));
     }
 

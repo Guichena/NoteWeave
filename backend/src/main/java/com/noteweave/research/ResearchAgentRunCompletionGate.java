@@ -444,24 +444,13 @@ public class ResearchAgentRunCompletionGate {
 
     /** Reads the already-persisted canonical state for a Run and returns the terminal decision. */
     public CompletionDecision evaluateForRun(String runId) {
-        CompletionDecision decision = evaluate(
-                new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).applyCoverage(loadTableState(runId)),
+        CompletionDecision decision = evaluate(loadTableState(runId),
                 loadVerifierState(runId), loadBudgetState(runId), loadInfraState(runId));
-        decision = new ResearchReportCoverageService(jdbcTemplate, objectMapper).apply(runId, decision, false);
         if (!hasNoValidQuoteSignal(runId)) return decision;
         List<String> reasons = new ArrayList<>(decision.reasonCodes());
         reasons.add(REASON_NO_VALID_QUOTE);
         return new CompletionDecision(decision.terminalState(), decision.promotableClaims(),
                 decision.unresolvedCells(), decision.limitations(), dedupe(reasons));
-    }
-
-    public CompletionDecision evaluateReportForFinalization(String runId) {
-        return new ResearchReportCoverageService(jdbcTemplate, objectMapper).apply(runId, evaluateForRun(runId), true);
-    }
-
-    public boolean requiresReportCoverage(String runId) {
-        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
-        return coverage.improvedCompletion(runId) && coverage.enforces(runId);
     }
 
     private boolean hasNoValidQuoteSignal(String runId) {

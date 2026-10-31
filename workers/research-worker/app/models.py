@@ -414,7 +414,6 @@ class ResearchSearchHit(BaseModel):
 
 
 class ResearchFetchedDocument(BaseModel):
-    navigation_links: list[dict[str, str]] = Field(default_factory=list)
     fetch_id: str
     hit_id: str
     source_id: str

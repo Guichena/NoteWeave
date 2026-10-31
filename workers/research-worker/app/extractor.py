@@ -30,6 +30,9 @@ _MAX_REJECTION_DETAIL_CHARS = 240
 _QUESTION_STOP_TERMS = frozenset({
     "about", "and", "compare", "evidence", "from", "how", "into", "must", "only",
     "research", "should", "summary", "that", "the", "this", "use", "what", "with",
+    # 检索词里限定来源类型的词，出现在原文里不能说明原文切题
+    "analysis", "case", "documentation", "docs", "empirical", "for", "guide", "literature", "official",
+    "paper", "preprint", "report", "review", "studies", "study", "survey", "systematic", "technical",
 })
 
 
@@ -119,7 +122,7 @@ def _extract_evidence_cards_detailed_with_llm(
         "research.extract",
         {
             "question": plan.normalized_question,
-            "as_of_date": plan.stop_contract.get("as_of_date") or datetime.now(timezone.utc).date().isoformat(),
+            "as_of_date": datetime.now(timezone.utc).date().isoformat(),
             "research_type": plan.research_type,
             "target_entity_type": plan.target_entity_type,
             "schema_columns": [col.key for col in plan.research_schema.columns],
@@ -129,10 +132,6 @@ def _extract_evidence_cards_detailed_with_llm(
                 for col in plan.research_schema.columns
             ],
             "target_entity": str(plan.stop_contract.get("deep_cell_entity_label") or ""),
-            "source_scopes": plan.stop_contract.get("source_scopes", []),
-            "requirement_specs": [item for item in plan.stop_contract.get("requirement_specs", [])
-                                  if any(str(item.get("cell_key", "")).endswith(":" + col.key)
-                                         for col in plan.research_schema.columns)],
             "recovery_mode": str(plan.stop_contract.get("recovery_mode", "")).strip().upper(),
             "extraction_policy": [
                 "NEVER write internal knowledge; every claim must cite a window_id",
@@ -143,9 +142,6 @@ def _extract_evidence_cards_detailed_with_llm(
                 "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
-                "When requirement_specs asks for DISTINCT_FACTS, extract each distinct requested item as its own card. "
-                "Repeated descriptions of one item are one fact; never split one fact into paraphrases to reach minimum_count. "
-                "Keep the item's name and the requested property together, with its version and time conditions.",
                 "when a column asks for a command, option, parameter, configuration item or condition, prefer a quote "
                 "that names it literally (for example '--max-connections=N' or 'only when the cache is cold') over a "
                 "general description of the feature",
@@ -155,10 +151,7 @@ def _extract_evidence_cards_detailed_with_llm(
                 "for current status or maturity, distinguish earlier-release documentation, current stable "
                 "documentation and development versions using source_url and dates; never turn a historical "
                 "experimental status into a claim about today. Preserve the version and time scope in claim_text",
-                ("For each (entity, column), produce at most 12 SUPPORTS cards covering different requested facts. "
-                 "Prioritize the missing requirement_specs. Selection and the submission budget are enforced later; do not merge independent facts into one claim."
-                 if plan.stop_contract.get("evidence_selection_version") == 1 else
-                 "for each (entity, column) produce up to three SUPPORTS cards, each stating a different fact that answers the column (up to five when the column asks for a list of items), plus at most one CONFLICTS card; never emit two cards for the same fact"),
+                "for each (entity, column) produce up to three SUPPORTS cards, each stating a different fact that answers the column (up to five when the column asks for a list of items), plus at most one CONFLICTS card; never emit two cards for the same fact",
                 "CONFLICTS is relative to another card: when sources disagree, emit one directional finding as SUPPORTS and the opposing finding as CONFLICTS; never emit only CONFLICTS cards",
                 "relation_type is judged against the column, not against the question's hypothesis: a finding that X does not help is SUPPORTS for a column that asks for opposing or inconclusive evidence",
                 "if the window does not support any schema column, skip the window",
@@ -317,6 +310,7 @@ def _extract_evidence_cards_detailed_with_llm(
             )
             continue
         raw_claim = str(raw_card.get("claim_text") or "").strip()
+        quote_start, quote = _extend_quote_past_colon(window.window_text, quote_start, quote)
         quote_start, quote = _extend_quote_for_claim(window.window_text, quote_start, quote, raw_claim)
         claim = _grounded_claim(raw_claim, quote)
         if not claim:
@@ -674,6 +668,32 @@ def _extend_quote_for_claim(text: str, quote_start: int, quote: str, claim: str)
     return quote_start, quote
 
 
+_HEADING_LINE = re.compile(r"\n[ \t]*#")
+_LAST_SENTENCE_END = re.compile(r".*(?:[.!?](?=\s)|[。！？；])", re.DOTALL)
+
+
+def _extend_quote_past_colon(text: str, quote_start: int, quote: str) -> tuple[int, str]:
+    """引用停在冒号上时（例如 the following two strategies:），答案在冒号后面，把引用扩到后面的内容，仍是原文中连续的一段。
+
+    冒号后的列表在网页转成的文本里形式不一：Markdown 列表、缩进行、空行隔开的短行，也可能是一段话或代码，
+    所以不判断列表形式，只扩到下一个标题之前，总长不超过扩展上限，并截在上限内最后一个完整的行或句子。
+    """
+    if quote_start < 0 or not quote.rstrip().endswith((":", "：")):
+        return quote_start, quote
+    end = quote_start + len(quote)
+    limit = min(len(text), quote_start + _MAX_EXTENDED_QUOTE_CHARS)
+    following = text[end:limit]
+    heading = _HEADING_LINE.search(following)
+    if heading:
+        following = following[:heading.start()]
+    elif limit < len(text):
+        sentence = _LAST_SENTENCE_END.match(following)
+        following = following[:max(following.rfind("\n"), sentence.end() if sentence else -1, 0)]
+    if not following.strip():
+        return quote_start, quote
+    return quote_start, (quote + following).rstrip()
+
+
 def _grounded_claim(claim: str, quote: str) -> str:
     """结论写成对这一列的简短回答；其中的数字、版本号、日期和命令、参数名必须都出现在引用原文里，
     否则 Java 侧会按引用不支撑判为不合格，或者成文时因原文没有而略去，这时退回用原文本身作为结论。"""
@@ -727,11 +747,15 @@ def _is_external_window(window: ResearchReadWindow) -> bool:
 
 
 def _intent_terms_text(plan: ResearchPlan) -> str:
-    """判断原文是否切题时的参照词：问题加上列名、说明、检索意图和研究对象名。
-    只用问题时，中文问题里的拉丁词很少，英文文档里讲命令或参数的句子常被误判为答错列。"""
+    """判断原文是否切题时的参照词：问题加上列名、说明、检索意图、本次实际发出的检索词和研究对象名。
+    只用问题时，中文问题里的拉丁词很少，英文文档里讲命令或参数的句子常被误判为答错列；
+    冲突类问题的列名和说明也全是中文，英文论文只能靠实际检索词判断是否切题。"""
     columns = " ".join(" ".join((column.label, column.description, *column.search_intents))
                        for column in plan.research_schema.columns)
-    return " ".join((plan.normalized_question, columns, str(plan.stop_contract.get("deep_cell_entity_label") or "")))
+    queries = " ".join(dict.fromkeys((*getattr(plan, "query_set", ()),
+                                      *(spec.query for spec in getattr(plan, "query_specs", ())))))
+    return " ".join((plan.normalized_question, columns, queries,
+                     str(plan.stop_contract.get("deep_cell_entity_label") or "")))
 
 
 def _quote_matches_question_intent(question: str, quote: str) -> bool:

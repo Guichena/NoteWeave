@@ -192,10 +192,6 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
     provider_receipt: ResearchAgentExtractionProviderReceipt
     execution_report: dict[str, object] | None = None
     claim_clusters: list[dict[str, object]] | None = None
-    requirement_coverage: dict[str, object] | None = None
-    fact_selection: dict[str, object] | None = None
-    source_scope_checks: dict[str, object] | None = None
-    runtime_metrics: dict[str, object] | None = None
     rejection_samples: tuple[ResearchAgentRejectionSample, ...] = Field(
         default_factory=tuple, max_length=_MAX_REJECTION_SAMPLES
     )
@@ -224,24 +220,12 @@ class ResearchAgentExtractionDiagnostics(_FrozenStrictContract):
 
     @model_validator(mode="after")
     def validate_diagnostics(self) -> "ResearchAgentExtractionDiagnostics":
-        if self.source_scope_checks is not None:
-            from app.source_scope_checks import validate_scope_checks
-            validate_scope_checks(self.source_scope_checks)
-        if self.runtime_metrics is not None:
-            from app.runtime_metrics import validate_runtime_metrics
-            validate_runtime_metrics(self.runtime_metrics)
-        if self.fact_selection is not None:
-            from app.fact_selection import validate_selection
-            validate_selection(self.fact_selection)
         if self.execution_report is not None:
             from app.execution_report import validate_execution_report
             validate_execution_report(self.execution_report)
         if self.claim_clusters is not None:
             from app.claim_clustering import validate_clusters
             validate_clusters(self.claim_clusters)
-        if self.requirement_coverage is not None:
-            from app.requirement_coverage import RequirementCoverageProposal
-            RequirementCoverageProposal.model_validate(self.requirement_coverage)
         if sum(self.rejection_counts.values()) != self.rejected_count:
             raise ValueError("extraction rejection_counts must sum to rejected_count")
         if self.accepted_count == 0 and self.termination_reason == _EXTRACTION_ACCEPTED_REASON:
@@ -353,8 +337,8 @@ class _ResearchAgentCompletionContent(_FrozenStrictContract):
     budget_usage: ResearchAgentBudgetUsage
     telemetry: ResearchAgentCompletionTelemetry
     trace_digest: str = Field(pattern=_DIGEST_PATTERN)
-    evidence: tuple[ResearchAgentCompletionEvidence, ...] = Field(default_factory=tuple, max_length=12)
-    candidates: tuple[ResearchAgentCompletionCandidate, ...] = Field(default_factory=tuple, max_length=3)
+    evidence: tuple[ResearchAgentCompletionEvidence, ...] = Field(default_factory=tuple, max_length=36)
+    candidates: tuple[ResearchAgentCompletionCandidate, ...] = Field(default_factory=tuple, max_length=6)
     role_result: dict[str, object] | None = None
     extraction_diagnostics: ResearchAgentExtractionDiagnostics | None = None
 

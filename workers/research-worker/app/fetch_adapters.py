@@ -18,7 +18,14 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from typing import Protocol
 
-from app.http_security import credential_safe_urlopen, resolve_public_http_addresses
+from app.fetch_access import fetch_blocked, record_fetch_outcome
+from app.http_security import (
+    TOTAL_TIMEOUT_FACTOR,
+    ResponseDeadline,
+    ResponseDeadlineExceeded,
+    credential_safe_urlopen,
+    resolve_public_http_addresses,
+)
 from app.mcp_search_client import (
     TAVILY_EXTRACT_TOOL,
     McpSearchClient,
@@ -152,7 +159,6 @@ class UrlFetchAdapter:
         fetch_index: int,
     ) -> ResearchFetchedDocument | None:
         del task_input
-        del plan
         if not hit.url.strip():
             return None
 
@@ -181,7 +187,6 @@ class UrlFetchAdapter:
         published_at = ""
         updated_at = ""
         reported_transport_attempt_count = 0
-        navigation_links = []
 
         if self.transport is not None:
             fetch_method = "TRANSPORT"
@@ -192,7 +197,8 @@ class UrlFetchAdapter:
             transport_resolution = "TRANSPORT"
             transport_fallback_reason = fetch_error_reason
             transport_fallback_code = fetch_failure_code
-            snapshot = self.transport.read(hit.url, hit.query, self.token_budget)
+            focus = "\n".join([" ".join(hit.query.split()), *_column_focus(plan)])
+            snapshot = self.transport.read(hit.url, focus, self.token_budget)
             untrusted_content = bool(snapshot.get("untrusted_content", True))
             prompt_injection_detected = bool(snapshot.get("prompt_injection_detected", False))
             prompt_injection_signals = [
@@ -206,8 +212,6 @@ class UrlFetchAdapter:
             updated_at = str(snapshot.get("updated_at") or "").strip()
             reported_transport_attempt_count = int(snapshot.get("transport_attempt_count") or 0)
             fetched_text = str(snapshot.get("text") or "").strip()
-            from app.document_navigation import document_links
-            navigation_links = (snapshot.get("navigation_links") or document_links(fetched_text, hit.url))[:200]
             snapshot_status = str(snapshot.get("snapshot_status") or snapshot_status).strip() or snapshot_status
             snapshot_key = str(snapshot.get("snapshot_key") or snapshot_key).strip()
             fetch_status = str(snapshot.get("fetch_status") or fetch_status).strip() or fetch_status
@@ -253,6 +257,7 @@ class UrlFetchAdapter:
                     transport_fallback_code = ""
                 if not transport_resolution:
                     transport_resolution = fetch_method
+            record_fetch_outcome(hit.url, bool(snapshot_text), fetch_failure_code)
 
         source_domain = hit.source_domain or infer_source_domain(hit.url)
         if untrusted_content and not prompt_injection_signals:
@@ -283,7 +288,6 @@ class UrlFetchAdapter:
             hit_id=hit.hit_id,
             source_id=hit.source_id,
             source_title=hit.source_title,
-            navigation_links=navigation_links,
             query=hit.query,
             rank=hit.rank,
             url=hit.url,
@@ -460,10 +464,8 @@ class HttpUrlSnapshotTransport:
                 "transport_fallback_code": "EMPTY_FETCH_TEXT",
             }
         injection_signals = detect_prompt_injection(cleaned_text)
-        from app.document_navigation import document_links
         return {
             "text": cleaned_text,
-            "navigation_links": document_links(text, url),
             "snapshot_key": _snapshot_key(url, cleaned_text),
             "snapshot_status": "HTTP_FETCHED",
             "fetch_status": "FETCHED",
@@ -797,6 +799,30 @@ class CompositeUrlSnapshotTransport:
         }
 
 
+# 抓取失败时最多补抓到预算的几倍，避免整页命中都打不开时把时间耗在逐个重试上
+FETCH_BACKFILL_FACTOR = 2
+# 长页面按列各截一段时最多照顾的列数，每段至少还有几千字符
+MAX_FOCUS_COLUMNS = 4
+
+
+def _column_focus(plan: ResearchPlan) -> list[str]:
+    """同一任务里各列的名称与检索意图，每列一行；抓取长页面时为每列各截一段相关正文。"""
+    lines = []
+    for column in plan.research_schema.columns[:MAX_FOCUS_COLUMNS]:
+        line = " ".join(" ".join((column.label, *column.search_intents)).split())
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _readable_document(document: ResearchFetchedDocument) -> bool:
+    """与阅读环节的判断一致：工作台资料，或抓到了正文的网页快照。"""
+    if document.adapter == "workspace":
+        return True
+    return (document.fetch_status == "FETCHED" and document.content_origin == "FETCHED_SNAPSHOT"
+            and bool(document.snapshot_text.strip()))
+
+
 class CompositeFetchAdapter:
     def __init__(self, adapters: list[FetchAdapter], max_concurrency: int = 1) -> None:
         self.adapters = adapters
@@ -812,17 +838,39 @@ class CompositeFetchAdapter:
         if retention_budget <= 0:
             return []
 
-        selected_hits = _ordered_hits(plan, search_hits)[:retention_budget]
-        if self.max_concurrency <= 1 or len(selected_hits) <= 1:
+        # 论文库、出版社页面常返回 403，PDF 也读不出正文；拒绝自动读取的站点排到最后，抓取失败的网址
+        # 不占阅读名额，按顺序补抓后面的命中，直到读到的篇数达到预算，最多抓预算的两倍
+        ordered = sorted(_ordered_hits(plan, search_hits), key=lambda hit: fetch_blocked(hit.url or ""))
+        ordered = ordered[:retention_budget * FETCH_BACKFILL_FACTOR]
+        documents: list[ResearchFetchedDocument] = []
+        cursor = 0
+        while cursor < len(ordered):
+            needed = retention_budget - sum(1 for document in documents if _readable_document(document))
+            if needed <= 0:
+                break
+            batch = ordered[cursor:cursor + needed]
+            documents.extend(self._fetch_batch(task_input, plan, batch, start_index=cursor + 1))
+            cursor += len(batch)
+        return documents
+
+    def _fetch_batch(
+        self,
+        task_input: ResearchTaskInput,
+        plan: ResearchPlan,
+        hits: list[ResearchSearchHit],
+        *,
+        start_index: int,
+    ) -> list[ResearchFetchedDocument]:
+        if self.max_concurrency <= 1 or len(hits) <= 1:
             return [
                 document
-                for index, hit in enumerate(selected_hits, start=1)
+                for index, hit in enumerate(hits, start=start_index)
                 if (document := self._fetch_first_supported_hit(task_input, plan, hit, index)) is not None
             ]
-        with ThreadPoolExecutor(max_workers=min(self.max_concurrency, len(selected_hits))) as executor:
+        with ThreadPoolExecutor(max_workers=min(self.max_concurrency, len(hits))) as executor:
             futures = [
                 executor.submit(self._fetch_first_supported_hit, task_input, plan, hit, index)
-                for index, hit in enumerate(selected_hits, start=1)
+                for index, hit in enumerate(hits, start=start_index)
             ]
             return [document for future in futures if (document := future.result()) is not None]
 
@@ -1023,8 +1071,10 @@ def _pinned_http_get(
             connection = _PinnedHTTPSConnection(connect_ip, parsed.hostname or "", port, timeout_seconds)
         else:
             connection = http.client.HTTPConnection(connect_ip, port=port, timeout=timeout_seconds)
+        deadline = ResponseDeadline(timeout_seconds * TOTAL_TIMEOUT_FACTOR)
         try:
             connection.request("GET", path, headers=request_headers)
+            deadline.attach(getattr(connection, "sock", None))
             response = connection.getresponse()
             response_headers = {str(key).title(): str(value) for key, value in response.getheaders()}
             if response.status in {301, 302, 303, 307, 308}:
@@ -1039,8 +1089,14 @@ def _pinned_http_get(
                 continue
             if response.status >= 400:
                 raise ValueError(f"HTTP_STATUS_{response.status}")
-            return _read_response_bytes(response, token_budget), response_headers, current_url
+            body = _read_response_bytes(response, token_budget)
+            deadline.check()
+            return body, response_headers, current_url
+        except Exception as exc:
+            deadline.check(exc)
+            raise
         finally:
+            deadline.cancel()
             connection.close()
     raise ValueError("URL_REDIRECT_LIMIT_EXCEEDED")
 
@@ -1079,6 +1135,9 @@ def _blocked_url_result(method: str, reason: str) -> dict[str, object]:
 
 
 def _is_retryable_fetch_error(exc: BaseException) -> bool:
+    # 超过总时限的读取方式多半还会再次挂住，直接换下一个读取方式
+    if isinstance(exc, ResponseDeadlineExceeded):
+        return False
     match = re.fullmatch(r"HTTP_STATUS_(\d{3})", str(exc).strip())
     if match is None:
         return True
@@ -1087,6 +1146,8 @@ def _is_retryable_fetch_error(exc: BaseException) -> bool:
 
 
 def _non_retryable_fetch_failure_code(exc: BaseException) -> str:
+    if isinstance(exc, ResponseDeadlineExceeded):
+        return "FETCH_DEADLINE_EXCEEDED"
     match = re.fullmatch(r"HTTP_STATUS_(\d{3})", str(exc).strip())
     return f"NON_RETRYABLE_HTTP_{match.group(1)}" if match else "NON_RETRYABLE_FETCH_ERROR"
 
@@ -1200,15 +1261,38 @@ PAGE_HEAD_CHARS = 2000
 
 
 def _select_query_relevant_text(text: str, query: str, token_budget: int) -> str:
-    """保留页面开头加上与检索词最相关的一段；页面不长时整页保留。"""
+    """保留页面开头加上与检索词最相关的一段；页面不长时整页保留。
+
+    query 有多行时，第一行是找到这一页的检索词，其余各行是同一任务里各列的检索意图（见 _column_focus）。
+    只按第一行截取时，同一页里其他列要的段落常落在截取范围之外，所以第一行占正文篇幅的一半，
+    其余篇幅按页面里能找到的各列检索意图分别截一段。
+    """
     max_chars = max(500, token_budget * 6)
     if len(text) <= max_chars:
         return text.strip()
+    lines = [line for line in query.splitlines() if line.strip()]
     head_chars = min(PAGE_HEAD_CHARS, max_chars // 5)
     if max_chars - head_chars < 500 or _boilerplate_head(text[:head_chars]):
-        return _best_query_window(text, query, max_chars)
-    window = _best_query_window(text[head_chars:], query, max_chars - head_chars)
-    return (text[:head_chars].rstrip() + "\n\n" + window).strip()
+        head, body, budget = "", text, max_chars
+    else:
+        head, body, budget = text[:head_chars].rstrip(), text[head_chars:], max_chars - head_chars
+    folded = body.casefold()
+    focus = [line for line in lines[1:] if any(term in folded for term in _query_terms(line))]
+    if len(lines) <= 1 or not focus or len(body) <= budget:
+        window = _best_query_window(body, lines[0] if len(lines) > 1 else query, budget)
+    else:
+        primary = budget // 2
+        each = (budget - primary) // len(focus)
+        spans = [(start, start + primary) for start in [_best_query_start(body, lines[0], primary)]]
+        spans += [(start, start + each) for start in (_best_query_start(body, line, each) for line in focus)]
+        merged: list[list[int]] = []
+        for start, end in sorted(spans):
+            if merged and start <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], end)
+            else:
+                merged.append([start, end])
+        window = "\n\n".join(body[start:end].strip() for start, end in merged)
+    return (head + "\n\n" + window).strip() if head else window.strip()
 
 
 def _boilerplate_head(head: str) -> bool:
@@ -1219,10 +1303,7 @@ def _boilerplate_head(head: str) -> bool:
     return folded.count("](") + folded.count("http://") + folded.count("https://") >= 5
 
 
-def _best_query_window(text: str, query: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text.strip()
-    folded = text.casefold()
+def _query_terms(query: str) -> set[str]:
     # URLs in a source-scoped question are repeated throughout Markdown navigation
     # and reference links.  Treating their host/path fragments as research terms
     # makes a link-heavy page header outscore the article body.
@@ -1232,10 +1313,22 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
         "primary", "reports", "sources", "the", "uploads", "using", "which",
         "with", "www",
     }
-    terms = {
+    return {
         term for term in re.findall(r"[a-z0-9][a-z0-9._-]{2,}", query_without_urls)
         if term not in stop and not term.startswith("www.") and not any(char.isdigit() for char in term)
     }
+
+
+def _best_query_window(text: str, query: str, max_chars: int) -> str:
+    start = _best_query_start(text, query, max_chars)
+    return text[start:start + max_chars].strip()
+
+
+def _best_query_start(text: str, query: str, max_chars: int) -> int:
+    if len(text) <= max_chars:
+        return 0
+    folded = text.casefold()
+    terms = _query_terms(query)
     starts = {0}
     # Keep candidate generation deterministic and fair across terms.  The old
     # global 160-start cutoff depended on set iteration order and could exhaust
@@ -1251,7 +1344,7 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
             offset = index + len(term)
             term_matches += 1
     if len(starts) == 1:
-        return text[:max_chars].strip()
+        return 0
 
     boilerplate = ("cookie", "privacy", "advertisement", "manage preferences", "search articles")
 
@@ -1273,8 +1366,7 @@ def _best_query_window(text: str, query: str, max_chars: int) -> str:
         prose_chars = len(re.findall(r"[a-z\u4e00-\u9fff]", candidate))
         return relevance - penalty, coverage, prose_chars, -start
 
-    best_start = max(starts, key=score)
-    return text[best_start:best_start + max_chars].strip()
+    return max(starts, key=score)
 
 
 def _strip_jina_wrapper(text: str) -> str:

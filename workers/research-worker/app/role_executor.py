@@ -68,11 +68,11 @@ class RoleProfileCatalog:
             "wide-discovery-v1", "wide_discovery", 0.2,
             frozenset({"search", "read"}), 3, 0, 12, 4,
         ),
-        # 一个任务最多覆盖同一研究对象的 3 个单元格，每个单元格单独抽取并做等价判定，
+        # 一个任务最多覆盖同一研究对象的 6 个单元格，每个单元格单独抽取并做等价判定，
         # 上限为检索词规划 2 次加每个单元格 32 次
         "DEEP_CELL": RoleProfile(
             "deep-cell-v1", "deep_cell_extract", 0.1,
-            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 98,
+            frozenset({"search", "fetch", "read", "extract"}), 7, 7, 14, 194,
         ),
         "COUNTERFACTUAL": RoleProfile(
             "counterfactual-v1", "counterfactual_verify", 0.0,

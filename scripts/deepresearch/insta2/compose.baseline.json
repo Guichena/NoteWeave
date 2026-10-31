@@ -1,0 +1,10 @@
+{
+  "services": {
+    "backend": {
+      "image": "nw-research-backend:dev"
+    },
+    "research-worker-consumer": {
+      "image": "nw-research-worker:dev"
+    }
+  }
+}

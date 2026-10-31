@@ -19,6 +19,8 @@ class ResearchAgentSynthesisValidationService {
                     + "|(?<![\\d.])v?\\d+\\.\\d+(?:\\.\\d+)*(?!\\d|\\.\\d)",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern INLINE_CITATION = Pattern.compile("\\[(evidence:[^\\[\\]\\s]+)\\]");
+    /** 原文常写 60.6 percent，结论写 60.6%；比对数字前统一成 %，与 Worker 侧核对口径一致。 */
+    private static final Pattern PERCENT_WORD = Pattern.compile("(\\d)\\s*(?:per\\s?cent\\b|％)", Pattern.CASE_INSENSITIVE);
     private static final Pattern STATEMENT = Pattern.compile(
             ".+?(?:[。！？!?]|\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
 
@@ -246,17 +248,25 @@ class ResearchAgentSynthesisValidationService {
                     sources.append(' ').append(cell.entity());
                 }
             }
-            if (!typedTokens(sources.toString()).containsAll(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")))) {
-                throw invalid("句子的数字或版本没有所引原文支持");
+            Set<String> unsupported = new java.util.TreeSet<>(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")));
+            unsupported.removeAll(typedTokens(sources.toString()));
+            if (!unsupported.isEmpty()) {
+                // 带上句子开头和缺少出处的数字，拒收后可以直接从日志定位是哪一句
+                String excerpt = statement.strip();
+                throw invalid("句子的数字或版本没有所引原文支持：" + unsupported + "，"
+                        + (excerpt.length() > 80 ? excerpt.substring(0, 80) + "…" : excerpt));
             }
-            String mentionedText = (subject + " " + statement).toLowerCase(Locale.ROOT);
+            // 句子提到了研究对象时，所引证据至少要属于其中一个，防止把一个对象的事实写到另一个对象名下；
+            // 比较句会同时提到两边而只引用其中一边的原文，属于正常写法
+            String mentionedText = (subject + " " + INLINE_CITATION.matcher(statement).replaceAll("")).toLowerCase(Locale.ROOT);
+            Set<String> mentioned = new HashSet<>();
             for (FrozenCell cell : allCells.values()) {
                 String stem = entityStem(cell.entity());
                 if (stem.length() >= 3 && Pattern.compile("(?<![A-Za-z0-9])" + Pattern.quote(stem) + "(?![A-Za-z0-9])")
-                        .matcher(mentionedText).find()
-                        && cited.stream().noneMatch(source -> entityStem(source.entity()).equals(stem))) {
-                    throw invalid("句子中的研究对象与所引证据不一致");
-                }
+                        .matcher(mentionedText).find()) mentioned.add(stem);
+            }
+            if (!mentioned.isEmpty() && cited.stream().noneMatch(source -> mentioned.contains(entityStem(source.entity())))) {
+                throw invalid("句子中的研究对象与所引证据不一致");
             }
         }
     }
@@ -284,7 +294,7 @@ class ResearchAgentSynthesisValidationService {
 
     private Set<String> typedTokens(String value) {
         Set<String> tokens = new HashSet<>();
-        Matcher matcher = TYPED_TOKEN.matcher(value);
+        Matcher matcher = TYPED_TOKEN.matcher(PERCENT_WORD.matcher(value).replaceAll("$1%"));
         while (matcher.find()) tokens.add(matcher.group().replaceAll("\\s+", "").replace(",", "")
                 .toLowerCase(Locale.ROOT).replaceFirst("^v(?=\\d)", ""));
         return tokens;

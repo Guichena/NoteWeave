@@ -19,7 +19,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 final class ResearchReportCitations {
     private static final Pattern INLINE = Pattern.compile("\\[(evidence:[0-9a-f]{16,64})]");
     private static final List<String> AUDIT_HEADINGS = List.of("## 引用核对", "## Citation audit", "## 补充引用");
-    private static final int MAX_QUOTE_CHARS = 300;
+    // 与 Worker 扩展引用的上限一致：扩展出的部分（冒号后的列表、下一句里的名称）正是结论的依据，截短后读者核对不到
+    private static final int MAX_QUOTE_CHARS = 700;
 
     private ResearchReportCitations() {
     }

@@ -391,6 +391,71 @@ def test_inline_citation_outside_bound_cells_requires_rewriting_instead_of_remov
     assert result.reason == "NARRATIVE_UNSUPPORTED_TYPED_FACT"
 
 
+def test_paragraph_citing_another_cells_evidence_binds_that_cell_instead_of_being_dropped() -> None:
+    article = json.loads(_inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
+    # 模型只写了一格，却同时引用了另一格的证据
+    article["sections"][0]["paragraphs"][0]["cell_keys"] = ["kafka:ordering"]
+    client = FakeLlmClient({"research.synthesis": json.dumps(article)})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。" in result.markdown
+    assert "补充核验结果" not in result.markdown
+
+
+def test_comparison_row_citing_another_cells_evidence_is_kept() -> None:
+    article = json.loads(_inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"]))
+    article["comparison_table"]["rows"][0]["cell_keys"] = ["kafka:ordering"]
+    client = FakeLlmClient({"research.synthesis": json.dumps(article)})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    row = result.narrative["comparison_table"]["rows"][0]
+    assert row["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "| 顺序范围 | 单个分区 [evidence:aa01] | 按 key [evidence:bb01] |" in result.markdown
+
+
+def test_only_the_unsupported_sentence_is_removed_from_a_paragraph() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 在单个分区内保证顺序 [evidence:aa01]。两者的顺序范围不同。Kafka 从 3.0 起默认开启幂等。"
+        "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    # 不带引用又写了数字的一句去掉，同段有引用的句子和不含事实的过渡句照常保留
+    assert paragraph["text"] == ("Kafka 在单个分区内保证顺序 [evidence:aa01]。两者的顺序范围不同。"
+                                 "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。")
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "3.0" not in result.markdown
+
+
+def test_unsupported_topic_sentence_is_replaced_by_the_cells_verified_value() -> None:
+    client = FakeLlmClient({"research.synthesis": _inline_article(
+        "Kafka 3.0 在单个分区内保证顺序 [evidence:aa01]。其分区可以由多个消费者并行读取。"
+        "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
+        ["顺序范围", "单个分区 [evidence:aa01]", "按 key [evidence:bb01]"])})
+
+    result = NarrativeReportPolisher(client).polish(INLINE_INPUT)
+
+    assert result.mode == "LLM"
+    paragraph = result.narrative["sections"][0]["paragraphs"][0]
+    # 主题句多写了来源里没有的 3.0，换成该单元格核验过的结论，后文的代词仍有所指
+    assert paragraph["text"] == ("Kafka 在单个分区内保证顺序 [evidence:aa01]。其分区可以由多个消费者并行读取。"
+                                 "Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。")
+    assert paragraph["cell_keys"] == ["kafka:ordering", "pulsar:ordering"]
+    assert "3.0" not in result.markdown
+
+
 def test_summary_keeps_two_citations_and_row_label_drops_repeated_ones() -> None:
     article = json.loads(_inline_article(
         "Kafka 在单个分区内保证顺序 [evidence:aa01]。Pulsar 的 Key_Shared 订阅按 key 保证顺序 [evidence:bb01]。",
@@ -463,3 +528,43 @@ def test_truncated_model_output_keeps_the_completed_paragraphs() -> None:
     assert result.mode == "LLM"
     assert "Version 2.1 records a measured latency of 50 ms." in result.markdown
     assert "cut off" not in result.markdown
+
+
+def test_comparison_sentence_may_name_both_subjects_while_citing_one_side() -> None:
+    from app.narrative_report import _cited_text_supported
+
+    pg = {"cell_key": "pg", "candidate_value": "GIN indexes", "entity_label": "PostgreSQL 17", "evidence_keys": ["evidence:pg"],
+          "evidence_quotes": [{"evidence_key": "evidence:pg", "quote": "PostgreSQL 17 supports GIN indexes."}]}
+    mysql = {"cell_key": "mysql", "candidate_value": "Virtual column indexes", "entity_label": "MySQL 8.4",
+             "evidence_keys": ["evidence:mysql"],
+             "evidence_quotes": [{"evidence_key": "evidence:mysql", "quote": "MySQL 8.4 indexes virtual columns."}]}
+    cells = [pg, mysql]
+
+    # 比较句同时提到两边、只引用一边的原文，与 Java 侧校验口径一致
+    assert _cited_text_supported("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", [pg], ["evidence:pg"], cells)
+    # 只提到一个对象却引用另一个对象的证据，仍然拒绝
+    assert not _cited_text_supported("PostgreSQL indexes virtual columns [evidence:mysql].", cells, ["evidence:mysql"], cells)
+
+
+def test_percent_word_in_the_quote_supports_the_percent_sign() -> None:
+    from app.narrative_report import _cited_text_supported
+
+    cell = {"cell_key": "survey", "candidate_value": "主观生产力均值为60.6%", "entity_label": "Japanese survey",
+            "evidence_keys": ["evidence:survey"],
+            "evidence_quotes": [{"evidence_key": "evidence:survey", "quote": "the mean productivity of WFH was 60.6 percent"}]}
+
+    assert _cited_text_supported("主观生产力均值为60.6% [evidence:survey]。", [cell], ["evidence:survey"], [cell])
+    assert not _cited_text_supported("主观生产力均值为61% [evidence:survey]。", [cell], ["evidence:survey"], [cell])
+
+
+def test_omitted_cell_falls_back_to_its_quote_when_the_value_has_an_unsupported_number() -> None:
+    from app.narrative_report import _cited_text_supported, _omitted_cell_text
+
+    cell = {"cell_key": "survey", "candidate_value": "主观生产力均值约为六成，即 60%", "entity_label": "Japanese survey",
+            "evidence_keys": ["evidence:survey"], "guarded": False,
+            "evidence_quotes": [{"evidence_key": "evidence:survey", "quote": "[Survey] the mean productivity of WFH was 60.6 percent"}]}
+
+    text = _omitted_cell_text(cell, [cell], True)
+    # 结论里的 60% 原文中没有，补段改用原文，并去掉原文前的标题
+    assert text == "Japanese survey：the mean productivity of WFH was 60.6 percent"
+    assert _cited_text_supported(text, [cell], ["evidence:survey"], [cell])
