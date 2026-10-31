@@ -78,6 +78,18 @@ class ResearchReportGroundingContractTest {
         });
         assertThat((String) citations.get(0).get("quote_text")).doesNotContain("报告结论");
 
+        // 读取对话消息时，没有资料编号的研究引用按所属报告判断能否展示，引用行照常返回
+        JsonNode listed = data(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                "/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages", workspace, conversation), 200);
+        JsonNode assistant = null;
+        for (JsonNode message : listed) {
+            if (assistantMessageId.equals(message.path("message_id").asText())) assistant = message;
+        }
+        assertThat(assistant).isNotNull();
+        assertThat(assistant.path("context_status").asText()).isNotEqualTo("REDACTED");
+        assertThat(assistant.path("citations")).hasSize(2);
+        assertThat(assistant.path("citations").get(0).asText()).startsWith("Kafka 文档：重平衡 | ");
+
         String planVersion = jdbc.queryForObject(
                 "select retrieval_plan_version from answer_run where id = ?", String.class, runId);
         assertThat(planVersion).endsWith("+research-report-v1");
@@ -244,7 +256,7 @@ class ResearchReportGroundingContractTest {
     private JsonNode data(org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
                           int expectedStatus) throws Exception {
         JsonNode root = mapper.readTree(mvc.perform(request).andExpect(status().is(expectedStatus))
-                .andReturn().getResponse().getContentAsString());
+                .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8));
         return expectedStatus == 200 ? root.path("data") : root;
     }
 }

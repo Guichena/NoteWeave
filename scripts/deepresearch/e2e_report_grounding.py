@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_minimal_eval import ApiClient, EvalRunError, authenticate, wait_for_terminal  # noqa: E402
 
 QUESTION = "Java 21 的虚拟线程在什么情况下会被固定（pinning）在载体线程上？这会带来什么影响？"
-FOLLOW_UP = "按这份报告，写代码时怎样避免虚拟线程被固定？"
+FOLLOW_UP = "按这份报告，哪些情况会让虚拟线程被固定在载体线程上？"
 ANSWER_TERMINAL = {"COMPLETED", "FAILED", "CANCELLED"}
 
 
@@ -132,12 +132,18 @@ def main() -> int:
                          retrieval_strategy="AUTO", retrieval_channels=["WORKSPACE", "REPORT"],
                          grounding_refs=[research_run_id])]
     report["follow_ups"] = results
-    first = results[0]
-    assert first["status"] == "COMPLETED", f"追问没有完成：{first['status']} {first['error_code']}"
-    assert first["evidence_kinds"] == ["RESEARCH_EVIDENCE"], first["evidence_kinds"]
-    assert all(str(item["location"]).startswith("http") for item in first["evidence"]), "研究证据缺少网页地址"
-    assert len(first["citations"]) == len(first["evidence"]), "引用条数与证据条数不一致"
-    assert str(first["plan_version"]).endswith("+research-report-v1"), first["plan_version"]
+    for result in results:
+        assert result["status"] == "COMPLETED", f"{result['label']} 没有完成：{result['status']} {result['error_code']}"
+        assert "RESEARCH_EVIDENCE" in result["evidence_kinds"], f"{result['label']} 没有研究证据"
+        assert all(str(item["location"]).startswith("http") for item in result["evidence"]
+                   if str(item["id"]).startswith("research-evidence:")), "研究证据缺少网页地址"
+        assert str(result["plan_version"]).endswith("+research-report-v1"), result["plan_version"]
+        # 依据不足时按拒答处理，不登记引用；其余情况每条证据都对应一张引用卡片
+        if result["sufficiency"] != "INSUFFICIENT":
+            assert len(result["citations"]) == len(result["evidence"]), f"{result['label']} 引用条数与证据条数不一致"
+    cited = [result for result in results if result["citations"]]
+    assert cited, "三次追问都没有登记引用"
+    first = cited[0]
 
     note = client.request("POST", f"/api/v2/workspaces/{workspace_id}/knowledge-items", {
         "item_type": "NOTE", "title": "避免虚拟线程固定", "content": str(first["content"]),

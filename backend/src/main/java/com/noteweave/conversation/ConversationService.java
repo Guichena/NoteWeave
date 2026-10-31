@@ -134,25 +134,40 @@ public class ConversationService {
                   and s.replay_availability = 'METADATA_ONLY'
                 """.formatted(placeholders), String.class, parameters));
         Map<String, List<String>> sourcesByMessage = new HashMap<>();
+        Map<String, List<String>> reportsByMessage = new HashMap<>();
         Map<String, List<String>> citationsByMessage = new HashMap<>();
         jdbcTemplate.query("""
-                select mc.message_id, c.source_id, c.title, c.quote_text
+                select mc.message_id, c.source_id, c.title, c.quote_text, c.research_run_id
                 from conversation_message m
                 join message_citation mc on mc.message_id = m.id
                 join citation c on c.id = mc.citation_id
                 where m.workspace_id = ? and m.id in (%s)
                 order by mc.message_id, mc.sort_order
                 """.formatted(placeholders), rs -> {
-            sourcesByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
-                    .add(rs.getString(2));
+            // 研究报告引用没有资料编号，按所属研究报告判断能否展示
+            if (rs.getString(2) != null) {
+                sourcesByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                        .add(rs.getString(2));
+            } else if (rs.getString(5) != null) {
+                reportsByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                        .add(rs.getString(5));
+            }
             citationsByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
                     .add(citationLine(rs.getString(3), rs.getString(4)));
         }, parameters);
         List<String> citedSources = sourcesByMessage.values().stream().flatMap(List::stream)
-                .filter(id -> id != null && !id.isBlank()).distinct().toList();
+                .filter(id -> !id.isBlank()).distinct().toList();
         Set<String> readableSources = generatedSourceGate.readableSourceIds(workspaceId, citedSources);
         sourcesByMessage.forEach((messageId, sourceIds) -> {
             if (!readableSources.containsAll(sourceIds)) redacted.add(messageId);
+        });
+        // 报告正文已不允许展示（依赖资料被合规删除等）时，引用它的回答同样隐藏
+        Map<String, Boolean> reportAllowed = new HashMap<>();
+        reportsByMessage.forEach((messageId, researchRunIds) -> {
+            if (researchRunIds.stream().anyMatch(runId -> !reportAllowed.computeIfAbsent(
+                    runId, id -> generatedSourceGate.reportBodyAllowed(workspaceId, id)))) {
+                redacted.add(messageId);
+            }
         });
         return messages.stream().map(message -> redacted.contains(message.messageId())
                 && "ASSISTANT".equals(message.role())
