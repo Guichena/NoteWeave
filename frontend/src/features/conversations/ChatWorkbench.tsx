@@ -5,6 +5,7 @@ import { type AnswerMode } from "../../routes";
 import { modeExamplePrompts, modeQuestionPlaceholder } from "../shell/modeContext";
 import { BrandMark } from "../shell/BrandMark";
 import { MessageBubble, type AnswerFeedbackSender, type EvidenceLoader } from "../answers/MessageBubble";
+import type { WikiEvidenceVersionTarget } from "../answers/evidence";
 import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
 import type { ResearchRunDetail } from "../research/model";
@@ -55,6 +56,8 @@ export type ChatWorkbenchProps = {
   loadAnswerEvidence?: EvidenceLoader;
   /** 点击回答中的 [[页面]] 时跳转到对应的 Wiki 页面。 */
   onOpenWikiPage?: (title: string) => void;
+  /** 点击 Wiki 证据时打开它引用的那个知识版本。 */
+  onOpenWikiVersion?: (target: WikiEvidenceVersionTarget) => void;
   onAnswerFeedback?: AnswerFeedbackSender;
   onRegenerateAnswer?: (answerRunId: string) => void;
   /** 停止正在生成的回答；后端取消接口已有，界面此前没有入口。 */
@@ -93,6 +96,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     uploadBusy = false,
     loadAnswerEvidence,
     onOpenWikiPage,
+    onOpenWikiVersion,
     onAnswerFeedback,
     onRegenerateAnswer,
     onCancelAnswer,
@@ -301,6 +305,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                         message={message}
                         loadEvidence={loadAnswerEvidence}
                         onOpenWikiPage={onOpenWikiPage}
+                        onOpenWikiVersion={onOpenWikiVersion}
                         onFeedback={onAnswerFeedback}
                         onRegenerate={onRegenerateAnswer}
                       />

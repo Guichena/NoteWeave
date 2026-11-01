@@ -82,7 +82,9 @@ public class GenerationContractGuard {
         }
         if (!knowledgeVersionIds.isEmpty()) {
             List<String> active = jdbcTemplate.queryForList("""
-                    select id from knowledge_version where workspace_id = ? and id in (%s)
+                    select v.id from knowledge_version v
+                    join knowledge_item i on i.id = v.item_id
+                    where i.workspace_id = ? and v.id in (%s)
                     """.formatted(placeholders(knowledgeVersionIds.size())),
                     String.class, concat(workspaceId, knowledgeVersionIds));
             for (String versionId : knowledgeVersionIds) {

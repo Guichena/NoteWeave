@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { formatDateTime } from "../../shared/util/datetime";
+import type { WikiEvidenceVersionTarget } from "../answers/evidence";
 import type { ShellRun } from "../shell/useShellBusy";
 import type { AppView } from "../shell/viewRoute";
 import { navigateAppView } from "../shell/viewRoute";
@@ -106,6 +107,7 @@ export function useWikiWorkbenchController({
     selectPage: selectKnowledgePage,
     refreshGraph: refreshWikiGraph,
     loadVersion: loadKnowledgeVersion,
+    loadVersionById: loadKnowledgeVersionById,
     restoreLatestVersion: restoreLatestKnowledgeVersion,
     findFirstIssue: findFirstWikiIssue,
     updateEnabled: updateWikiEnabled
@@ -228,6 +230,41 @@ export function useWikiWorkbenchController({
         await selectWikiPage(page);
       } else {
         setStatus(`知识库中还没有「${title}」页面`);
+      }
+    }, "wiki");
+  }
+
+  /**
+   * 打开引用证据对应的知识版本。证据绑定的是版本身份，页面之后被改过也要展示那一版，
+   * 不能用最新正文冒充当时的证据。
+   */
+  async function openWikiVersionById(target: WikiEvidenceVersionTarget) {
+    if (!workspace) {
+      return;
+    }
+    await run(`打开引用版本《${target.title}》`, async () => {
+      const home = wikiHome ?? await refreshWikiFromServer("", {
+        mode: wikiGraphMode,
+        graphKinds: wikiGraphKindFilters
+      });
+      const page = home?.pages.find((entry) => entry.item_id === target.itemId);
+      if (!page) {
+        setStatus(`知识库中已找不到证据对应的页面「${target.title}」`);
+        return;
+      }
+      setView("wiki");
+      navigateAppView("wiki");
+      const detail = await selectKnowledgePage(page);
+      if (detail?.latest_version_id === target.versionId) {
+        setStatus(`已打开《${page.title}》引用的版本`);
+        return;
+      }
+      const version = await loadKnowledgeVersionById(page.item_id, target.versionId);
+      if (version) {
+        setStatus(`已打开《${page.title}》第 ${version.version_no} 版，即本次回答引用的版本`);
+      } else {
+        // 找不到那一版时保持当前页面的最新正文并明确说明，不假装它就是证据对应的版本
+        setStatus(`《${page.title}》引用的版本已不在当前版本列表中，未用最新正文代替`);
       }
     }, "wiki");
   }
@@ -394,6 +431,7 @@ export function useWikiWorkbenchController({
     prepareWikiLinkRepair,
     openWikiPageById,
     loadWikiVersion,
+    openWikiVersionById,
     restoreLatestWikiVersion,
     switchWikiGraphMode,
     toggleWikiGraphKind,

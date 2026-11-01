@@ -43,7 +43,8 @@ class GenerationContractGuardTest {
                     location_info varchar(1000), fresh_at timestamp, character_cost int,
                     created_at timestamp default current_timestamp)
                 """);
-        jdbc.execute("create table knowledge_version(id varchar(36), workspace_id varchar(36))");
+        jdbc.execute("create table knowledge_item(id varchar(36), workspace_id varchar(36))");
+        jdbc.execute("create table knowledge_version(id varchar(36), item_id varchar(36))");
     }
 
     @Test
@@ -105,7 +106,8 @@ class GenerationContractGuardTest {
     @Test
     void knowledgeVersionThatStillExistsPasses() {
         manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
-        jdbc.update("insert into knowledge_version(id, workspace_id) values ('version-1', 'ws')");
+        jdbc.update("insert into knowledge_item(id, workspace_id) values ('item-1', 'ws')");
+        jdbc.update("insert into knowledge_version(id, item_id) values ('version-1', 'item-1')");
 
         assertThatCode(() -> guard().requireEligible("ws", "run", contract(
                 List.of("knowledge-version:one"), Map.of("knowledge-version:one", HASH_A))))
