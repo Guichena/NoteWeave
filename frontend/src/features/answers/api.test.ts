@@ -42,3 +42,32 @@ describe("AnswersApi", () => {
     expect(deleteJson).toHaveBeenCalledWith("/api/v2/workspaces/workspace/answer-runs/run");
   });
 });
+
+describe("AnswersApi 证据清单", () => {
+  it("解析引用协议与编号绑定，缺字段的历史回答按旧协议返回", async () => {
+    const get = vi.fn(async () => ({
+      run_id: "run",
+      evidence: [],
+      protocol_version: "citation-binding-v1",
+      allowed_evidence_ids: ["passage:c1"],
+      citation_bindings: [{ number: 1, evidence_id: "passage:c1", citation_ids: ["citation-1"] }]
+    }));
+    const api = new AnswersApi({ get } as unknown as ApiClient);
+
+    const manifest = await api.getEvidence("workspace", "run");
+
+    expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/answer-runs/run/evidence");
+    expect(manifest.citation_protocol).toEqual({
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["passage:c1"],
+      citationBindings: [{ number: 1, evidenceId: "passage:c1", citationIds: ["citation-1"] }]
+    });
+  });
+
+  it("历史回答不带 protocol_version 时协议为 null", async () => {
+    const get = vi.fn(async () => ({ run_id: "run", evidence: [] }));
+    const api = new AnswersApi({ get } as unknown as ApiClient);
+
+    expect((await api.getEvidence("workspace", "run")).citation_protocol).toBeNull();
+  });
+});

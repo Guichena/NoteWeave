@@ -74,9 +74,9 @@ const turns: Turn[] = [
       "三个页面的来源都回链到《RAG 检索链路设计》，其中 [[RRF 融合排序]] 还引用了压测记录中的对比数据。"
     ].join("\n"),
     evidence: [
-      { evidence_id: "knowledge-version:hybrid-v3", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "hybrid", title: "混合检索", excerpt: "混合检索同时使用 BM25 关键词召回与向量语义召回，两路结果经 RRF 融合后进入重排。", location: "knowledge-version:hybrid-v3" },
-      { evidence_id: "knowledge-version:rrf-v2", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "rrf", title: "RRF 融合排序", excerpt: "RRF 按名次融合多路结果：score = Σ 1 / (k + rank)，k 通常取 60。", location: "knowledge-version:rrf-v2" },
-      { evidence_id: "knowledge-version:rerank-v1", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "rerank", title: "Rerank 重排", excerpt: "Rerank 使用交叉编码模型对候选重新打分，只处理融合后的前 80 条。", location: "knowledge-version:rerank-v1",
+      { evidence_id: "knowledge-version:hybrid-v3", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "hybrid", knowledge_version_id: "hybrid-v3", title: "混合检索", excerpt: "混合检索同时使用 BM25 关键词召回与向量语义召回，两路结果经 RRF 融合后进入重排。", location: "knowledge-version:hybrid-v3" },
+      { evidence_id: "knowledge-version:rrf-v2", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "rrf", knowledge_version_id: "rrf-v2", title: "RRF 融合排序", excerpt: "RRF 按名次融合多路结果：score = Σ 1 / (k + rank)，k 通常取 60。", location: "knowledge-version:rrf-v2" },
+      { evidence_id: "knowledge-version:rerank-v1", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null, knowledge_item_id: "rerank", knowledge_version_id: "rerank-v1", title: "Rerank 重排", excerpt: "Rerank 使用交叉编码模型对候选重新打分，只处理融合后的前 80 条。", location: "knowledge-version:rerank-v1",
         graph_path: ["混合检索", "RRF 融合排序", "Rerank 重排"] }
     ]
   }
@@ -108,7 +108,11 @@ export const evidenceByRun: Record<string, AnswerEvidence[]> = Object.fromEntrie
 );
 
 // 3A 查询改写与 3·S7 证据充分性的示例：QA 回答带一条规则改写，Note 回答只覆盖部分问题。
-export const evidenceMetaByRun: Record<string, Pick<AnswerEvidenceManifest, "retrieval_rewrite" | "evidence_sufficiency" | "memory_references">> = {
+// Wiki 回答带冻结的引用协议，用来演示按编号绑定渲染角标；其余回答仍是旧协议。
+export const evidenceMetaByRun: Record<
+  string,
+  Pick<AnswerEvidenceManifest, "retrieval_rewrite" | "evidence_sufficiency" | "memory_references" | "citation_protocol">
+> = {
   "answer-qa": {
     retrieval_rewrite: {
       is_standalone: false,
@@ -123,7 +127,18 @@ export const evidenceMetaByRun: Record<string, Pick<AnswerEvidenceManifest, "ret
       selection_reason: "适用于全部回答的常驻约束", display_text: "回答先给结论，再展开证据"
     }]
   },
-  "answer-note": { evidence_sufficiency: "PARTIAL" }
+  "answer-note": { evidence_sufficiency: "PARTIAL" },
+  "answer-wiki": {
+    citation_protocol: {
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["knowledge-version:hybrid-v3", "knowledge-version:rrf-v2", "knowledge-version:rerank-v1"],
+      citationBindings: [
+        { number: 1, evidenceId: "knowledge-version:hybrid-v3", citationIds: ["citation-hybrid"] },
+        { number: 2, evidenceId: "knowledge-version:rrf-v2", citationIds: ["citation-rrf"] },
+        { number: 3, evidenceId: "knowledge-version:rerank-v1", citationIds: ["citation-rerank"] }
+      ]
+    }
+  }
 };
 
 /** 回答反馈按回答记录，重复提交以最后一次为准。 */

@@ -177,6 +177,25 @@ export function useKnowledgeActions({
     }
   }, [api, dispatch, gate, workspaceId]);
 
+  /** 按版本 ID 加载指定版本：证据绑定的是版本身份，不按标题或最新版代替。 */
+  const loadVersionById = useCallback(async (itemId: string, versionId: string) => {
+    const lease = gate.begin("version", workspaceId);
+    try {
+      const versions = await api.getVersions(itemId, { signal: lease.signal });
+      const target = versions.find((entry) => entry.version_id === versionId);
+      if (!target) {
+        return null;
+      }
+      const version = await api.getVersion(itemId, target.version_no, { signal: lease.signal });
+      if (lease.isCurrent()) {
+        dispatch({ type: "version", version });
+      }
+      return version;
+    } finally {
+      lease.complete();
+    }
+  }, [api, dispatch, gate, workspaceId]);
+
   const restoreLatestVersion = useCallback(() => {
     dispatch({ type: "restore-latest" });
   }, [dispatch]);
@@ -231,6 +250,7 @@ export function useKnowledgeActions({
     selectPage,
     refreshGraph,
     loadVersion,
+    loadVersionById,
     restoreLatestVersion,
     findFirstIssue,
     updateEnabled

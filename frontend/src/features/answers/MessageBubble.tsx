@@ -5,7 +5,13 @@ import {
 import { type Message } from "./messageTypes";
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { routes } from "../../routes";
-import { buildCitationViews, type AnswerEvidenceManifest } from "./evidence";
+import {
+  buildBoundCitationViews,
+  buildCitationViews,
+  type AnswerEvidenceManifest,
+  type CitationView,
+  type WikiEvidenceVersionTarget
+} from "./evidence";
 import type { AnswerFeedbackInput, AnswerFeedbackRating } from "./model";
 import { MemoryReferenceList } from "../memory/MemoryInjectionPreview";
 
@@ -47,6 +53,8 @@ type MessageBubbleProps = {
   message: Message;
   loadEvidence?: EvidenceLoader;
   onOpenWikiPage?: (title: string) => void;
+  /** 打开 Wiki 证据对应的知识版本；不按标题临时打开最新页。 */
+  onOpenWikiVersion?: (target: WikiEvidenceVersionTarget) => void;
   onFeedback?: AnswerFeedbackSender;
   /** 用同一个问题重新生成这条回答。 */
   onRegenerate?: (answerRunId: string) => void;
@@ -67,11 +75,21 @@ export function MessageBubble(props: MessageBubbleProps) {
   return <AssistantMessage {...props} />;
 }
 
-function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, onRegenerate }: MessageBubbleProps) {
+function AssistantMessage({
+  message,
+  loadEvidence,
+  onOpenWikiPage,
+  onOpenWikiVersion,
+  onFeedback,
+  onRegenerate
+}: MessageBubbleProps) {
   const [activeCitation, setActiveCitation] = useState<number | null>(null);
+  const [activeEvidenceId, setActiveEvidenceId] = useState<string | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [manifest, setManifest] = useState<AnswerEvidenceManifest | null>(null);
+  /** 证据清单读取失败：此时无法判断协议，不能把它标成旧协议。 */
+  const [manifestUnavailable, setManifestUnavailable] = useState(false);
   const [rating, setRating] = useState<AnswerFeedbackRating | null>(null);
   const [reasonOpen, setReasonOpen] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
@@ -87,7 +105,18 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
       : "此回答暂未返回正文。");
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
-  const citationViews = buildCitationViews(sourceItems, manifest?.evidence ?? null);
+  // 流式阶段先下发引用协议，历史回答要等补拉证据清单后才知道协议
+  const protocol = message.citationProtocol ?? manifest?.citation_protocol ?? null;
+  const bindingMode = Boolean(protocol && protocol.protocolVersion);
+  // 清单已加载却没有协议版本：这条回答来自旧协议，保留按标题解析并明确标注
+  const legacyProtocol = Boolean(manifest) && !manifestUnavailable && !bindingMode;
+  const citationViews = bindingMode && protocol
+    ? buildBoundCitationViews(protocol, manifest?.evidence ?? null)
+    : buildCitationViews(sourceItems, manifest?.evidence ?? null);
+  // 新协议下来源列表本身来自绑定，允许在没有引用文本时也展示
+  const sourcesPanel = sources ?? (!isFailed && citationViews.length > 0
+    ? { title: "来源引用", items: [], note: "" }
+    : null);
   // 正文里标注过的引用排在前面，其余检索到但没被引用的资料折叠在后面
   const { cited: citedViews, uncited: uncitedViews } = splitCitedViews(citationViews, body);
   const rewrite = manifest?.retrieval_rewrite;
@@ -95,36 +124,49 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
   const ModeIcon = MODE_ICONS[route.key];
   const answerRunId = message.answerRunId;
 
-  const renderSourceItem = (view: (typeof citationViews)[number]) => (
-    <li
-      key={view.index}
-      className={activeCitation === view.index ? "is-active" : undefined}
-    >
-      <button type="button" className="citation-chip" onClick={() => focusCitation(view.index)}>
-        {view.index}
-      </button>
-      <div className="message-source-body">
-        <strong>{view.title}</strong>
-        {view.kindLabel || view.location ? (
-          <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
-        ) : null}
-        {view.url ? (
-          <a className="message-source-link" href={view.url} target="_blank" rel="noreferrer noopener">
-            {hostOf(view.url)}
-          </a>
-        ) : null}
-        {view.quote ? <p>{view.quote}</p> : null}
-        {view.ocrNote ? (
-          <small className={`message-source-ocr${view.ocrLowConfidence ? " is-low" : ""}`}>
-            {view.ocrNote}{view.ocrLowConfidence ? "，识别可能有误，请对照原文核对" : ""}
-          </small>
-        ) : null}
-        {view.graphPath.length > 1 ? (
-          <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
-        ) : null}
-      </div>
-    </li>
-  );
+  const renderSourceItem = (view: CitationView) => {
+    // Wiki 证据按冻结的知识版本展示；旧协议不推断版本，wikiVersion 保持为空
+    const wikiVersion = view.knowledgeVersionId && view.knowledgeItemId
+      ? { itemId: view.knowledgeItemId, versionId: view.knowledgeVersionId, title: view.title }
+      : null;
+    return (
+      <li
+        key={view.index}
+        className={(bindingMode && view.evidenceId
+          ? activeEvidenceId === view.evidenceId
+          : activeCitation === view.index) ? "is-active" : undefined}
+      >
+        <button type="button" className="citation-chip" onClick={() => focusSourceView(view)}>
+          {view.index}
+        </button>
+        <div className="message-source-body">
+          <strong>{view.title}</strong>
+          {view.kindLabel || view.location ? (
+            <small>{[view.kindLabel, view.location].filter(Boolean).join(" · ")}</small>
+          ) : null}
+          {view.url ? (
+            <a className="message-source-link" href={view.url} target="_blank" rel="noreferrer noopener">
+              {hostOf(view.url)}
+            </a>
+          ) : null}
+          {view.quote ? <p>{view.quote}</p> : null}
+          {view.ocrNote ? (
+            <small className={`message-source-ocr${view.ocrLowConfidence ? " is-low" : ""}`}>
+              {view.ocrNote}{view.ocrLowConfidence ? "，识别可能有误，请对照原文核对" : ""}
+            </small>
+          ) : null}
+          {view.graphPath.length > 1 ? (
+            <small className="message-source-path">经由页面：{view.graphPath.join(" → ")}</small>
+          ) : null}
+          {wikiVersion && onOpenWikiVersion ? (
+            <button type="button" className="secondary-button" onClick={() => onOpenWikiVersion(wikiVersion)}>
+              查看引用版本
+            </button>
+          ) : null}
+        </div>
+      </li>
+    );
+  };
 
   if (isGenerating) sawGenerating.current = true;
   // 历史消息在第一次展开引用时才读取证据清单，避免每条消息都发请求；
@@ -134,8 +176,16 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
     if (!wantsManifest || manifest || !answerRunId || !loadEvidence || isGenerating || isFailed) return;
     let cancelled = false;
     loadEvidence(answerRunId)
-      .then((loaded) => { if (!cancelled) setManifest(loaded); })
-      .catch(() => { if (!cancelled) setManifest({ run_id: answerRunId, evidence: [] }); });
+      .then((loaded) => {
+        if (cancelled) return;
+        setManifest(loaded);
+        setManifestUnavailable(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setManifest({ run_id: answerRunId, evidence: [] });
+        setManifestUnavailable(true);
+      });
     return () => { cancelled = true; };
   }, [wantsManifest, manifest, answerRunId, loadEvidence, isGenerating, isFailed]);
 
@@ -148,6 +198,20 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
   function focusCitation(index: number) {
     setActiveCitation((current) => (current === index ? null : index));
     setSourcesOpen(true);
+  }
+
+  /** 新协议下按证据身份选中来源，编号只用于展示。 */
+  function focusEvidence(evidenceId: string) {
+    setActiveEvidenceId((current) => (current === evidenceId ? null : evidenceId));
+    setSourcesOpen(true);
+  }
+
+  function focusSourceView(view: CitationView) {
+    if (bindingMode && view.evidenceId) {
+      focusEvidence(view.evidenceId);
+      return;
+    }
+    focusCitation(view.index);
   }
 
   async function sendFeedback(next: AnswerFeedbackRating, reason?: string) {
@@ -201,7 +265,10 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
             <ModeIcon size={13} aria-hidden="true" />
             {route.label} · {route.strategy}
           </span>
-          {sourceItems.length > 0 ? <span>{sourceItems.length} 条引用</span> : null}
+          {citationViews.length > 0 ? <span>{citationViews.length} 条引用</span> : null}
+          {legacyProtocol ? (
+            <span title="旧版引用协议：编号与来源只按标题对照，不代表精确版本关系">旧协议</span>
+          ) : null}
         </div>
       ) : null}
       {!isFailed ? <SufficiencyNotice value={manifest?.evidence_sufficiency} /> : null}
@@ -209,9 +276,20 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
       <MarkdownSurface
         content={body}
         className="bubble-body"
-        citations={citationViews.length > 0 ? citationViews.map((view) => view.title) : undefined}
-        activeCitation={activeCitation}
-        onCitationClick={focusCitation}
+        // 新协议走证据绑定：显式开角标、给证据顺序与点击回调，不再让任意数字自动成角标
+        compactCitations={bindingMode || undefined}
+        citationBindings={bindingMode ? protocol?.citationBindings : undefined}
+        allowedEvidenceIds={bindingMode ? protocol?.allowedEvidenceIds : undefined}
+        evidenceOrder={bindingMode
+          ? protocol?.citationBindings.map((binding) => binding.evidenceId)
+          : undefined}
+        activeEvidence={activeEvidenceId}
+        onEvidenceClick={bindingMode ? focusEvidence : undefined}
+        citations={bindingMode
+          ? undefined
+          : citationViews.length > 0 ? citationViews.map((view) => view.title) : undefined}
+        activeCitation={bindingMode ? null : activeCitation}
+        onCitationClick={bindingMode ? undefined : focusCitation}
         onWikiLinkClick={onOpenWikiPage}
       />
       {!isFailed && presentation.cards.length > 0 ? (
@@ -228,20 +306,20 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
           ))}
         </div>
       ) : null}
-      {sources ? (
+      {sourcesPanel ? (
         <details
           className="message-sources"
           open={sourcesOpen}
           onToggle={(event) => setSourcesOpen((event.currentTarget as HTMLDetailsElement).open)}
         >
           <summary>
-            <strong>{sources.title}</strong>
-            <span>{sourceItems.length > 0
+            <strong>{sourcesPanel.title}</strong>
+            <span>{citationViews.length > 0
               ? (citedViews.length > 0 && uncitedViews.length > 0
                 ? `引用 ${citedViews.length} 条 · 另检索到 ${uncitedViews.length} 条`
-                : `${sourceItems.length} 条来源`)
+                : `${citationViews.length} 条来源`)
               : "说明"}</span>
-            {sourceItems.length > 0 ? (
+            {citationViews.length > 0 ? (
               <span className="message-sources-peek" aria-hidden="true">
                 {Array.from(new Set(citationViews.map((view) => view.title))).slice(0, 3).map((title) => (
                   <span key={title}>{trimText(title, 18)}</span>
@@ -250,14 +328,23 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
             ) : null}
             <ChevronDown className="message-card-chevron" size={15} aria-hidden="true" />
           </summary>
-          {sourceItems.length > 0 ? (
+          {legacyProtocol ? (
+            <p className="message-retrieval-rewrite">
+              这条回答由旧版引用协议生成：来源与正文编号只按标题对照，版本关系无法精确到当时引用的那一版。
+            </p>
+          ) : null}
+          {citationViews.length > 0 ? (
             <>
               <ol className="message-source-list">
                 {(citedViews.length > 0 ? citedViews : citationViews).map((view) => renderSourceItem(view))}
               </ol>
               {citedViews.length > 0 && uncitedViews.length > 0 ? (
                 <details className="message-sources-uncited">
-                  <summary>其余检索到的资料（{uncitedViews.length} 条，回答中没有引用）</summary>
+                  <summary>
+                    {bindingMode
+                      ? `其余允许引用的资料（${uncitedViews.length} 条，正文没有引用）`
+                      : `其余检索到的资料（${uncitedViews.length} 条，回答中没有引用）`}
+                  </summary>
                   <ol className="message-source-list">
                     {uncitedViews.map((view) => renderSourceItem(view))}
                   </ol>
@@ -277,7 +364,7 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
               <MemoryReferenceList references={manifest.memory_references} />
             </div>
           ) : null}
-          {sources.note ? <MarkdownSurface content={sources.note} className="message-sources-note" /> : null}
+          {sourcesPanel.note ? <MarkdownSurface content={sourcesPanel.note} className="message-sources-note" /> : null}
         </details>
       ) : null}
       {!isGenerating && !isFailed && presentation.body ? (

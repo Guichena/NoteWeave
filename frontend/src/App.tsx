@@ -384,6 +384,7 @@ export function App() {
       artifactRailProps,
       onOpenSourceLibrary: () => navigateWorkbenchView("library"),
       onOpenWikiPage: (title) => void wiki.openWikiPageByTitle(title),
+      onOpenWikiVersion: (target) => void wiki.openWikiVersionById(target),
       onOpenResearchRun: (researchRunId) => {
         // 不走 openResearchWorkbench：它会不带编号再加载一次研究列表，和下面按编号的加载互相覆盖
         researchReportRunIdRef.current = researchRunId;

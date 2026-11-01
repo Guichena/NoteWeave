@@ -5,6 +5,7 @@ import type { Workspace } from "../workspace/model";
 import type { Conversation } from "./model";
 import type { ChatSessionController } from "./useChatSessionController";
 import type { ChatWorkbenchProps } from "./ChatWorkbench";
+import type { WikiEvidenceVersionTarget } from "../answers/evidence";
 
 type BuildChatWorkbenchPropsInput = {
   chat: ChatSessionController;
@@ -18,6 +19,8 @@ type BuildChatWorkbenchPropsInput = {
   artifactRailProps: import("../artifacts/ArtifactRailProps").ArtifactRailProps;
   onOpenSourceLibrary: () => void;
   onOpenWikiPage?: (title: string) => void;
+  /** 点击 Wiki 证据时打开它引用的知识版本，不按标题打开最新页。 */
+  onOpenWikiVersion?: (target: WikiEvidenceVersionTarget) => void;
   /** 对话里的研究消息点查看完整报告时，跳到研究页并打开这次研究的完整报告 */
   onOpenResearchRun?: (researchRunId: string) => void;
   uploadBusy?: boolean;
@@ -36,6 +39,7 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     artifactRailProps,
     onOpenSourceLibrary,
     onOpenWikiPage,
+    onOpenWikiVersion,
     onOpenResearchRun,
     uploadBusy = false
   } = input;
@@ -63,6 +67,7 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     uploadSourceFile: chat.uploadSourceFile,
     uploadBusy,
     onOpenWikiPage,
+    onOpenWikiVersion,
     loadAnswerEvidence: workspace
       ? (answerRunId) => answersApi.getEvidence(workspace.workspace_id, answerRunId)
       : undefined,

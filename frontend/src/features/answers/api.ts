@@ -1,5 +1,5 @@
 import { apiClient, type ApiClient } from "../../shared/api";
-import { type AnswerEvidenceManifest } from "./evidence";
+import { parseAnswerEvidenceManifest, type AnswerEvidenceManifest } from "./evidence";
 import {
   type AnswerFeedbackInput,
   type AnswerRunSnapshot,
@@ -23,10 +23,11 @@ export class AnswersApi {
     );
   }
 
-  getEvidence(workspaceId: string, runId: string) {
-    return this.client.get<AnswerEvidenceManifest>(
-      `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}/evidence`
-    );
+  /** 证据清单：按后端冻结的协议解析，编号绑定与允许集合以协议为准。 */
+  getEvidence(workspaceId: string, runId: string): Promise<AnswerEvidenceManifest> {
+    return this.client
+      .get<unknown>(`/api/v2/workspaces/${workspaceId}/answer-runs/${runId}/evidence`)
+      .then(parseAnswerEvidenceManifest);
   }
 
   sendFeedback(workspaceId: string, runId: string, input: AnswerFeedbackInput) {

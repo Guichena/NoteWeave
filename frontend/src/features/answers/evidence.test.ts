@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { buildCitationViews, evidenceKindLabel, parseCitationLine, type AnswerEvidence } from "./evidence";
+import {
+  allowedCitationNumbers,
+  buildBoundCitationViews,
+  buildCitationViews,
+  evidenceKindLabel,
+  parseAnswerEvidenceManifest,
+  parseCitationLine,
+  parseCitationProtocol,
+  parseCitationProtocolEvent,
+  type AnswerEvidence
+} from "./evidence";
 
 function evidence(overrides: Partial<AnswerEvidence>): AnswerEvidence {
   return {
@@ -74,5 +84,137 @@ describe("buildCitationViews", () => {
     expect(views[0]).toMatchObject({ ocrNote: "文字由 OCR 识别 · 置信度 93%", ocrLowConfidence: false });
     expect(views[1]).toMatchObject({ ocrNote: "文字由 OCR 识别 · 置信度 61%", ocrLowConfidence: true });
     expect(views[2]).toMatchObject({ ocrNote: "", ocrLowConfidence: false });
+  });
+});
+
+describe("parseCitationProtocol", () => {
+  it("历史回答没有 protocol_version 时返回 null，保持旧协议解析", () => {
+    expect(parseCitationProtocol({ run_id: "run-1", evidence: [] })).toBeNull();
+    expect(parseCitationProtocol({ protocol_version: "" })).toBeNull();
+  });
+
+  it("解析新协议的允许集合与编号绑定，并按下划线字段名读取", () => {
+    const protocol = parseCitationProtocol({
+      protocol_version: "citation-binding-v1",
+      allowed_evidence_ids: ["knowledge-version:v2", "passage:c1"],
+      citation_bindings: [
+        { number: 2, evidence_id: "passage:c1", citation_ids: ["citation-b"] },
+        { number: 1, evidence_id: "knowledge-version:v2", citation_ids: ["citation-a1", "citation-a2"] }
+      ]
+    });
+
+    expect(protocol).toEqual({
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["knowledge-version:v2", "passage:c1"],
+      citationBindings: [
+        { number: 1, evidenceId: "knowledge-version:v2", citationIds: ["citation-a1", "citation-a2"] },
+        { number: 2, evidenceId: "passage:c1", citationIds: ["citation-b"] }
+      ]
+    });
+  });
+
+  it("丢掉缺编号或重复编号的绑定，避免渲染出点不开的角标", () => {
+    const protocol = parseCitationProtocol({
+      protocol_version: "citation-binding-v1",
+      citation_bindings: [
+        { number: 1, evidence_id: "passage:c1" },
+        { number: 1, evidence_id: "passage:dup" },
+        { number: 0, evidence_id: "passage:zero" },
+        { evidence_id: "passage:no-number" },
+        { number: 3 }
+      ]
+    });
+
+    expect(protocol?.citationBindings).toEqual([{ number: 1, evidenceId: "passage:c1", citationIds: [] }]);
+  });
+
+  it("流式 evidence.ready 事件的正文就是协议本身，解析失败按未知处理", () => {
+    const protocol = parseCitationProtocolEvent(JSON.stringify({
+      protocol_version: "citation-binding-v1",
+      allowed_evidence_ids: ["passage:c1"],
+      citation_bindings: [{ number: 1, evidence_id: "passage:c1", citation_ids: [] }]
+    }));
+
+    expect(protocol?.protocolVersion).toBe("citation-binding-v1");
+    expect(protocol?.citationBindings).toHaveLength(1);
+    expect(parseCitationProtocolEvent("not-json")).toBeNull();
+    expect(parseCitationProtocolEvent("")).toBeNull();
+  });
+});
+
+describe("parseAnswerEvidenceManifest", () => {
+  it("补齐后端已有的快照与知识版本字段，并保留未带协议的旧回答", () => {
+    const manifest = parseAnswerEvidenceManifest({
+      run_id: "run-1",
+      evidence: [{
+        rank: 1, evidence_id: "knowledge-version:v2", kind: "KNOWLEDGE_VERSION",
+        source_id: null, source_snapshot_id: null, passage_id: null,
+        knowledge_item_id: "k1", knowledge_version_id: "v2",
+        title: "RRF 融合排序", excerpt: "按名次融合", location: null, character_cost: 5
+      }],
+      evidence_sufficiency: "SUFFICIENT"
+    });
+
+    expect(manifest.evidence[0]).toMatchObject({
+      source_snapshot_id: null,
+      knowledge_version_id: "v2"
+    });
+    expect(manifest.citation_protocol).toBeNull();
+    expect(manifest.evidence_sufficiency).toBe("SUFFICIENT");
+  });
+});
+
+describe("buildBoundCitationViews", () => {
+  it("按编号绑定取证据，不按标题或排名猜，并带上数据版本身份", () => {
+    const protocol = {
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["knowledge-version:v2", "passage:c1"],
+      citationBindings: [
+        { number: 1, evidenceId: "knowledge-version:v2", citationIds: ["citation-a"] },
+        { number: 2, evidenceId: "passage:c1", citationIds: ["citation-b"] }
+      ]
+    };
+    const manifest: AnswerEvidence[] = [
+      { rank: 1, evidence_id: "passage:c1", kind: "PASSAGE", source_id: "s1", passage_id: "c1",
+        knowledge_item_id: null, title: "标题不同的段落", excerpt: "段落摘录", location: "第 3 页", character_cost: 10 },
+      { rank: 2, evidence_id: "knowledge-version:v2", kind: "KNOWLEDGE_VERSION", source_id: null, passage_id: null,
+        knowledge_item_id: "k1", knowledge_version_id: "v2", title: "RRF 融合排序", excerpt: "按名次融合",
+        location: "knowledge-version:v2", character_cost: 5 }
+    ];
+
+    const views = buildBoundCitationViews(protocol, manifest);
+
+    // 编号 1 绑定的是 Wiki 版本证据，排名 1 的段落不参与
+    expect(views[0]).toMatchObject({
+      index: 1, evidenceId: "knowledge-version:v2", knowledgeVersionId: "v2", knowledgeItemId: "k1",
+      title: "RRF 融合排序", kindLabel: "Wiki 页面", location: ""
+    });
+    expect(views[1]).toMatchObject({
+      index: 2, evidenceId: "passage:c1", knowledgeVersionId: null, title: "标题不同的段落", location: "第 3 页"
+    });
+  });
+
+  it("证据清单还没到手时按绑定占位，不退回标题匹配", () => {
+    const views = buildBoundCitationViews({
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["passage:c1"],
+      citationBindings: [{ number: 4, evidenceId: "passage:c1", citationIds: [] }]
+    }, null);
+
+    expect(views).toHaveLength(1);
+    expect(views[0]).toMatchObject({ index: 4, evidenceId: "passage:c1", title: "来源 4", quote: "" });
+  });
+});
+
+describe("allowedCitationNumbers", () => {
+  it("只放行同时在绑定与允许集合里的编号", () => {
+    expect(allowedCitationNumbers({
+      protocolVersion: "citation-binding-v1",
+      allowedEvidenceIds: ["passage:c1"],
+      citationBindings: [
+        { number: 1, evidenceId: "passage:c1", citationIds: [] },
+        { number: 2, evidenceId: "passage:revoked", citationIds: [] }
+      ]
+    })).toEqual([1]);
   });
 });

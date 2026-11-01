@@ -1,4 +1,5 @@
 import { type RawSseEvent } from "../../shared/event-stream";
+import { parseCitationProtocolEvent } from "./evidence";
 import { type AnswerRunSnapshot, type AnswerRunState } from "./model";
 
 type ConversationEventEnvelope = {
@@ -181,7 +182,8 @@ export function createAnswerRunState(runId = ""): AnswerRunState {
     citations: [],
     status: "GENERATING",
     error: "",
-    lastRunSequence: 0
+    lastRunSequence: 0,
+    citationProtocol: null
   };
 }
 
@@ -196,6 +198,11 @@ export function reduceAnswerRunState(
     if (eventType === "citation.upsert" && !current.citations.includes(data)) {
       const supplemented = { ...current, citations: [...current.citations, data] };
       return supplemented;
+    }
+    // 引用协议在首个正文增量之前下发，晚到或重放时补一次，已有值不再覆盖
+    if (eventType === "evidence.ready" && !current.citationProtocol) {
+      const lateProtocol = parseCitationProtocolEvent(data);
+      return lateProtocol ? { ...current, citationProtocol: lateProtocol } : current;
     }
     return current;
   }
@@ -216,6 +223,14 @@ export function reduceAnswerRunState(
         next.citations.push(data);
       }
       return next;
+    case "evidence.ready": {
+      // 冻结的引用协议：允许集合与编号绑定，先于正文增量到达；重复投递不覆盖已冻结的绑定
+      if (next.citationProtocol) {
+        return next;
+      }
+      const protocol = parseCitationProtocolEvent(data);
+      return protocol ? { ...next, citationProtocol: protocol } : next;
+    }
     case "answer.completed":
       next.status = "COMPLETED";
       return next;

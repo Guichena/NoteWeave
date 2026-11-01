@@ -1,3 +1,5 @@
+import type { CitationProtocol } from "./evidence";
+
 export type SendAnswerInput = {
   content: string;
   answer_mode: string;
@@ -45,4 +47,6 @@ export type AnswerRunState = {
   status: string;
   error: string;
   lastRunSequence: number;
+  /** 冻结的引用协议：新协议带允许集合与编号绑定，历史回答为 null。 */
+  citationProtocol: CitationProtocol | null;
 };

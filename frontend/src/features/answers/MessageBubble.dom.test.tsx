@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AnswerEvidence } from "./evidence";
+import type { AnswerEvidence, AnswerEvidenceManifest, CitationProtocol } from "./evidence";
 import type { Message } from "./messageTypes";
 import { MessageBubble, splitCitedViews } from "./MessageBubble";
 
@@ -291,5 +291,114 @@ describe("splitCitedViews", () => {
   it("treats every source as uncited when the answer has no numbered citations", () => {
     const { cited } = splitCitedViews([{ index: 1 }], "Wiki 回答引用页面 [[Memory]]。");
     expect(cited).toEqual([]);
+  });
+});
+
+function boundProtocol(overrides: Partial<CitationProtocol> = {}): CitationProtocol {
+  return {
+    protocolVersion: "citation-binding-v1",
+    allowedEvidenceIds: ["knowledge-version:k1"],
+    citationBindings: [{ number: 1, evidenceId: "knowledge-version:k1", citationIds: ["citation-1"] }],
+    ...overrides
+  };
+}
+
+function boundManifest(overrides: Partial<AnswerEvidenceManifest> = {}): AnswerEvidenceManifest {
+  return {
+    run_id: "run-9",
+    evidence: [evidenceItem({ knowledge_version_id: "v1", excerpt: "按名次融合" })],
+    citation_protocol: boundProtocol(),
+    ...overrides
+  };
+}
+
+describe("MessageBubble 引用绑定协议", () => {
+  it("新协议下角标按绑定映射到证据，点击传给打开版本的处理器", async () => {
+    const loadEvidence = vi.fn(async () => boundManifest());
+    const onOpenWikiVersion = vi.fn();
+    render(
+      <MessageBubble
+        loadEvidence={loadEvidence}
+        onOpenWikiVersion={onOpenWikiVersion}
+        message={{ ...completedAnswer(), answerMode: "wiki" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    expect(loadEvidence).toHaveBeenCalledWith("run-9");
+    fireEvent.click(await screen.findByRole("button", { name: "查看引用版本" }));
+    // 展示的是证据绑定的那一版，不按标题打开最新页
+    expect(onOpenWikiVersion).toHaveBeenCalledWith({
+      itemId: "k1", versionId: "v1", title: "RRF 融合排序"
+    });
+  });
+
+  it("点角标只定位证据，不把用户从正文跳走", async () => {
+    const loadEvidence = vi.fn(async () => boundManifest());
+    const onOpenWikiVersion = vi.fn();
+    render(
+      <MessageBubble
+        loadEvidence={loadEvidence}
+        onOpenWikiVersion={onOpenWikiVersion}
+        message={{ ...completedAnswer(), answerMode: "wiki" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看来源 1" }));
+    expect(onOpenWikiVersion).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "查看引用版本" })).toBeTruthy();
+  });
+
+  it("正文编号按绑定出角标，越界编号不生成按钮", async () => {
+    const loadEvidence = vi.fn(async () => boundManifest());
+    render(
+      <MessageBubble
+        loadEvidence={loadEvidence}
+        message={{ ...completedAnswer(), content: "按名次融合 [1]，另见 [9]。" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    expect(await screen.findByRole("button", { name: "查看来源 1" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "查看来源 9" })).toBeNull();
+  });
+
+  it("流式先到的协议直接用，不必等证据清单", () => {
+    const loadEvidence = vi.fn(async () => boundManifest());
+    render(
+      <MessageBubble
+        loadEvidence={loadEvidence}
+        message={{ ...completedAnswer(), citationProtocol: boundProtocol() }}
+      />
+    );
+
+    // 历史回答不主动拉清单，但已有协议即可出角标
+    expect(loadEvidence).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "查看来源 1" })).toBeTruthy();
+  });
+
+  it("旧协议保持按标题解析，并标注为旧协议", async () => {
+    const loadEvidence = vi.fn(async () => ({
+      run_id: "run-9",
+      evidence: [evidenceItem({ knowledge_version_id: "v1" })],
+      citation_protocol: null
+    }));
+    render(<MessageBubble loadEvidence={loadEvidence} message={{ ...completedAnswer(), answerMode: "wiki" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    expect(await screen.findByText(/旧版引用协议生成/)).toBeTruthy();
+    expect(screen.getByText("旧协议")).toBeTruthy();
+    // 旧协议不从标题推造精确版本关系，不提供按版本打开
+    expect(screen.queryByRole("button", { name: "查看引用版本" })).toBeNull();
+  });
+
+  it("证据清单读取失败时不把回答误标成旧协议", async () => {
+    const loadEvidence = vi.fn(async () => { throw new Error("boom"); });
+    render(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /来源 1/ }));
+    await screen.findByText(/来源引用/);
+    expect(screen.queryByText("旧协议")).toBeNull();
   });
 });

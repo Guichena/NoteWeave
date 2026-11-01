@@ -1,4 +1,5 @@
 import { type AnswerMode } from "../../routes";
+import { type CitationProtocol } from "./evidence";
 import { type AnswerRunState } from "./model";
 
 export type Message = {
@@ -14,6 +15,8 @@ export type Message = {
   retrievalDegradationReasons?: string[];
   /** 深度研究轮次的助手消息：按研究运行展示进度与报告，不走回答流 */
   researchRunId?: string;
+  /** 流式先到的引用协议；缺失时由 MessageBubble 补拉证据清单解析。 */
+  citationProtocol?: CitationProtocol | null;
 };
 export function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
   let targetIndex = -1;
@@ -32,7 +35,8 @@ export function updateLastAssistantMessage(current: Message[], answer: AnswerRun
       content: answer.content,
       citations: [...answer.citations],
       answerStatus: answer.status,
-      answerError: answer.error
+      answerError: answer.error,
+      citationProtocol: answer.citationProtocol
     }
     : message);
 }
@@ -48,7 +52,8 @@ export function updateAssistantMessageByRun(
       content: answer.content,
       citations: [...answer.citations],
       answerStatus: answer.status,
-      answerError: answer.error
+      answerError: answer.error,
+      citationProtocol: answer.citationProtocol
     }
     : message);
 }

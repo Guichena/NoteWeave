@@ -1,5 +1,8 @@
 import { Fragment, type ReactNode } from "react";
 
+/** 编号到证据的最小绑定视图：[n] 对应哪条证据。 */
+export type CitationBindingView = { number: number; evidenceId: string };
+
 type MarkdownSurfaceProps = {
   content: string;
   className?: string;
@@ -16,6 +19,13 @@ type MarkdownSurfaceProps = {
   /** 证据编号顺序，通常为报告中首次出现的顺序。 */
   evidenceOrder?: string[];
   activeEvidence?: string | null;
+  /** 本次回答允许引用的证据 ID；编号或证据不在集合内时只渲染普通文字。 */
+  allowedEvidenceIds?: readonly string[];
+  /**
+   * 编号绑定：传入后正文里的 [n] 按绑定解析到证据，不再按 citations 的顺序或标题猜，
+   * 点击交给 onEvidenceClick 处理。
+   */
+  citationBindings?: readonly CitationBindingView[];
 };
 
 type InlineContext = {
@@ -28,6 +38,8 @@ type InlineContext = {
   onEvidenceClick?: (evidenceId: string) => void;
   evidenceOrder?: string[];
   activeEvidence?: string | null;
+  allowedEvidenceIds?: readonly string[];
+  citationBindings?: readonly CitationBindingView[];
 };
 
 function headingId(value: string) {
@@ -50,11 +62,13 @@ export function MarkdownSurface({
   resolveWikiLink,
   onEvidenceClick,
   evidenceOrder,
-  activeEvidence = null
+  activeEvidence = null,
+  allowedEvidenceIds,
+  citationBindings
 }: MarkdownSurfaceProps) {
   const inline: InlineContext = {
     compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
-    onEvidenceClick, evidenceOrder, activeEvidence
+    onEvidenceClick, evidenceOrder, activeEvidence, allowedEvidenceIds, citationBindings
   };
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -203,24 +217,44 @@ function normalizeTableRow(cells: string[], columnCount: number) {
 function renderInlineMarkdown(value: string, context: InlineContext) {
   const {
     compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
-    onEvidenceClick, evidenceOrder, activeEvidence
+    onEvidenceClick, evidenceOrder, activeEvidence, allowedEvidenceIds, citationBindings
   } = context;
-  const numberedCitations = Boolean(citations && citations.length > 0);
+  const bindingMode = Boolean(citationBindings && citationBindings.length > 0);
+  const numberedCitations = Boolean((citations && citations.length > 0) || bindingMode);
   const parts = [
     "`[^`]+`",
     "\\[\\[[^\\]]+\\]\\]",
     "\\*\\*[^*]+\\*\\*",
     "\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\)",
     ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]", PENDING_MARKER.source] : []),
-    ...(numberedCitations ? ["\\[\\d{1,2}\\](?!\\()"] : [])
+    // 转义字面量 \\[7] 不是引用，交给普通文字渲染
+    ...(numberedCitations ? ["(?<!\\\\)\\[\\d{1,2}\\](?!\\()"] : [])
   ];
+  const allowedEvidence = allowedEvidenceIds ? new Set(allowedEvidenceIds) : null;
+  const bindingByNumber = new Map(
+    (citationBindings ?? []).map((binding) => [binding.number, binding.evidenceId])
+  );
+  // 只有绑定了证据、并且证据在本次允许集合内的编号才生成角标
+  function boundEvidenceId(number: number): string | null {
+    const evidenceId = bindingByNumber.get(number);
+    if (!evidenceId) return null;
+    return allowedEvidence && !allowedEvidence.has(evidenceId) ? null : evidenceId;
+  }
+  function isAllowedEvidence(evidenceId: string) {
+    return !allowedEvidence || allowedEvidence.has(evidenceId);
+  }
   const pattern = new RegExp(`(${parts.join("|")})`, "g");
   const tokens = value.split(pattern);
   // 引用角标后紧跟的标点与角标放在同一个不换行单元里，避免标点单独折到下一行。
   const trailing: string[] = [];
   tokens.forEach((token, index) => {
-    const isCitation = (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token))
-      || (numberedCitations && /^\[\d{1,2}\]$/.test(token));
+    const isEvidenceCitation = compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token);
+    const isNumberedCitation = numberedCitations && /^\[\d{1,2}\]$/.test(token);
+    // 绑定模式下只有真正会渲染成角标的编号才和标点粘连
+    const isCitation = bindingMode
+      ? (isEvidenceCitation && isAllowedEvidence(token.slice(1, -1).replace(/^evidence[:-]/, "").trim()))
+        || (isNumberedCitation && boundEvidenceId(Number(token.slice(1, -1))) !== null)
+      : isEvidenceCitation || isNumberedCitation;
     const next = tokens[index + 1];
     if (isCitation && next && TRAILING_PUNCTUATION.test(next)) {
       trailing[index] = next[0];
@@ -269,6 +303,10 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     }
     if (compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token)) {
       const evidenceId = token.slice(1, -1).replace(/^evidence[:-]/, "").trim();
+      // 不在本次允许集合内的证据只当普通文字，不给可点击角标
+      if (!isAllowedEvidence(evidenceId)) {
+        return <Fragment key={index}>{token}</Fragment>;
+      }
       if (onEvidenceClick) {
         const order = evidenceOrder?.indexOf(evidenceId) ?? -1;
         const label = order >= 0 ? String(order + 1) : "证据";
@@ -289,6 +327,28 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     }
     if (numberedCitations && /^\[\d{1,2}\]$/.test(token)) {
       const citationNumber = Number(token.slice(1, -1));
+      if (bindingMode) {
+        const evidenceId = boundEvidenceId(citationNumber);
+        // 未知编号或尚无绑定的编号留成普通文字，不生成看起来有效的来源按钮
+        if (!evidenceId) {
+          return <Fragment key={index}>{token}</Fragment>;
+        }
+        if (onEvidenceClick) {
+          return (
+            <button
+              type="button"
+              key={index}
+              className={`citation-chip${activeEvidence === evidenceId ? " is-active" : ""}`}
+              title={`证据 ${citationNumber}`}
+              aria-label={`查看来源 ${citationNumber}`}
+              onClick={() => onEvidenceClick(evidenceId)}
+            >
+              {citationNumber}
+            </button>
+          );
+        }
+        return <sup className="research-citation-ref" key={index}>{citationNumber}</sup>;
+      }
       const label = citations?.[citationNumber - 1] ?? `来源 ${citationNumber}`;
       return (
         <button
@@ -307,10 +367,12 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     if (link) {
       return <a key={index} href={link[2]} target="_blank" rel="noreferrer">{link[1]}</a>;
     }
-    return <Fragment key={index}>{token}</Fragment>;
+    return <Fragment key={index}>{token.replace(ESCAPED_NUMBERED_BRACKET, "[$1]")}</Fragment>;
   }
 }
 
 const TRAILING_PUNCTUATION = /^[。，、；：！？）」』》.,;:!?)]/;
+// 转义的编号方括号是正文里的字面量，渲染时去掉反斜杠，不当引用处理
+const ESCAPED_NUMBERED_BRACKET = /\\\[(\d{1,2})\\?\]/g;
 // 研究报告里线索的标注，显示成待核实标签（Worker 现在写（待核实），旧报告里是（未经核实））
 const PENDING_MARKER = /（待核实）|（未经核实）|（该项尚未完成核验）|\(unverified\)/;
