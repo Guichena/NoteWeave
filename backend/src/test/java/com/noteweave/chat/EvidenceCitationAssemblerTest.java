@@ -73,6 +73,9 @@ class EvidenceCitationAssemblerTest {
         assertThat(jdbcTemplate.semanticCitations.subList(0, 2))
                 .isEqualTo(jdbcTemplate.semanticCitations.subList(2, 4));
         assertThat(jdbcTemplate.sortOrders).containsExactly(0, 1, 0, 1);
+        // 引用归属按消息记录：两轮重放各自记在自己那条消息上
+        assertThat(jdbcTemplate.ownerMessages)
+                .containsExactly("message-one", "message-one", "message-two", "message-two");
     }
 
     @Test
@@ -133,13 +136,16 @@ class EvidenceCitationAssemblerTest {
 
     private static final class RecordingJdbcTemplate extends JdbcTemplate {
         private final List<List<Object>> semanticCitations = new ArrayList<>();
+        private final List<Object> ownerMessages = new ArrayList<>();
         private final List<Integer> sortOrders = new ArrayList<>();
 
         @Override
         public int update(String sql, Object... args) {
             if (sql.contains("insert into citation(")) {
+                // 最后一参是引用归属消息，单独记录，语义列不参与跨轮比较
                 semanticCitations.add(List.copyOf(
-                        Arrays.asList(args).subList(1, args.length)));
+                        Arrays.asList(args).subList(1, args.length - 1)));
+                ownerMessages.add(args[args.length - 1]);
             } else if (sql.contains("insert into message_citation(")) {
                 sortOrders.add((Integer) args[3]);
             }
