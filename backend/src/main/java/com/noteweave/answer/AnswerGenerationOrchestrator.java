@@ -1,7 +1,9 @@
 package com.noteweave.answer;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.answer.generation.CitationMarkerNormalizer;
 import com.noteweave.answer.generation.GenerationContractGuard;
+import com.noteweave.common.Json;
 import java.time.Duration;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -27,6 +29,7 @@ public class AnswerGenerationOrchestrator {
     private final GenerationContractGuard contractGuard;
     private final ScheduledExecutorService eventScheduler;
     private final ScheduledExecutorService leaseScheduler;
+    private final ObjectMapper objectMapper;
 
     public AnswerGenerationOrchestrator(
             AnswerRunService answerRunService,
@@ -36,7 +39,8 @@ public class AnswerGenerationOrchestrator {
             AnswerGenerationGateway generationGateway,
             GenerationContractGuard contractGuard,
             @Qualifier("answerEventScheduler") ScheduledExecutorService eventScheduler,
-            @Qualifier("answerLeaseScheduler") ScheduledExecutorService leaseScheduler
+            @Qualifier("answerLeaseScheduler") ScheduledExecutorService leaseScheduler,
+            ObjectMapper objectMapper
     ) {
         this.answerRunService = answerRunService;
         this.cancellationRegistry = cancellationRegistry;
@@ -46,6 +50,7 @@ public class AnswerGenerationOrchestrator {
         this.contractGuard = contractGuard;
         this.eventScheduler = eventScheduler;
         this.leaseScheduler = leaseScheduler;
+        this.objectMapper = objectMapper;
     }
 
     public void stream(String assistantRequestId, Consumer<AnswerDeliveryEvent> consumer) {
@@ -89,6 +94,9 @@ public class AnswerGenerationOrchestrator {
             if (run != null) {
                 contractGuard.requireEligible(run.workspaceId(), run.runId(), material.contract());
             }
+            // 引用绑定必须先于首个正文增量下发，前端角标才能从第一段正文起按绑定渲染；
+            // 放在契约复核之后，避免替一次注定失败的运行广播绑定
+            emitEvidenceReady(consumer, fallbackSequence, material, run, leaseValid);
             // 越界编号与未选页面名在这里改成普通文字；流式、返回值与落库都用同一份规范文本
             CitationMarkerNormalizer normalizer = new CitationMarkerNormalizer(material.contract());
             StringBuilder normalized = new StringBuilder();
@@ -249,6 +257,8 @@ public class AnswerGenerationOrchestrator {
             emit(consumer, sequence, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE", null);
             return;
         }
+        // 已完成回放同样先给绑定，新订阅与重连都不必等补拉证据清单
+        emitEvidenceReady(consumer, sequence, material, null, null);
         generationGateway.replayChunks(material.content())
                 .forEach(piece -> emit(consumer, sequence, "answer.delta", piece, null));
         material.citationLines().forEach(citation ->
@@ -281,6 +291,32 @@ public class AnswerGenerationOrchestrator {
                         event.data()
                 )
         ));
+    }
+
+    /**
+     * 下发 {@code evidence.ready}：把冻结契约里的允许集合与编号绑定交给前端。
+     *
+     * <p>历史运行没有契约时直接跳过，前端保持旧协议解析。有运行记录时走与
+     * {@code answer.delta} 相同的 mux 与序列号通道，并沿用租约与取消检查，
+     * 保证它排在首个正文增量之前。</p>
+     */
+    private void emitEvidenceReady(
+            Consumer<AnswerDeliveryEvent> consumer,
+            AtomicLong fallbackSequence,
+            AnswerGenerationMaterial material,
+            AnswerRunRef run,
+            AtomicBoolean leaseValid
+    ) {
+        EvidenceReadyEvent payload = EvidenceReadyEvent.from(material.contract());
+        if (payload == null) {
+            return;
+        }
+        if (leaseValid != null && !leaseValid.get()) {
+            throw new AnswerStreamLeaseLostException();
+        }
+        ensureNotCancelled(run);
+        emit(consumer, fallbackSequence, EvidenceReadyEvent.EVENT_TYPE,
+                Json.write(objectMapper, payload), run);
     }
 
     private void emitDelta(
