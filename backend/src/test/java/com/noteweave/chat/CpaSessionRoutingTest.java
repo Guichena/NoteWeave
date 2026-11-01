@@ -44,14 +44,14 @@ class CpaSessionRoutingTest {
                             "ds-4.1", "test-only-key", 30));
             HttpChatLlmClient client = new HttpChatLlmClient(mapper, properties);
             ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                    mock(JdbcTemplate.class), client, mock(com.noteweave.research.ResearchGeneratedSourceReadGate.class), false);
+                    mock(JdbcTemplate.class), client, mock(com.noteweave.research.ResearchGeneratedSourceReadGate.class), mapper, false);
             List<String> tokens = new ArrayList<>();
 
-            assertThat(adapter.generateInConversation("ws-A", "conversation-A", "first prompt", 1200, tokens::add))
+            assertThat(adapter.generateInConversation("ws-A", "conversation-A", null, "first prompt", 1200, tokens::add))
                     .isEqualTo("OK");
-            adapter.generateInConversation("ws-A", "conversation-A", "new evidence and compacted history", 1200, tokens::add);
-            adapter.generateInConversation("ws-A", "conversation-B", "first prompt", 1200, tokens::add);
-            adapter.generateInConversation("ws-B", "conversation-A", "first prompt", 1200, tokens::add);
+            adapter.generateInConversation("ws-A", "conversation-A", null, "new evidence and compacted history", 1200, tokens::add);
+            adapter.generateInConversation("ws-A", "conversation-B", null, "first prompt", 1200, tokens::add);
+            adapter.generateInConversation("ws-B", "conversation-A", null, "first prompt", 1200, tokens::add);
             client.streamChat("system", "standalone request", 1200, tokens::add);
 
             assertThat(sessions).hasSize(5);

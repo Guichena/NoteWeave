@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class FallbackRerankClient implements RerankClient {
     private static final Logger log = LoggerFactory.getLogger(FallbackRerankClient.class);
-    static final String LLM_MODEL = "llm-listwise-v1";
+    static final String LLM_MODEL = RerankClient.LLM_FALLBACK_MODEL;
     /** 一次交给模型的候选上限与每条候选的字数，控制提示长度和耗时。 */
     static final int MAX_DOCUMENTS = 40;
     static final int MAX_DOCUMENT_CHARACTERS = 320;
@@ -60,7 +60,8 @@ public class FallbackRerankClient implements RerankClient {
     public RerankResult rerank(String query, List<String> documents, int topN) {
         if (provider.isEnabled()) {
             try {
-                return provider.rerank(query, documents, topN);
+                return requireValid(provider.rerank(query, documents, topN),
+                        documents == null ? 0 : documents.size());
             } catch (RuntimeException exception) {
                 if (llm() == null) throw exception;
                 log.warn("重排服务调用失败，改用模型打分：{}", exception.getMessage());
@@ -68,9 +69,37 @@ public class FallbackRerankClient implements RerankClient {
         }
         ChatLlmClient llm = llm();
         if (llm == null) {
-            return provider.rerank(query, documents, topN);
+            return requireValid(provider.rerank(query, documents, topN),
+                    documents == null ? 0 : documents.size());
         }
         return llmRerank(llm, query, documents, topN);
+    }
+
+    /**
+     * 在适配层校验提供方响应。越界编号、非有限分数和重复编号都在这里判为不合法，
+     * 由调用方转到模型后备；不能让不合法的响应继续往下走，退化成只按融合排序。
+     */
+    static RerankResult requireValid(RerankResult result, int documentCount) {
+        if (result == null) {
+            throw new IllegalStateException("RERANK_PROVIDER_RESPONSE_INVALID: 空响应");
+        }
+        List<Hit> hits = result.hits();
+        if (hits == null || hits.isEmpty()) {
+            throw new IllegalStateException("RERANK_PROVIDER_RESPONSE_INVALID: 没有命中");
+        }
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        for (Hit hit : hits) {
+            if (hit == null || hit.documentIndex() < 0 || hit.documentIndex() >= documentCount) {
+                throw new IllegalStateException("RERANK_PROVIDER_RESPONSE_INVALID: 候选编号越界");
+            }
+            if (!Double.isFinite(hit.score())) {
+                throw new IllegalStateException("RERANK_PROVIDER_RESPONSE_INVALID: 分数不是有限值");
+            }
+            if (!seen.add(hit.documentIndex())) {
+                throw new IllegalStateException("RERANK_PROVIDER_RESPONSE_INVALID: 候选编号重复");
+            }
+        }
+        return result;
     }
 
     RerankResult llmRerank(ChatLlmClient llm, String query, List<String> documents, int topN) {

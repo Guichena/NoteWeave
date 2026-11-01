@@ -3,6 +3,9 @@ package com.noteweave.chat;
 import com.noteweave.answer.AnswerRunRef;
 import com.noteweave.answer.AnswerGenerationGateway;
 import com.noteweave.answer.AnswerGenerationMaterial;
+import com.noteweave.answer.generation.CitationAssemblyResult;
+import com.noteweave.answer.generation.GenerationContract;
+import com.noteweave.answer.generation.GenerationContractCompiler;
 import com.noteweave.answer.AnswerGenerationOrchestrator;
 import com.noteweave.answer.AnswerSubmissionService;
 import com.noteweave.answer.strategy.AnswerContext;
@@ -152,10 +155,14 @@ public class ChatService {
                 set content = ?
                 where workspace_id = ? and id = ? and context_status = 'PENDING'
                 """, material.answer(), workspaceId, assistantMessageId);
-        int newCitationCount = evidenceCitationAssembler.persist(
+        CitationAssemblyResult citationAssembly = evidenceCitationAssembler.persist(
                 workspaceId, assistantMessageId, material.evidenceBundle(), material.promptSpec());
         bindExistingCitations(
-                workspaceId, assistantMessageId, material.existingCitationIds(), newCitationCount);
+                workspaceId, assistantMessageId, material.existingCitationIds(),
+                citationAssembly.persistedCount());
+        // 引用落库之后冻结生成契约：编号绑定与本次实际生成的引用行一一对应
+        GenerationContract generationContract = GenerationContractCompiler.compile(
+                answerMode, material.promptSpec(), material.evidenceBundle(), citationAssembly);
         memoryCompilerService.logPackUsage(
                 workspaceId,
                 answerMode,
@@ -173,7 +180,8 @@ public class ChatService {
                 material.evidenceBundle(),
                 material.promptVersion(),
                 material.maximumOutputTokens(),
-                material.evidenceSufficiency()
+                material.evidenceSufficiency(),
+                generationContract
         );
     }
 

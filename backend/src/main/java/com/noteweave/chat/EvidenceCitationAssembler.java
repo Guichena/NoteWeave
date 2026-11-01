@@ -1,5 +1,7 @@
 package com.noteweave.chat;
 
+import com.noteweave.answer.generation.CitationAssemblyResult;
+import com.noteweave.answer.generation.CitationBinding;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.PromptSpec;
 import com.noteweave.answer.strategy.ResearchReportEvidence;
@@ -23,8 +25,14 @@ public class EvidenceCitationAssembler {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    public int persist(String workspaceId, String messageId, EvidenceBundle bundle, PromptSpec prompt) {
+    public CitationAssemblyResult persist(
+            String workspaceId,
+            String messageId,
+            EvidenceBundle bundle,
+            PromptSpec prompt
+    ) {
         List<AssembledCitation> citations = assemble(bundle, prompt);
+        Map<String, List<String>> citationIdsByEvidence = new LinkedHashMap<>();
         for (int index = 0; index < citations.size(); index++) {
             AssembledCitation citation = citations.get(index);
             String citationId = Ids.newId();
@@ -32,24 +40,70 @@ public class EvidenceCitationAssembler {
                 // 研究报告引用的网页原文没有工作台资料，按研究运行编号和证据键记录出处
                 jdbcTemplate.update("""
                         insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text,
-                                             location_info, research_run_id, research_evidence_key)
-                        values (?, ?, null, null, null, ?, ?, ?, ?, ?)
+                                             location_info, research_run_id, research_evidence_key, owner_message_id)
+                        values (?, ?, null, null, null, ?, ?, ?, ?, ?, ?)
                         """, citationId, workspaceId, trim(citation.title(), 300), trim(citation.quoteText(), 360),
-                        citation.location(), citation.researchRunId(), citation.passageId());
+                        citation.location(), citation.researchRunId(), citation.passageId(), messageId);
             } else {
                 jdbcTemplate.update("""
-                        insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
-                        values (?, ?, ?, ?, ?, ?, ?, (select sc.page_start from source_chunk sc where sc.id = ?), ?)
+                        insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info, owner_message_id)
+                        values (?, ?, ?, ?, ?, ?, ?, (select sc.page_start from source_chunk sc where sc.id = ?), ?, ?)
                         """, citationId, workspaceId, citation.sourceId(), citation.sourceSnapshotId(),
                         citation.passageId(), citation.title(), trim(citation.quoteText(), 360), citation.passageId(),
-                        citation.location());
+                        citation.location(), messageId);
             }
             jdbcTemplate.update("""
                     insert into message_citation(id, message_id, citation_id, sort_order)
                     values (?, ?, ?, ?)
                     """, Ids.newId(), messageId, citationId, index);
+            citationIdsByEvidence.computeIfAbsent(citation.evidenceId(), key -> new ArrayList<>())
+                    .add(citationId);
         }
-        return citations.size();
+        return new CitationAssemblyResult(
+                bindings(bundle, prompt, citationIdsByEvidence), citations.size());
+    }
+
+    /**
+     * 按提示里的编号顺序生成绑定。知识页证据没有独立引用行，绑定它已有的来源引用；
+     * 一页可以有多个来源引用，不强行做一页一来源。
+     */
+    private List<CitationBinding> bindings(
+            EvidenceBundle bundle,
+            PromptSpec prompt,
+            Map<String, List<String>> citationIdsByEvidence
+    ) {
+        Map<String, EvidenceBundle.Evidence> byId = new LinkedHashMap<>();
+        for (EvidenceBundle.Evidence evidence : bundle.evidence()) {
+            byId.putIfAbsent(evidence.evidenceId(), evidence);
+        }
+        List<CitationBinding> bindings = new ArrayList<>();
+        List<String> referenced = prompt.referencedEvidenceIds();
+        for (int index = 0; index < referenced.size(); index++) {
+            String evidenceId = referenced.get(index);
+            List<String> citationIds = new ArrayList<>(
+                    citationIdsByEvidence.getOrDefault(evidenceId, List.of()));
+            if (citationIds.isEmpty()) {
+                EvidenceBundle.Evidence evidence = byId.get(evidenceId);
+                if (evidence != null && "KNOWLEDGE_VERSION".equals(evidence.kind())) {
+                    citationIds.addAll(splitCitationIds(evidence.metadata().get("citation_ids")));
+                }
+            }
+            bindings.add(new CitationBinding(index + 1, evidenceId, citationIds));
+        }
+        return List.copyOf(bindings);
+    }
+
+    private static List<String> splitCitationIds(String value) {
+        if (value == null || value.isBlank()) {
+            return List.of();
+        }
+        List<String> ids = new ArrayList<>();
+        for (String part : value.split(",")) {
+            if (!part.isBlank()) {
+                ids.add(part.trim());
+            }
+        }
+        return ids;
     }
 
     List<AssembledCitation> assemble(EvidenceBundle bundle, PromptSpec prompt) {

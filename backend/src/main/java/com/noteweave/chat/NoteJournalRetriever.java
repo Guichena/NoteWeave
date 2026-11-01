@@ -63,7 +63,8 @@ public class NoteJournalRetriever {
             // 已删除、合规撤销和暂不可用的来源都不再提供检索信号，避免历史笔记把失效原文带回来
             if ("source-deleted".equals(f.status()) || "source-unavailable".equals(f.status())
                     || "source-compliance-revoked".equals(f.status())) continue;
-            if ("stale-source-updated".equals(f.status())) value = Math.max(1, value / 2);
+            // 先有正相关再做来源更新折扣：零分不能被 Math.max 抬成命中，也不能占用来源配额
+            if (value > 0 && "stale-source-updated".equals(f.status())) value = Math.max(1, value / 2);
             if (value > 0) result.merge(row.sourceId(), value, Integer::sum);
         }
         return result;

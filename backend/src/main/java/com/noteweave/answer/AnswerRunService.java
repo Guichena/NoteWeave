@@ -1,5 +1,6 @@
 package com.noteweave.answer;
 
+import com.noteweave.answer.generation.GenerationContract;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.EvidenceBundleSnapshot;
 import com.noteweave.answer.strategy.RetrievalExecutionTrace;
@@ -22,6 +23,8 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -29,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AnswerRunService {
+
+    private static final Logger log = LoggerFactory.getLogger(AnswerRunService.class);
 
     private static final String PLAN_VERSION = "legacy-adapter-v1";
     private static final long STREAM_LEASE_SECONDS = 150;
@@ -128,7 +133,8 @@ public class AnswerRunService {
             EvidenceBundle evidenceBundle,
             String promptVersion,
             int maximumOutputTokens,
-            String evidenceSufficiency
+            String evidenceSufficiency,
+            GenerationContract generationContract
     ) {
         String actor = actor();
         EvidenceBundleSnapshot bundleSnapshot = EvidenceBundleSnapshot.from(evidenceBundle);
@@ -137,12 +143,14 @@ public class AnswerRunService {
                 update answer_run
                 set answer_message_id = ?, assistant_request_id = ?, model = ?,
                     maximum_output_tokens = ?, evidence_bundle_json = ?, evidence_sufficiency = ?,
+                    generation_contract_json = ?,
                     status = 'GENERATING',
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ? and status = 'RETRIEVING'
                 """, answerMessageId, assistantRequestId, model,
                 maximumOutputTokens, Json.write(objectMapper, bundleSnapshot),
                 EvidenceSufficiency.canonical(evidenceSufficiency),
+                generationContract == null ? null : Json.write(objectMapper, generationContract),
                 actor, workspaceId, runId);
         requireTransition(updated, runId, "GENERATING");
         jdbcTemplate.update("""
@@ -273,6 +281,13 @@ public class AnswerRunService {
             // 首版消息在这期间被改走（取消或改写）：显式失败，绝不把运行留在 FINALIZING
             return failRunInternal(workspaceId, runId, streamOwner, "ANSWER_MESSAGE_REVISION_INVALID",
                     "Answer message revision is not in STREAMING state");
+        }
+        // 正文写回与运行收尾在同一事务里完成：消息已删除时不写回，晚到结果不能复活已删消息
+        if (current.answerMessageId() != null && !current.answerMessageId().isBlank()) {
+            jdbcTemplate.update("""
+                    update conversation_message set content = ?, content_hash = ?
+                    where workspace_id = ? and id = ? and context_status <> 'DELETED'
+                    """, finalContent, sha256(finalContent), workspaceId, current.answerMessageId());
         }
         int completed = jdbcTemplate.update("""
                 update answer_run
@@ -538,20 +553,41 @@ public class AnswerRunService {
                 graphPath(rs.getString("graph_path_json")), rs.getString("text_origin"),
                 rs.getObject("ocr_confidence", Double.class)
         ), workspaceId, runId);
-        record StoredPlan(String planJson, String evidenceSufficiency) {
+        record StoredPlan(String planJson, String evidenceSufficiency, String contractJson) {
         }
         StoredPlan storedPlan = jdbcTemplate.query("""
-                select retrieval_plan_json, evidence_sufficiency from answer_run
+                select retrieval_plan_json, evidence_sufficiency, generation_contract_json from answer_run
                 where workspace_id = ? and id = ?
                 """, rs -> rs.next()
-                ? new StoredPlan(rs.getString("retrieval_plan_json"), rs.getString("evidence_sufficiency"))
-                : new StoredPlan(null, null), workspaceId, runId);
+                ? new StoredPlan(rs.getString("retrieval_plan_json"), rs.getString("evidence_sufficiency"),
+                        rs.getString("generation_contract_json"))
+                : new StoredPlan(null, null, null), workspaceId, runId);
+        GenerationContract contract = readGenerationContract(storedPlan.contractJson());
         return new AnswerEvidenceManifestResponse(
                 runId,
                 evidence,
                 QueryRewrite.viewFromPlanJson(storedPlan.planJson()),
                 compiledMemoryReferences(workspaceId, runId),
-                storedPlan.evidenceSufficiency());
+                storedPlan.evidenceSufficiency(),
+                contract == null ? null : AnswerEvidenceManifestResponse.PROTOCOL_VERSION,
+                contract == null ? List.of() : contract.allowedEvidenceIds(),
+                contract == null ? List.of() : contract.citationBindings().stream()
+                        .map(binding -> new AnswerEvidenceManifestResponse.CitationBindingView(
+                                binding.number(), binding.evidenceId(), binding.citationIds()))
+                        .toList());
+    }
+
+    /** 历史回答没有冻结契约，按旧协议返回 null，前端不得从标题猜绑定关系。 */
+    private GenerationContract readGenerationContract(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, GenerationContract.class);
+        } catch (Exception exception) {
+            log.warn("生成契约无法解析，按旧协议返回：{}", exception.getMessage());
+            return null;
+        }
     }
 
     /** 从这次回答的输入快照读出实际编入的记忆。回放被降级时不带出展示文本。 */

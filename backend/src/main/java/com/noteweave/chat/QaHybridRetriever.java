@@ -256,7 +256,8 @@ public class QaHybridRetriever {
                 hit.title(), content, owner.locationOr("chunk:" + hit.chunkNo()), hit.sourceType(),
                 owner.generatedBy(), owner.generatedRefId(),
                 (int) Math.round(item.ranked().rerankScore() * 1000), reason,
-                Math.max(hit.vectorScore(), hit.keywordScore()), hit.rrfScore(), item.ranked().rerankScore());
+                Math.max(hit.vectorScore(), hit.keywordScore()), hit.rrfScore(), item.ranked().rerankScore(),
+                item.ranked().scoreInfo());
     }
 
     /** 相邻段落只保留靠近命中段落的窗口，并跳过 excluded 中已作为独立证据的段落。 */

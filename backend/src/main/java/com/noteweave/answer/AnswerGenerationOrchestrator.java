@@ -1,5 +1,7 @@
 package com.noteweave.answer;
 
+import com.noteweave.answer.generation.CitationMarkerNormalizer;
+import com.noteweave.answer.generation.GenerationContractGuard;
 import java.time.Duration;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -22,6 +24,7 @@ public class AnswerGenerationOrchestrator {
     private final SessionEventMux runEventMux;
     private final ConversationEventMux conversationEventMux;
     private final AnswerGenerationGateway generationGateway;
+    private final GenerationContractGuard contractGuard;
     private final ScheduledExecutorService eventScheduler;
     private final ScheduledExecutorService leaseScheduler;
 
@@ -31,6 +34,7 @@ public class AnswerGenerationOrchestrator {
             SessionEventMux runEventMux,
             ConversationEventMux conversationEventMux,
             AnswerGenerationGateway generationGateway,
+            GenerationContractGuard contractGuard,
             @Qualifier("answerEventScheduler") ScheduledExecutorService eventScheduler,
             @Qualifier("answerLeaseScheduler") ScheduledExecutorService leaseScheduler
     ) {
@@ -39,6 +43,7 @@ public class AnswerGenerationOrchestrator {
         this.runEventMux = runEventMux;
         this.conversationEventMux = conversationEventMux;
         this.generationGateway = generationGateway;
+        this.contractGuard = contractGuard;
         this.eventScheduler = eventScheduler;
         this.leaseScheduler = leaseScheduler;
     }
@@ -80,12 +85,35 @@ public class AnswerGenerationOrchestrator {
                 eventScheduler,
                 batch -> emitDelta(consumer, fallbackSequence, batch, run, streamOwner, firstToken, leaseValid))) {
             String draft = generationGateway.prepareDraft(material.content());
-            streamed = run == null
-                    ? generationGateway.generate(draft, material.maximumOutputTokens(), deltaEmitter::accept)
-                    : generationGateway.generateInConversation(
-                            run.workspaceId(), run.conversationId(), draft,
-                            material.maximumOutputTokens(), deltaEmitter::accept);
+            // 冻结与生成之间证据可能失效：调用模型之前按冻结契约复核，失效时整个运行失败
+            if (run != null) {
+                contractGuard.requireEligible(run.workspaceId(), run.runId(), material.contract());
+            }
+            // 越界编号与未选页面名在这里改成普通文字；流式、返回值与落库都用同一份规范文本
+            CitationMarkerNormalizer normalizer = new CitationMarkerNormalizer(material.contract());
+            StringBuilder normalized = new StringBuilder();
+            Consumer<String> sink = token -> {
+                String safe = normalizer.accept(token);
+                if (!safe.isEmpty()) {
+                    normalized.append(safe);
+                    deltaEmitter.accept(safe);
+                }
+            };
+            if (run == null) {
+                generationGateway.generate(
+                        material.contract(), draft, material.maximumOutputTokens(), sink);
+            } else {
+                generationGateway.generateInConversation(
+                        run.workspaceId(), run.conversationId(), material.contract(), draft,
+                        material.maximumOutputTokens(), sink);
+            }
+            String tail = normalizer.flush();
+            if (!tail.isEmpty()) {
+                normalized.append(tail);
+                deltaEmitter.accept(tail);
+            }
             deltaEmitter.flush();
+            streamed = normalized.toString();
         } catch (AnswerRunCancelledException ex) {
             persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
             return;
@@ -138,8 +166,9 @@ public class AnswerGenerationOrchestrator {
         for (String citation : material.citationLines()) {
             emit(consumer, fallbackSequence, "citation.upsert", citation, run);
         }
-        generationGateway.persistContent(material.workspaceId(), material.messageId(), streamed);
         if (run == null) {
+            // 没有运行记录的旧路径自己写回；有运行记录时正文写回并入 complete 的同一事务
+            generationGateway.persistContent(material.workspaceId(), material.messageId(), streamed);
             emit(consumer, fallbackSequence, "answer.completed", material.messageId(), null);
             return;
         }

@@ -1,5 +1,7 @@
 package com.noteweave.retrieval.qa;
 
+import com.noteweave.answer.strategy.ScoreInfo;
+import com.noteweave.answer.strategy.ScoreOrigins;
 import com.noteweave.retrieval.provider.RerankClient;
 import com.noteweave.retrieval.qa.QaRrfFusionService.FusedHit;
 import java.util.ArrayList;
@@ -59,7 +61,8 @@ public class QaRerankService {
                     continue;
                 }
                 FusedHit candidate = safeCandidates.get(rerankHit.documentIndex());
-                ranked.add(new RankedHit(candidate, rerankHit.score(), rerankHit.rank(), false));
+                ranked.add(new RankedHit(candidate, rerankHit.score(), rerankHit.rank(),
+                        ScoreOrigins.fromRerankModel(result.model(), rerankHit.score())));
             }
             boolean hasScored = !ranked.isEmpty();
             double minScored = hasScored
@@ -77,7 +80,7 @@ public class QaRerankService {
                         ? minScored - 1e-6d * (unscored + 1)
                         : candidate.rrfScore();
                 unscored++;
-                ranked.add(new RankedHit(candidate, score, ranked.size() + 1, true));
+                ranked.add(new RankedHit(candidate, score, ranked.size() + 1, ScoreOrigins.fusionFallback()));
             }
             // 部分评分观测：记录供应商实际返回分数的数量与未评分数量，尾部候选保留
             return new RerankOutcome(ranked, false, List.of(), result.model(), ranked.size() - unscored, unscored);
@@ -89,7 +92,8 @@ public class QaRerankService {
     private RerankOutcome degraded(List<FusedHit> candidates, int topN, String reason) {
         List<RankedHit> ranked = java.util.stream.IntStream.range(0, Math.min(topN, candidates.size()))
                 .mapToObj(index -> new RankedHit(
-                        candidates.get(index), candidates.get(index).rrfScore(), index + 1, true))
+                        candidates.get(index), candidates.get(index).rrfScore(), index + 1,
+                        ScoreOrigins.fusionFallback()))
                 .toList();
         return new RerankOutcome(ranked, true, List.of(reason), "");
     }
@@ -164,8 +168,16 @@ public class QaRerankService {
             FusedHit hit,
             double rerankScore,
             int rerankRank,
-            boolean fallbackScore
+            ScoreInfo scoreInfo
     ) {
+        public RankedHit {
+            scoreInfo = scoreInfo == null ? ScoreInfo.unknown() : scoreInfo;
+        }
+
+        /** 分数不是重排给出的：降级或未覆盖的尾部候选。 */
+        public boolean fallbackScore() {
+            return scoreInfo.value() == null;
+        }
     }
 
     public record RerankOutcome(

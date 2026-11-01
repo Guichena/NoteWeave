@@ -70,6 +70,6 @@ class HybridScopedPassageSearchTest {
         return new RetrievedChunk(
                 id, "source-" + id, "snapshot-" + id, 1, "title", "content",
                 "loc-" + id, "MARKDOWN", "", "", 1, "reason",
-                0.1d, 0.4d, rerankScore);
+                0.1d, 0.4d, rerankScore, com.noteweave.answer.strategy.ScoreInfo.provider("rerank-v1", rerankScore));
     }
 }

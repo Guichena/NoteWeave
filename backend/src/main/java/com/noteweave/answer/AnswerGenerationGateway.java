@@ -1,5 +1,6 @@
 package com.noteweave.answer;
 
+import com.noteweave.answer.generation.GenerationContract;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -10,13 +11,23 @@ public interface AnswerGenerationGateway {
 
     String prepareDraft(String storedContent);
 
-    String generate(String draft, int maximumOutputTokens, Consumer<String> tokenConsumer);
+    /**
+     * 按冻结的生成契约生成正文。
+     *
+     * @param contract 冻结的生成契约；历史运行没有契约时为 null，按旧协议处理
+     */
+    String generate(
+            GenerationContract contract,
+            String draft,
+            int maximumOutputTokens,
+            Consumer<String> tokenConsumer
+    );
 
     default String generateInConversation(
-            String workspaceId, String conversationId, String draft,
+            String workspaceId, String conversationId, GenerationContract contract, String draft,
             int maximumOutputTokens, Consumer<String> tokenConsumer
     ) {
-        return generate(draft, maximumOutputTokens, tokenConsumer);
+        return generate(contract, draft, maximumOutputTokens, tokenConsumer);
     }
 
     List<String> replayChunks(String content);

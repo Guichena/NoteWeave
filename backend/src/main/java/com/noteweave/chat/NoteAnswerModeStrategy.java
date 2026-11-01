@@ -71,7 +71,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
     public PromptSpec compose(AnswerContext context, EvidenceBundle bundle) {
         String encodedSnapshot = bundle.metadata().get(NoteRetrievalSnapshotCodec.METADATA_KEY);
         if (encodedSnapshot == null || encodedSnapshot.isBlank()) {
-            return insufficientPrompt();
+            return insufficientPrompt(planVersion(bundle));
         }
         NoteRetrievalSnapshot snapshot = snapshotCodec.decode(encodedSnapshot);
         Set<String> selectedEvidenceIds = bundle.evidence().stream()
@@ -91,14 +91,14 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         List<CandidateSource> candidates = snapshot.recallPlan().candidateSources();
         List<ReadingWindow> windows = snapshot.windows();
         if (candidates.isEmpty() || windows.isEmpty()) {
-            return insufficientPrompt();
+            return insufficientPrompt(planVersion(bundle));
         }
         String answer = render(context, snapshot);
         return new PromptSpec(
                 "Answer from the selected Note reading windows and preserve their source citations.",
                 answer,
                 bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId).toList(),
-                PLAN_VERSION
+                planVersion(bundle)
         );
     }
 
@@ -107,14 +107,23 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
         return new AnswerPolicy(1, false, true, 2_400);
     }
 
-    private PromptSpec insufficientPrompt() {
+    private PromptSpec insufficientPrompt(String planVersion) {
         return new PromptSpec(
                 "Answer only when Note retrieval has verified source windows.",
                 "当前工作台资料不足，暂时无法通过 Marginalia 式资料级检索形成可靠回答。请先上传或保存更多资料。",
                 List.of(),
-                PLAN_VERSION,
+                planVersion,
                 true
         );
+    }
+
+    /**
+     * 版本取证据包里的检索计划版本，保证拒答分支与正常分支的版本一致；
+     * 公共校验器按版本比对，不能靠各模式自报固定版本。
+     */
+    private static String planVersion(EvidenceBundle bundle) {
+        String version = bundle == null ? null : bundle.retrievalPlanVersion();
+        return version == null || version.isBlank() ? PLAN_VERSION : version;
     }
 
     private String windowEvidenceId(ReadingWindow window) {

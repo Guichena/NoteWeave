@@ -55,10 +55,20 @@ class EvidenceCitationAssemblerTest {
         PromptSpec prompt = new PromptSpec(
                 "system", "user", List.of("two", "one"), "qa-v1");
 
-        assertThat(replayAssembler.persist("workspace", "message-one", bundle, prompt))
-                .isEqualTo(2);
-        assertThat(replayAssembler.persist("workspace", "message-two", bundle, prompt))
-                .isEqualTo(2);
+        com.noteweave.answer.generation.CitationAssemblyResult first =
+                replayAssembler.persist("workspace", "message-one", bundle, prompt);
+        com.noteweave.answer.generation.CitationAssemblyResult second =
+                replayAssembler.persist("workspace", "message-two", bundle, prompt);
+
+        assertThat(first.persistedCount()).isEqualTo(2);
+        assertThat(second.persistedCount()).isEqualTo(2);
+        // 编号与提示里的 [n] 一致：提示顺序是 two、one
+        assertThat(first.bindings()).extracting(com.noteweave.answer.generation.CitationBinding::number)
+                .containsExactly(1, 2);
+        assertThat(first.bindings()).extracting(com.noteweave.answer.generation.CitationBinding::evidenceId)
+                .containsExactly("two", "one");
+        assertThat(first.bindings()).allSatisfy(binding ->
+                assertThat(binding.citationIds()).hasSize(1));
 
         assertThat(jdbcTemplate.semanticCitations.subList(0, 2))
                 .isEqualTo(jdbcTemplate.semanticCitations.subList(2, 4));

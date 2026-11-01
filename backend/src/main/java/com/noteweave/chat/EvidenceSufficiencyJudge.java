@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.answer.EvidenceSufficiency;
 import com.noteweave.answer.strategy.EvidenceBundle;
+import com.noteweave.answer.strategy.ScoreInfo;
 import java.util.List;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -23,16 +24,13 @@ public class EvidenceSufficiencyJudge {
     static final String REASON_UNAVAILABLE = "EVIDENCE_SUFFICIENCY_LLM_UNAVAILABLE";
     static final String REASON_FAILED = "EVIDENCE_SUFFICIENCY_LLM_CALL_FAILED";
     static final String REASON_INVALID = "EVIDENCE_SUFFICIENCY_OUTPUT_INVALID";
-    static final String REASON_ABSENT = "RERANK_SCORE_ABSENT";
-    static final String REASON_RERANK_UNAVAILABLE = "RERANK_UNAVAILABLE_MODEL_VERDICT_ONLY";
+    /** 本次证据里没有提供方重排分，只采用模型结论。 */
+    static final String REASON_NO_PROVIDER_SCORE = "NO_PROVIDER_MODEL_SCORE";
     static final String REASON_BELOW_015 = "RERANK_SCORE_BELOW_0_15";
     static final String REASON_BELOW_035 = "RERANK_SCORE_BELOW_0_35";
 
-    /** 两路 RRF 上限大约 0.033。低于这个值的不是模型 Rerank 分。 */
-    static final double MODEL_SCORE_FLOOR = 0.05d;
     static final double PARTIAL_BELOW = 0.35d;
     static final double INSUFFICIENT_BELOW = 0.15d;
-    private static final double WIKI_SCORE_SCALE = 100.0d;
     private static final int OUTPUT_TOKENS = 200;
     /** 每条证据给判定模型看的命中段落长度上限。 */
     private static final int EXCERPT_LIMIT = 800;
@@ -87,10 +85,6 @@ public class EvidenceSufficiencyJudge {
             if (parsed.verdict() == null) {
                 return new Judgement(EvidenceSufficiency.NOT_RUN, List.of(REASON_INVALID));
             }
-            // 重排不可用时证据上的分数来自融合阶段（量级约 0.01），不能按重排分数的阈值降级
-            if (rerankUnavailable(bundle)) {
-                return new Judgement(parsed.verdict(), List.of(REASON_RERANK_UNAVAILABLE));
-            }
             return combine(parsed.verdict(), bundle.evidence());
         } catch (RuntimeException ex) {
             log.warn("证据充分性判定调用失败：{}", ex.getMessage());
@@ -99,8 +93,10 @@ public class EvidenceSufficiencyJudge {
     }
 
     /**
-     * 把模型结论和最高 rerankScore 合成最终三态。
-     * Wiki 种子页的分数是百分制，其余链路成功时是 0 到 1。扩展页不参与。
+     * 把模型结论和最高提供方重排分合成最终三态。
+     *
+     * <p>只有 {@link ScoreInfo#PROVIDER_MODEL} 的分数参与门槛。模型后备分、融合分、词法分和图扩展
+     * 都不参与，避免把量纲不同的分数当成重排分来降级。没有提供方分数时只采用模型结论。</p>
      */
     static Judgement combine(EvidenceSufficiency modelVerdict, List<EvidenceBundle.Evidence> evidence) {
         if (modelVerdict == null || modelVerdict == EvidenceSufficiency.NOT_RUN) {
@@ -108,7 +104,7 @@ public class EvidenceSufficiencyJudge {
         }
         Double score = modelScore(evidence);
         if (score == null) {
-            return new Judgement(modelVerdict, List.of(REASON_ABSENT));
+            return new Judgement(modelVerdict, List.of(REASON_NO_PROVIDER_SCORE));
         }
         if (score < INSUFFICIENT_BELOW
                 && (modelVerdict == EvidenceSufficiency.SUFFICIENT
@@ -121,43 +117,25 @@ public class EvidenceSufficiencyJudge {
         return new Judgement(modelVerdict, List.of());
     }
 
-    private static Double modelScore(List<EvidenceBundle.Evidence> evidence) {
+    /** 本次证据里最高的提供方重排分；没有提供方分数时返回 null。 */
+    static Double modelScore(List<EvidenceBundle.Evidence> evidence) {
         if (evidence == null || evidence.isEmpty()) {
             return null;
         }
-        EvidenceBundle.Evidence best = null;
+        Double best = null;
         for (EvidenceBundle.Evidence item : evidence) {
-            if (item == null || hasGraphPath(item)) {
+            if (item == null || item.scoreInfo() == null || !item.scoreInfo().isProviderModelScore()) {
                 continue;
             }
-            double raw = item.rerankScore();
-            if (!Double.isFinite(raw) || raw <= 0.0d) {
+            double value = item.scoreInfo().value();
+            if (!Double.isFinite(value) || value < 0.0d || value > 1.0d) {
                 continue;
             }
-            if (best == null || raw > best.rerankScore()) {
-                best = item;
+            if (best == null || value > best) {
+                best = value;
             }
         }
-        if (best == null) {
-            return null;
-        }
-        double normalized = "KNOWLEDGE_VERSION".equals(best.kind())
-                ? best.rerankScore() / WIKI_SCORE_SCALE
-                : best.rerankScore();
-        if (!Double.isFinite(normalized) || normalized < MODEL_SCORE_FLOOR || normalized > 1.0d) {
-            return null;
-        }
-        return normalized;
-    }
-
-    static boolean rerankUnavailable(EvidenceBundle bundle) {
-        return bundle.degradationReasons().stream()
-                .anyMatch(reason -> reason != null && reason.endsWith("RERANK_UNAVAILABLE"));
-    }
-
-    private static boolean hasGraphPath(EvidenceBundle.Evidence evidence) {
-        String path = evidence.metadata().get(WikiEvidenceRetriever.GRAPH_PATH_METADATA);
-        return path != null && !path.isBlank();
+        return best;
     }
 
     private String userPrompt(String question, EvidenceBundle bundle) {

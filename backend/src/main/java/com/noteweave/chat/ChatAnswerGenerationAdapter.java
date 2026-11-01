@@ -1,7 +1,10 @@
 package com.noteweave.chat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.answer.AnswerGenerationGateway;
 import com.noteweave.answer.AnswerGenerationMaterial;
+import com.noteweave.answer.generation.GenerationContract;
+import com.noteweave.answer.generation.GenerationContractCompiler;
 import com.noteweave.common.BusinessException;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.ArrayList;
@@ -19,16 +22,19 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     private final ChatLlmClient chatLlmClient;
     private final boolean templateFallbackEnabled;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final ObjectMapper objectMapper;
 
     public ChatAnswerGenerationAdapter(
             JdbcTemplate jdbcTemplate,
             ChatLlmClient chatLlmClient,
             ResearchGeneratedSourceReadGate generatedSourceGate,
+            ObjectMapper objectMapper,
             @Value("${noteweave.llm.template-fallback-enabled:false}") boolean templateFallbackEnabled
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.chatLlmClient = chatLlmClient;
         this.generatedSourceGate = generatedSourceGate;
+        this.objectMapper = objectMapper;
         this.templateFallbackEnabled = templateFallbackEnabled;
     }
 
@@ -36,7 +42,8 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     public AnswerGenerationMaterial load(String assistantRequestId) {
         return jdbcTemplate.query("""
                 select m.id, m.workspace_id, m.content,
-                       coalesce(r.maximum_output_tokens, 1200) as maximum_output_tokens
+                       coalesce(r.maximum_output_tokens, 1200) as maximum_output_tokens,
+                       r.generation_contract_json
                 from conversation_message m
                 left join answer_run r on r.assistant_request_id = m.assistant_request_id
                 where m.assistant_request_id = ?
@@ -51,9 +58,23 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
                     workspaceId,
                     rs.getString("content"),
                     citationLines(workspaceId, messageId),
-                    rs.getInt("maximum_output_tokens")
+                    rs.getInt("maximum_output_tokens"),
+                    readContract(rs.getString("generation_contract_json"))
             );
         }, assistantRequestId);
+    }
+
+    /** 历史运行没有契约，返回 null，由生成调用按旧协议处理。 */
+    private GenerationContract readContract(String json) {
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, GenerationContract.class);
+        } catch (Exception exception) {
+            throw new BusinessException("ANSWER_GENERATION_CONTRACT_INVALID",
+                    "冻结的生成契约无法解析：" + exception.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 
     @Override
@@ -72,17 +93,19 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
 
     @Override
     public String generate(
+            GenerationContract contract,
             String draft,
             int maximumOutputTokens,
             Consumer<String> tokenConsumer
     ) {
-        return generateInConversation(null, null, draft, maximumOutputTokens, tokenConsumer);
+        return generateInConversation(null, null, contract, draft, maximumOutputTokens, tokenConsumer);
     }
 
     @Override
     public String generateInConversation(
             String workspaceId,
             String conversationId,
+            GenerationContract contract,
             String draft,
             int maximumOutputTokens,
             Consumer<String> tokenConsumer
@@ -105,15 +128,7 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             replayChunks(draft).forEach(tokenConsumer);
             return draft;
         }
-        // 前端按草稿里的二级标题拆出页面关系、来源等折叠卡片，模型润色时必须保留这些标题
-        String systemPrompt = """
-                你是 NoteWeave 知识工作台的统一聊天助手。用户消息是系统整理的回答草稿，或者回答要求加资料片段，请据此写出自然通顺的中文回答。
-                回答必须基于其中的资料证据与检索元信息，不要编造未在证据中出现的来源、链接、引用或数字。
-                草稿中每个以 ## 开头的二级标题都要原样保留，名称和顺序不变，只改写标题下面的内容；不要新增草稿里没有的二级标题。
-                保留引用标注（例如 [1]、[[页面名]]）和列表结构。
-                不要在正文里复述系统内部字段，例如 RESOLVED、UNRESOLVED、出链数、反链数、来源计数、chunk 编号。
-                最终结果直接作为聊天正文，不要加前言或解释。
-                """.trim();
+        String systemPrompt = systemPrompt(contract);
         String[] streamedBuffer = new String[1];
         Consumer<String> onToken = token -> {
             if (token == null || token.isEmpty()) {
@@ -137,6 +152,17 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             );
         }
         return generated;
+    }
+
+    /**
+     * 冻结契约里的系统提示就是本次生成用的系统提示，公共规则与模式提示的拼接顺序在冻结时已经确定。
+     * 历史运行没有契约时退回公共规则，保持旧行为。
+     */
+    private String systemPrompt(GenerationContract contract) {
+        if (contract != null && !contract.systemPrompt().isBlank()) {
+            return contract.systemPrompt();
+        }
+        return GenerationContractCompiler.COMMON_RULES;
     }
 
     @Override

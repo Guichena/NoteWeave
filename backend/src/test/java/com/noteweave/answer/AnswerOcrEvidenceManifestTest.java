@@ -113,7 +113,7 @@ class AnswerOcrEvidenceManifestTest {
         String run = service.createAndStartRetrieval("w", "conversation", "QA", "query", null);
         EvidenceBundle bundle = new EvidenceBundle("bundle", "test-v1", evidence, false, List.of(), Instant.now());
         service.prepareGeneration("w", run, "answer", UUID.randomUUID().toString(), "", "test-model", bundle,
-                "test-prompt-v1", 1000, null);
+                "test-prompt-v1", 1000, null, null);
         return run;
     }
 

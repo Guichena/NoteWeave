@@ -1,5 +1,6 @@
 package com.noteweave.answer;
 
+import com.noteweave.answer.generation.GenerationContract;
 import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import org.springframework.stereotype.Service;
@@ -46,7 +47,9 @@ public class AnswerSubmissionService {
                 evidenceBundle,
                 promptVersion,
                 maximumOutputTokens,
-                evidenceSufficiency
+                evidenceSufficiency,
+                // 非对话入口的旧路径暂不冻结生成契约，二期统一到同一份契约
+                null
         );
         return runId;
     }
@@ -62,7 +65,8 @@ public class AnswerSubmissionService {
             EvidenceBundle evidenceBundle,
             String promptVersion,
             int maximumOutputTokens,
-            String evidenceSufficiency
+            String evidenceSufficiency,
+            GenerationContract generationContract
     ) {
         answerRunService.startPreparedRetrieval(workspaceId, runId, retrievalPlan);
         answerRunService.prepareGeneration(
@@ -75,7 +79,8 @@ public class AnswerSubmissionService {
                 evidenceBundle,
                 promptVersion,
                 maximumOutputTokens,
-                evidenceSufficiency
+                evidenceSufficiency,
+                generationContract
         );
     }
 }

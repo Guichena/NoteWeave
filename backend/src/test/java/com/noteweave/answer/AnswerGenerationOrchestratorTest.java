@@ -9,6 +9,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.noteweave.answer.generation.GenerationContractGuard;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
@@ -27,15 +28,15 @@ class AnswerGenerationOrchestratorTest {
         when(gateway.prepareDraft("draft")).thenReturn("prepared");
         when(gateway.generateInConversation(
                 org.mockito.ArgumentMatchers.eq("ws"), org.mockito.ArgumentMatchers.eq("stable-conversation"),
-                org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any()))
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any()))
                 .thenReturn("");
 
         orchestrator(runs, gateway).stream("new-request-id", ignored -> {});
 
         verify(gateway).generateInConversation(
                 org.mockito.ArgumentMatchers.eq("ws"), org.mockito.ArgumentMatchers.eq("stable-conversation"),
-                org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any());
-        verify(gateway, never()).generate(anyString(), anyInt(), any());
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq("prepared"), org.mockito.ArgumentMatchers.eq(1200), any());
+        verify(gateway, never()).generate(any(), anyString(), anyInt(), any());
     }
 
     @Test
@@ -46,7 +47,7 @@ class AnswerGenerationOrchestratorTest {
         when(gateway.load("request-1"))
                 .thenReturn(new AnswerGenerationMaterial("message-1", "workspace-1", "draft", List.of(), 100));
         when(gateway.prepareDraft("draft")).thenReturn("prepared");
-        when(gateway.generate(anyString(), anyInt(), any())).thenReturn("  ");
+        when(gateway.generate(any(), anyString(), anyInt(), any())).thenReturn("  ");
 
         AnswerGenerationOrchestrator orchestrator = orchestrator(answerRunService, gateway);
         List<AnswerDeliveryEvent> events = new ArrayList<>();
@@ -87,6 +88,7 @@ class AnswerGenerationOrchestratorTest {
                 mock(SessionEventMux.class),
                 mock(ConversationEventMux.class),
                 gateway,
+                mock(GenerationContractGuard.class),
                 mock(ScheduledExecutorService.class),
                 mock(ScheduledExecutorService.class));
     }

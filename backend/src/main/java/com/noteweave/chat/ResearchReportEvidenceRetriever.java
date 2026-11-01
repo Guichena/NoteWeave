@@ -6,6 +6,7 @@ import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.ResearchReportEvidence;
 import com.noteweave.answer.strategy.RetrievalPlan;
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.text.LexicalTerms;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
@@ -209,7 +210,9 @@ public class ResearchReportEvidenceRetriever implements EvidenceRetriever {
                 row.createdAt(),
                 "research_report_citation",
                 excerpt.length(),
-                metadata
+                metadata,
+                // 报告通道按词项重合度排序，没有重排分，不参与充分性门槛
+                ScoreInfo.lexical("", null)
         );
     }
 

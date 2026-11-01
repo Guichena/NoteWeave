@@ -1,6 +1,7 @@
 package com.noteweave.chat;
 
 import com.noteweave.answer.strategy.RetrievalExecutionTrace;
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.noteweave.chat.RetrievalHydrator.PassageOwnership;
 import com.noteweave.common.BusinessException;
 import com.noteweave.retrieval.QaEvidenceRelevancePolicy;
@@ -297,7 +298,8 @@ public class QaPassageRetriever {
             String matchReason,
             double rawScore,
             double fusedScore,
-            double rerankScore
+            double rerankScore,
+            ScoreInfo scoreInfo
     ) {
         public RetrievedChunk(
                 String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
@@ -306,21 +308,21 @@ public class QaPassageRetriever {
         ) {
             this(chunkId, sourceId, sourceSnapshotId, chunkNo, title, content, locationInfo,
                     sourceType, generatedBy, generatedRefId, score, matchReason,
-                    score, score, score);
+                    score, score, score, ScoreInfo.unknown());
         }
 
         RetrievedChunk withScore(int nextScore) {
             return new RetrievedChunk(
                     chunkId, sourceId, sourceSnapshotId, chunkNo, title, content,
                     locationInfo, sourceType, generatedBy, generatedRefId,
-                    nextScore, matchReason, nextScore, nextScore, nextScore);
+                    nextScore, matchReason, nextScore, nextScore, nextScore, scoreInfo);
         }
 
         RetrievedChunk withMatchReason(String nextMatchReason) {
             return new RetrievedChunk(
                     chunkId, sourceId, sourceSnapshotId, chunkNo, title, content,
                     locationInfo, sourceType, generatedBy, generatedRefId,
-                    score, nextMatchReason, rawScore, fusedScore, rerankScore);
+                    score, nextMatchReason, rawScore, fusedScore, rerankScore, scoreInfo);
         }
     }
 

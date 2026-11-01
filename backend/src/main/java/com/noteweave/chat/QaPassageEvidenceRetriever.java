@@ -92,7 +92,8 @@ public class QaPassageEvidenceRetriever implements EvidenceRetriever {
                 java.time.Instant.now(),
                 chunk.matchReason(),
                 chunk.content() == null ? 0 : chunk.content().length(),
-                metadata
+                metadata,
+                chunk.scoreInfo()
         );
     }
 

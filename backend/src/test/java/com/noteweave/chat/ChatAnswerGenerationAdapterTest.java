@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.common.BusinessException;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.ArrayList;
@@ -22,9 +23,9 @@ class ChatAnswerGenerationAdapterTest {
         ChatLlmClient client = mock(ChatLlmClient.class);
         when(client.isEnabled()).thenReturn(false);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), false);
+                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), new ObjectMapper(), false);
 
-        assertThatThrownBy(() -> adapter.generate("template draft", 1200, ignored -> {}))
+        assertThatThrownBy(() -> adapter.generate(null, "template draft", 1200, ignored -> {}))
                 .isInstanceOfSatisfying(BusinessException.class, error -> {
                     assertThat(error.code()).isEqualTo("ANSWER_LLM_CONFIGURATION_REQUIRED");
                     assertThat(error.status()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
@@ -37,10 +38,10 @@ class ChatAnswerGenerationAdapterTest {
         ChatLlmClient client = mock(ChatLlmClient.class);
         when(client.isEnabled()).thenReturn(false);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), true);
+                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), new ObjectMapper(), true);
         List<String> chunks = new ArrayList<>();
 
-        assertThat(adapter.generate("line one\nline two", 1200, chunks::add))
+        assertThat(adapter.generate(null, "line one\nline two", 1200, chunks::add))
                 .isEqualTo("line one\nline two");
         assertThat(chunks).isNotEmpty();
         assertThat(adapter.configuredModel()).isEqualTo("template-fallback");
@@ -51,9 +52,9 @@ class ChatAnswerGenerationAdapterTest {
         ChatLlmClient client = mock(ChatLlmClient.class);
         when(client.isEnabled()).thenReturn(false);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), true);
+                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), new ObjectMapper(), true);
 
-        assertThatThrownBy(() -> adapter.generate("  ", 1200, ignored -> {}))
+        assertThatThrownBy(() -> adapter.generate(null, "  ", 1200, ignored -> {}))
                 .isInstanceOfSatisfying(BusinessException.class, error -> {
                     assertThat(error.code()).isEqualTo("ANSWER_TEMPLATE_EMPTY_RESPONSE");
                     assertThat(error.status()).isEqualTo(HttpStatus.BAD_GATEWAY);
@@ -71,9 +72,9 @@ class ChatAnswerGenerationAdapterTest {
                 org.mockito.ArgumentMatchers.<java.util.function.Consumer<String>>any()))
                 .thenReturn("  ");
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), false);
+                mock(JdbcTemplate.class), client, mock(ResearchGeneratedSourceReadGate.class), new ObjectMapper(), false);
 
-        assertThatThrownBy(() -> adapter.generate("draft", 1200, ignored -> {}))
+        assertThatThrownBy(() -> adapter.generate(null, "draft", 1200, ignored -> {}))
                 .isInstanceOfSatisfying(BusinessException.class, error -> {
                     assertThat(error.code()).isEqualTo("ANSWER_LLM_EMPTY_RESPONSE");
                     assertThat(error.status()).isEqualTo(HttpStatus.BAD_GATEWAY);
@@ -84,7 +85,7 @@ class ChatAnswerGenerationAdapterTest {
     void replayChunksShouldNotEmitEmptyDelta() {
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
                 mock(JdbcTemplate.class), mock(ChatLlmClient.class),
-                mock(ResearchGeneratedSourceReadGate.class), true);
+                mock(ResearchGeneratedSourceReadGate.class), new ObjectMapper(), true);
 
         assertThat(adapter.replayChunks("  ")).isEmpty();
     }
@@ -94,7 +95,7 @@ class ChatAnswerGenerationAdapterTest {
         JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(
                 "jdbc:h2:mem:answer-citation-" + System.nanoTime() + ";DB_CLOSE_DELAY=-1", "sa", ""));
         jdbc.execute("create table conversation_message(id varchar(36), workspace_id varchar(36), content varchar(500), assistant_request_id varchar(36))");
-        jdbc.execute("create table answer_run(assistant_request_id varchar(36), maximum_output_tokens int)");
+        jdbc.execute("create table answer_run(assistant_request_id varchar(36), maximum_output_tokens int, generation_contract_json varchar(4000))");
         jdbc.execute("create table source(id varchar(36), generated_by varchar(64), generated_ref_id varchar(36))");
         jdbc.execute("create table citation(id varchar(36), workspace_id varchar(36), source_id varchar(36), title varchar(100), quote_text varchar(500))");
         jdbc.execute("create table message_citation(message_id varchar(36), citation_id varchar(36), sort_order int)");
@@ -104,7 +105,7 @@ class ChatAnswerGenerationAdapterTest {
         jdbc.update("insert into message_citation values ('message', 'citation', 0)");
         ResearchGeneratedSourceReadGate gate = mock(ResearchGeneratedSourceReadGate.class);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(
-                jdbc, mock(ChatLlmClient.class), gate, true);
+                jdbc, mock(ChatLlmClient.class), gate, new ObjectMapper(), true);
         // NR03：资格批量判定为可读 → 引用行进入生成材料
         when(gate.readableSourceIds("workspace", List.of("source"))).thenReturn(java.util.Set.of("source"));
         assertThat(adapter.load("request").citationLines()).singleElement().asString()

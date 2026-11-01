@@ -83,7 +83,7 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                     "Answer only from formal workspace Wiki pages.",
                     renderFallback(context),
                     List.of(),
-                    PLAN_VERSION,
+                    planVersion(bundle),
                     true
             );
         }
@@ -99,8 +99,17 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 "Answer from the selected Knowledge Versions and preserve their source provenance.",
                 renderAnswer(context, selectedContexts, paths),
                 bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId).toList(),
-                PLAN_VERSION
+                planVersion(bundle)
         );
+    }
+
+    /**
+     * 版本取证据包里的检索计划版本，拒答分支与正常分支因此一致；
+     * 显式 NONE 检索时计划版本是 none-v1，不能再用本模式自报的固定版本。
+     */
+    private static String planVersion(EvidenceBundle bundle) {
+        String version = bundle == null ? null : bundle.retrievalPlanVersion();
+        return version == null || version.isBlank() ? PLAN_VERSION : version;
     }
 
     @Override

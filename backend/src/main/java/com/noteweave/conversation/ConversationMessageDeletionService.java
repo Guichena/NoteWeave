@@ -108,6 +108,13 @@ public class ConversationMessageDeletionService {
                 delete from conversation_constraint_state_v2
                 where workspace_id = ? and conversation_id = ?
                 """, workspaceId, conversationId);
+        // 消息自有的引用：解除绑定并清空正文副本，只留身份与位置。
+        // 被其他页面或其他消息共用的引用行不动，不能为了删一条消息清空整表仍在使用的引用。
+        jdbcTemplate.update("delete from message_citation where message_id = ?", messageId);
+        jdbcTemplate.update("""
+                update citation set title = '', quote_text = '', location_info = null
+                where workspace_id = ? and owner_message_id = ?
+                """, workspaceId, messageId);
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }
