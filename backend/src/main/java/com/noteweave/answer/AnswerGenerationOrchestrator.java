@@ -54,7 +54,26 @@ public class AnswerGenerationOrchestrator {
     }
 
     public void stream(String assistantRequestId, Consumer<AnswerDeliveryEvent> consumer) {
+        java.util.concurrent.atomic.AtomicInteger emitted = new java.util.concurrent.atomic.AtomicInteger();
+        Consumer<AnswerDeliveryEvent> counting = event -> {
+            emitted.incrementAndGet();
+            consumer.accept(event);
+        };
+        try {
+            streamInternal(assistantRequestId, counting, emitted);
+        } finally {
+            log.debug("stream finished requestId={} emitted={}", assistantRequestId, emitted.get());
+        }
+    }
+
+    private void streamInternal(
+            String assistantRequestId,
+            Consumer<AnswerDeliveryEvent> consumer,
+            java.util.concurrent.atomic.AtomicInteger emitted
+    ) {
         AnswerRunRef run = answerRunService.requireByAssistantRequest(assistantRequestId);
+        log.debug("stream begin requestId={} runId={} status={}",
+                assistantRequestId, run == null ? null : run.runId(), run == null ? null : run.status());
         if (run != null && ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status()))) {
             deliver(consumer, new AnswerDeliveryEvent("", "CANCELLED".equals(run.status())
                     ? "answer.cancelled" : "answer.failed", terminalData(run)));
@@ -63,6 +82,8 @@ public class AnswerGenerationOrchestrator {
         if (run != null) answerRunService.requireReplayReadable(run.workspaceId(), run.runId());
         AnswerGenerationMaterial material = generationGateway.load(assistantRequestId);
         if (run != null && "COMPLETED".equals(run.status())) {
+            log.debug("stream branch=replay-completed runId={} contentLen={}",
+                    run.runId(), material.content() == null ? -1 : material.content().length());
             replayCompleted(material, run, consumer);
             return;
         }
@@ -81,9 +102,17 @@ public class AnswerGenerationOrchestrator {
             if (run == null || !"ANSWER_RUN_ALREADY_STREAMING".equals(ex.code())) {
                 throw ex;
             }
-            followExistingGeneration(material, run, consumer);
+            log.debug("stream branch=follow-existing runId={}", run.runId());
+            followExistingGeneration(assistantRequestId, material, run, consumer);
             return;
         }
+        if (run != null && streamOwner == null) {
+            // 认领失败说明运行已被其他流接管或已经收尾，此时进入生成分支必然抛撤销
+            log.debug("stream branch=claim-null runId={}", run.runId());
+            followExistingGeneration(assistantRequestId, material, run, consumer);
+            return;
+        }
+        log.debug("stream branch=claim runId={} owner={}", run == null ? null : run.runId(), streamOwner);
         if (run != null) {
             runEventMux.seed(run.runId(), answerRunService.currentEventSequence(run.workspaceId(), run.runId()));
         }
@@ -157,8 +186,15 @@ public class AnswerGenerationOrchestrator {
                 AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
                 String currentStatus = current == null ? null : current.status();
                 if ("COMPLETED".equals(currentStatus)) {
-                    // 收尾已经成功，迟到的批量下发异常不能改写结果
-                    log.warn("Ignore generation error after completion: {}", ex.getMessage());
+                    // 收尾已经成功，迟到的批量下发异常不能改写结果；
+                    // 但本订阅一个事件都没发出时，客户端会拿到空流，必须补一次完成回放
+                    if (emitted.get() == 0) {
+                        log.warn("Recover empty stream after completion: {}", ex.getMessage());
+                        AnswerGenerationMaterial finalMaterial = generationGateway.load(assistantRequestId);
+                        replayCompleted(finalMaterial == null ? material : finalMaterial, run, consumer);
+                    } else {
+                        log.warn("Ignore generation error after completion: {}", ex.getMessage());
+                    }
                     return;
                 }
                 if ("CANCELLED".equals(currentStatus)) {
@@ -331,9 +367,24 @@ public class AnswerGenerationOrchestrator {
             AnswerRunRef run,
             Consumer<AnswerDeliveryEvent> consumer
     ) {
+        followExistingGeneration(null, material, run, consumer);
+    }
+
+    private void followExistingGeneration(
+            String assistantRequestId,
+            AnswerGenerationMaterial material,
+            AnswerRunRef run,
+            Consumer<AnswerDeliveryEvent> consumer
+    ) {
         AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
+        if (current == null) {
+            current = run;
+        }
         if ("COMPLETED".equals(current.status())) {
-            replayCompleted(material, run, consumer);
+            // 首次加载到的可能是生成中的草稿，完成回放必须用落库后的最终正文
+            AnswerGenerationMaterial finalMaterial = assistantRequestId == null
+                    ? null : generationGateway.load(assistantRequestId);
+            replayCompleted(finalMaterial == null ? material : finalMaterial, run, consumer);
             return;
         }
         if ("FAILED".equals(current.status()) || "CANCELLED".equals(current.status())) {

@@ -35,6 +35,7 @@ class AnswerGenerationOrchestratorTest {
                 .thenReturn(new AnswerRunRef("answer-run", "ws", "stable-conversation", "message", "new-request-id", "RUNNING"));
         when(gateway.load("new-request-id"))
                 .thenReturn(new AnswerGenerationMaterial("message", "ws", "draft", List.of(), 1200));
+        when(runs.claimStream("ws", "answer-run")).thenReturn("stream-owner");
         when(gateway.prepareDraft("draft")).thenReturn("prepared");
         when(gateway.generateInConversation(
                 org.mockito.ArgumentMatchers.eq("ws"), org.mockito.ArgumentMatchers.eq("stable-conversation"),
@@ -257,6 +258,30 @@ class AnswerGenerationOrchestratorTest {
         List<String> keys = new ArrayList<>();
         node.fieldNames().forEachRemaining(keys::add);
         return keys;
+    }
+
+    @Test
+    void claimLossMustReplayFinalContentInsteadOfReturningEmptyStream() {
+        AnswerRunService runs = mock(AnswerRunService.class);
+        AnswerGenerationGateway gateway = mock(AnswerGenerationGateway.class);
+        when(runs.requireByAssistantRequest("request-race"))
+                .thenReturn(new AnswerRunRef("run-race", "ws", "conv", "message", "request-race", "GENERATING"));
+        when(gateway.load("request-race"))
+                .thenReturn(new AnswerGenerationMaterial("message", "ws", "草稿正文", List.of(), 100))
+                .thenReturn(new AnswerGenerationMaterial(
+                        "message", "ws", "最终正文 [1]", List.of("Kafka 文档：重平衡 | 引用"), 100));
+        when(gateway.replayChunks("最终正文 [1]")).thenReturn(List.of("最终正文 [1]"));
+        when(runs.claimStream("ws", "run-race")).thenReturn(null);
+        when(runs.requireRef("ws", "run-race"))
+                .thenReturn(new AnswerRunRef("run-race", "ws", "conv", "message", "request-race", "COMPLETED"));
+
+        List<AnswerDeliveryEvent> events = new ArrayList<>();
+
+        orchestrator(runs, gateway).stream("request-race", events::add);
+
+        assertThat(events).extracting(AnswerDeliveryEvent::eventType)
+                .contains("answer.delta", "answer.completed");
+        assertThat(events).anySatisfy(event -> assertThat(event.data()).contains("最终正文"));
     }
 
     private AnswerGenerationOrchestrator orchestrator(
