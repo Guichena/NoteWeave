@@ -392,30 +392,36 @@ public class RetrievalHydrator {
 
     /** 按候选来源核对召回快照是否仍是当前 INDEXED 版本；变更来源整源退出。 */
     private SnapshotScopeResult resolveSnapshotScope(String workspaceId, Map<String, String> pinnedSnapshots) {
-        Map<String, String> current = currentSnapshotIds(workspaceId, List.copyOf(pinnedSnapshots.keySet()));
+        Map<String, String> pinned = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : pinnedSnapshots.entrySet()) {
+            if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                pinned.put(entry.getKey(), entry.getValue());
+            }
+        }
+        // 兼容旧调用方：没有显式快照时沿用窗口查询里的当前快照条件，不额外查一次快照身份
         List<String> activeSources = new ArrayList<>();
+        if (pinned.isEmpty()) {
+            activeSources.addAll(pinnedSnapshots.keySet());
+            return new SnapshotScopeResult(List.copyOf(activeSources), Map.of(), 0);
+        }
+        Map<String, String> current = currentSnapshotIds(workspaceId, List.copyOf(pinned.keySet()));
         Map<String, String> snapshotBySource = new LinkedHashMap<>();
         int droppedSources = 0;
         for (Map.Entry<String, String> entry : pinnedSnapshots.entrySet()) {
             String sourceId = entry.getKey();
-            String pinned = entry.getValue();
-            String currentSnapshot = current.get(sourceId);
-            if (pinned == null || pinned.isBlank()) {
-                // 旧调用方没有快照列：按当前快照处理，空值不做任意快照通配
-                if (currentSnapshot == null || currentSnapshot.isBlank()) {
-                    droppedSources++;
-                    continue;
-                }
+            String pinnedSnapshot = entry.getValue();
+            if (pinnedSnapshot == null || pinnedSnapshot.isBlank()) {
+                // 空快照来源按当前快照处理，由窗口 SQL 的当前版本条件约束
                 activeSources.add(sourceId);
-                snapshotBySource.put(sourceId, currentSnapshot);
                 continue;
             }
-            if (!pinned.equals(currentSnapshot)) {
+            String currentSnapshot = current.get(sourceId);
+            if (!pinnedSnapshot.equals(currentSnapshot)) {
                 droppedSources++;
                 continue;
             }
             activeSources.add(sourceId);
-            snapshotBySource.put(sourceId, pinned);
+            snapshotBySource.put(sourceId, pinnedSnapshot);
         }
         return new SnapshotScopeResult(List.copyOf(activeSources), Map.copyOf(snapshotBySource), droppedSources);
     }
