@@ -329,6 +329,10 @@ public class ChatService {
                 .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.RESEARCH_RUN)
                 .map(entry -> entry.refId()).distinct()
                 .reduce((left, right) -> left + "," + right).orElse(""));
+        attributes.put("context_working_set_knowledge_weights", workingSet.entries().stream()
+                .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE)
+                .map(entry -> entry.refId() + ":" + entry.weight())
+                .reduce((left, right) -> left + "," + right).orElse(""));
         var cellMatches = researchCellFollowUpService.match(workspaceId, conversationId,
                 conversationContext.currentQuestion(), currentSeq == null ? 0 : currentSeq);
         attributes.put("context_research_cell_matches", cellMatches.stream()
