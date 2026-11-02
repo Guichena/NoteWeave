@@ -144,7 +144,9 @@ public class ChatService {
                 draft.contextProjection(),
                 draft.frozenContextV2(),
                 draft.maximumOutputTokens(),
-                draft.evidenceSufficiency()
+                draft.evidenceSufficiency(),
+                draft.taskParameters(),
+                draft.taskParametersUnsupported()
         );
     }
 
@@ -323,9 +325,10 @@ public class ChatService {
         }
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION, controlSection);
         attributes.put("task_parameters", preferenceLine);
-        attributes.put("task_parameters_unsupported", preferenceParameters.unsupported().stream()
+        String unsupportedParameters = preferenceParameters.unsupported().stream()
                 .map(item -> item.targetKey() + ":" + item.reason())
-                .reduce((left, right) -> left + "," + right).orElse(""));
+                .reduce((left, right) -> left + "," + right).orElse("");
+        attributes.put("task_parameters_unsupported", unsupportedParameters);
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         // F4-01：工作集只提供选择线索与信号摘要，正文与权限仍由各模式检索自己把关。
         Integer currentSeq = jdbcTemplate.queryForObject("""
@@ -428,7 +431,9 @@ public class ChatService {
                 conversationContext.inputProjection(),
                 conversationContext.frozenV2(),
                 policy.maximumOutputTokens(),
-                sufficiency.verdict().name()
+                sufficiency.verdict().name(),
+                preferenceLine,
+                unsupportedParameters
         );
     }
 
@@ -763,7 +768,9 @@ public class ChatService {
             ConversationContextProjectionService.Projection contextProjection,
             ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
             int maximumOutputTokens,
-            String evidenceSufficiency
+            String evidenceSufficiency,
+            String taskParameters,
+            String taskParametersUnsupported
     ) {
         private String promptVersion() {
             return promptSpec == null ? retrievalPlan.version() : promptSpec.promptVersion();
@@ -780,7 +787,9 @@ public class ChatService {
             ConversationContextProjectionService.Projection contextProjection,
             ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
             int maximumOutputTokens,
-            String evidenceSufficiency
+            String evidenceSufficiency,
+            String taskParameters,
+            String taskParametersUnsupported
     ) {
         public PreparedAnswerMaterial(
                 String answer,
@@ -794,7 +803,23 @@ public class ChatService {
                 int maximumOutputTokens
         ) {
             this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
-                    contextProjection, frozenContextV2, maximumOutputTokens, null);
+                    contextProjection, frozenContextV2, maximumOutputTokens, null, null, null);
+        }
+
+        public PreparedAnswerMaterial(
+                String answer,
+                List<String> existingCitationIds,
+                MemoryControlPackResponse chatControlPack,
+                RetrievalPlan retrievalPlan,
+                EvidenceBundle evidenceBundle,
+                PromptSpec promptSpec,
+                ConversationContextProjectionService.Projection contextProjection,
+                ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
+                int maximumOutputTokens,
+                String evidenceSufficiency
+        ) {
+            this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
+                    contextProjection, frozenContextV2, maximumOutputTokens, evidenceSufficiency, null, null);
         }
 
         public PreparedAnswerMaterial {
