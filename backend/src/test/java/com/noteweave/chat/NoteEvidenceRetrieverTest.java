@@ -221,6 +221,47 @@ class NoteEvidenceRetrieverTest {
         assertThat(result.evidence().get(0).sourceSnapshotId()).isEqualTo("snapshot");
     }
 
+    @Test
+    void workingSetPreferredSourceWindowsAreOrderedFirstWithoutDroppingOthers() {
+        NoteRecallRetriever recallRetriever = mock(NoteRecallRetriever.class);
+        NoteRetrievalService retrievalService = mock(NoteRetrievalService.class);
+        NoteReadingRetriever readingRetriever = mock(NoteReadingRetriever.class);
+        NoteRetrievalSnapshotCodec codec =
+                new NoteRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        CandidateSource candidate = candidate();
+        NoteRecallPlan plan = new NoteRecallPlan(
+                List.of(), List.of(candidate), List.of(), List.of(candidate),
+                new NoteRecallTrace(0, 1, 0, 1, 1, 0, 0, 1));
+        when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
+        when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
+                .thenReturn(List.of());
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(readingResult(List.of(
+                        windowForSource("chunk-a", "source-a", "A body"),
+                        windowForSource("chunk-b", "source-b", "B body"))));
+        NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
+                recallRetriever, retrievalService, readingRetriever, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                NoteEvidenceRetriever.CHANNEL, 2, 1, Map.of());
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of("context_working_set_sources", "source-b"), Instant.now()),
+                new RetrievalPlan("note-test-v1", AnswerMode.NOTE, List.of(step),
+                        new RetrievalPlan.Budget(2, 24_000, 0, 0)),
+                step
+        );
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::passageId)
+                .containsExactly("chunk-b", "chunk-a");
+    }
+
+    private ReadingWindow windowForSource(String chunkId, String sourceId, String content) {
+        return new ReadingWindow(
+                chunkId, sourceId, "snapshot", 0, "Heading", "Source", "", "",
+                0, content, "chunk:0", 9, "anchor-window", 0, "verify");
+    }
+
     private ReadingWindow windowWithContent(String chunkId, String content) {
         return new ReadingWindow(
                 chunkId, "source", "snapshot", 0, "Heading", "Source", "", "",

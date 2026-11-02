@@ -32,6 +32,15 @@ class ConversationWorkingSetServiceTest {
         jdbc.execute("""
                 create table message_citation(message_id varchar(36), citation_id varchar(36))
                 """);
+        jdbc.execute("""
+                create table knowledge_version(id varchar(36) primary key, item_id varchar(36))
+                """);
+        jdbc.execute("""
+                create table knowledge_version_citation(citation_id varchar(36),
+                    knowledge_version_id varchar(36))
+                """);
+        jdbc.update("insert into knowledge_version values ('kv1','knowledge-page-1')");
+        jdbc.update("insert into knowledge_version_citation values ('c1','kv1')");
         jdbc.update("""
                 insert into conversation_message values
                 ('m1','w','c',1,'USER','CURRENT'),
@@ -90,7 +99,14 @@ class ConversationWorkingSetServiceTest {
                 .filteredOn(entry -> entry.kind() == ConversationWorkingSet.EntryKind.CITED_EVIDENCE)
                 .extracting(ConversationWorkingSet.Entry::refId)
                 .containsExactly("c1", "c2");
-        assertThat(set.count(ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE)).isZero();
+        assertThat(set.count(ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE)).isEqualTo(1);
+        assertThat(set.entries())
+                .filteredOn(entry -> entry.kind() == ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE)
+                .singleElement().satisfies(entry -> {
+                    assertThat(entry.refId()).isEqualTo("knowledge-page-1");
+                    assertThat(entry.versionId()).isEqualTo("kv1");
+                    assertThat(entry.contributingMessageIds()).containsExactly("m2");
+                });
         assertThat(set.derivationVersion()).isEqualTo(ConversationWorkingSetService.DERIVATION_VERSION);
     }
 }

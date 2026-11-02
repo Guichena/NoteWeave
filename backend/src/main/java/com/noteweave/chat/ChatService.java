@@ -329,6 +329,10 @@ public class ChatService {
                 .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.RESEARCH_RUN)
                 .map(entry -> entry.refId()).distinct()
                 .reduce((left, right) -> left + "," + right).orElse(""));
+        attributes.put("context_working_set_knowledge_weights", workingSet.entries().stream()
+                .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE)
+                .map(entry -> entry.refId() + ":" + entry.weight())
+                .reduce((left, right) -> left + "," + right).orElse(""));
         var cellMatches = researchCellFollowUpService.match(workspaceId, conversationId,
                 conversationContext.currentQuestion(), currentSeq == null ? 0 : currentSeq);
         attributes.put("context_research_cell_matches", cellMatches.stream()
@@ -336,6 +340,12 @@ public class ChatService {
                 .reduce((left, right) -> left + "," + right).orElse(""));
         attributes.put("context_research_cell_ambiguous",
                 Boolean.toString(cellMatches.stream().anyMatch(match -> match.ambiguous())));
+        // 已定位且已核实的单元格证据需要进入本轮研究报告范围，才能通过所有权守卫。
+        Set<String> effectiveReportScope = new java.util.LinkedHashSet<>(reportScope);
+        cellMatches.stream()
+                .filter(match -> !match.ambiguous() && "VERIFIED".equals(match.status()))
+                .map(match -> match.researchRunId())
+                .forEach(effectiveReportScope::add);
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         attributes.put(QaAnswerModeStrategy.ATTRIBUTE_WORKSPACE_CHANNEL,
                 Boolean.toString(!reportChannel || retrievalConfig.channels().contains("WORKSPACE")));
@@ -358,7 +368,7 @@ public class ChatService {
                 sourceScope,
                 attributes,
                 Instant.now(),
-                reportScope
+                effectiveReportScope
         );
         AnswerModeStrategy strategy = answerModeStrategyRegistry.require(mode);
         RetrievalPlan strategyPlan = strategy.plan(context);

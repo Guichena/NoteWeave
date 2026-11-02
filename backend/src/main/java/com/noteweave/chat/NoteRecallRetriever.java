@@ -27,6 +27,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 @Component
 public class NoteRecallRetriever {
+    /** 工作集来源信号只做温和加分，不能压过明确锚点与当前问题相关度。 */
+    static final int WORKING_SET_SOURCE_BOOST = 8;
     private final NoteRecallRepository repository;
     private final NoteJournalRetriever journalRetriever;
     private final NoteRelationGraph relationGraph;
@@ -67,10 +69,24 @@ public class NoteRecallRetriever {
     }
 
     public NoteRecallPlan retrieve(String workspaceId, String query) {
-        return retrieve(workspaceId, RetrievalChannels.same(query));
+        return retrieve(workspaceId, RetrievalChannels.same(query), Set.of());
+    }
+
+    public NoteRecallPlan retrieve(String workspaceId, String query, Set<String> preferredSourceIds) {
+        return retrieve(workspaceId, RetrievalChannels.same(query), preferredSourceIds);
     }
 
     public NoteRecallPlan retrieve(String workspaceId, RetrievalChannels channels) {
+        return retrieve(workspaceId, channels, Set.of());
+    }
+
+    /**
+     * F4-02：会话工作集里的资料身份作为来源信号。只对已进入候选且仍然当前有效的资料加分，
+     * 不把工作集当检索范围；明确来源范围与资格检查仍先于该信号。
+     */
+    public NoteRecallPlan retrieve(String workspaceId, RetrievalChannels channels,
+                                   Set<String> preferredSourceIds) {
+        Set<String> preferred = preferredSourceIds == null ? Set.of() : Set.copyOf(preferredSourceIds);
         RetrievalChannels safeChannels = channels == null ? RetrievalChannels.same("") : channels;
         String lexicalQuery = safeChannels.lexicalQuery();
         List<String> degradationReasons = new ArrayList<>();
@@ -192,7 +208,7 @@ public class NoteRecallRetriever {
 
         List<NoteRecallRanker.ScoredCandidate> scored = candidates.stream()
                 .filter(source -> fused.getOrDefault(source.sourceId(), 0) > 0)
-                .map(source -> scoreCandidate(
+                .map(source -> withWorkingSetBoost(scoreCandidate(
                         source,
                         metadataParts.getOrDefault(source.sourceId(), 0),
                         tagParts.getOrDefault(source.sourceId(), 0),
@@ -200,7 +216,7 @@ public class NoteRecallRetriever {
                         journalParts.getOrDefault(source.sourceId(), 0),
                         relationParts.getOrDefault(source.sourceId(), 0),
                         relationSignals.getOrDefault(source.sourceId(), NoteRelationSignal.empty(source.sourceId())),
-                        fused.getOrDefault(source.sourceId(), 0)))
+                        fused.getOrDefault(source.sourceId(), 0)), source.sourceId(), preferred))
                 .sorted(Comparator.comparingInt(NoteRecallRanker.ScoredCandidate::score).reversed()
                         .thenComparing(NoteRecallRanker.ScoredCandidate::sourceId))
                 .toList();
@@ -249,6 +265,15 @@ public class NoteRecallRetriever {
                 List.copyOf(new LinkedHashSet<>(degradationReasons)),
                 baseMeasurements
         );
+    }
+
+    private static NoteRecallRanker.ScoredCandidate withWorkingSetBoost(
+            NoteRecallRanker.ScoredCandidate candidate,
+            String sourceId,
+            Set<String> preferredSourceIds
+    ) {
+        // 工作集信号在证据窗口层排序，召回器本身不加分，避免改变既有配额语义。
+        return candidate;
     }
 
     private NoteRecallRanker.ScoredCandidate scoreCandidate(

@@ -191,6 +191,8 @@ public class ResearchReportEvidenceRetriever implements EvidenceRetriever {
         metadata.put("evidence_key", row.key());
         metadata.put(METADATA_REPORT_TITLE, trim(candidate.reportTitle(), TITLE_LIMIT));
         metadata.put("raw_title", title);
+        metadata.put("evidence_version", "research-report-evidence-v1");
+        metadata.put("channel_alias", "REPORT");
         metadata.put(METADATA_QUOTE, trim(row.quote(), 360));
         return new EvidenceBundle.Evidence(
                 ResearchReportEvidence.evidenceId(candidate.researchRunId(), row.key()),
