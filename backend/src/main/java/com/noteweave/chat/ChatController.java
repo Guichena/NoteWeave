@@ -33,6 +33,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 @RestController
 @RequestMapping("/api/v2")
 public class ChatController {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatController.class);
 
     private final ChatService chatService;
     private final ConversationTurnModule conversationTurnModule;
@@ -122,7 +123,17 @@ public class ChatController {
                     chatService.stream(assistantRequestId, event -> send(emitter, event));
                     emitter.complete();
                 } catch (Exception ex) {
-                    emitter.completeWithError(ex);
+                    // 开流阶段失败也要给客户端明确原因，静默空响应会让前端无法区分断线与拒绝
+                    String code = ex instanceof com.noteweave.common.BusinessException business
+                            ? business.code() : "ANSWER_STREAM_FAILED";
+                    String message = ex.getMessage() == null ? "" : ex.getMessage();
+                    log.warn("answer stream failed before first event: {} {}", code, message, ex);
+                    try {
+                        send(emitter, new ChatStreamEvent("0", "answer.failed", code + ": " + message));
+                    } catch (RuntimeException ignored) {
+                        // 响应已经结束，无法再写失败事件
+                    }
+                    emitter.complete();
                 }
             });
         } catch (RejectedExecutionException ex) {
@@ -250,7 +261,17 @@ public class ChatController {
                     }
                     emitter.complete();
                 } catch (Exception ex) {
-                    emitter.completeWithError(ex);
+                    // 开流阶段失败也要给客户端明确原因，静默空响应会让前端无法区分断线与拒绝
+                    String code = ex instanceof com.noteweave.common.BusinessException business
+                            ? business.code() : "ANSWER_STREAM_FAILED";
+                    String message = ex.getMessage() == null ? "" : ex.getMessage();
+                    log.warn("answer stream failed before first event: {} {}", code, message, ex);
+                    try {
+                        send(emitter, new ChatStreamEvent("0", "answer.failed", code + ": " + message));
+                    } catch (RuntimeException ignored) {
+                        // 响应已经结束，无法再写失败事件
+                    }
+                    emitter.complete();
                 }
             });
         } catch (RejectedExecutionException ex) {
