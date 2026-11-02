@@ -21,6 +21,7 @@ import com.noteweave.answer.strategy.RetrievalOrchestrator;
 import com.noteweave.answer.AnswerLiveEvent;
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
+import com.noteweave.conversation.ConversationWorkingSetService;
 import com.noteweave.conversation.EffectiveRetrievalConfig;
 import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.conversation.ContextV2RolloutService;
@@ -71,6 +72,7 @@ public class ChatService {
     private final ContextV2RolloutService contextV2Rollout;
     private final ContextV2ShadowSnapshotService contextV2Snapshots;
     private final ResearchReportGrounding reportGrounding;
+    private final ConversationWorkingSetService workingSetService;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -91,7 +93,8 @@ public class ChatService {
             EvidenceSufficiencyJudge evidenceSufficiencyJudge,
             ContextV2RolloutService contextV2Rollout,
             ContextV2ShadowSnapshotService contextV2Snapshots,
-            ResearchReportGrounding reportGrounding
+            ResearchReportGrounding reportGrounding,
+            ConversationWorkingSetService workingSetService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -112,6 +115,7 @@ public class ChatService {
         this.contextV2Rollout = contextV2Rollout;
         this.contextV2Snapshots = contextV2Snapshots;
         this.reportGrounding = reportGrounding;
+        this.workingSetService = workingSetService;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -306,6 +310,22 @@ public class ChatService {
                 renderChatControlSection(chatControlPack, conversationContext.frozenV2(),
                         !conversationContext.contextApplied()));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
+        // F4-01：工作集只提供选择线索与信号摘要，正文与权限仍由各模式检索自己把关。
+        Integer currentSeq = jdbcTemplate.queryForObject("""
+                select message_seq from conversation_message where id = ? and workspace_id = ?
+                """, Integer.class, currentUserMessageId, workspaceId);
+        var workingSet = workingSetService.derive(workspaceId, conversationId,
+                currentSeq == null ? 0 : currentSeq);
+        attributes.put("context_working_set_schema_version", workingSet.schemaVersion());
+        attributes.put("context_working_set_size", Integer.toString(workingSet.entries().size()));
+        attributes.put("context_working_set_sources", workingSet.entries().stream()
+                .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.SOURCE)
+                .map(entry -> entry.refId()).distinct()
+                .reduce((left, right) -> left + "," + right).orElse(""));
+        attributes.put("context_working_set_research_runs", workingSet.entries().stream()
+                .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.RESEARCH_RUN)
+                .map(entry -> entry.refId()).distinct()
+                .reduce((left, right) -> left + "," + right).orElse(""));
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         attributes.put(QaAnswerModeStrategy.ATTRIBUTE_WORKSPACE_CHANNEL,
                 Boolean.toString(!reportChannel || retrievalConfig.channels().contains("WORKSPACE")));
