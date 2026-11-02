@@ -310,7 +310,15 @@ public class ChatService {
         attributes.put(QaAnswerModeStrategy.ATTRIBUTE_WORKSPACE_CHANNEL,
                 Boolean.toString(!reportChannel || retrievalConfig.channels().contains("WORKSPACE")));
         if (conversationContext.contextApplied()) {
-            attributes.put(ConversationWindow.ATTRIBUTE, conversationContext.retrievalQuestion());
+            attributes.put(ConversationWindow.ATTRIBUTE, conversationContext.generationContext());
+            // 上下文契约、视图与计数同源：排障时可核对提示、冻结快照与预算记录
+            attributes.put("context_contract_sha256", conversationContext.contextContractSha256());
+            attributes.put("context_view_sha256", conversationContext.contextViewSha256());
+            attributes.put("context_estimated_tokens",
+                    Integer.toString(conversationContext.contextEstimatedTokens()));
+            attributes.put("context_layer_tokens", conversationContext.contextLayerTokens().toString());
+            attributes.put("context_degradation_reasons",
+                    String.join(",", conversationContext.contextDegradations()));
         }
         AnswerContext context = new AnswerContext(
                 workspaceId,
@@ -545,12 +553,13 @@ public class ChatService {
     private ConversationRetrievalContextAssembler.Context buildConversationContext(
             String workspaceId, String conversationId, String currentUserMessageId, String currentQuestion) {
         String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
+        String actorId = auditActorProvider.currentOrSystem("CHAT");
         if (contextV2Rollout.activeEnabled(workspaceId)) {
             var frozen = contextV2Snapshots.readReadyForAnswer(
                     workspaceId, conversationId, currentUserMessageId);
             if (frozen != null) {
                 return conversationContextAssembler.assembleV2(
-                        currentUserMessageId, trimmedQuestion, frozen);
+                        workspaceId, actorId, currentUserMessageId, trimmedQuestion, frozen);
             }
         }
         if (!conversationContextAssembler.requiresHistory(trimmedQuestion)) {
@@ -561,6 +570,9 @@ public class ChatService {
         ConversationContextProjectionService.CompilationProjection projection = contextProjectionService.compile(
                 workspaceId, conversationId, cutoffSeq == null ? 0 : cutoffSeq);
         return conversationContextAssembler.assemble(
+                workspaceId,
+                actorId,
+                conversationId,
                 currentUserMessageId,
                 trimmedQuestion,
                 projection,
