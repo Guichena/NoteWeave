@@ -168,8 +168,11 @@ class Phase3NoteWikiContractTest {
         String secondNoteRequestId = secondNoteMessage.path("data").path("assistant_request_id").asText();
         ChatStreamTestSupport.perform(mockMvc, secondNoteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("历史笔记《阶段3 Note 链路整理》")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")));
+                // F6-02：历史笔记只作召回信号，日志标题不再进入最终提示
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("历史笔记《阶段3 Note 链路整理》"))))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 资料定位")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")));
 
         JsonNode wikiItem = createWikiPage(workspaceId, noteAssistantMessageId);
         String wikiItemId = wikiItem.path("data").path("item_id").asText();
@@ -390,7 +393,9 @@ class Phase3NoteWikiContractTest {
         String locationSection = stream.substring(
                 stream.indexOf("## 资料定位"), stream.indexOf("## 摘录证据"));
         String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
-        assertThat(locationSection).contains("windowless-top.md");
+        // F6-02：没有正文窗口的来源不能占资料定位，也不能占阅读角色
+        assertThat(locationSection).doesNotContain("windowless-top.md");
+        assertThat(locationSection).contains("window-ready.md");
         assertThat(evidenceSection).doesNotContain("windowless-top.md");
         assertThat(evidenceSection).contains("window-ready.md");
     }
@@ -487,7 +492,7 @@ class Phase3NoteWikiContractTest {
     }
 
     @Test
-    void noteModeShouldDemoteStaleJournalHitsAndShowFreshnessStatus() throws Exception {
+    void noteModeShouldDemoteStaleJournalWithoutRenderingJournalText() throws Exception {
         String workspaceId = createWorkspace();
         String staleSourceId = uploadSource(workspaceId, "stale-journal.md", """
                 JournalFreshness staleBranchToken
@@ -535,12 +540,14 @@ class Phase3NoteWikiContractTest {
 
         MvcResult result = ChatStreamTestSupport.perform(mockMvc, noteRequestId)
                 .andExpect(status().isOk())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                        "历史笔记《A过期资料整理》（来源已更新，以当前原文为准）")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 摘录证据")))
                 .andReturn();
 
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream.indexOf("Z新鲜资料整理")).isLessThan(stream.indexOf("A过期资料整理"));
+        // F6-02：历史笔记只作召回信号；过期日志的标题与展示状态都不进入最终提示
+        assertThat(stream).doesNotContain("历史笔记《A过期资料整理》", "历史笔记《Z新鲜资料整理》");
+        String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
+        assertThat(evidenceSection).doesNotContain("A过期资料整理", "Z新鲜资料整理");
     }
 
     @Test
@@ -582,8 +589,8 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("active-availability.md")))
                 .andReturn();
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream).contains("历史笔记《失效来源整理》");
-        assertThat(stream).contains("引用的来源已删除，笔记内容仅供参考，原文不可引用");
+        // F6-02：失效日志只作召回信号，标题与降级说明都不进入最终提示
+        assertThat(stream).doesNotContain("历史笔记《失效来源整理》", "引用的来源已删除");
         String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
         assertThat(evidenceSection).doesNotContain("失效来源整理");
         Integer auditNoteCount = jdbcTemplate.queryForObject(
@@ -631,9 +638,8 @@ class Phase3NoteWikiContractTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("active-failed-availability.md")))
                 .andReturn();
         String stream = result.getResponse().getContentAsString();
-        assertThat(stream).contains("历史笔记《暂不可用来源整理》");
-        assertThat(stream).contains("引用的来源暂不可用，笔记内容仅供参考");
-        assertThat(stream).doesNotContain("引用的来源已删除");
+        // F6-02：暂不可用日志同样只作召回信号，不能把标题或降级说明送进最终提示
+        assertThat(stream).doesNotContain("历史笔记《暂不可用来源整理》", "引用的来源暂不可用");
         String evidenceSection = stream.substring(stream.indexOf("## 摘录证据"));
         assertThat(evidenceSection).doesNotContain("暂不可用来源整理");
         Integer auditNoteCount = jdbcTemplate.queryForObject(
@@ -994,7 +1000,10 @@ class Phase3NoteWikiContractTest {
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.pages").isEmpty());
+                // 资料页与自动概念页随资料删除退出；导航目录页保留，但不参与事实问答
+                .andExpect(jsonPath("$.data.pages[*].title").value(org.hamcrest.Matchers.hasItem("Wiki Index")))
+                .andExpect(jsonPath("$.data.pages[*].title").value(
+                        org.hamcrest.Matchers.not(org.hamcrest.Matchers.hasItem("phase3.md"))));
 
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-stats", workspaceId))
                 .andExpect(status().isOk())

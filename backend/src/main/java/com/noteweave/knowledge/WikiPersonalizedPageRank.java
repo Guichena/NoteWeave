@@ -18,6 +18,9 @@ public final class WikiPersonalizedPageRank {
     public static final double CONVERGENCE_L1 = 1.0e-6;
     public static final int ADJACENCY_BATCH = 50;
     public static final int MAX_HOPS = 3;
+    /** 图扩展的资源边界：节点与边总数都有硬上限，高出度图不能把内存与查询拖成无界。 */
+    public static final int MAX_NODES = 240;
+    public static final int MAX_EDGES = 600;
 
     private WikiPersonalizedPageRank() {
     }
@@ -83,6 +86,10 @@ public final class WikiPersonalizedPageRank {
             Collections.sort(discovered);
             frontier = new ArrayList<>();
             for (String itemId : discovered) {
+                if (nodes.size() >= MAX_NODES) {
+                    // 到达节点上限后停止扩张；宁可有界缺页，也不让高出度图无界展开
+                    break;
+                }
                 Candidate candidate = found.get(itemId);
                 Node node = new Node(itemId);
                 node.title = blankToEmpty(candidate.title);
@@ -158,13 +165,21 @@ public final class WikiPersonalizedPageRank {
         }
         List<WikiResolvedLink> edges = new ArrayList<>();
         for (int offset = 0; offset < ids.size(); offset += ADJACENCY_BATCH) {
+            if (edges.size() >= MAX_EDGES) {
+                break;
+            }
             List<String> batch = ids.subList(offset, Math.min(ids.size(), offset + ADJACENCY_BATCH));
             List<WikiResolvedLink> loaded = source.linksTouching(batch);
             if (loaded == null) {
                 continue;
             }
-            edges.addAll(loaded);
-            absorbPairs(pairWeight, loaded);
+            for (WikiResolvedLink edge : loaded) {
+                if (edges.size() >= MAX_EDGES) {
+                    break;
+                }
+                edges.add(edge);
+                absorbPairs(pairWeight, List.of(edge));
+            }
         }
         return edges;
     }

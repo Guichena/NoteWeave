@@ -61,6 +61,30 @@ class NoteReadingPlannerTest {
         assertThat(continuations(next)).contains("4:0", "3:1").doesNotContain("4:2");
     }
 
+    @Test
+    void sameSourceDifferentSnapshotWindowsAreDistinct() {
+        NoteReadingPlanner planner = new NoteReadingPlanner();
+        ReadingWindow current = window(1, 0, "current");
+        ReadingWindow previous = new ReadingWindow("c10", "s", "ss-old", 1, "h", "t", "", "",
+                0, "previous", "loc", 0, "candidate-window", 0, "candidate-pool");
+        var result = planner.planPrescored(List.of(
+                current.withScore(5), previous.withScore(4)), 2);
+        // 窗口键含快照：同源同块同窗口但快照不同不能合并成一条
+        assertThat(result).hasSize(2);
+        assertThat(result).extracting(ReadingWindow::sourceSnapshotId)
+                .containsExactly("ss", "ss-old");
+    }
+
+    @Test
+    void blankContentWindowsAreNotPlanned() {
+        NoteReadingPlanner planner = new NoteReadingPlanner();
+        var result = planner.planPrescored(List.of(
+                window(1, 0, "").withScore(9),
+                window(1, 1, "real content").withScore(1)), 2);
+        // 空正文不能占主窗口名额
+        assertThat(result).extracting(ReadingWindow::windowNo).containsExactly(1);
+    }
+
     private List<String> continuations(List<ReadingWindow> plan) {
         return plan.stream()
                 .filter(window -> "continuation-window".equals(window.readRole()))

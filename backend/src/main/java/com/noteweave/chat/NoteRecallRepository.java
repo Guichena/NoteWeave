@@ -33,6 +33,7 @@ public class NoteRecallRepository {
     public List<CandidateSource> findCurrentSources(String workspaceId) {
         List<CandidateSource> sources = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
+                       coalesce(ss.id, '') as source_snapshot_id,
                        coalesce(s.generated_by, '') as generated_by,
                        coalesce(s.generated_ref_id, '') as generated_ref_id,
                        coalesce(s.summary, '') as summary,
@@ -70,7 +71,8 @@ public class NoteRecallRepository {
                 0,
                 0,
                 "",
-                ""
+                "",
+                rs.getString("source_snapshot_id")
         ), workspaceId);
         return filterVisible(workspaceId, sources);
     }
@@ -87,6 +89,7 @@ public class NoteRecallRepository {
         args.addAll(ids);
         List<CandidateSource> sources = jdbcTemplate.query("""
                 select s.id, s.title, s.source_type, s.updated_at,
+                       coalesce(ss.id, '') as source_snapshot_id,
                        coalesce(s.generated_by, '') as generated_by,
                        coalesce(s.generated_ref_id, '') as generated_ref_id,
                        coalesce(s.summary, '') as summary,
@@ -418,7 +421,8 @@ public class NoteRecallRepository {
                     0,
                     0,
                     "",
-                    ""
+                    "",
+                    rs.getString("source_snapshot_id")
             );
 
     private record NoteCitationPair(String noteId, String sourceId) {

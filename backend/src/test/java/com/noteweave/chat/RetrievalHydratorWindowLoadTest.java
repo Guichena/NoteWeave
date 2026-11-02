@@ -2,6 +2,7 @@ package com.noteweave.chat;
 
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -156,6 +157,120 @@ class RetrievalHydratorWindowLoadTest {
         Map<String, List<NoteRetrievalService.ReadingWindow>> windows =
                 hydrator.hydrateNoteWindows(WS, List.of("src-legacy"));
         org.junit.jupiter.api.Assertions.assertEquals(5, windows.get("src-legacy").size());
+    }
+
+    @Test
+    void higherRelevanceWindowWinsTightBodyBudget() {
+        insertSourceRow("src-rank");
+        for (int i = 1; i <= 5; i++) {
+            insertWindow("src-rank", i, 1, "内容第" + i + "段");
+        }
+        String head = "chk-src-rank-1";
+        String tail = "chk-src-rank-5";
+        RetrievalHydrator.WindowIndexResult index = hydrator.loadWindowIndex(
+                WS,
+                List.of(new RetrievalHydrator.SourceScope("src-rank", "snap-src-rank")),
+                List.of(head, tail),
+                Map.of(head, 0.1d, tail, 0.9d),
+                List.of(),
+                RetrievalHydrator.WindowIndexBudget.defaults());
+        RetrievalHydrator.BodyLoadResult bodies = hydrator.hydrateWindowBodies(
+                WS, index.windows(), new RetrievalHydrator.WindowBodyBudget(2_000_000, 64 * 1024, 1));
+        // 预算只够一个窗口时，靠后但语义相关性更高的窗口必须优先留下
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("win-src-rank-5"), List.copyOf(bodies.contentById().keySet()));
+    }
+
+    @Test
+    void bodyBudgetFollowsCallerOrderNotDatabaseRowOrder() throws Exception {
+        JdbcTemplate jdbc = org.mockito.Mockito.mock(JdbcTemplate.class);
+        RetrievalHydrator reading = new RetrievalHydrator(jdbc);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            org.springframework.jdbc.core.RowCallbackHandler callback = invocation.getArgument(1);
+            java.sql.ResultSet laterRow = org.mockito.Mockito.mock(java.sql.ResultSet.class);
+            org.mockito.Mockito.when(laterRow.getString("id")).thenReturn("win-b");
+            org.mockito.Mockito.when(laterRow.getString("content")).thenReturn("bbbb");
+            java.sql.ResultSet earlierRow = org.mockito.Mockito.mock(java.sql.ResultSet.class);
+            org.mockito.Mockito.when(earlierRow.getString("id")).thenReturn("win-a");
+            org.mockito.Mockito.when(earlierRow.getString("content")).thenReturn("aaaaaa");
+            // SQL 故意先返回调用方顺序靠后的行
+            callback.processRow(laterRow);
+            callback.processRow(earlierRow);
+            return null;
+        }).when(jdbc).query(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(org.springframework.jdbc.core.RowCallbackHandler.class),
+                org.mockito.ArgumentMatchers.any(Object[].class));
+        List<RetrievalHydrator.WindowIdentity> identities = List.of(
+                new RetrievalHydrator.WindowIdentity("win-a", "source-a", "snapshot-a", "chunk-a", 1,
+                        "h", "t", "", "", 1, "loc", "head-fallback"),
+                new RetrievalHydrator.WindowIdentity("win-b", "source-a", "snapshot-a", "chunk-b", 2,
+                        "h", "t", "", "", 1, "loc", "head-fallback"));
+        RetrievalHydrator.BodyLoadResult bodies = reading.hydrateWindowBodies(
+                WS, identities, new RetrievalHydrator.WindowBodyBudget(2_000_000, 64 * 1024, 1));
+        // 预算按调用方给出的身份顺序消费：行序靠前的 win-b 不能挤掉 win-a
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("win-a"), List.copyOf(bodies.contentById().keySet()));
+    }
+
+    @Test
+    void blankWindowBodyIsDroppedAndNotCounted() {
+        insertSourceRow("src-blank");
+        insertWindow("src-blank", 1, 1, " ");
+        insertWindow("src-blank", 2, 1, "真实内容");
+        List<RetrievalHydrator.WindowIdentity> identities = hydrator.loadWindowIndex(
+                WS, List.of("src-blank"), List.of(), List.of(),
+                RetrievalHydrator.WindowIndexBudget.defaults()).windows();
+        RetrievalHydrator.BodyLoadResult bodies = hydrator.hydrateWindowBodies(
+                WS, identities, RetrievalHydrator.WindowBodyBudget.defaults());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("win-src-blank-2"), List.copyOf(bodies.contentById().keySet()));
+        org.junit.jupiter.api.Assertions.assertEquals(1, hydrator.lastWindowLoadUsage().droppedEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(1, hydrator.lastWindowLoadUsage().loadedWindows());
+    }
+
+    @Test
+    void roundRobinConsumesBodyBudgetAcrossSources() {
+        insertSourceWithWindows("src-rr-a", 3, "共同内容");
+        insertSourceWithWindows("src-rr-b", 3, "共同内容");
+        RetrievalHydrator.WindowIndexResult index = hydrator.loadWindowIndex(
+                WS,
+                List.of(new RetrievalHydrator.SourceScope("src-rr-a", "snap-src-rr-a"),
+                        new RetrievalHydrator.SourceScope("src-rr-b", "snap-src-rr-b")),
+                List.of(), Map.of(), List.of(), RetrievalHydrator.WindowIndexBudget.defaults());
+        RetrievalHydrator.BodyLoadResult bodies = hydrator.hydrateWindowBodies(
+                WS, index.windows(), new RetrievalHydrator.WindowBodyBudget(2_000_000, 64 * 1024, 2));
+        // 跨来源轮询：预算只够两条时必须一个来源一条，不能被第一个来源占满
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("win-src-rr-a-1", "win-src-rr-b-1"),
+                List.copyOf(bodies.contentById().keySet()));
+    }
+
+    @Test
+    void recalledSnapshotChangedDropsSourceInsteadOfMixingWindows() {
+        insertSourceRow("src-pin");
+        insertWindow("src-pin", 1, 1, "旧快照内容");
+        jdbc.update("insert into source_snapshot (id, source_id, version_no, index_status) "
+                + "values ('snap-src-pin-v2', 'src-pin', 2, 'INDEXED')");
+        jdbc.update("insert into source_chunk (id, workspace_id, source_id, source_snapshot_id, chunk_no, "
+                + "heading, projection_status) values ('chk-pin-2', ?, 'src-pin', 'snap-src-pin-v2', 1, '', 'PROJECTED')",
+                WS);
+        jdbc.update("insert into source_window (id, source_chunk_id, window_no, content) "
+                + "values ('win-pin-2', 'chk-pin-2', 1, '新快照内容')");
+
+        RetrievalHydrator.WindowIndexResult stale = hydrator.loadWindowIndex(
+                WS, List.of(new RetrievalHydrator.SourceScope("src-pin", "snap-src-pin")),
+                List.of(), Map.of(), List.of(), RetrievalHydrator.WindowIndexBudget.defaults());
+        // 召回快照已变更：整源退出，不能改用新快照窗口
+        org.junit.jupiter.api.Assertions.assertTrue(stale.windows().isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals(1, stale.droppedSnapshotSources());
+
+        RetrievalHydrator.WindowIndexResult current = hydrator.loadWindowIndex(
+                WS, List.of(new RetrievalHydrator.SourceScope("src-pin", "snap-src-pin-v2")),
+                List.of(), Map.of(), List.of(), RetrievalHydrator.WindowIndexBudget.defaults());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of("chk-pin-2"),
+                current.windows().stream().map(RetrievalHydrator.WindowIdentity::chunkId).toList());
     }
 
     // === 测试基础设施 ===

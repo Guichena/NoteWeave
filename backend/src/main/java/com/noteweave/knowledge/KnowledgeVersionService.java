@@ -79,18 +79,24 @@ public class KnowledgeVersionService {
         int nextVersionNo = (currentVersion == null ? 0 : currentVersion) + 1;
         String versionId = Ids.newId();
         String summary = summarize(normalizedContent);
+        // WIKI-03：人工追加版本即视为人工页面，后续自动 ingest 让路；
+        // 系统追加的版本保持自动页面，可以继续随资料更新。系统链接维护不能把人工页降级成 AUTO。
+        String pageState = "WIKI".equals(item.itemType())
+                ? resolveAppendPageState(itemId, actor)
+                : null;
+        // 自动页在发布同一事务里写入受支持的编译策略标记；人工页不要求自动标记。
+        String provenanceSchemaVersion = "WIKI".equals(item.itemType())
+                && !WikiPageState.MANUAL.name().equals(pageState)
+                ? KnowledgeCitationReadGate.WIKI_PROVENANCE_SCHEMA_VERSION
+                : null;
         jdbcTemplate.update("""
                 insert into knowledge_version(
-                    id, item_id, version_no, content, summary, source_message_id
-                ) values (?, ?, ?, ?, ?, ?)
+                    id, item_id, version_no, content, summary, source_message_id,
+                    provenance_schema_version
+                ) values (?, ?, ?, ?, ?, ?, ?)
                 """, versionId, itemId, nextVersionNo,
-                normalizedContent, summary, request.sourceMessageId());
+                normalizedContent, summary, request.sourceMessageId(), provenanceSchemaVersion);
         bindVersionCitations(versionId, citationIds);
-        // WIKI-03：人工追加版本即视为人工页面，后续自动 ingest 让路；
-        // 系统追加的版本保持自动页面，可以继续随资料更新。
-        String pageState = "WIKI".equals(item.itemType())
-                ? (actor.startsWith("SYSTEM:") ? WikiPageState.AUTO.name() : WikiPageState.MANUAL.name())
-                : null;
         jdbcTemplate.update("""
                 update knowledge_item
                 set latest_version_id = ?, page_kind = ?, updated_by = ?,
@@ -108,6 +114,25 @@ public class KnowledgeVersionService {
                 itemId, item.itemType(), pageKind, item.title(), "ACTIVE",
                 versionId, nextVersionNo, summary, Instant.now(),
                 0, 0, citationIds.size(), 0, pageState);
+    }
+
+    /**
+     * 追加版本后的页面状态：人工写入记为 MANUAL；系统写入只把自动页保持为 AUTO，
+     * 已经人工编辑或待确认的页面不能被链接重写等系统维护降级。
+     */
+    private String resolveAppendPageState(String itemId, String actor) {
+        WikiPageState stored = jdbcTemplate.query("""
+                select wiki_page_state, updated_by
+                from knowledge_item
+                where id = ?
+                """, rs -> rs.next()
+                        ? WikiPageState.fromStored(rs.getString(1), rs.getString(2))
+                        : WikiPageState.MANUAL, itemId);
+        boolean systemWrite = actor != null && actor.startsWith("SYSTEM:");
+        if (!systemWrite) {
+            return WikiPageState.MANUAL.name();
+        }
+        return stored.autoUpdatable() ? WikiPageState.AUTO.name() : stored.name();
     }
 
     public List<KnowledgeVersionSummaryResponse> listItemVersions(String itemId) {
