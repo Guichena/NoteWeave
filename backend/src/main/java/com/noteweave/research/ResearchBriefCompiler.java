@@ -3,6 +3,7 @@ package com.noteweave.research;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.common.BusinessException;
 import com.noteweave.conversation.ContextProjectionV2;
 import com.noteweave.conversation.ResearchContextV2Question;
@@ -14,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -26,13 +29,32 @@ public class ResearchBriefCompiler {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ChatLlmClient llmClient;
 
     public ResearchBriefCompiler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper
     ) {
+        this(jdbcTemplate, objectMapper, (ChatLlmClient) null);
+    }
+
+    @Autowired
+    public ResearchBriefCompiler(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ObjectProvider<ChatLlmClient> llmClientProvider
+    ) {
+        this(jdbcTemplate, objectMapper, llmClientProvider.getIfAvailable());
+    }
+
+    private ResearchBriefCompiler(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ChatLlmClient llmClient
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.llmClient = llmClient;
     }
 
     public CompiledBrief compile(String runId, String currentQuestion) {
@@ -106,7 +128,26 @@ public class ResearchBriefCompiler {
         Map<String, Object> brief = new LinkedHashMap<>(compiled.researchBrief());
         brief.putIfAbsent("schema_version", BRIEF_SCHEMA_VERSION);
         brief.put("original_question", text(run.question()).trim());
-        brief.put("research_question", text(currentQuestion).trim());
+        List<Map<String, Object>> recentMessages = new ArrayList<>();
+        Object rawMessages = brief.get("recent_messages");
+        if (rawMessages instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    recentMessages.add(Map.of(
+                            "message_id", String.valueOf(map.get("message_id")),
+                            "role", String.valueOf(map.get("role")),
+                            "content", String.valueOf(map.get("content"))));
+                }
+            }
+        }
+        ResearchBriefQuestionCompiler.Result compiledQuestion = ResearchBriefQuestionCompiler.compile(
+                llmClient, objectMapper, run.workspaceId(), runId,
+                text(run.question()), recentMessages);
+        brief.put("brief_purpose", ResearchBriefQuestionCompiler.PURPOSE);
+        brief.put("research_question", compiledQuestion.researchQuestion().isBlank()
+                ? text(currentQuestion).trim() : compiledQuestion.researchQuestion());
+        brief.put("key_points", compiledQuestion.keyPoints());
+        brief.put("degradation_reasons", compiledQuestion.degradationReasons());
         brief.put("source_policy", safeMap(run.sourceScopeJson()));
         Map<String, Object> control = safeMap(run.controlPackJson());
         brief.putIfAbsent("output_requirements", control.getOrDefault("output_requirements", List.of()));
