@@ -279,6 +279,7 @@ class KnowledgeGovernanceServiceTest {
                     content clob not null,
                     summary varchar(1000),
                     source_message_id varchar(36),
+                    provenance_schema_version varchar(64),
                     created_at timestamp default current_timestamp,
                     unique(item_id, version_no)
                 )

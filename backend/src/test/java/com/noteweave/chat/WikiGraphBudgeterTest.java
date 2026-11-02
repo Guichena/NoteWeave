@@ -59,7 +59,11 @@ class WikiGraphBudgeterTest {
                 .containsExactly("A", "B", "C", "D");
         assertThat(result.graphPaths().get("D")).containsExactly("Alpha", "Beta", "Gamma", "Delta");
         assertThat(result.graphEdgeCount()).isEqualTo(1 + 2 + 3);
-        assertThat(result.graphCharacterCount()).isEqualTo(3);
+        // 页面证据成本 = 统一正文 + 标题与编号包装开销
+        assertThat(result.graphCharacterCount()).isEqualTo(
+                WikiPageEvidence.cost(pages.get("B").page())
+                        + WikiPageEvidence.cost(pages.get("C").page())
+                        + WikiPageEvidence.cost(pages.get("D").page()));
     }
 
     @Test
@@ -97,12 +101,13 @@ class WikiGraphBudgeterTest {
 
         WikiGraphBudgeter.Result result = new WikiGraphBudgeter().apply(
                 List.of(context("A", "Alpha", "seed", 10)),
-                new RetrievalPlan.Budget(40, 20_000, 3, 30, 60, 4),
+                new RetrievalPlan.Budget(40, 20_000, 3, 30, 60,
+                        WikiPageEvidence.cost(pages.get("B").page())),
                 source,
                 ids -> load(pages, ids));
 
         assertThat(result.graphPaths()).containsOnlyKeys("B");
-        assertThat(result.graphCharacterCount()).isEqualTo(4);
+        assertThat(result.graphCharacterCount()).isEqualTo(WikiPageEvidence.cost(pages.get("B").page()));
     }
 
     @Test
@@ -171,6 +176,23 @@ class WikiGraphBudgeterTest {
             // 入度为 1 时除数是 ln(2)，小于 1，调整分高于原始 PageRank。
             assertThat(page.adjustedScore()).isCloseTo(page.pageRank() / Math.log(2), within(1.0e-9));
         });
+    }
+
+    @Test
+    void graphExpansionStopsAtNodeCapInsteadOfReadingUnboundedFanout() {
+        List<WikiResolvedLink> edges = new ArrayList<>();
+        for (int index = 0; index < 500; index++) {
+            edges.add(edge("A", "Alpha", "n" + index, "N" + index));
+        }
+        WikiPersonalizedPageRank.Exploration exploration = WikiPersonalizedPageRank.expand(
+                List.of(new WikiPersonalizedPageRank.Seed("A", "Alpha", 1)),
+                3,
+                new RecordingSource(edges, Map.of()));
+
+        // 高出度图不能无界展开：节点数必须停在硬上限内
+        assertThat(exploration.expanded()).isNotEmpty();
+        assertThat(exploration.expanded().size())
+                .isLessThan(WikiPersonalizedPageRank.MAX_NODES);
     }
 
     private List<WikiPageContext> load(Map<String, WikiPageContext> pages, List<String> ids) {

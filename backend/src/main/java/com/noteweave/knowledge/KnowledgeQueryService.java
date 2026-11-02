@@ -396,7 +396,12 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
             List<KnowledgePageHit> pages = wikiSearchEngine.findRelevantPages(workspaceId, query, boost);
             Set<String> readable = citationReadGate.readableVersionIds(workspaceId,
                     pages.stream().map(KnowledgePageHit::versionId).toList());
-            return pages.stream().filter(page -> readable.contains(page.versionId()))
+            // 导航目录与缺少受支持编译标记的旧自动页不能进入事实检索候选
+            Set<String> certified = citationReadGate.certifiedCurrentEvidenceVersionIds(workspaceId,
+                    pages.stream().map(KnowledgePageHit::versionId).toList());
+            return pages.stream()
+                    .filter(page -> readable.contains(page.versionId())
+                            && certified.contains(page.versionId()))
                     .limit(5).toList();
         } finally {
             rememberWikiDegradation();
@@ -428,9 +433,10 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         return findRelevantWikiPages(workspaceId, query, boost).stream()
                 .map(page -> new WikiPageContext(
                         page,
+                        // 链接只做展示，保留展示上限；citation 是完整依赖，不能按展示条数裁剪
                         listOutgoingLinks(workspaceId, page.itemId()).stream().limit(5).toList(),
                         listBacklinks(workspaceId, page.itemId()).stream().limit(5).toList(),
-                        citationsForVersion(page.versionId()).stream().limit(5).toList()
+                        citationsForVersion(page.versionId())
                 ))
                 .toList();
     }
@@ -444,6 +450,11 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
         if (citationReadGate.readableVersionIds(workspaceId, versionIds).size() != versionIds.size()) {
             throw new BusinessException("KNOWLEDGE_SOURCE_REVOKED",
                     "Wiki 引用的资料或版本已撤销", HttpStatus.CONFLICT);
+        }
+        if (citationReadGate.certifiedCurrentEvidenceVersionIds(workspaceId, versionIds).size()
+                != versionIds.size()) {
+            throw new BusinessException("KNOWLEDGE_PROVENANCE_UNVERIFIED",
+                    "Wiki 页面不是当前认证证据，不能登记生成契约", HttpStatus.CONFLICT);
         }
         String placeholders = String.join(",", versionIds.stream().map(v -> "?").toList());
         return jdbcTemplate.queryForList("""
@@ -478,6 +489,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                   and l.relation_status = 'RESOLVED'
                   and l.target_item_id is not null
                   and (l.source_item_id in (%s) or l.target_item_id in (%s))
+                order by l.source_item_id, l.target_item_id
+                limit 500
                 """.formatted(slots, slots), (rs, rowNum) -> new WikiResolvedLink(
                 rs.getString("source_item_id"),
                 rs.getString("target_item_id"),

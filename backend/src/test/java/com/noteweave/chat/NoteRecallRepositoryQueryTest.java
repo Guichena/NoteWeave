@@ -95,5 +95,7 @@ class NoteRecallRepositoryQueryTest {
 
         assertThat(sources).hasSize(1);
         assertThat(sources.get(0).sampleText()).startsWith("Zebra");
+        // 候选来源把召回阶段的当前快照一起带出，后续窗口装载不再重新猜快照
+        assertThat(sources.get(0).sourceSnapshotId()).isEqualTo("ss1");
     }
 }

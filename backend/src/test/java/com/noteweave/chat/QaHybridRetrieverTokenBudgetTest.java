@@ -38,12 +38,9 @@ class QaHybridRetrieverTokenBudgetTest {
         assertThat(result.chunks()).extracting(RetrievedChunk::chunkId).contains("a", "b");
         RetrievedChunk anchor = result.chunks().stream()
                 .filter(chunk -> chunk.chunkId().equals("a")).findFirst().orElseThrow();
-        assertThat(anchor.content())
-                .contains("content a", "前段结尾", "…")
-                .doesNotContain("前".repeat(400))
-                .doesNotContain("后段开头");
-        assertThat(anchor.matchReason()).contains("adjacent-context:z").doesNotContain("|b");
-        assertThat(EvidenceSufficiencyJudge.hitText(anchor.content())).startsWith("content a");
+        // 邻块不再并入命中块正文，引用只指向模型实际使用的那一块
+        assertThat(anchor.content()).startsWith("content a");
+        assertThat(anchor.content()).doesNotContain("前段结尾", "后段开头");
         assertThat(result.measurements()).containsEntry("evidence_token_budget", 8_000L);
 
         assertThat(result.rankedCandidates()).hasSize(3);
@@ -63,8 +60,24 @@ class QaHybridRetrieverTokenBudgetTest {
 
         RetrievedChunk anchor = result.chunks().stream()
                 .filter(chunk -> chunk.chunkId().equals("a")).findFirst().orElseThrow();
-        assertThat(anchor.content()).contains(LONG_PREVIOUS, NEXT_CONTENT);
+        // V2 与 V3 一致：邻块都不并入命中块正文
+        assertThat(anchor.content()).startsWith("content a");
+        assertThat(anchor.content()).doesNotContain("前段结尾", "后段开头");
         assertThat(result.measurements()).doesNotContainKey("evidence_token_budget");
+    }
+
+    @Test
+    void neighbourFactNeverEntersTheCitedExcerpt() {
+        QaHybridRetriever.HybridResult result = retriever().retrieve(
+                "workspace", RetrievalChannels.same("question"), Set.of(), QaRetrievalStrategyProfile.V3);
+
+        RetrievedChunk anchor = result.chunks().stream()
+                .filter(chunk -> chunk.chunkId().equals("a")).findFirst().orElseThrow();
+        // 邻块正文不进引用：引用正文只能是命中块自己的说法
+        assertThat(anchor.content()).contains("content a");
+        assertThat(anchor.content()).doesNotContain("前段结尾", "后段开头");
+        assertThat(result.rankedCandidates()).allSatisfy(candidate ->
+                assertThat(candidate.excerpt()).doesNotContain("前段结尾", "后段开头"));
     }
 
     private QaHybridRetriever retriever() {
