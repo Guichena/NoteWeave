@@ -567,8 +567,9 @@ public class ChatService {
         }
         Integer cutoffSeq = jdbcTemplate.queryForObject(
                 "select message_seq from conversation_message where id = ?", Integer.class, currentUserMessageId);
+        int cutoff = cutoffSeq == null ? 0 : cutoffSeq;
         ConversationContextProjectionService.CompilationProjection projection = contextProjectionService.compile(
-                workspaceId, conversationId, cutoffSeq == null ? 0 : cutoffSeq);
+                workspaceId, conversationId, cutoff);
         return conversationContextAssembler.assemble(
                 workspaceId,
                 actorId,
@@ -576,8 +577,95 @@ public class ChatService {
                 currentUserMessageId,
                 trimmedQuestion,
                 projection,
-                contextProjectionService.toProjection(projection)
+                contextProjectionService.toProjection(projection),
+                loadConversationLedger(workspaceId, conversationId, cutoff),
+                loadPremises(workspaceId, conversationId, cutoff)
         );
+    }
+
+    /** 冻结截止内仍生效的会话前提；前提只作为未经核实的条件进入提示。 */
+    private java.util.List<com.noteweave.context.ConversationPremise> loadPremises(
+            String workspaceId, String conversationId, int cutoffSeq) {
+        return jdbcTemplate.query("""
+                select id, workspace_id, conversation_id, subject_key, premise_text, source_message_id,
+                       source_seq, scope, topic_id, valid_from_seq, invalid_after_seq, status,
+                       superseded_by, extraction_version
+                from conversation_premise
+                where workspace_id = ? and conversation_id = ? and status = 'ACTIVE'
+                  and valid_from_seq <= ?
+                  and (invalid_after_seq is null or invalid_after_seq > ?)
+                order by source_seq asc, id asc
+                """, (rs, rowNum) -> new com.noteweave.context.ConversationPremise(
+                rs.getString("id"),
+                rs.getString("workspace_id"),
+                rs.getString("conversation_id"),
+                rs.getString("subject_key"),
+                rs.getString("premise_text"),
+                rs.getString("source_message_id"),
+                rs.getInt("source_seq"),
+                com.noteweave.context.ConversationPremise.PremiseScope.fromDb(rs.getString("scope")),
+                rs.getString("topic_id"),
+                rs.getInt("valid_from_seq"),
+                (Integer) rs.getObject("invalid_after_seq"),
+                rs.getString("status"),
+                rs.getString("superseded_by"),
+                rs.getString("extraction_version")
+        ), workspaceId, conversationId, cutoffSeq, cutoffSeq);
+    }
+
+    /**
+     * 请求冻结时读取的账本：删除消息不携带正文，进行中/失败/取消的助手回合按状态投影成占位或句柄。
+     * 这是冻结输入的一部分，后续完成的新内容不会写回本次上下文。
+     */
+    private java.util.List<com.noteweave.context.ConversationLedgerEntry> loadConversationLedger(
+            String workspaceId, String conversationId, int cutoffSeq) {
+        return jdbcTemplate.query("""
+                select m.id, m.message_seq, m.role, coalesce(m.answer_mode, '') as answer_mode,
+                       coalesce(m.context_status, 'CURRENT') as context_status,
+                       case when m.context_status = 'DELETED' then '' else m.content end as content,
+                       coalesce(r.status, '') as run_status
+                from conversation_message m
+                left join answer_run r on r.answer_message_id = m.id and r.workspace_id = m.workspace_id
+                where m.workspace_id = ? and m.conversation_id = ? and m.message_seq <= ?
+                order by m.message_seq asc
+                """, (rs, rowNum) -> new com.noteweave.context.ConversationLedgerEntry(
+                rs.getString("id"),
+                rs.getInt("message_seq"),
+                rs.getString("role"),
+                rs.getString("answer_mode"),
+                ledgerStatus(rs.getString("context_status"), rs.getString("role"),
+                        rs.getString("run_status")),
+                ledgerText(rs.getString("context_status"), rs.getString("run_status"),
+                        rs.getString("content")),
+                "", "", ""
+        ), workspaceId, conversationId, cutoffSeq);
+    }
+
+    private String ledgerStatus(String contextStatus, String role, String runStatus) {
+        if ("DELETED".equals(contextStatus)) {
+            return com.noteweave.context.ConversationLedgerEntry.STATUS_DELETED;
+        }
+        if (!"ASSISTANT".equals(role)) {
+            return com.noteweave.context.ConversationLedgerEntry.STATUS_CURRENT;
+        }
+        return switch (runStatus == null ? "" : runStatus) {
+            case "CANCELLED" -> com.noteweave.context.ConversationLedgerEntry.STATUS_CANCELLED;
+            case "FAILED", "REVOKED" -> com.noteweave.context.ConversationLedgerEntry.STATUS_FAILED;
+            case "CREATED", "RETRIEVING", "PREPARING", "GENERATING", "FINALIZING" ->
+                    com.noteweave.context.ConversationLedgerEntry.STATUS_PENDING;
+            default -> com.noteweave.context.ConversationLedgerEntry.STATUS_CURRENT;
+        };
+    }
+
+    private String ledgerText(String contextStatus, String runStatus, String content) {
+        if ("DELETED".equals(contextStatus) || "FAILED".equals(runStatus)
+                || "REVOKED".equals(runStatus) || "CANCELLED".equals(runStatus)
+                || "CREATED".equals(runStatus) || "RETRIEVING".equals(runStatus)
+                || "PREPARING".equals(runStatus) || "GENERATING".equals(runStatus)
+                || "FINALIZING".equals(runStatus)) {
+            return "";
+        }
+        return content == null ? "" : content;
     }
 
     private record ConversationRef(String conversationId, String workspaceId) {

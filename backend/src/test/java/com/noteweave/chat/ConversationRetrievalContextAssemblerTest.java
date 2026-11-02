@@ -33,8 +33,8 @@ class ConversationRetrievalContextAssemblerTest {
         assertThat(result.retrievalQuestion())
                 .contains("当前问题")
                 .contains("如何设计检索降级策略？")
-                .contains("建议 默认应 fail closed")
-                .contains("既有主题摘要");
+                .contains("建议 默认应 fail closed");
+        assertThat(result.topicSummary()).contains("既有主题摘要");
         assertThat(result.generationContext()).isNotBlank()
                 .contains("如何设计检索降级策略？")
                 .contains("建议 默认应 fail closed");
@@ -106,6 +106,59 @@ class ConversationRetrievalContextAssemblerTest {
         assertThat(assembler.classifyQuestion("比较两个方案的区别")).isEqualTo("comparison");
         assertThat(assembler.classifyQuestion("为什么会失败")).isEqualTo("reasoning");
         assertThat(assembler.classifyQuestion("给出引用来源")).isEqualTo("source_lookup");
+    }
+
+    @Test
+    void deletedFailedAndPendingResearchMessagesKeepLedgerPositionWithoutLeakingText() {
+        var compilation = new ConversationContextProjectionService.CompilationProjection(
+                null,
+                "",
+                List.of(raw("m1", 1, "USER", "前序问题"),
+                        raw("m5", 5, "USER", "继续展开")));
+        var projection = new ConversationContextProjectionService.Projection(List.of(), List.of());
+        java.util.List<com.noteweave.context.ConversationLedgerEntry> ledger = List.of(
+                ledgerEntry("m1", 1, "USER", "", "CURRENT", "前序问题"),
+                ledgerEntry("m2", 2, "ASSISTANT", "", "DELETED", ""),
+                ledgerEntry("m3", 3, "ASSISTANT", "", "FAILED", ""),
+                ledgerEntry("m4", 4, "ASSISTANT", "DEEP_RESEARCH", "PENDING", ""),
+                ledgerEntry("m5", 5, "USER", "", "CURRENT", "继续展开"));
+
+        var result = assembler.assemble("workspace", "actor", "conversation", "m5",
+                "继续展开", compilation, projection, ledger);
+
+        // 删除、失败、进行中的研究回合都保留位置与占位形态，不把正文带进提示
+        assertThat(result.generationContext())
+                .contains("前序问题")
+                .contains("该回合已删除")
+                .contains("该回合执行失败")
+                .contains("研究尚未完成");
+    }
+
+    private com.noteweave.context.ConversationLedgerEntry ledgerEntry(
+            String id, int seq, String role, String answerMode, String status, String text) {
+        return new com.noteweave.context.ConversationLedgerEntry(
+                id, seq, role, answerMode, status, text, "", "", "");
+    }
+
+    @Test
+    void effectivePremiseEntersGenerationContextAsUnverifiedCondition() {
+        var compilation = new ConversationContextProjectionService.CompilationProjection(
+                null, "",
+                List.of(raw("m1", 1, "USER", "我们用 MySQL"),
+                        raw("m2", 2, "ASSISTANT", "好的"),
+                        raw("m3", 3, "USER", "那缓存呢")));
+        var projection = new ConversationContextProjectionService.Projection(List.of(), List.of());
+        var premise = new com.noteweave.context.ConversationPremise(
+                "premise-1", "workspace", "conversation", "db.version", "MySQL",
+                "m1", 1, com.noteweave.context.ConversationPremise.PremiseScope.CONVERSATION,
+                "", 1, null, com.noteweave.context.ConversationPremise.STATUS_ACTIVE, "",
+                "premise-extraction-v1");
+
+        var result = assembler.assemble("workspace", "actor", "conversation", "m3", "那缓存呢",
+                compilation, projection, List.of(), List.of(premise));
+
+        assertThat(result.generationContext())
+                .contains("db.version", "MySQL", "未经资料核实");
     }
 
     private ConversationContextProjectionService.RawMessage raw(
