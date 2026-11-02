@@ -27,7 +27,7 @@ public final class PreferenceParameterCompiler {
 
     public static Compiled compile(MemoryControlPackResponse pack) {
         if (pack == null) {
-            return new Compiled("", List.of(), Set.of());
+            return new Compiled("", List.of(), Set.of(), Map.of());
         }
         List<PreferenceEntry> entries = new ArrayList<>();
         long sequence = 1;
@@ -137,7 +137,7 @@ public final class PreferenceParameterCompiler {
             }
         }
         return new Compiled(promptLine(parameters.parameters()),
-                List.copyOf(unsupported), Set.copyOf(handled));
+                List.copyOf(unsupported), Set.copyOf(handled), parameters.parameters());
     }
 
     static String promptLine(Map<String, String> parameters) {
@@ -223,11 +223,13 @@ public final class PreferenceParameterCompiler {
      */
     public record Compiled(String promptLine,
                            List<PreferenceLayeringService.Unsupported> unsupported,
-                           Set<String> consumed) {
+                           Set<String> consumed,
+                           Map<String, String> parameters) {
         public Compiled {
             promptLine = promptLine == null ? "" : promptLine;
             unsupported = unsupported == null ? List.of() : List.copyOf(unsupported);
             consumed = consumed == null ? Set.of() : Set.copyOf(consumed);
+            parameters = parameters == null ? Map.of() : Map.copyOf(parameters);
         }
     }
 }
