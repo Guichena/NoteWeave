@@ -66,6 +66,20 @@ class QaHybridRetrieverTokenBudgetTest {
         assertThat(result.measurements()).doesNotContainKey("evidence_token_budget");
     }
 
+    @Test
+    void neighbourFactNeverEntersTheCitedExcerpt() {
+        QaHybridRetriever.HybridResult result = retriever().retrieve(
+                "workspace", RetrievalChannels.same("question"), Set.of(), QaRetrievalStrategyProfile.V3);
+
+        RetrievedChunk anchor = result.chunks().stream()
+                .filter(chunk -> chunk.chunkId().equals("a")).findFirst().orElseThrow();
+        // 邻块正文不进引用：引用正文只能是命中块自己的说法
+        assertThat(anchor.content()).contains("content a");
+        assertThat(anchor.content()).doesNotContain("前段结尾", "后段开头");
+        assertThat(result.rankedCandidates()).allSatisfy(candidate ->
+                assertThat(candidate.excerpt()).doesNotContain("前段结尾", "后段开头"));
+    }
+
     private QaHybridRetriever retriever() {
         EmbeddingClient embedding = mock(EmbeddingClient.class);
         when(embedding.isEnabled()).thenReturn(true);
