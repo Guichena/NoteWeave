@@ -29,7 +29,7 @@ class ConversationRetrievalContextAssemblerV2Test {
                         memory, sha(memory))), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
         var context = new ConversationRetrievalContextAssembler().assembleV2(
-                "current", current, frozen);
+                "workspace", "actor", "current", current, frozen);
         assertThat(context.frozenV2()).isSameAs(frozen);
         assertThat(context.retrievalQuestion()).contains(old, current, topic, "请用中文")
                 .doesNotContain(memory);
@@ -41,7 +41,7 @@ class ConversationRetrievalContextAssemblerV2Test {
     }
 
     @Test
-    void truncatesFrozenRawWindowWithV1Budgets() throws Exception {
+    void keepsFrozenRawWindowContentBeyondOldCharacterBudgets() throws Exception {
         String current = "第二种写入顺序呢？";
         String longUser = "用户上下文" + "甲".repeat(200);
         String longAssistant = "助手上下文" + "乙".repeat(300);
@@ -54,17 +54,13 @@ class ConversationRetrievalContextAssemblerV2Test {
                 List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
 
-        var context = new ConversationRetrievalContextAssembler().assembleV2("current", current, frozen);
+        var context = new ConversationRetrievalContextAssembler().assembleV2(
+                "workspace", "actor", "current", current, frozen);
 
-        String expectedUser = longUser.substring(0, 119) + "...";
-        String expectedAssistant = longAssistant.substring(0, 179) + "...";
-        assertThat(expectedUser).hasSize(122);
-        assertThat(expectedAssistant).hasSize(182);
-        assertThat(context.retrievalQuestion())
-                .contains("- USER：" + expectedUser)
-                .contains("- ASSISTANT：" + expectedAssistant)
-                .doesNotContain(longUser)
-                .doesNotContain(longAssistant);
+        // 旧实现按用户 120、助手 180 截断；新契约要求原文完整进入预算选择，不得偷偷截字
+        assertThat(context.retrievalQuestion()).contains(longUser).contains(longAssistant);
+        assertThat(context.generationContext()).contains(longUser).contains(longAssistant);
+        assertThat(context.retrievalQuestion()).doesNotContain("...");
     }
 
     @Test
@@ -80,11 +76,12 @@ class ConversationRetrievalContextAssemblerV2Test {
                 List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
 
-        var context = new ConversationRetrievalContextAssembler().assembleV2("current", current, frozen);
+        var context = new ConversationRetrievalContextAssembler().assembleV2(
+                "workspace", "actor", "current", current, frozen);
 
         assertThat(context.retrievalQuestion())
-                .contains("- USER：" + user)
-                .contains("- ASSISTANT：" + answer)
+                .contains(user)
+                .contains(answer)
                 .doesNotContain("...");
     }
 
@@ -105,11 +102,11 @@ class ConversationRetrievalContextAssemblerV2Test {
                 List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
 
-        var context = new ConversationRetrievalContextAssembler().assembleV2("m5", current, frozen);
+        var context = new ConversationRetrievalContextAssembler().assembleV2("workspace", "actor", "m5", current, frozen);
 
         assertThat(context.contextApplied()).isTrue();
         assertThat(context.topicAnchor()).contains("AlphaSpec");
-        assertThat(context.retrievalQuestion()).contains("主题锚点：", "AlphaSpec");
+        assertThat(context.retrievalQuestion()).contains("AlphaSpec");
     }
 
     @Test
@@ -129,10 +126,10 @@ class ConversationRetrievalContextAssemblerV2Test {
                 List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
 
-        var context = new ConversationRetrievalContextAssembler().assembleV2("m5", current, frozen);
+        var context = new ConversationRetrievalContextAssembler().assembleV2("workspace", "actor", "m5", current, frozen);
 
         assertThat(context.windowTurnCount()).isEqualTo(2);
-        assertThat(context.retrievalQuestion()).contains("连续原文窗口：");
+        assertThat(context.retrievalQuestion()).contains(firstAnswer, secondAnswer);
     }
 
     @Test
@@ -146,7 +143,7 @@ class ConversationRetrievalContextAssemblerV2Test {
                 List.of(), List.of(), List.of(), List.of(), 4096, 200, List.of(), "FULL");
         var frozen = new ContextV2ShadowSnapshotService.FrozenAnswer("snapshot", sha("snapshot"), projection);
 
-        var context = new ConversationRetrievalContextAssembler().assembleV2("m2", current, frozen);
+        var context = new ConversationRetrievalContextAssembler().assembleV2("workspace", "actor", "m2", current, frozen);
 
         assertThat(context.topicAnchor()).isEmpty();
         assertThat(context.retrievalQuestion()).doesNotContain("主题锚点：");
