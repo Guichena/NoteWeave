@@ -248,6 +248,7 @@ public class KnowledgeGovernanceService {
                 join knowledge_version v on v.id = i.latest_version_id
                 left join knowledge_version_citation c on c.knowledge_version_id = v.id
                 where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                  and (i.origin is null or i.origin <> 'SYSTEM_NAVIGATION')
                 group by i.id, i.title
                 having count(c.id) = 0
                 """, (rs, rowNum) -> new WikiIssueResponse(
