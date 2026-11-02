@@ -146,7 +146,8 @@ public class ChatService {
                 draft.maximumOutputTokens(),
                 draft.evidenceSufficiency(),
                 draft.taskParameters(),
-                draft.taskParametersUnsupported()
+                draft.taskParametersUnsupported(),
+                draft.taskParametersMemoryRefs()
         );
     }
 
@@ -329,6 +330,10 @@ public class ChatService {
                 .map(item -> item.targetKey() + ":" + item.reason())
                 .reduce((left, right) -> left + "," + right).orElse("");
         attributes.put("task_parameters_unsupported", unsupportedParameters);
+        String preferenceMemoryRefs = chatControlPack.memoryReferences().stream()
+                .map(reference -> reference.memoryObjectId() + "@" + reference.memoryVersionId())
+                .reduce((left, right) -> left + "," + right).orElse("");
+        attributes.put("task_parameters_memory_refs", preferenceMemoryRefs);
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         // F4-01：工作集只提供选择线索与信号摘要，正文与权限仍由各模式检索自己把关。
         Integer currentSeq = jdbcTemplate.queryForObject("""
@@ -433,7 +438,8 @@ public class ChatService {
                 policy.maximumOutputTokens(),
                 sufficiency.verdict().name(),
                 preferenceLine,
-                unsupportedParameters
+                unsupportedParameters,
+                preferenceMemoryRefs
         );
     }
 
@@ -770,7 +776,8 @@ public class ChatService {
             int maximumOutputTokens,
             String evidenceSufficiency,
             String taskParameters,
-            String taskParametersUnsupported
+            String taskParametersUnsupported,
+            String taskParametersMemoryRefs
     ) {
         private String promptVersion() {
             return promptSpec == null ? retrievalPlan.version() : promptSpec.promptVersion();
@@ -789,7 +796,8 @@ public class ChatService {
             int maximumOutputTokens,
             String evidenceSufficiency,
             String taskParameters,
-            String taskParametersUnsupported
+            String taskParametersUnsupported,
+            String taskParametersMemoryRefs
     ) {
         public PreparedAnswerMaterial(
                 String answer,
@@ -803,7 +811,7 @@ public class ChatService {
                 int maximumOutputTokens
         ) {
             this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
-                    contextProjection, frozenContextV2, maximumOutputTokens, null, null, null);
+                    contextProjection, frozenContextV2, maximumOutputTokens, null, null, null, null);
         }
 
         public PreparedAnswerMaterial(
@@ -819,7 +827,26 @@ public class ChatService {
                 String evidenceSufficiency
         ) {
             this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
-                    contextProjection, frozenContextV2, maximumOutputTokens, evidenceSufficiency, null, null);
+                    contextProjection, frozenContextV2, maximumOutputTokens, evidenceSufficiency, null, null, null);
+        }
+
+        public PreparedAnswerMaterial(
+                String answer,
+                List<String> existingCitationIds,
+                MemoryControlPackResponse chatControlPack,
+                RetrievalPlan retrievalPlan,
+                EvidenceBundle evidenceBundle,
+                PromptSpec promptSpec,
+                ConversationContextProjectionService.Projection contextProjection,
+                ContextV2ShadowSnapshotService.FrozenAnswer frozenContextV2,
+                int maximumOutputTokens,
+                String evidenceSufficiency,
+                String taskParameters,
+                String taskParametersUnsupported
+        ) {
+            this(answer, existingCitationIds, chatControlPack, retrievalPlan, evidenceBundle, promptSpec,
+                    contextProjection, frozenContextV2, maximumOutputTokens, evidenceSufficiency,
+                    taskParameters, taskParametersUnsupported, null);
         }
 
         public PreparedAnswerMaterial {
