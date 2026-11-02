@@ -195,6 +195,15 @@ class WikiGraphBudgeterTest {
                 .isLessThan(WikiPersonalizedPageRank.MAX_NODES);
     }
 
+    @Test
+    void workingSetRestartWeightIsBoundedToDoubleTheSeed() {
+        assertThat(WikiGraphBudgeter.seedWeight(10.0d, 0.0d)).isEqualTo(10.0d);
+        assertThat(WikiGraphBudgeter.seedWeight(10.0d, 0.5d)).isEqualTo(15.0d);
+        assertThat(WikiGraphBudgeter.seedWeight(10.0d, 1.0d)).isEqualTo(20.0d);
+        assertThat(WikiGraphBudgeter.seedWeight(10.0d, 9.0d)).isEqualTo(20.0d);
+        assertThat(WikiGraphBudgeter.seedWeight(10.0d, -3.0d)).isEqualTo(10.0d);
+    }
+
     private List<WikiPageContext> load(Map<String, WikiPageContext> pages, List<String> ids) {
         List<WikiPageContext> loaded = new ArrayList<>();
         for (String id : ids) {

@@ -90,6 +90,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             degradationReasons = List.of();
         }
         String workspaceId = context.workspaceId();
+        java.util.Map<String, Double> restartWeights = restartWeights(
+                context.attributes().getOrDefault("context_working_set_knowledge_weights", ""));
         WikiGraphBudgeter.Result graph = graphBudgeter.apply(
                 candidateContexts,
                 plan.budget(),
@@ -112,7 +114,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                     List<WikiPageContext> loaded = wikiRetrievalQueryPort.loadWikiPagesByIds(
                             workspaceId, itemIds);
                     return loaded == null ? List.of() : loaded;
-                });
+                },
+                restartWeights);
         // 总候选上限来自计划预算：种子与扩展共用这个上限，但扩大上限不会放宽种子上限
         int totalCandidateLimit = plan.budget() == null
                 ? graph.contexts().size() : Math.max(0, plan.budget().maxEvidence());
@@ -172,6 +175,29 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             return lexical;
         }
         return "当前问题：" + current + "\n主题锚点：" + anchor;
+    }
+
+    /** 工作集知识页权重：{@code itemId:weight,itemId:weight}，损坏的项直接跳过。 */
+    private static java.util.Map<String, Double> restartWeights(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, Double> weights = new LinkedHashMap<>();
+        for (String part : encoded.split(",")) {
+            int separator = part.indexOf(':');
+            if (separator <= 0 || separator == part.length() - 1) {
+                continue;
+            }
+            try {
+                double weight = Double.parseDouble(part.substring(separator + 1));
+                if (weight > 0 && weight <= 1.0d) {
+                    weights.put(part.substring(0, separator), weight);
+                }
+            } catch (NumberFormatException ignored) {
+                // 单个损坏项不影响其余工作集信号
+            }
+        }
+        return java.util.Map.copyOf(weights);
     }
 
     private EvidenceBundle.Evidence toEvidence(

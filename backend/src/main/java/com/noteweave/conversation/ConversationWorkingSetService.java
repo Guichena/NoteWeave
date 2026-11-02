@@ -25,6 +25,7 @@ public class ConversationWorkingSetService {
     public static final String REASON_DELETED_TURN = "DELETED_TURN";
     public static final String REASON_SOURCE_LIMIT = "SOURCE_LIMIT";
     public static final String REASON_RESEARCH_LIMIT = "RESEARCH_LIMIT";
+    public static final String REASON_KNOWLEDGE_PAGE_LIMIT = "KNOWLEDGE_PAGE_LIMIT";
     public static final String REASON_CITED_EVIDENCE_LIMIT = "CITED_EVIDENCE_LIMIT";
 
     private static final double DECAY_PER_TURN = 0.08d;
@@ -39,20 +40,25 @@ public class ConversationWorkingSetService {
     public ConversationWorkingSet derive(String workspaceId, String conversationId, int cutoffSeq) {
         List<Contribution> contributions = jdbcTemplate.query("""
                 select m.id as message_id, m.message_seq, m.role, m.context_status,
-                       c.id as citation_id, c.source_id, c.source_snapshot_id, c.research_run_id
+                       c.id as citation_id, c.source_id, c.source_snapshot_id, c.research_run_id,
+                       kv.item_id as knowledge_item_id, kv.id as knowledge_version_id
                 from conversation_message m
                 left join message_citation mc on mc.message_id = m.id
                 left join citation c on c.id = mc.citation_id
+                left join knowledge_version_citation kvc on kvc.citation_id = c.id
+                left join knowledge_version kv on kv.id = kvc.knowledge_version_id
                 where m.workspace_id = ? and m.conversation_id = ? and m.message_seq <= ?
                 order by m.message_seq asc, c.id asc
                 """, (rs, rowNum) -> new Contribution(
                 rs.getString("message_id"), rs.getInt("message_seq"), rs.getString("role"),
                 rs.getString("context_status"), rs.getString("citation_id"),
                 rs.getString("source_id"), rs.getString("source_snapshot_id"),
-                rs.getString("research_run_id")), workspaceId, conversationId, Math.max(0, cutoffSeq));
+                rs.getString("research_run_id"), rs.getString("knowledge_item_id"),
+                rs.getString("knowledge_version_id")), workspaceId, conversationId, Math.max(0, cutoffSeq));
 
         Map<String, SourceAccumulator> sources = new LinkedHashMap<>();
         Map<String, ResearchAccumulator> research = new LinkedHashMap<>();
+        Map<String, KnowledgeAccumulator> knowledge = new LinkedHashMap<>();
         Map<String, EvidenceAccumulator> evidence = new LinkedHashMap<>();
         Set<String> deletedSourceIds = new LinkedHashSet<>();
         for (Contribution contribution : contributions) {
@@ -66,6 +72,10 @@ public class ConversationWorkingSetService {
             }
             if (contribution.researchRunId() != null && !contribution.researchRunId().isBlank()) {
                 research.computeIfAbsent(contribution.researchRunId(), ignored -> new ResearchAccumulator())
+                        .observe(contribution, validTurn);
+            }
+            if (contribution.knowledgeItemId() != null && !contribution.knowledgeItemId().isBlank()) {
+                knowledge.computeIfAbsent(contribution.knowledgeItemId(), ignored -> new KnowledgeAccumulator())
                         .observe(contribution, validTurn);
             }
             if (contribution.citationId() != null && validTurn) {
@@ -110,6 +120,20 @@ public class ConversationWorkingSetService {
             }
             entries.add(run.toEntry(cutoffSeq));
         }
+        List<KnowledgeAccumulator> validKnowledge = knowledge.values().stream()
+                .filter(KnowledgeAccumulator::hasValidTurn)
+                .sorted(Comparator.comparingInt((KnowledgeAccumulator value) -> value.lastSeq).reversed())
+                .toList();
+        for (int index = 0; index < validKnowledge.size(); index++) {
+            KnowledgeAccumulator page = validKnowledge.get(index);
+            if (index >= ConversationWorkingSet.Limits.defaults().knowledgePages()) {
+                exclusions.add(new ConversationWorkingSet.Exclusion(
+                        ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE, page.refId,
+                        REASON_KNOWLEDGE_PAGE_LIMIT));
+                continue;
+            }
+            entries.add(page.toEntry(cutoffSeq));
+        }
         List<EvidenceAccumulator> validEvidence = evidence.values().stream()
                 .sorted(Comparator.comparingInt((EvidenceAccumulator value) -> value.lastSeq).reversed())
                 .toList();
@@ -146,7 +170,7 @@ public class ConversationWorkingSetService {
 
     private record Contribution(String messageId, int messageSeq, String role, String contextStatus,
                                 String citationId, String sourceId, String sourceSnapshotId,
-                                String researchRunId) {
+                                String researchRunId, String knowledgeItemId, String knowledgeVersionId) {
     }
 
     private static final class SourceAccumulator {
@@ -207,6 +231,39 @@ public class ConversationWorkingSetService {
         private ConversationWorkingSet.Entry toEntry(int cutoffSeq) {
             return new ConversationWorkingSet.Entry(
                     ConversationWorkingSet.EntryKind.RESEARCH_RUN, refId, "",
+                    weight(cutoffSeq, lastSeq), List.copyOf(messageIds), firstSeq, lastSeq);
+        }
+    }
+
+    private static final class KnowledgeAccumulator {
+        private String refId;
+        private String versionId = "";
+        private final Set<String> messageIds = new LinkedHashSet<>();
+        private int firstSeq = Integer.MAX_VALUE;
+        private int lastSeq;
+        private int validTurns;
+
+        private void observe(Contribution contribution, boolean valid) {
+            refId = contribution.knowledgeItemId();
+            if (contribution.knowledgeVersionId() != null && !contribution.knowledgeVersionId().isBlank()) {
+                versionId = contribution.knowledgeVersionId();
+            }
+            if (!valid) {
+                return;
+            }
+            validTurns++;
+            messageIds.add(contribution.messageId());
+            firstSeq = Math.min(firstSeq, contribution.messageSeq());
+            lastSeq = Math.max(lastSeq, contribution.messageSeq());
+        }
+
+        private boolean hasValidTurn() {
+            return validTurns > 0;
+        }
+
+        private ConversationWorkingSet.Entry toEntry(int cutoffSeq) {
+            return new ConversationWorkingSet.Entry(
+                    ConversationWorkingSet.EntryKind.KNOWLEDGE_PAGE, refId, versionId,
                     weight(cutoffSeq, lastSeq), List.copyOf(messageIds), firstSeq, lastSeq);
         }
     }
