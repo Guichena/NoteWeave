@@ -65,6 +65,47 @@ class F1KnowledgeEligibilityRegressionTest {
         assertThatThrownBy(()->gate.requireCurrentVersionEligible("w","item","v"))
                 .isInstanceOfSatisfying(BusinessException.class,e->org.assertj.core.api.Assertions.assertThat(e.code()).isEqualTo("KNOWLEDGE_PROVENANCE_UNVERIFIED"));
     }
+    @Test void autoPageWithSupportedProvenanceAndCompleteDependenciesIsCurrentEvidence() {
+        for(int i=0;i<6;i++) dependency("s"+i,"ss"+i,"c"+i,i);
+        jdbc.update("update knowledge_item set wiki_page_state='AUTO' where id='item'");
+        jdbc.update("update knowledge_version set provenance_schema_version='wiki-page-provenance-v1' where id='v'");
+        assertThatCode(()->gate.requireCurrentVersionEligible("w","item","v")).doesNotThrowAnyException();
+        revoked.add("s5");
+        assertThatThrownBy(()->gate.requireCurrentVersionEligible("w","item","v")).isInstanceOf(BusinessException.class);
+    }
+    @Test void navigationPageNeverBecomesCurrentEvidence() {
+        dependency("s","ss","c",1);
+        jdbc.update("update knowledge_item set origin='SYSTEM_NAVIGATION' where id='item'");
+        assertThatThrownBy(()->gate.requireCurrentVersionEligible("w","item","v"))
+                .isInstanceOf(BusinessException.class);
+    }
+    @Test void currentEvidenceReadsEachCitationBoundSnapshotWhileHistoryKeepsOldSnapshot() {
+        dependency("s","old","c1",1);
+        jdbc.update("insert into source_snapshot(id,source_id,file_object_id,version_no,object_key,sha256,parse_status,index_status) values ('new','s','file',2,'key',?,'PARSED','INDEXED')","b".repeat(64));
+        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,title,quote_text) values ('c2','w','s','new','来源','正文')");
+        jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('k2','v','c2',2)");
+        current.put("s","new");
+        // 当前证据：任一 citation 绑定旧快照即整版不可用，不能按 sourceId 合并放行
+        org.assertj.core.api.Assertions.assertThat(gate.readableVersionIds("w",List.of("v"),AccessPurpose.CURRENT_EVIDENCE)).isEmpty();
+        // 历史展示：旧快照按历史政策仍可读
+        org.assertj.core.api.Assertions.assertThat(gate.readableVersionIds("w",List.of("v"),AccessPurpose.HISTORY_DISPLAY)).containsExactly("v");
+    }
+    @Test void eligibilityBatchStaysWithinPortLimit() {
+        for(int i=0;i<250;i++) dependency("bs"+i,"bss"+i,"bc"+i,i);
+        assertThatCode(()->gate.readableVersionIds("w",List.of("v"),AccessPurpose.CURRENT_EVIDENCE))
+                .doesNotThrowAnyException();
+    }
+    @Test void certifiedEvidenceExcludesNavigationAndUnprovenancedAutoPages() {
+        dependency("s","ss","c",1);
+        jdbc.update("update knowledge_item set wiki_page_state='AUTO' where id='item'");
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).isEmpty();
+        jdbc.update("update knowledge_version set provenance_schema_version='wiki-page-provenance-v1' where id='v'");
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).containsExactly("v");
+        jdbc.update("update knowledge_item set origin='SYSTEM_NAVIGATION' where id='item'");
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).isEmpty();
+        jdbc.update("update knowledge_item set origin=null, wiki_page_state='MANUAL' where id='item'");
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).containsExactly("v");
+    }
     @Test void oldVersionIsRejectedAfterLatestVersionChanges() {
         dependency("s","ss","c",1);
         jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('v2','item',2,'新版')");

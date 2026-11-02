@@ -144,6 +144,90 @@ class NoteEvidenceRetrieverTest {
         assertThat(result.measurements()).containsEntry("note_window_rerank_count", 0L);
     }
 
+    @Test
+    void blankBodyWindowsAreExcludedFromEvidenceAndSnapshot() {
+        NoteRecallRetriever recallRetriever = mock(NoteRecallRetriever.class);
+        NoteRetrievalService retrievalService = mock(NoteRetrievalService.class);
+        NoteReadingRetriever readingRetriever = mock(NoteReadingRetriever.class);
+        NoteRetrievalSnapshotCodec codec =
+                new NoteRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        CandidateSource candidate = candidate();
+        NoteRecallPlan plan = new NoteRecallPlan(
+                List.of(), List.of(candidate), List.of(), List.of(candidate),
+                new NoteRecallTrace(0, 1, 0, 1, 1, 0, 0, 1));
+        when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
+        when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
+                .thenReturn(List.of());
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(readingResult(List.of(
+                        windowWithContent("chunk-empty", ""),
+                        windowWithContent("chunk-real", "real body"))));
+        NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
+                recallRetriever, retrievalService, readingRetriever, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                NoteEvidenceRetriever.CHANNEL, 8, 1, Map.of());
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()),
+                new RetrievalPlan("note-test-v1", AnswerMode.NOTE, List.of(step),
+                        new RetrievalPlan.Budget(8, 24_000, 0, 0)),
+                step
+        );
+
+        assertThat(result.evidence()).extracting(EvidenceBundle.Evidence::passageId)
+                .containsExactly("chunk-real");
+        NoteRetrievalSnapshot snapshot = codec.decode(
+                result.metadata().get(NoteRetrievalSnapshotCodec.METADATA_KEY));
+        assertThat(snapshot.windows()).extracting(ReadingWindow::chunkId)
+                .containsExactly("chunk-real");
+    }
+
+    @Test
+    void recalledSourceSnapshotIsPreservedInFrozenSnapshot() {
+        NoteRecallRetriever recallRetriever = mock(NoteRecallRetriever.class);
+        NoteRetrievalService retrievalService = mock(NoteRetrievalService.class);
+        NoteReadingRetriever readingRetriever = mock(NoteReadingRetriever.class);
+        NoteRetrievalSnapshotCodec codec =
+                new NoteRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        CandidateSource candidate = new CandidateSource(
+                "source", "Source", "MARKDOWN", 2, 2, "", "", "summary",
+                "[]", "{}", "sample", 8, "metadata", List.of(), List.of(),
+                1, 1, "metadata-quota", "candidate:metadata-quota", "snap-1");
+        NoteRecallPlan plan = new NoteRecallPlan(
+                List.of(), List.of(candidate), List.of(), List.of(candidate),
+                new NoteRecallTrace(0, 1, 0, 1, 1, 0, 0, 1));
+        when(recallRetriever.retrieve("workspace", "query")).thenReturn(plan);
+        when(retrievalService.readEntriesMetadataForNote("workspace", plan.verifySources(), "query"))
+                .thenReturn(List.of());
+        when(readingRetriever.retrieveWithDiagnostics("workspace", plan.verifySources(), "query"))
+                .thenReturn(readingResult(List.of(window("chunk-a", 2, "anchor-window", "A", "", ""))));
+        NoteEvidenceRetriever retriever = new NoteEvidenceRetriever(
+                recallRetriever, retrievalService, readingRetriever, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                NoteEvidenceRetriever.CHANNEL, 8, 1, Map.of());
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()),
+                new RetrievalPlan("note-test-v1", AnswerMode.NOTE, List.of(step),
+                        new RetrievalPlan.Budget(8, 24_000, 0, 0)),
+                step
+        );
+
+        NoteRetrievalSnapshot snapshot = codec.decode(
+                result.metadata().get(NoteRetrievalSnapshotCodec.METADATA_KEY));
+        assertThat(snapshot.recallPlan().verifySources().get(0).sourceSnapshotId()).isEqualTo("snap-1");
+        assertThat(result.evidence().get(0).sourceSnapshotId()).isEqualTo("snapshot");
+    }
+
+    private ReadingWindow windowWithContent(String chunkId, String content) {
+        return new ReadingWindow(
+                chunkId, "source", "snapshot", 0, "Heading", "Source", "", "",
+                0, content, "chunk:0", 9, "anchor-window", 0, "verify"
+        );
+    }
+
     private NoteReadingRetriever.ReadingResult readingResult(List<ReadingWindow> windows) {
         return new NoteReadingRetriever.ReadingResult(
                 windows, false, List.of(), Map.of(

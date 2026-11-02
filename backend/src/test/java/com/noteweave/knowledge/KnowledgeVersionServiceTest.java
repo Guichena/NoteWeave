@@ -176,6 +176,36 @@ class KnowledgeVersionServiceTest {
                 """, Integer.class)).isEqualTo(1);
     }
 
+    @Test
+    void automaticAppendMarksProvenanceAndSystemMaintenanceKeepsManualState() {
+        seedItem("item-auto", "WIKI", "Auto Page", "version-1", "initial");
+        jdbcTemplate.update("""
+                update knowledge_item set wiki_page_state = 'AUTO', updated_by = 'SYSTEM:KNOWLEDGE'
+                where id = 'item-auto'
+                """);
+
+        KnowledgeItemResponse automatic = versionService.appendVersion(
+                "item-auto",
+                new AppendKnowledgeVersionRequest("auto content", null, List.of()),
+                "SYSTEM:KNOWLEDGE");
+        assertThat(automatic.wikiPageState()).isEqualTo("AUTO");
+        assertThat(jdbcTemplate.queryForObject("""
+                select provenance_schema_version from knowledge_version where id = ?
+                """, String.class, automatic.latestVersionId()))
+                .isEqualTo(KnowledgeCitationReadGate.WIKI_PROVENANCE_SCHEMA_VERSION);
+
+        // 人工编辑后，系统链接维护不能把页面降级成 AUTO，也不能伪造自动编译标记
+        jdbcTemplate.update("update knowledge_item set wiki_page_state = 'MANUAL' where id = 'item-auto'");
+        KnowledgeItemResponse maintenance = versionService.appendVersion(
+                "item-auto",
+                new AppendKnowledgeVersionRequest("manual content with [[link]]", null, List.of()),
+                "SYSTEM:KNOWLEDGE");
+        assertThat(maintenance.wikiPageState()).isEqualTo("MANUAL");
+        assertThat(jdbcTemplate.queryForObject("""
+                select provenance_schema_version from knowledge_version where id = ?
+                """, String.class, maintenance.latestVersionId())).isNull();
+    }
+
     private void createSchema() {
         org.flywaydb.core.Flyway.configure().dataSource(jdbcTemplate.getDataSource())
                 .locations("classpath:db/migration").load().migrate();
