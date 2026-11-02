@@ -261,7 +261,7 @@ class Phase3NoteWikiContractTest {
         ChatStreamTestSupport.perform(mockMvc, wikiRequestId)
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Wiki 页面：")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("[[NoteWeave 阶段3总览]]")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("[1] NoteWeave 阶段3总览")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Note 链路")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
     }

@@ -19,6 +19,11 @@ class ArchitectureBoundaryTest {
 
     private static final JavaClasses CLASSES = new ClassFileImporter().importPackages("com.noteweave");
 
+    /** 依赖方向只约束生产代码；测试为构造真实协作者可以引用实现类。 */
+    private static final JavaClasses PRODUCTION_CLASSES = new ClassFileImporter()
+            .withImportOption(com.tngtech.archunit.core.importer.ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
+            .importPackages("com.noteweave");
+
     @Test
     void legacyKnowledgeFacadeMustRemainDeleted() {
         assertThat(CLASSES.stream().map(javaClass -> javaClass.getSimpleName()))
@@ -898,7 +903,7 @@ class ArchitectureBoundaryTest {
                         "com.noteweave.knowledge.."
                 )
                 .because("AnswerRun lifecycle is an application boundary and must not depend on mode or middleware implementations")
-                .check(CLASSES);
+                .check(PRODUCTION_CLASSES);
     }
 
     @Test

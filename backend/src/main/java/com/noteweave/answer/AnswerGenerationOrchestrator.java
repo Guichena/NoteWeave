@@ -57,7 +57,7 @@ public class AnswerGenerationOrchestrator {
         AnswerRunRef run = answerRunService.requireByAssistantRequest(assistantRequestId);
         if (run != null && ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status()))) {
             deliver(consumer, new AnswerDeliveryEvent("", "CANCELLED".equals(run.status())
-                    ? "answer.cancelled" : "answer.failed", run.status()));
+                    ? "answer.cancelled" : "answer.failed", terminalData(run)));
             return;
         }
         if (run != null) answerRunService.requireReplayReadable(run.workspaceId(), run.runId());
@@ -70,7 +70,7 @@ public class AnswerGenerationOrchestrator {
             deliver(consumer, new AnswerDeliveryEvent(
                     "1",
                     "CANCELLED".equals(run.status()) ? "answer.cancelled" : "answer.failed",
-                    run.status()));
+                    terminalData(run)));
             return;
         }
 
@@ -137,6 +137,8 @@ public class AnswerGenerationOrchestrator {
                 deltaEmitter.accept(tail);
             }
             deltaEmitter.flush();
+            // 正文生成结束就关闭发射器，收尾阶段的迟到批量下发不再可能触发撤销判定
+            deltaEmitter.close();
             streamed = normalized.toString();
             if (run != null) {
                 answerRunService.recordCitationNormalization(run.workspaceId(), run.runId(), streamOwner,
@@ -151,6 +153,19 @@ public class AnswerGenerationOrchestrator {
             }
             return;
         } catch (Exception ex) {
+            if (run != null) {
+                AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
+                String currentStatus = current == null ? null : current.status();
+                if ("COMPLETED".equals(currentStatus)) {
+                    // 收尾已经成功，迟到的批量下发异常不能改写结果
+                    log.warn("Ignore generation error after completion: {}", ex.getMessage());
+                    return;
+                }
+                if ("CANCELLED".equals(currentStatus)) {
+                    persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
+                    return;
+                }
+            }
             String errorCode = ex instanceof com.noteweave.common.BusinessException business
                     ? business.code() : "ANSWER_STREAM_FAILED";
             String terminalMessage = errorCode + ": " + (ex.getMessage() == null ? "" : ex.getMessage());
@@ -232,6 +247,16 @@ public class AnswerGenerationOrchestrator {
             AnswerLiveEvent terminal = publishTerminal(run, "answer.completed", material.messageId());
             emitTerminal(consumer, fallbackSequence, terminal, "answer.completed", material.messageId());
         } catch (RuntimeException ex) {
+            // 运行已经完成时，收尾阶段的迟到异常不能把结果改写成失败
+            String currentStatus = answerRunService.requireRef(run.workspaceId(), run.runId()).status();
+            if ("COMPLETED".equals(currentStatus)) {
+                log.warn("Ignore finalization error after completion: {}", ex.getMessage());
+                return;
+            }
+            if ("CANCELLED".equals(currentStatus)) {
+                emitTerminal(consumer, fallbackSequence, null, "answer.cancelled", "CANCELLED");
+                return;
+            }
             // ANS-01：收尾失败必须显式落 FAILED 并发出终态事件，
             // 不能让运行停在 GENERATING、把客户端晾在打开的流上。
             failFinalization(run, streamOwner, ex);
@@ -329,6 +354,17 @@ public class AnswerGenerationOrchestrator {
     }
 
     /**
+     * 终态事件的数据：取消回状态词，失败回具体原因。
+     */
+    private String terminalData(AnswerRunRef run) {
+        if ("CANCELLED".equals(run.status())) {
+            return "CANCELLED";
+        }
+        String summary = answerRunService.failureSummary(run.workspaceId(), run.runId());
+        return summary.isBlank() ? run.status() : summary;
+    }
+
+    /**
      * 下发 {@code evidence.ready}：把冻结契约里的允许集合与编号绑定交给前端。
      *
      * <p>历史运行没有契约时直接跳过，前端保持旧协议解析。有运行记录时走与
@@ -367,7 +403,21 @@ public class AnswerGenerationOrchestrator {
             throw new AnswerStreamLeaseLostException();
         }
         ensureNotCancelled(run);
-        if (run != null) answerRunService.requireStreamEligible(run.workspaceId(), run.runId(), streamOwner);
+        if (run != null) {
+            try {
+                answerRunService.requireStreamEligible(run.workspaceId(), run.runId(), streamOwner);
+            } catch (com.noteweave.common.BusinessException revoked) {
+                // 收尾已经把运行推进到终态时，晚到的批量下发只是迟到，不能改写已定的结果
+                AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
+                String status = current == null ? null : current.status();
+                if (!"GENERATING".equals(status)) {
+                    // 收尾已经开始或已经结束，这批增量只是迟到，不能改写结果
+                    log.debug("Drop late delta after status {}: {}", status, revoked.getMessage());
+                    return;
+                }
+                throw revoked;
+            }
+        }
         if (run != null && firstToken.compareAndSet(false, true)) {
             answerRunService.markFirstToken(run.workspaceId(), run.runId(), streamOwner);
         }

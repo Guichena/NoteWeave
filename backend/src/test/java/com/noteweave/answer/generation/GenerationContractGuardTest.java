@@ -42,6 +42,10 @@ class GenerationContractGuardTest {
         jdbc.update("insert into source(id,workspace_id,file_object_id,title,source_type,status,parse_status,index_status) values ('source-1','ws','file','来源','TEXT','READY','PARSED','INDEXED')");
         jdbc.update("insert into source_snapshot(id,source_id,file_object_id,version_no,object_key,sha256,parse_status,index_status) values ('snapshot-1','source-1','file',1,'key',?,'PARSED','INDEXED')",HASH_A);
         jdbc.update("insert into source_chunk(id,workspace_id,source_id,source_snapshot_id,chunk_no,content,token_estimate) values ('passage-1','ws','source-1','snapshot-1',0,'正文',1)");
+        jdbc.update("insert into conversation_message(id,workspace_id,conversation_id,message_seq,role,content) values ('answer','ws','conv',2,'ASSISTANT','回答'),('other','ws','conv',3,'ASSISTANT','另一回答')");
+        jdbc.update("update answer_run set answer_message_id='answer' where id='run'");
+        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text,owner_message_id) values ('c','ws','source-1','snapshot-1','passage-1','来源','正文','answer')");
+        jdbc.update("insert into message_citation(id,message_id,citation_id,sort_order) values ('mc','answer','c',0)");
 
     }
 
@@ -106,7 +110,7 @@ class GenerationContractGuardTest {
         manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
         jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','页面','ACTIVE','version-1','MANUAL')");
         jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'正文')");
-        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text) values ('c','ws','source-1','snapshot-1','passage-1','来源','正文')");
+
         jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('kvc','version-1','c',0)");
 
         assertThatCode(() -> guard().requireEligible("ws", "run", contract(
@@ -122,6 +126,104 @@ class GenerationContractGuardTest {
                 GenerationContract.SCHEMA_VERSION, "QA", "qa-v1", "system", true,
                 List.of(), List.of(), "bundle", Map.of(), List.of())))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    void tamperedCitationIdMustBeRevokedEvenWhenManifestAndHashAreValid() {
+        manifest("passage:one", "PASSAGE", "source-1", "snapshot-1", null, HASH_A);
+        GenerationContract original = contract(List.of("passage:one"), Map.of("passage:one", HASH_A));
+        assertThatCode(() -> guard().requireEligible("ws", "run", original)).doesNotThrowAnyException();
+        GenerationContract tampered = new GenerationContract(original.schemaVersion(), original.mode(),
+                original.promptVersion(), original.systemPrompt(), original.refusal(), original.allowedEvidenceIds(),
+                List.of(new CitationBinding(1, "passage:one", List.of("missing-citation"))),
+                original.evidenceBundleId(), original.evidenceTextHashes(), original.allowedPageTitles());
+        assertBindingRevoked(tampered);
+    }
+
+    @Test
+    void citationBoundOnlyToAnotherMessageMustBeRevoked() {
+        manifest("passage:one", "PASSAGE", "source-1", "snapshot-1", null, HASH_A);
+        GenerationContract frozen = contract(List.of("passage:one"), Map.of("passage:one", HASH_A));
+        assertThatCode(() -> guard().requireEligible("ws", "run", frozen)).doesNotThrowAnyException();
+        jdbc.update("update message_citation set message_id='other' where id='mc'");
+        assertBindingRevoked(frozen);
+    }
+
+    @Test
+    void boundCitationWithDifferentPassageIdentityMustBeRevoked() {
+        manifest("passage:one", "PASSAGE", "source-1", "snapshot-1", null, HASH_A);
+        GenerationContract frozen = contract(List.of("passage:one"), Map.of("passage:one", HASH_A));
+        assertThatCode(() -> guard().requireEligible("ws", "run", frozen)).doesNotThrowAnyException();
+        jdbc.update("insert into source_chunk(id,workspace_id,source_id,source_snapshot_id,chunk_no,content,token_estimate) values ('passage-2','ws','source-1','snapshot-1',1,'不同正文',1)");
+        jdbc.update("update citation set source_chunk_id='passage-2' where id='c'");
+        assertBindingRevoked(frozen);
+    }
+
+    @Test
+    void knowledgeVersionRejectsIncompleteCitationDependencyBindings() {
+        manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
+        jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','页面','ACTIVE','version-1','MANUAL')");
+        jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'正文')");
+        jdbc.update("insert into source_chunk(id,workspace_id,source_id,source_snapshot_id,chunk_no,content,token_estimate) values ('passage-2','ws','source-1','snapshot-1',1,'第二依赖',1)");
+        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text) values ('c2','ws','source-1','snapshot-1','passage-2','来源','第二依赖')");
+        jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('k1','version-1','c',0),('k2','version-1','c2',1)");
+        jdbc.update("insert into message_citation(id,message_id,citation_id,sort_order) values ('mc2','answer','c2',1)");
+        GenerationContract complete = new GenerationContract(GenerationContract.SCHEMA_VERSION, "WIKI", "wiki-v1",
+                "system", false, List.of("knowledge-version:one"),
+                List.of(new CitationBinding(1,"knowledge-version:one",List.of("c","c2"))),
+                "bundle", Map.of("knowledge-version:one",HASH_A), List.of());
+        assertThatCode(() -> guard().requireEligible("ws", "run", complete)).doesNotThrowAnyException();
+        assertBindingRevoked(contract(List.of("knowledge-version:one"), Map.of("knowledge-version:one", HASH_A)));
+    }
+
+    @Test
+    void knowledgeCitationCopyPreservingIdentityRemainsValid() {
+        manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
+        jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','页面','ACTIVE','version-1','MANUAL')");
+        jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'正文')");
+        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text) select 'knowledge-copy',workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text from citation where id='c'");
+        jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('k1','version-1','knowledge-copy',0)");
+        assertThatCode(() -> guard().requireEligible("ws", "run", contract(
+                List.of("knowledge-version:one"), Map.of("knowledge-version:one", HASH_A))))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void explicitlyManualIndependentPageHasVersionEvidenceWithoutInventedSourceCitation() {
+        manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
+        jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','人工知识','ACTIVE','version-1','MANUAL')");
+        jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'人工独立正文')");
+        GenerationContract independent = new GenerationContract(GenerationContract.SCHEMA_VERSION, "WIKI", "wiki-v1",
+                "system", false, List.of("knowledge-version:one"),
+                List.of(new CitationBinding(1, "knowledge-version:one", List.of())),
+                "bundle", Map.of("knowledge-version:one", HASH_A), List.of());
+        assertThatCode(() -> guard().requireEligible("ws", "run", independent)).doesNotThrowAnyException();
+        jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('k1','version-1','c',0)");
+        assertBindingRevoked(independent);
+    }
+
+    @Test
+    void automaticPageCannotUseEmptyBindingToBypassProvenanceVerification() {
+        manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
+        jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','自动页','ACTIVE','version-1','AUTO')");
+        jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'自动正文')");
+        GenerationContract empty = new GenerationContract(GenerationContract.SCHEMA_VERSION, "WIKI", "wiki-v1",
+                "system", false, List.of("knowledge-version:one"),
+                List.of(new CitationBinding(1, "knowledge-version:one", List.of())),
+                "bundle", Map.of("knowledge-version:one", HASH_A), List.of());
+        assertThatThrownBy(() -> guard().requireEligible("ws", "run", empty))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    assertThat(error.code()).isEqualTo(GenerationContractGuard.CODE_REVOKED);
+                    assertThat(error.getMessage()).contains("KNOWLEDGE_PROVENANCE_UNVERIFIED");
+                });
+    }
+
+    private void assertBindingRevoked(GenerationContract contract) {
+        assertThatThrownBy(() -> guard().requireEligible("ws", "run", contract))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    assertThat(error.code()).isEqualTo(GenerationContractGuard.CODE_REVOKED);
+                    assertThat(error.getMessage()).contains("CITATION_BINDING");
+                });
     }
 
     private GenerationContract contract(List<String> allowed, Map<String, String> hashes) {
@@ -146,7 +248,9 @@ class GenerationContractGuardTest {
     }
 
     private GenerationContractGuard guard() {
-        return new GenerationContractGuard(jdbc, new StubEligibilityPort(blockedSources));
+        MaterialEligibilityPort eligibility = new StubEligibilityPort(blockedSources);
+        return new GenerationContractGuard(jdbc, eligibility,
+                new com.noteweave.knowledge.KnowledgeCitationReadGate(jdbc, eligibility));
     }
 
     /** 资格端口替身：只按来源编号返回可读或不可读。 */

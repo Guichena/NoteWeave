@@ -348,7 +348,7 @@ class Phase1And2ContractTest {
         assertThat(persistedPlan.path("steps").get(0).path("filters")
                 .path("strategy_profile").asText()).isEqualTo("qa-hybrid-mmr-token-v3");
         assertThat(persistedBundle.path("schema_version").asText())
-                .isEqualTo("evidence-bundle-snapshot-v1");
+                .isEqualTo("evidence-bundle-snapshot-v2");
         assertThat(persistedBundle.path("evidence").get(0).path("source_snapshot_id").asText())
                 .isNotBlank();
         assertThat(retrievalSnapshots.get("evidence_bundle_json").toString())

@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * 旧签名保持既有 CURRENT_EVIDENCE 语义，调用方逐个迁移，不允许默认放宽为历史展示。</p>
  */
 @Component
-public class KnowledgeCitationReadGate {
+public class KnowledgeCitationReadGate implements com.noteweave.answer.generation.KnowledgeVersionEligibility {
     private final JdbcTemplate jdbc;
     private final MaterialEligibilityPort eligibilityPort;
 
@@ -49,8 +49,8 @@ public class KnowledgeCitationReadGate {
                     "自动知识版本缺少可信完整依赖标记，不能作为当前生成证据", HttpStatus.CONFLICT);
         }
         List<String> citations=jdbc.queryForList("select citation_id from knowledge_version_citation where knowledge_version_id=? order by sort_order,id",String.class,versionId);
-        // 本期不伪造旧自动页的完整依赖；资料编译型Wiki至少必须有来源身份。
-        if(citations.isEmpty()) throw revoked("知识版本缺少可验证依赖");
+        // 上面已核实MANUAL。人工独立知识以其版本为证据，不伪造不存在的资料依赖。
+        // 自动版本仍被完整依赖标记门禁阻止；人工页已有依赖时仍须全部验证。
         requireCitationIdsCurrent(workspaceId,citations);
     }
 

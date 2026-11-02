@@ -249,16 +249,17 @@ public class AnswerRunService {
         if (terminal != null) {
             return terminal;
         }
-        try {
-            new AnswerRunLifecycleGuard(jdbcTemplate).lockForCompletion(workspaceId, runId, streamOwner);
-        } catch (BusinessException revoked) {
-            CompletionOutcome latestTerminal = terminalOutcome(requireRef(workspaceId, runId).status());
-            if (latestTerminal != null) return latestTerminal;
-            CompletionSnapshot snapshot = completionSnapshot(workspaceId, runId);
-            if (snapshot != null && !java.util.Objects.equals(streamOwner, snapshot.streamOwner())) {
-                return CompletionOutcome.SUPERSEDED;
-            }
-            return failRunInternal(workspaceId, runId, streamOwner, revoked.code(), revoked.getMessage());
+        AnswerRunLifecycleGuard.CompletionGate gate =
+                new AnswerRunLifecycleGuard(jdbcTemplate).gateCompletion(workspaceId, runId, streamOwner);
+        if (gate == AnswerRunLifecycleGuard.CompletionGate.SUPERSEDED) {
+            return CompletionOutcome.SUPERSEDED;
+        }
+        if (gate == AnswerRunLifecycleGuard.CompletionGate.MESSAGES_GONE) {
+            return failRunInternal(workspaceId, runId, streamOwner, "ANSWER_MESSAGE_DELETED", "关联消息已删除");
+        }
+        if (gate == AnswerRunLifecycleGuard.CompletionGate.NOT_READY) {
+            return failRunInternal(workspaceId, runId, streamOwner, "ANSWER_RUN_NOT_FINALIZABLE",
+                    "Answer run is not in a finalizable state");
         }
         requireNonBlankFinalContent(finalContent);
         String actor = actor();
@@ -521,6 +522,33 @@ public class AnswerRunService {
         appendEvent(runId, workspaceId, "answer.cancelled", Map.of("status", "CANCELLED"));
         meterRegistry.counter("noteweave.answer.run.cancelled").increment();
         return get(workspaceId, runId);
+    }
+
+    /** 终态事件里要给出可诊断的原因，不能只回一个状态词。 */
+    public String failureSummary(String workspaceId, String runId) {
+        String summary = jdbcTemplate.query("""
+                select error_code, error_message from answer_run where workspace_id = ? and id = ?
+                """, rs -> {
+                    if (!rs.next()) return "";
+                    String code = rs.getString(1);
+                    String message = rs.getString(2);
+                    if (code == null) return "";
+                    return message == null || message.isBlank() ? code : code + ": " + message;
+                }, workspaceId, runId);
+        return summary == null ? "" : summary;
+    }
+
+    /** 会话流里混有研究进度等非回答事件，只有回答运行才做正文撤销校验。 */
+    public void requireReplayReadableIfAnswerRun(String workspaceId, String runId) {
+        if (runId == null || runId.isBlank()) {
+            return;
+        }
+        Integer rows = jdbcTemplate.queryForObject(
+                "select count(*) from answer_run where id = ?", Integer.class, runId);
+        if (rows == null || rows == 0) {
+            return;
+        }
+        requireReplayReadable(workspaceId, runId);
     }
 
     public void requireReplayReadable(String workspaceId, String runId) {

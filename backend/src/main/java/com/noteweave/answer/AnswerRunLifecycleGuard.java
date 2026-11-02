@@ -1,6 +1,5 @@
 package com.noteweave.answer;
 
-import com.noteweave.chat.CitationBindingService;
 import com.noteweave.common.BusinessException;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -10,11 +9,13 @@ import org.springframework.stereotype.Service;
 /** 状态仲裁辅助类。锁方法加入调用方事务，不能在网络生成期间保留锁。 */
 @Service
 public class AnswerRunLifecycleGuard {
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(AnswerRunLifecycleGuard.class);
     private final JdbcTemplate jdbc;
-    private final CitationBindingService citations;
+    private final CitationLockOrder citations;
     public AnswerRunLifecycleGuard(JdbcTemplate jdbc) {
         this.jdbc=jdbc;
-        this.citations=new CitationBindingService(jdbc);
+        this.citations=new CitationLockOrder(jdbc);
     }
     public record LockedRun(String runId,String conversationId,String queryMessageId,
                             String answerMessageId,String status,String streamOwner) {}
@@ -35,15 +36,39 @@ public class AnswerRunLifecycleGuard {
         requireMessages(workspaceId,run,true);
         if (!"GENERATING".equals(run.status()) || owner == null || !owner.equals(run.streamOwner()))
             throw revoked("回答已取消、失败或流归属已变化");
-        requireLease(workspaceId,runId,owner);
         return run;
+    }
+
+    /** 收尾前置判断的结论，由调用方映射成终态，不在这里抛异常。 */
+    public enum CompletionGate { READY, SUPERSEDED, MESSAGES_GONE, NOT_READY }
+
+    /** 收尾前只读判定：状态、流归属与消息可用性。不做锁，也不改状态。 */
+    public CompletionGate gateCompletion(String workspaceId,String runId,String owner) {
+        LockedRun run=load(workspaceId,runId,false);
+        if(run.queryMessageId()==null || run.answerMessageId()==null) return CompletionGate.MESSAGES_GONE;
+        if(!"GENERATING".equals(run.status())) return CompletionGate.NOT_READY;
+        if(owner==null || !owner.equals(run.streamOwner())) return CompletionGate.SUPERSEDED;
+        for(String id:List.of(run.queryMessageId(),run.answerMessageId()).stream().distinct().sorted().toList()) {
+            String state=jdbc.query("select context_status from conversation_message where workspace_id=? and conversation_id=? and id=?",
+                    rs->rs.next()?rs.getString(1):null,workspaceId,run.conversationId(),id);
+            if(state==null || "DELETED".equals(state) || "FAILED".equals(state)) return CompletionGate.MESSAGES_GONE;
+        }
+        return CompletionGate.READY;
     }
 
     public void requireStreamEligible(String workspaceId,String runId,String owner) {
         LockedRun run=load(workspaceId,runId,false);
         requireMessages(workspaceId,run,false);
-        if (!"GENERATING".equals(run.status()) || owner == null || !owner.equals(run.streamOwner()))
+        if (!"GENERATING".equals(run.status()) || owner == null || !owner.equals(run.streamOwner())) {
+            if ("GENERATING".equals(run.status())) {
+                log.warn("stream ineligible runId={} status={} owner={} rowOwner={}",
+                        runId, run.status(), owner, run.streamOwner());
+            } else {
+                log.debug("stream closed runId={} status={} owner={} rowOwner={}",
+                        runId, run.status(), owner, run.streamOwner());
+            }
             throw revoked("回答已停止生成");
+        }
         requireLease(workspaceId,runId,owner);
     }
 

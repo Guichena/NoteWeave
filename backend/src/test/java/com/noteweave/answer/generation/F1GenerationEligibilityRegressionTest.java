@@ -25,7 +25,13 @@ class F1GenerationEligibilityRegressionTest {
         jdbc.update("insert into conversation(id,workspace_id,title,conversation_type,status) values ('c','w','测试','QA','ACTIVE')");
         jdbc.update("insert into conversation_message(id,conversation_id,workspace_id,message_seq,role,content) values ('q','c','w',1,'USER','问题')");
         jdbc.update("insert into answer_run(id,workspace_id,conversation_id,mode,status,query_message_id,created_by,updated_by) values ('r','w','c','QA','GENERATING','q','test','test')");
-        guard=new GenerationContractGuard(jdbc,mock(MaterialEligibilityPort.class));
+        jdbc.update("insert into conversation_message(id,conversation_id,workspace_id,message_seq,role,content) values ('answer','c','w',3,'ASSISTANT','本轮回答')");
+        jdbc.update("update answer_run set answer_message_id='answer' where id='r'");
+        jdbc.update("insert into citation(id,workspace_id,title,quote_text,research_run_id,research_evidence_key,owner_message_id) values ('c','w','研究来源','原文','research','evidence:0123456789abcdef','answer')");
+        jdbc.update("insert into message_citation(id,message_id,citation_id,sort_order) values ('mc','answer','c',0)");
+        MaterialEligibilityPort eligibility = mock(MaterialEligibilityPort.class);
+        guard = new GenerationContractGuard(jdbc, eligibility,
+                new com.noteweave.knowledge.KnowledgeCitationReadGate(jdbc, eligibility));
     }
     @Test void deletedWikiVersionCannotRemainGenerationEvidence() {
         jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id) values ('item','w','WIKI','页面','DELETED','version')");
@@ -103,6 +109,18 @@ class F1GenerationEligibilityRegressionTest {
         } finally { pool.shutdownNow(); }
     }
 
+    @Test void researchCitationWithDifferentKeyMustBeRevoked() {
+        String id = validResearch();
+        org.assertj.core.api.Assertions.assertThatCode(() -> guard.requireEligible("w", "r", contract(id, HASH)))
+                .doesNotThrowAnyException();
+        jdbc.update("update citation set research_evidence_key='evidence:fedcba9876543210' where id='c'");
+        assertThatThrownBy(() -> guard.requireEligible("w", "r", contract(id, HASH)))
+                .isInstanceOfSatisfying(BusinessException.class, error -> {
+                    org.assertj.core.api.Assertions.assertThat(error.code()).isEqualTo(GenerationContractGuard.CODE_REVOKED);
+                    org.assertj.core.api.Assertions.assertThat(error.getMessage()).contains("CITATION_BINDING_IDENTITY_MISMATCH");
+                });
+    }
+
     String validResearch() {
         jdbc.update("insert into task(id,workspace_id,task_type,task_status) values ('task','w','RESEARCH','COMPLETED')");
         jdbc.update("insert into conversation_message(id,conversation_id,workspace_id,message_seq,role,content) values ('research-a','c','w',2,'ASSISTANT','研究报告')");
@@ -111,7 +129,8 @@ class F1GenerationEligibilityRegressionTest {
         var eligibility=mock(MaterialEligibilityPort.class);
         org.mockito.Mockito.when(eligibility.assessGeneratedDependenciesDetailed("w","research_agent","research",com.noteweave.source.eligibility.AccessPurpose.CURRENT_EVIDENCE))
                 .thenReturn(new com.noteweave.source.eligibility.GeneratedDependencyAssessment(true,List.of(),Map.of()));
-        guard=new GenerationContractGuard(jdbc,eligibility);
+        guard = new GenerationContractGuard(jdbc, eligibility,
+                new com.noteweave.knowledge.KnowledgeCitationReadGate(jdbc, eligibility));
         String id="research-evidence:research:evidence:0123456789abcdef";
         manifest(id,"RESEARCH_EVIDENCE","evidence:0123456789abcdef",null,null);
         return id;

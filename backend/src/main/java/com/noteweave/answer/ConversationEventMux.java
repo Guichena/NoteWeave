@@ -207,7 +207,7 @@ public class ConversationEventMux {
 
     private boolean readable(String runId) {
         if (revokedRuns.contains(runId)) return false;
-        if (replayAccessGuard != null && !replayAccessGuard.isReadable(runId)) return false;
+        if (replayAccessGuard != null && replayAccessGuard.isRevoked(runId)) return false;
         return bridge == null || !bridge.isReplayRevoked(runId);
     }
     private void requireReadable(String runId) {

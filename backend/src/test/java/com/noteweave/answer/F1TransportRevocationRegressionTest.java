@@ -37,8 +37,8 @@ class F1TransportRevocationRegressionTest {
         BlockingQueue<Runnable> dispatch=new LinkedBlockingQueue<>();
         AtomicBoolean readable=new AtomicBoolean(true);
         AnswerReplayAccessGuard guard=mock(AnswerReplayAccessGuard.class);
-        when(guard.isReadable("deleted")).thenAnswer(invocation->readable.get());
-        when(guard.isReadable("safe")).thenReturn(true);
+        when(guard.isRevoked("deleted")).thenAnswer(invocation->!readable.get());
+        when(guard.isRevoked("safe")).thenReturn(false);
         ConversationEventMux mux=new ConversationEventMux(noBridge(),Runnable::run,dispatch::add,new SimpleMeterRegistry(),guard,64,16,900,10000);
         mux.publish("c","deleted",new AnswerLiveEvent(1,"answer.delta","secret",Instant.now()));
         mux.publish("c","safe",new AnswerLiveEvent(2,"answer.completed","safe",Instant.now()));

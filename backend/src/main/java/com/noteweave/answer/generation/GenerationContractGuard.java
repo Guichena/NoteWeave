@@ -1,7 +1,6 @@
 package com.noteweave.answer.generation;
 
 import com.noteweave.common.BusinessException;
-import com.noteweave.knowledge.KnowledgeCitationReadGate;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.source.eligibility.AccessPurpose;
 import com.noteweave.source.eligibility.MaterialEligibilityPort;
@@ -20,14 +19,15 @@ public class GenerationContractGuard {
     public static final String CODE_REVOKED="ANSWER_EVIDENCE_REVOKED";
     private final JdbcTemplate jdbc;
     private final MaterialEligibilityPort eligibility;
-    private final KnowledgeCitationReadGate knowledge;
+    private final KnowledgeVersionEligibility knowledge;
     private final ResearchGeneratedSourceReadGate research;
-    public GenerationContractGuard(JdbcTemplate jdbc,MaterialEligibilityPort eligibility) {
-        this(jdbc,eligibility,new KnowledgeCitationReadGate(jdbc,eligibility),null);
+    public GenerationContractGuard(JdbcTemplate jdbc, MaterialEligibilityPort eligibility,
+                                   KnowledgeVersionEligibility knowledge) {
+        this(jdbc, eligibility, knowledge, null);
     }
     @Autowired
     public GenerationContractGuard(JdbcTemplate jdbc,MaterialEligibilityPort eligibility,
-                                   KnowledgeCitationReadGate knowledge,ResearchGeneratedSourceReadGate research) {
+                                   KnowledgeVersionEligibility knowledge,ResearchGeneratedSourceReadGate research) {
         this.jdbc=jdbc; this.eligibility=eligibility; this.knowledge=knowledge; this.research=research;
     }
     public void requireEligible(String workspaceId,String runId,GenerationContract contract) {
@@ -71,8 +71,91 @@ public class GenerationContractGuard {
                 case "RESEARCH_EVIDENCE" -> research(workspaceId,runId,row);
                 default -> throw invalid("未知证据种类");
             }
+            CitationBinding binding = contract.citationBindings().stream()
+                    .filter(candidate -> id.equals(candidate.evidenceId()))
+                    .findFirst().orElseThrow(() -> revoked(id + ":CITATION_BINDING_MISSING"));
+            requireCitationBindings(workspaceId, runId, row, binding);
         }
     }
+
+    /** 冻结ID必须仍绑定本运行助手，且精确身份必须与证据一致；owner并非独占证明。 */
+    private void requireCitationBindings(String workspaceId, String runId, Row evidence, CitationBinding binding) {
+        Integer assistantCount = jdbc.queryForObject("""
+                select count(*) from answer_run r
+                join conversation_message m on m.id = r.answer_message_id
+                     and m.workspace_id = r.workspace_id and m.conversation_id = r.conversation_id
+                where r.workspace_id = ? and r.id = ? and m.role = 'ASSISTANT'
+                  and m.context_status <> 'DELETED'
+                """, Integer.class, workspaceId, runId);
+        if (assistantCount == null || assistantCount != 1) {
+            throw revoked(evidence.id() + ":CITATION_BINDING_ASSISTANT_MISSING");
+        }
+        if (!"KNOWLEDGE_VERSION".equals(evidence.kind()) && binding.citationIds().isEmpty()) {
+            throw revoked(evidence.id() + ":CITATION_BINDING_MISSING");
+        }
+        Set<String> seenIds = new HashSet<>();
+        Set<CitationIdentity> actualIdentities = new HashSet<>();
+        for (String citationId : binding.citationIds()) {
+            if (blank(citationId) || !seenIds.add(citationId)) {
+                throw revoked(evidence.id() + ":CITATION_BINDING_INVALID_ID");
+            }
+            List<CitationIdentity> identities = jdbc.query("""
+                    select c.source_id, c.source_snapshot_id, c.source_chunk_id,
+                           c.research_run_id, c.research_evidence_key
+                    from answer_run r
+                    join conversation_message m on m.id = r.answer_message_id
+                         and m.workspace_id = r.workspace_id and m.conversation_id = r.conversation_id
+                    join message_citation mc on mc.message_id = m.id
+                    join citation c on c.id = mc.citation_id and c.workspace_id = r.workspace_id
+                    where r.workspace_id = ? and r.id = ? and c.id = ?
+                      and m.role = 'ASSISTANT' and m.context_status <> 'DELETED'
+                    """, (rs, index) -> new CitationIdentity(rs.getString(1), rs.getString(2),
+                            rs.getString(3), rs.getString(4), rs.getString(5)), workspaceId, runId, citationId);
+            if (identities.size() != 1) {
+                throw revoked(evidence.id() + ":CITATION_BINDING_NOT_OWNED");
+            }
+            CitationIdentity actual = identities.get(0);
+            actualIdentities.add(actual);
+            if ("PASSAGE".equals(evidence.kind())) {
+                CitationIdentity expected = new CitationIdentity(evidence.source(), evidence.snapshot(),
+                        evidence.passage(), null, null);
+                if (!expected.equals(actual)) {
+                    throw revoked(evidence.id() + ":CITATION_BINDING_IDENTITY_MISMATCH");
+                }
+            } else if ("RESEARCH_EVIDENCE".equals(evidence.kind())) {
+                String suffix = ":" + evidence.passage();
+                String researchRunId = evidence.id().substring("research-evidence:".length(),
+                        evidence.id().length() - suffix.length());
+                CitationIdentity expected = new CitationIdentity(null, null, null,
+                        researchRunId, evidence.passage());
+                if (!expected.equals(actual)) {
+                    throw revoked(evidence.id() + ":CITATION_BINDING_IDENTITY_MISMATCH");
+                }
+            }
+        }
+        if ("KNOWLEDGE_VERSION".equals(evidence.kind())) {
+            // copy-on-bind可能改变citation ID，但不改变源身份；必须覆盖该版本全部依赖。
+            List<CitationIdentity> dependencies = jdbc.query("""
+                    select c.source_id, c.source_snapshot_id, c.source_chunk_id,
+                           c.research_run_id, c.research_evidence_key
+                    from knowledge_version_citation kvc
+                    join citation c on c.id = kvc.citation_id
+                    join knowledge_version v on v.id = kvc.knowledge_version_id
+                    join knowledge_item i on i.id = v.item_id
+                    where i.workspace_id = ? and c.workspace_id = ? and i.id = ? and v.id = ?
+                    """, (rs, index) -> new CitationIdentity(rs.getString(1), rs.getString(2),
+                            rs.getString(3), rs.getString(4), rs.getString(5)), workspaceId, workspaceId,
+                    evidence.item(), evidence.version());
+            // 空集合仅在前置资格门禁已确认MANUAL独立页、且真实kvc也为空时成立。
+            if (!actualIdentities.equals(new HashSet<>(dependencies))) {
+                throw revoked(evidence.id() + ":CITATION_BINDING_DEPENDENCY_MISMATCH");
+            }
+        }
+    }
+
+    private record CitationIdentity(String sourceId, String snapshotId, String chunkId,
+                                    String researchRunId, String evidenceKey) { }
+
     private void passage(String workspaceId,Row row) {
         if(blank(row.source()) || blank(row.snapshot()) || blank(row.passage())) throw invalid("资料身份不完整");
         // 每条绑定快照独立检查，绝不按sourceId覆盖另一代snapshot的决定。

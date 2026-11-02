@@ -180,7 +180,7 @@ public class ConversationController {
             return;
         }
         try {
-            answerRunService.requireReplayReadable(null, event.runId());
+            answerRunService.requireReplayReadableIfAnswerRun(null, event.runId());
             String payload = Json.write(objectMapper, Map.of(
                     "run_id", event.runId(),
                     "run_sequence", event.runSequence(),

@@ -1,6 +1,8 @@
 package com.noteweave.answer;
 
 import com.noteweave.common.BusinessException;
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,18 +20,44 @@ public class AnswerReplayAccessGuard {
                 "ANSWER_REPLAY_REVOKED","回答正文已撤销或不可读取",HttpStatus.CONFLICT);
     }
 
+    /** 传输层用：只判断是否已撤销。没有运行记录的事件（研究进度等）不算撤销。 */
+    public boolean isRevoked(String runId) {
+        if(runId==null || runId.isBlank()) return false;
+        List<Map<String,Object>> rows=load(runId);
+        return !rows.isEmpty() && revoked(rows.get(0));
+    }
+
+    /**
+     * 只拦真正撤销的回答正文。没有运行记录一律不可读，非回答事件由调用方先判断类型；
+     * 尚未落回答消息的运行仍可读，回答消息被删除时按 error_code 与消息状态判定。
+     */
     private boolean readable(String workspaceId,String runId) {
         if(runId==null || runId.isBlank()) return false;
-        Integer count=jdbc.queryForObject("""
-                select count(*) from answer_run r
-                join conversation_message q on q.id=r.query_message_id
+        List<Map<String,Object>> rows=load(runId);
+        if(rows.isEmpty()) return false;
+        Map<String,Object> row=rows.get(0);
+        if(workspaceId!=null && !workspaceId.isBlank()
+                && !workspaceId.equals(String.valueOf(row.get("workspace_id")))) return false;
+        return !revoked(row);
+    }
+
+    private List<Map<String,Object>> load(String runId) {
+        return jdbc.queryForList("""
+                select r.workspace_id as workspace_id, r.error_code as error_code,
+                       q.context_status as query_status, a.context_status as answer_status
+                from answer_run r
+                left join conversation_message q on q.id=r.query_message_id
                   and q.workspace_id=r.workspace_id and q.conversation_id=r.conversation_id
-                join conversation_message a on a.id=r.answer_message_id
+                left join conversation_message a on a.id=r.answer_message_id
                   and a.workspace_id=r.workspace_id and a.conversation_id=r.conversation_id
-                where r.id=? and (? is null or r.workspace_id=?)
-                  and coalesce(r.error_code,'') not in ('ANSWER_MESSAGE_DELETED','ANSWER_EVIDENCE_REVOKED')
-                  and q.context_status<>'DELETED' and a.context_status<>'DELETED'
-                """,Integer.class,runId,workspaceId,workspaceId);
-        return count!=null && count==1;
+                where r.id=?
+                """,runId);
+    }
+
+    private boolean revoked(Map<String,Object> row) {
+        String errorCode=row.get("error_code")==null?null:String.valueOf(row.get("error_code"));
+        if("ANSWER_MESSAGE_DELETED".equals(errorCode) || "ANSWER_EVIDENCE_REVOKED".equals(errorCode)) return true;
+        if("DELETED".equals(row.get("query_status"))) return true;
+        return "DELETED".equals(row.get("answer_status"));
     }
 }

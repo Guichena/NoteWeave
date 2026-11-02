@@ -17,7 +17,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CitationBindingService {
     private final JdbcTemplate jdbc;
-    public CitationBindingService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    private final com.noteweave.answer.CitationLockOrder lockOrder;
+    public CitationBindingService(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+        this.lockOrder = new com.noteweave.answer.CitationLockOrder(jdbc);
+    }
 
     public record BindResult(List<String> citationIds, Map<String, String> copiedIds) {
         public BindResult { citationIds = List.copyOf(citationIds); copiedIds = Map.copyOf(copiedIds); }
@@ -25,49 +29,18 @@ public class CitationBindingService {
 
     /** 必须在调用方取得 run/message/knowledge item 锁之前调用。 */
     public void lockBindingConversations(String workspaceId, String targetConversationId, List<String> ids) {
-        lockCitationParents(workspaceId, ids);
-        TreeSet<String> conversations = new TreeSet<>();
-        if (targetConversationId != null && !targetConversationId.isBlank()) conversations.add(targetConversationId);
-        for (String id : distinct(ids)) {
-            conversations.addAll(jdbc.queryForList("""
-                    select m.conversation_id from citation c
-                    join conversation_message m on m.id = c.owner_message_id
-                    where c.workspace_id = ? and c.id = ? and m.workspace_id = ?
-                    """, String.class, workspaceId, id, workspaceId));
-        }
-        for (String id : conversations) {
-            List<String> locked = jdbc.queryForList(
-                    "select id from conversation where workspace_id = ? and id = ? for update",
-                    String.class, workspaceId, id);
-            if (locked.size() != 1) throw invalid("引用所属会话不可用");
-        }
+        lockOrder.lockBindingConversations(workspaceId, targetConversationId, ids);
     }
 
     /** 全部父行先于会话锁；防止INSERT citation的外键父锁与来源撤销反序。 */
     public void lockCitationParents(String workspaceId, List<String> citationIds) {
-        List<ParentRef> parents = new ArrayList<>();
-        for (String id : distinct(citationIds)) {
-            parents.addAll(jdbc.query("select source_id,source_snapshot_id,source_chunk_id from citation where workspace_id=? and id=?",
-                    (rs,n) -> new ParentRef(rs.getString(1),rs.getString(2),rs.getString(3)), workspaceId,id));
-        }
-        lockParents(workspaceId, parents);
+        lockOrder.lockCitationParents(workspaceId, citationIds);
     }
 
     /** 准备入口必须一次传入新证据和既有引用，不能锁完一组后再追加另一组父行。 */
     public void lockEvidenceParents(String workspaceId, com.noteweave.answer.strategy.EvidenceBundle bundle,
                                     List<String> citationIds) {
-        List<ParentRef> parents = new ArrayList<>();
-        if (bundle != null) {
-            for (var evidence : bundle.evidence()) {
-                if ("PASSAGE".equals(evidence.kind())) parents.add(new ParentRef(
-                        evidence.sourceId(),evidence.sourceSnapshotId(),evidence.passageId()));
-            }
-        }
-        for (String id : distinct(citationIds)) {
-            parents.addAll(jdbc.query("select source_id,source_snapshot_id,source_chunk_id from citation where workspace_id=? and id=?",
-                    (rs,n) -> new ParentRef(rs.getString(1),rs.getString(2),rs.getString(3)),workspaceId,id));
-        }
-        lockParents(workspaceId, parents);
+        lockOrder.lockEvidenceParents(workspaceId, bundle, citationIds);
     }
 
     private void lockParents(String workspaceId, List<ParentRef> parents) {
