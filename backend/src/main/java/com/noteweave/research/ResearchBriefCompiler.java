@@ -3,6 +3,7 @@ package com.noteweave.research;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.chat.ChatLlmClient;
 import com.noteweave.common.BusinessException;
 import com.noteweave.conversation.ContextProjectionV2;
 import com.noteweave.conversation.ResearchContextV2Question;
@@ -14,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -22,25 +25,48 @@ import org.springframework.stereotype.Service;
 @Service
 public class ResearchBriefCompiler {
     private static final int MAX_PLANNING_QUERY_CHARS = 12_000;
+    static final String BRIEF_SCHEMA_VERSION = "research-brief-v1";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final ChatLlmClient llmClient;
 
     public ResearchBriefCompiler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper
     ) {
+        this(jdbcTemplate, objectMapper, (ChatLlmClient) null);
+    }
+
+    @Autowired
+    public ResearchBriefCompiler(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ObjectProvider<ChatLlmClient> llmClientProvider
+    ) {
+        this(jdbcTemplate, objectMapper, llmClientProvider.getIfAvailable());
+    }
+
+    private ResearchBriefCompiler(
+            JdbcTemplate jdbcTemplate,
+            ObjectMapper objectMapper,
+            ChatLlmClient llmClient
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.llmClient = llmClient;
     }
 
     public CompiledBrief compile(String runId, String currentQuestion) {
         RunContext run = jdbcTemplate.query("""
-                select workspace_id, question, execution_question, context_snapshot_id
+                select workspace_id, question, execution_question, context_snapshot_id,
+                       source_scope_json, control_pack_json
                 from research_run where id = ?
                 """, rs -> rs.next() ? new RunContext(rs.getString(1), rs.getString(2),
-                rs.getString(3), rs.getString(4)) : null, runId);
+                rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)) : null, runId);
         if (run == null) throw snapshotMismatch("Research Run is unavailable", null);
+        // 复用已编译简报之前仍要校验冻结快照：删除、脱敏或摘要变化必须继续阻断规划，
+        // 不能因为简报已落库就跳过当前可用性检查。
         SnapshotLink link = jdbcTemplate.query("""
                 select id, workspace_id, conversation_id, query_message_id,
                        snapshot_json, compiler_version,
@@ -57,10 +83,10 @@ public class ResearchBriefCompiler {
                     || !run.executionQuestion().equals(currentQuestion)) {
                 throw snapshotMismatch("Frozen Research Context is unavailable", null);
             }
-            return attachResumeContext(runId, compileV2(link, run));
+            return persistBrief(runId, run, currentQuestion, attachResumeContext(runId, compileV2(link, run)));
         }
         if (link == null || !"FULL".equals(link.replayAvailability())) {
-            return attachResumeContext(runId, standalone(currentQuestion));
+            return persistBrief(runId, run, currentQuestion, attachResumeContext(runId, standalone(currentQuestion)));
         }
 
         FrozenProjection projection = loadFrozenProjection(link);
@@ -86,7 +112,96 @@ public class ResearchBriefCompiler {
         brief.put("current_question", currentQuestion.trim());
         brief.put("conversation_summary", projection.summaryText());
         brief.put("recent_messages", List.copyOf(messages));
-        return attachResumeContext(runId, new CompiledBrief(planningQuery, Map.copyOf(brief)));
+        return persistBrief(runId, run, currentQuestion, attachResumeContext(runId, new CompiledBrief(planningQuery, Map.copyOf(brief))));
+    }
+
+    /**
+     * 首次编译时把简报结构落库：保留 originalQuestion 与 schemaVersion，确定性合并输出要求、
+     * 来源策略、已有覆盖与种子；续跑、恢复和新任务读取同一份版本，不再重新解释原问题。
+     */
+    private CompiledBrief persistBrief(String runId, RunContext run, String currentQuestion,
+                                       CompiledBrief compiled) {
+        CompiledBrief existing = loadStoredBrief(runId);
+        if (existing != null) {
+            return existing;
+        }
+        Map<String, Object> brief = new LinkedHashMap<>(compiled.researchBrief());
+        brief.putIfAbsent("schema_version", BRIEF_SCHEMA_VERSION);
+        brief.put("original_question", text(run.question()).trim());
+        List<Map<String, Object>> recentMessages = new ArrayList<>();
+        Object rawMessages = brief.get("recent_messages");
+        if (rawMessages instanceof List<?> list) {
+            for (Object item : list) {
+                if (item instanceof Map<?, ?> map) {
+                    recentMessages.add(Map.of(
+                            "message_id", String.valueOf(map.get("message_id")),
+                            "role", String.valueOf(map.get("role")),
+                            "content", String.valueOf(map.get("content"))));
+                }
+            }
+        }
+        ResearchBriefQuestionCompiler.Result compiledQuestion = ResearchBriefQuestionCompiler.compile(
+                llmClient, objectMapper, run.workspaceId(), runId,
+                text(run.question()), recentMessages);
+        brief.put("brief_purpose", ResearchBriefQuestionCompiler.PURPOSE);
+        brief.put("research_question", compiledQuestion.researchQuestion().isBlank()
+                ? text(currentQuestion).trim() : compiledQuestion.researchQuestion());
+        brief.put("key_points", compiledQuestion.keyPoints());
+        brief.put("degradation_reasons", compiledQuestion.degradationReasons());
+        brief.put("source_policy", safeMap(run.sourceScopeJson()));
+        Map<String, Object> control = safeMap(run.controlPackJson());
+        brief.putIfAbsent("output_requirements", control.getOrDefault("output_requirements", List.of()));
+        brief.putIfAbsent("coverage", List.of());
+        brief.putIfAbsent("seeds", List.of());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("schema_version", BRIEF_SCHEMA_VERSION);
+        payload.put("planning_query", compiled.planningQuery());
+        payload.put("brief", brief);
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(payload);
+        } catch (Exception ex) {
+            return new CompiledBrief(compiled.planningQuery(), Map.copyOf(brief));
+        }
+        jdbcTemplate.update("""
+                update research_run set compiled_brief_json = ?
+                where id = ? and compiled_brief_json is null
+                """, json, runId);
+        CompiledBrief stored = loadStoredBrief(runId);
+        return stored == null ? new CompiledBrief(compiled.planningQuery(), Map.copyOf(brief)) : stored;
+    }
+
+    private CompiledBrief loadStoredBrief(String runId) {
+        String json = jdbcTemplate.query(
+                "select compiled_brief_json from research_run where id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, runId);
+        if (json == null || json.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (!BRIEF_SCHEMA_VERSION.equals(node.path("schema_version").asText())) {
+                throw snapshotMismatch("Compiled research brief schema is unsupported", null);
+            }
+            Map<String, Object> brief = objectMapper.convertValue(node.path("brief"),
+                    new TypeReference<LinkedHashMap<String, Object>>() { });
+            return new CompiledBrief(node.path("planning_query").asText(), Map.copyOf(brief));
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw snapshotMismatch("Compiled research brief JSON is invalid", ex);
+        }
+    }
+
+    private Map<String, Object> safeMap(String json) {
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<LinkedHashMap<String, Object>>() { });
+        } catch (Exception ex) {
+            return Map.of();
+        }
     }
 
     private CompiledBrief compileV2(SnapshotLink link, RunContext run) {
@@ -159,8 +274,15 @@ public class ResearchBriefCompiler {
             }
             FrozenMessage message = rows.get(0);
             if (message.messageSeq() != ref.path("message_seq").asInt()
-                    || !Objects.equals(message.role(), ref.path("role").asText())
-                    || !Objects.equals(message.contentHash(), nullableText(ref, "content_hash"))) {
+                    || !Objects.equals(message.role(), ref.path("role").asText())) {
+                throw snapshotMismatch("Frozen research message no longer matches its snapshot: " + messageId, null);
+            }
+            if (!Objects.equals(message.contentHash(), nullableText(ref, "content_hash"))) {
+                // 助手消息在冻结时可能仍在生成：冻结内容为空，随后被完成正文替换。
+                // 这不是用户输入漂移，丢弃该条即可；用户消息哈希变化仍视为快照被篡改。
+                if ("ASSISTANT".equals(message.role())) {
+                    continue;
+                }
                 throw snapshotMismatch("Frozen research message no longer matches its snapshot: " + messageId, null);
             }
             messages.add(message);
@@ -284,7 +406,8 @@ public class ResearchBriefCompiler {
                                 String replayAvailability) { }
 
     private record RunContext(String workspaceId, String question, String executionQuestion,
-                              String contextSnapshotId) { }
+                              String contextSnapshotId, String sourceScopeJson,
+                              String controlPackJson) { }
 
     private record FrozenProjection(String summaryText, List<FrozenMessage> messages) { }
 

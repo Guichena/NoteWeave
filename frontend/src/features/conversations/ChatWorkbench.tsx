@@ -296,6 +296,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                       <Suspense fallback={<span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>}>
                         <LazyResearchTurnMessage
                           researchRunId={message.researchRunId}
+                          researchProjectionJson={message.researchProjectionJson}
                           loadRun={loadResearchRun}
                           onOpenReport={(researchRunId) => onOpenResearchRun?.(researchRunId)}
                         />

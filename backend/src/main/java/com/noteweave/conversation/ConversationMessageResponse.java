@@ -20,7 +20,9 @@ public record ConversationMessageResponse(
         // 引用文本，格式与回答流中的 citation.upsert 一致：标题 | 摘录。
         List<String> citations,
         // 深度研究轮次的助手消息对应的研究运行，前端据此在对话里展示研究进度与报告；其他消息为空。
-        String researchRunId
+        String researchRunId,
+        // F3-03：结构化研究投影 JSON；前端结论卡据此渲染，历史消息可为空。
+        String researchProjectionJson
 ) {
     public ConversationMessageResponse {
         citations = citations == null ? List.of() : List.copyOf(citations);
@@ -31,6 +33,6 @@ public record ConversationMessageResponse(
                                        String contentHash, String answerStatus, String answerError,
                                        Instant createdAt, String answerRunId, List<String> citations) {
         this(messageId, messageSeq, role, requestedTurnMode, content, replyToMessageId, contextStatus, contentHash,
-                answerStatus, answerError, createdAt, answerRunId, citations, null);
+                answerStatus, answerError, createdAt, answerRunId, citations, null, null);
     }
 }
