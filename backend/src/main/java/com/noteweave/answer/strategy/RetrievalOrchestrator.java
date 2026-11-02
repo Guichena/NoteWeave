@@ -8,8 +8,10 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -67,6 +69,7 @@ public class RetrievalOrchestrator {
         List<EvidenceBundle.Evidence> collected = new ArrayList<>();
         List<String> degradationReasons = new ArrayList<>();
         List<RetrievalExecutionTrace.StepTrace> stepTraces = new ArrayList<>();
+        Set<String> seenIdentities = new HashSet<>();
         Map<String, String> metadata = new HashMap<>();
         int rawCandidateCount = 0;
         int admittedCandidateCount = 0;
@@ -87,6 +90,14 @@ public class RetrievalOrchestrator {
             EvidenceRetrievalResult result = retriever.retrieve(context, plan, step);
             List<EvidenceBundle.Evidence> admitted = evidenceBudgeter.limitCandidates(
                     result.evidence(), step.candidateLimit());
+            // F4-02：跨通道按规范证据身份去重，先到的通道优先，避免同一片段换一个通道重复计数。
+            List<EvidenceBundle.Evidence> unique = new ArrayList<>();
+            for (EvidenceBundle.Evidence candidate : admitted) {
+                if (seenIdentities.add(evidenceIdentity(candidate))) {
+                    unique.add(candidate);
+                }
+            }
+            admitted = unique;
             try {
                 evidenceScopeGuard.requireAllowed(context, plan, admitted);
                 evidenceOwnershipGuard.requireCurrent(context, admitted);
@@ -187,6 +198,19 @@ public class RetrievalOrchestrator {
                 evidence.rerankScore(),
                 evidence.characterCost()
         );
+    }
+
+    /**
+     * 规范证据身份：来源 + 快照 + 分块。标题、URL 只用于展示，不能用来合并不同资料。
+     */
+    private static String evidenceIdentity(EvidenceBundle.Evidence evidence) {
+        String passage = evidence.passageId() == null ? "" : evidence.passageId();
+        String source = evidence.sourceId() == null ? "" : evidence.sourceId();
+        if (!passage.isBlank() && !source.isBlank()) {
+            return source + "|" + (evidence.sourceSnapshotId() == null ? "" : evidence.sourceSnapshotId())
+                    + "|" + passage;
+        }
+        return evidence.evidenceId();
     }
 
     private void recordStepMetrics(

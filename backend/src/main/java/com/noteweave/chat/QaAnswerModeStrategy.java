@@ -91,15 +91,27 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
             filters.put("source_ids", String.join(",", context.sourceScope().stream().sorted().toList()));
         }
         QueryRewrite.copyInto(filters, context.attributes());
+        List<RetrievalPlan.Step> steps = new java.util.ArrayList<>();
+        // F4-02：只有已经存在会话工作集时才加入会话证据候选，首轮不凭空引入历史引用。
+        String workingSetSize = context.attributes().getOrDefault("context_working_set_size", "0");
+        if (!"0".equals(workingSetSize) && !workingSetSize.isBlank()) {
+            steps.add(new RetrievalPlan.Step(
+                    QaSessionEvidenceRetriever.CHANNEL,
+                    8,
+                    0.9d,
+                    filters
+            ));
+        }
+        steps.add(new RetrievalPlan.Step(
+                QaPassageEvidenceRetriever.CHANNEL,
+                profile.stepCandidateLimit(),
+                QaRetrievalStrategyProfile.STEP_WEIGHT,
+                filters
+        ));
         return new RetrievalPlan(
                 profile.planVersion(),
                 AnswerMode.QA,
-                List.of(new RetrievalPlan.Step(
-                        QaPassageEvidenceRetriever.CHANNEL,
-                        profile.stepCandidateLimit(),
-                        QaRetrievalStrategyProfile.STEP_WEIGHT,
-                        filters
-                )),
+                steps,
                 new RetrievalPlan.Budget(
                         profile.maxEvidence(),
                         profile.maxEvidenceCharacters(),
