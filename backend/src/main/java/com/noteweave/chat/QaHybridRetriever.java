@@ -351,20 +351,14 @@ public class QaHybridRetriever {
         additions.stream().filter(hit -> hit != null && seen.add(hit.chunkId())).forEach(target::add);
     }
 
+    /**
+     * 邻块不再拼进命中块正文。
+     *
+     * <p>拼接会让引用身份指向一段模型未必使用的文本，下游只能靠字符串剥离再还原，
+     * 因此这里保持主块独立正文；需要邻块时按独立证据登记并单独预算。</p>
+     */
     private String enrich(String content, List<RetrievalHydrator.AdjacentPassage> adjacent) {
-        if (adjacent == null || adjacent.isEmpty()) {
-            return content;
-        }
-        StringBuilder enriched = new StringBuilder();
-        adjacent.stream().filter(item -> item.chunkNo() < adjacentAnchor(adjacent))
-                .forEach(item -> appendContext(enriched, item));
-        if (content != null && !content.isBlank()) {
-            if (!enriched.isEmpty()) enriched.append("\n\n");
-            enriched.append(content);
-        }
-        adjacent.stream().filter(item -> item.chunkNo() > adjacentAnchor(adjacent))
-                .forEach(item -> appendContext(enriched, item));
-        return enriched.toString();
+        return content;
     }
 
     private int adjacentAnchor(List<RetrievalHydrator.AdjacentPassage> adjacent) {

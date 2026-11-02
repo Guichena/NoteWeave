@@ -433,6 +433,7 @@ class KnowledgeQueryServiceTest {
                     latest_version_id varchar(36),
                     wiki_page_state varchar(32),
                     origin varchar(32),
+                    updated_by varchar(128),
                     updated_at timestamp not null
                 )
                 """);
@@ -444,6 +445,7 @@ class KnowledgeQueryServiceTest {
                     content clob not null,
                     summary varchar(1000),
                     source_message_id varchar(36),
+                    provenance_schema_version varchar(64),
                     created_at timestamp not null
                 )
                 """);
@@ -552,12 +554,12 @@ class KnowledgeQueryServiceTest {
                 )
                 """);
         jdbcTemplate.update("""
-                insert into citation(id, source_id, title, quote_text, page_no, location_info)
-                values ('citation-a', 'source', 'Source A', 'quote a', 1, 'page:1')
+                insert into citation(id, source_id, source_snapshot_id, title, quote_text, page_no, location_info)
+                values ('citation-a', 'source', 'snap-1', 'Source A', 'quote a', 1, 'page:1')
                 """);
         jdbcTemplate.update("""
-                insert into citation(id, source_id, title, quote_text, page_no, location_info)
-                values ('citation-b', 'source', 'Source B', 'quote b', 2, 'page:2')
+                insert into citation(id, source_id, source_snapshot_id, title, quote_text, page_no, location_info)
+                values ('citation-b', 'source', 'snap-1', 'Source B', 'quote b', 2, 'page:2')
                 """);
         jdbcTemplate.update("""
                 insert into knowledge_version_citation(knowledge_version_id, citation_id, sort_order)

@@ -3,6 +3,8 @@ package com.noteweave.knowledge;
 import com.noteweave.common.BusinessException;
 import com.noteweave.source.eligibility.AccessPurpose;
 import com.noteweave.source.eligibility.EligibilityDecision;
+import com.noteweave.source.eligibility.EligibilityStatus;
+import com.noteweave.source.eligibility.MaterialEligibilityPolicy;
 import com.noteweave.source.eligibility.MaterialEligibilityPort;
 import com.noteweave.source.eligibility.OriginRef;
 import java.util.ArrayList;
@@ -26,6 +28,16 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class KnowledgeCitationReadGate implements com.noteweave.answer.generation.KnowledgeVersionEligibility {
+    /**
+     * 当前受支持的 Wiki 自动页编译策略版本。只有发布时写入该标记、且全部依赖仍然合法的自动页，
+     * 才能作为当前生成证据；旧自动页没有标记时保持未认证，不会被默认放行。
+     */
+    public static final String WIKI_PROVENANCE_SCHEMA_VERSION = "wiki-page-provenance-v1";
+    public static final Set<String> SUPPORTED_PROVENANCE_SCHEMA_VERSIONS =
+            Set.of(WIKI_PROVENANCE_SCHEMA_VERSION);
+    /** 导航目录页的 origin；目录只做导航，不进入事实检索、PPR 证据集合或生成契约。 */
+    public static final String SYSTEM_NAVIGATION_ORIGIN = "SYSTEM_NAVIGATION";
+
     private final JdbcTemplate jdbc;
     private final MaterialEligibilityPort eligibilityPort;
 
@@ -35,7 +47,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
         this.eligibilityPort = eligibilityPort;
     }
 
-    /** 生成准入：完整版本身份、当前版本及全部来源绑定快照必须仍然有效。 */
+    /** 生成准入：完整版本身份、当前版本、可信编译标记及全部来源绑定快照必须仍然有效。 */
     public void requireCurrentVersionEligible(String workspaceId,String itemId,String versionId) {
         Integer current=jdbc.queryForObject("""
                 select count(*) from knowledge_item i join knowledge_version v on v.id=i.latest_version_id
@@ -43,14 +55,33 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                   and (i.origin is null or i.origin<>'SYSTEM_NAVIGATION')
                 """,Integer.class,workspaceId,itemId,versionId);
         if(current==null || current!=1) throw revoked("知识页面或版本不再是当前有效证据");
-        String pageState = jdbc.queryForObject("select wiki_page_state from knowledge_item where workspace_id=? and id=?", String.class, workspaceId, itemId);
-        if (!"MANUAL".equals(pageState)) {
-            throw new BusinessException("KNOWLEDGE_PROVENANCE_UNVERIFIED",
-                    "自动知识版本缺少可信完整依赖标记，不能作为当前生成证据", HttpStatus.CONFLICT);
+        Map<String, String> page = jdbc.query("""
+                select coalesce(i.wiki_page_state, '') as wiki_page_state,
+                       coalesce(i.updated_by, '') as updated_by,
+                       coalesce(v.provenance_schema_version, '') as provenance_schema_version
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.workspace_id = ? and i.id = ? and v.id = ?
+                """, rs -> {
+                    if (!rs.next()) {
+                        return Map.<String, String>of();
+                    }
+                    return Map.of(
+                            "state", rs.getString("wiki_page_state"),
+                            "updated_by", rs.getString("updated_by"),
+                            "provenance", rs.getString("provenance_schema_version"));
+                }, workspaceId, itemId, versionId);
+        String pageState = WikiPageState.fromStored(page.get("state"), page.get("updated_by")).name();
+        if (!WikiPageState.MANUAL.name().equals(pageState)) {
+            String provenance = page.get("provenance");
+            // 自动页必须由受支持的编译策略标记过；旧自动页没有标记时显式未认证，不按依赖为空放行
+            if (provenance == null || !SUPPORTED_PROVENANCE_SCHEMA_VERSIONS.contains(provenance)) {
+                throw new BusinessException("KNOWLEDGE_PROVENANCE_UNVERIFIED",
+                        "自动知识版本缺少可信完整依赖标记，不能作为当前生成证据", HttpStatus.CONFLICT);
+            }
         }
         List<String> citations=jdbc.queryForList("select citation_id from knowledge_version_citation where knowledge_version_id=? order by sort_order,id",String.class,versionId);
-        // 上面已核实MANUAL。人工独立知识以其版本为证据，不伪造不存在的资料依赖。
-        // 自动版本仍被完整依赖标记门禁阻止；人工页已有依赖时仍须全部验证。
+        // MANUAL 人工页行为不变：不要求自动页标记，但已有依赖仍须逐条验证来源与绑定快照。
         requireCitationIdsCurrent(workspaceId,citations);
     }
 
@@ -153,40 +184,173 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
     }
 
     /**
-     * 按用途批量判定版本可读性：版本引用的全部来源都满足该用途才算可读。
-     * 检索结果中个别来源失效时由调用方做局部过滤；这里不做静默丢弃。
+     * 按用途批量判定版本可读性：版本引用的全部来源-快照对都满足该用途才算可读。
+     * 同一来源的不同快照按 (sourceId, snapshotId) 分别评估，不能按 sourceId 合并后互相放行。
      */
     public Set<String> readableVersionIds(String workspaceId, List<String> versionIds, AccessPurpose purpose) {
-        Map<String, List<EligibilityDecision>> availability =
-                versionSourceAvailability(workspaceId, versionIds);
-        Set<String> derivedWithoutCitations = artifactDerivedVersionIds(workspaceId, availability);
+        List<String> ids = versionIds == null ? List.of()
+                : versionIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        Map<String, List<CitationOrigin>> originsByVersion = citationOriginsByVersion(workspaceId, ids);
+        List<CitationOrigin> allOrigins = originsByVersion.values().stream()
+                .flatMap(List::stream).distinct().toList();
+        Map<String, EligibilityDecision> decisions = assessOrigins(workspaceId, allOrigins, purpose);
+        Set<String> derivedWithoutCitations = artifactDerivedVersionIds(workspaceId,
+                ids.stream().filter(id -> originsByVersion.getOrDefault(id, List.of()).isEmpty()).toList());
         LinkedHashSet<String> readableVersions = new LinkedHashSet<>();
-        availability.forEach((versionId, decisions) -> {
-            if (decisions.isEmpty()) {
+        for (String versionId : ids) {
+            List<CitationOrigin> origins = originsByVersion.getOrDefault(versionId, List.of());
+            if (origins.isEmpty()) {
                 // KB-01：没有引用来源时不能无条件放行。人工笔记本来就没有来源依赖，照常可读；
                 // 产物写回的内容必须有来源血缘，缺引用说明血缘已断，按不可读处理。
                 if (!derivedWithoutCitations.contains(versionId)) {
                     readableVersions.add(versionId);
                 }
-                return;
+                continue;
             }
-            boolean allAllowed = decisions.stream().allMatch(decision -> decision.allowed(purpose));
-            if (allAllowed) {
+            if (origins.stream().allMatch(origin -> originAllowed(decisions.get(origin.key()), origin, purpose))) {
                 readableVersions.add(versionId);
             }
-        });
+        }
         return Set.copyOf(readableVersions);
+    }
+
+    private boolean originAllowed(EligibilityDecision decision, CitationOrigin origin, AccessPurpose purpose) {
+        if (decision == null || !decision.allowed(purpose)) {
+            return false;
+        }
+        // 当前证据必须命中同一个绑定快照；历史展示允许旧快照按历史政策阅读。
+        return purpose != AccessPurpose.CURRENT_EVIDENCE
+                || (origin.snapshotId() != null && origin.snapshotId().equals(decision.snapshotId()));
+    }
+
+    private record CitationOrigin(String sourceId, String snapshotId) {
+        private String key() {
+            return sourceId + '\u0000' + (snapshotId == null ? "" : snapshotId);
+        }
+    }
+
+    /** 每个版本完整的来源-快照依赖；research 引用没有工作台来源，不在这里展开。 */
+    private Map<String, List<CitationOrigin>> citationOriginsByVersion(String workspaceId, List<String> versionIds) {
+        Map<String, List<CitationOrigin>> byVersion = new LinkedHashMap<>();
+        for (String versionId : versionIds) {
+            byVersion.put(versionId, new ArrayList<>());
+        }
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(versionIds);
+        jdbc.query("""
+                select kvc.knowledge_version_id, c.source_id, c.source_snapshot_id
+                from knowledge_version_citation kvc
+                join knowledge_version v on v.id = kvc.knowledge_version_id
+                join knowledge_item i on i.id = v.item_id
+                join citation c on c.id = kvc.citation_id
+                where i.workspace_id = ? and kvc.knowledge_version_id in (%s)
+                order by kvc.knowledge_version_id, kvc.sort_order, kvc.citation_id
+                """.formatted(String.join(",", Collections.nCopies(versionIds.size(), "?"))),
+                (RowCallbackHandler) rs -> {
+                    String sourceId = rs.getString("source_id");
+                    if (sourceId == null || sourceId.isBlank()) {
+                        return;
+                    }
+                    byVersion.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
+                            .add(new CitationOrigin(sourceId, rs.getString("source_snapshot_id")));
+                }, parameters.toArray());
+        Map<String, List<CitationOrigin>> immutable = new LinkedHashMap<>();
+        byVersion.forEach((versionId, origins) -> immutable.put(versionId, List.copyOf(origins)));
+        return immutable;
+    }
+
+    /**
+     * 分批评估来源-快照资格（单批不超过端口上限）。
+     * 单快照来源可以合并成批；同一来源出现多个快照时必须逐对评估，避免结果按 sourceId 互相覆盖。
+     */
+    private Map<String, EligibilityDecision> assessOrigins(
+            String workspaceId,
+            List<CitationOrigin> origins,
+            AccessPurpose purpose
+    ) {
+        Map<String, Set<String>> snapshotsBySource = new LinkedHashMap<>();
+        for (CitationOrigin origin : origins) {
+            snapshotsBySource.computeIfAbsent(origin.sourceId(), ignored -> new LinkedHashSet<>())
+                    .add(origin.snapshotId() == null ? "" : origin.snapshotId());
+        }
+        List<OriginRef> singleSnapshotRefs = new ArrayList<>();
+        Map<String, EligibilityDecision> result = new LinkedHashMap<>();
+        for (Map.Entry<String, Set<String>> entry : snapshotsBySource.entrySet()) {
+            String sourceId = entry.getKey();
+            if (entry.getValue().size() > 1) {
+                for (String snapshot : entry.getValue()) {
+                    assessOriginPair(workspaceId, sourceId,
+                            snapshot.isBlank() ? null : snapshot, purpose, result);
+                }
+                continue;
+            }
+            String snapshot = entry.getValue().iterator().next();
+            if (snapshot.isBlank()) {
+                if (purpose == AccessPurpose.CURRENT_EVIDENCE) {
+                    // 当前证据必须带绑定快照，缺失时直接阻断，不能按当前快照通配
+                    result.put(new CitationOrigin(sourceId, null).key(),
+                            MaterialEligibilityPolicy.decide(originKey(sourceId),
+                                    EligibilityStatus.MISSING_INTERNAL,
+                                    "CITATION_SNAPSHOT_MISSING", null, null, List.of()));
+                } else {
+                    singleSnapshotRefs.add(OriginRef.internalSource(sourceId));
+                }
+                continue;
+            }
+            singleSnapshotRefs.add(OriginRef.internalSnapshot(sourceId, snapshot));
+        }
+        for (int start = 0; start < singleSnapshotRefs.size();
+                start += MaterialEligibilityPort.MAX_ORIGINS_PER_ASSESS) {
+            List<OriginRef> batch = singleSnapshotRefs.subList(start,
+                    Math.min(start + MaterialEligibilityPort.MAX_ORIGINS_PER_ASSESS, singleSnapshotRefs.size()));
+            Map<String, EligibilityDecision> decisions = eligibilityPort.assess(workspaceId, batch, purpose);
+            for (OriginRef ref : batch) {
+                EligibilityDecision decision = decisions.get(ref.originKey());
+                if (decision != null) {
+                    result.put(new CitationOrigin(ref.sourceId(), ref.snapshotId()).key(), decision);
+                }
+            }
+        }
+        return result;
+    }
+
+    private void assessOriginPair(
+            String workspaceId,
+            String sourceId,
+            String snapshotId,
+            AccessPurpose purpose,
+            Map<String, EligibilityDecision> result
+    ) {
+        if (snapshotId == null && purpose == AccessPurpose.CURRENT_EVIDENCE) {
+            result.put(new CitationOrigin(sourceId, null).key(),
+                    MaterialEligibilityPolicy.decide(originKey(sourceId),
+                            EligibilityStatus.MISSING_INTERNAL,
+                            "CITATION_SNAPSHOT_MISSING", null, null, List.of()));
+            return;
+        }
+        OriginRef ref = snapshotId == null
+                ? OriginRef.internalSource(sourceId)
+                : OriginRef.internalSnapshot(sourceId, snapshotId);
+        Map<String, EligibilityDecision> decisions = eligibilityPort.assess(workspaceId, List.of(ref), purpose);
+        EligibilityDecision decision = decisions.get(ref.originKey());
+        if (decision != null) {
+            result.put(new CitationOrigin(sourceId, snapshotId).key(), decision);
+        }
+    }
+
+    private String originKey(String sourceId) {
+        return OriginRef.internalSource(sourceId).originKey();
     }
 
     /** 没有引用来源且声明了来源依赖（产物写回）的版本；这些版本不能默认放行。 */
     private Set<String> artifactDerivedVersionIds(
             String workspaceId,
-            Map<String, List<EligibilityDecision>> availability
+            List<String> versionsWithoutCitations
     ) {
-        List<String> versionsWithoutCitations = availability.entrySet().stream()
-                .filter(entry -> entry.getValue().isEmpty())
-                .map(Map.Entry::getKey)
-                .toList();
         if (versionsWithoutCitations.isEmpty()) return Set.of();
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
@@ -209,7 +373,6 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
     ) {
         List<String> ids = versionIds.stream().distinct().toList();
         if (ids.isEmpty()) return Map.of();
-        Map<String, Set<String>> sourcesByVersion = new LinkedHashMap<>();
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
         parameters.addAll(ids);
@@ -219,29 +382,16 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                 where i.workspace_id = ? and v.id in (%s)
                 """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
                 String.class, parameters.toArray());
-        jdbc.query("""
-                select kvc.knowledge_version_id, c.source_id
-                from knowledge_version_citation kvc
-                join knowledge_version v on v.id = kvc.knowledge_version_id
-                join knowledge_item i on i.id = v.item_id
-                join citation c on c.id = kvc.citation_id
-                where i.workspace_id = ? and kvc.knowledge_version_id in (%s)
-                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
-                (RowCallbackHandler) rs ->
-                        sourcesByVersion.computeIfAbsent(rs.getString(1), ignored -> new LinkedHashSet<>())
-                                .add(rs.getString(2)), parameters.toArray());
-        List<String> sourceIds = sourcesByVersion.values().stream().flatMap(Set::stream)
-                .filter(id -> id != null && !id.isBlank()).distinct().toList();
-        Map<String, EligibilityDecision> decisions = sourceIds.isEmpty() ? Map.of()
-                : eligibilityPort.assess(workspaceId,
-                        sourceIds.stream().map(OriginRef::internalSource).toList(),
-                        AccessPurpose.CURRENT_EVIDENCE);
+        Map<String, List<CitationOrigin>> originsByVersion = citationOriginsByVersion(workspaceId, ownedIds);
+        List<CitationOrigin> allOrigins = originsByVersion.values().stream()
+                .flatMap(List::stream).distinct().toList();
+        Map<String, EligibilityDecision> decisions =
+                assessOrigins(workspaceId, allOrigins, AccessPurpose.CURRENT_EVIDENCE);
         Map<String, List<EligibilityDecision>> result = new LinkedHashMap<>();
         for (String versionId : ownedIds) {
             List<EligibilityDecision> versionDecisions = new ArrayList<>();
-            for (String sourceId : sourcesByVersion.getOrDefault(versionId, Set.of())) {
-                EligibilityDecision decision = sourceId == null || sourceId.isBlank() ? null
-                        : decisions.get(OriginRef.internalSource(sourceId).originKey());
+            for (CitationOrigin origin : originsByVersion.getOrDefault(versionId, List.of())) {
+                EligibilityDecision decision = decisions.get(origin.key());
                 if (decision != null) {
                     versionDecisions.add(decision);
                 }
@@ -262,6 +412,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
         jdbc.query("""
                 select id, latest_version_id from knowledge_item
                 where workspace_id = ? and item_type = 'WIKI' and status = 'ACTIVE'
+                  and (origin is null or origin <> 'SYSTEM_NAVIGATION')
                   and id in (%s)
                 """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
                 (RowCallbackHandler) rs -> versionsByItem.put(rs.getString(1), rs.getString(2)),
@@ -274,6 +425,48 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
             if (readableVersions.contains(versionId)) readableItems.add(itemId);
         });
         return Set.copyOf(readableItems);
+    }
+
+    /**
+     * 检索候选的当前证据认证：导航目录与未带受支持编译标记的旧自动页都不能进入事实证据。
+     * MANUAL 人工页按既有行为保留（不要求自动编译标记）。
+     */
+    public Set<String> certifiedCurrentEvidenceVersionIds(String workspaceId, List<String> versionIds) {
+        List<String> ids = versionIds == null ? List.of()
+                : versionIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        if (ids.isEmpty()) {
+            return Set.of();
+        }
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(ids);
+        List<String[]> rows = new ArrayList<>();
+        jdbc.query("""
+                select v.id, coalesce(i.wiki_page_state, '') as wiki_page_state,
+                       coalesce(i.updated_by, '') as updated_by,
+                       coalesce(v.provenance_schema_version, '') as provenance_schema_version
+                from knowledge_version v
+                join knowledge_item i on i.id = v.item_id
+                where i.workspace_id = ? and v.id in (%s)
+                  and (i.origin is null or i.origin <> 'SYSTEM_NAVIGATION')
+                """.formatted(String.join(",", Collections.nCopies(ids.size(), "?"))),
+                (RowCallbackHandler) rs -> rows.add(new String[] {
+                        rs.getString("id"),
+                        rs.getString("wiki_page_state"),
+                        rs.getString("updated_by"),
+                        rs.getString("provenance_schema_version")}),
+                parameters.toArray());
+        LinkedHashSet<String> certified = new LinkedHashSet<>();
+        for (String[] row : rows) {
+            if (WikiPageState.MANUAL == WikiPageState.fromStored(row[1], row[2])) {
+                certified.add(row[0]);
+                continue;
+            }
+            if (SUPPORTED_PROVENANCE_SCHEMA_VERSIONS.contains(row[3])) {
+                certified.add(row[0]);
+            }
+        }
+        return Set.copyOf(certified);
     }
 
     /** 当前证据用途下各来源的资格事实，供检索路径局部过滤与原因展示。 */

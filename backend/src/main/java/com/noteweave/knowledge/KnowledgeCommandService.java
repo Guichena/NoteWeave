@@ -470,6 +470,11 @@ public class KnowledgeCommandService {
         String pageState = "WIKI".equals(itemType)
                 ? (actor.startsWith("SYSTEM:") ? WikiPageState.AUTO.name() : WikiPageState.MANUAL.name())
                 : null;
+        // 自动页创建版本时同步写入受支持的编译策略标记；人工页不伪造自动编译标记
+        String provenanceSchemaVersion = "WIKI".equals(itemType)
+                && !WikiPageState.MANUAL.name().equals(pageState)
+                ? KnowledgeCitationReadGate.WIKI_PROVENANCE_SCHEMA_VERSION
+                : null;
         jdbcTemplate.update("""
                 insert into knowledge_item(
                     id, workspace_id, item_type, page_kind, title, status,
@@ -480,9 +485,11 @@ public class KnowledgeCommandService {
                 versionId, actor, actor, originSourceId, pageState, origin);
         jdbcTemplate.update("""
                 insert into knowledge_version(
-                    id, item_id, version_no, content, summary, source_message_id
-                ) values (?, ?, 1, ?, ?, ?)
-                """, versionId, itemId, normalizedContent, summary, sourceMessageId);
+                    id, item_id, version_no, content, summary, source_message_id,
+                    provenance_schema_version
+                ) values (?, ?, 1, ?, ?, ?, ?)
+                """, versionId, itemId, normalizedContent, summary, sourceMessageId,
+                provenanceSchemaVersion);
         bindVersionCitations(versionId, normalizedCitationIds);
         if ("WIKI".equals(itemType)) {
             wikiMutationService.upsertWikiLinks(

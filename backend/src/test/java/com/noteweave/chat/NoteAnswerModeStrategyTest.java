@@ -97,6 +97,59 @@ class NoteAnswerModeStrategyTest {
         assertThat(prompt.referencedEvidenceIds()).containsExactly("note-window:chunk:0");
     }
 
+    @Test
+    void finalPromptOnlyUsesFinalWindowsAndDropsJournalAndUnselectedSources() {
+        CandidateSource selected = candidate();
+        CandidateSource unselected = new CandidateSource(
+                "source-unselected", "Unselected Source", "MARKDOWN", 1, 1, "", "",
+                "unselected summary", "[]", "{}", "sample", 3, "metadata", List.of(), List.of(),
+                0, 0, "metadata-quota", "candidate:metadata-quota");
+        NoteJournalHit invalidJournal = new NoteJournalHit(
+                "note", "History Title", "history summary", "history content", 1, 4,
+                "source-deleted", "deleted", 1, 0);
+        NoteRecallPlan plan = new NoteRecallPlan(
+                List.of(invalidJournal),
+                List.of(selected, unselected),
+                List.of(),
+                List.of(selected),
+                new NoteRecallTrace(1, 2, 0, 1, 2, 3, 0, 1));
+        NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(
+                plan, List.of(metadata()), List.of(window()));
+        EvidenceBundle bundle = new EvidenceBundle(
+                "bundle", NoteAnswerModeStrategy.PLAN_VERSION, List.of(evidence()), false,
+                List.of(), Instant.now(),
+                Map.of(NoteRetrievalSnapshotCodec.METADATA_KEY, codec.encode(snapshot))
+        );
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query", Set.of(), Map.of(), Instant.now());
+
+        var prompt = strategy.compose(context, bundle);
+
+        assertThat(prompt.userPrompt())
+                .contains("## 资料定位", "《Source》", "window content")
+                // 失效日志标题、未入选来源标题与摘要都不能继续供模型回答
+                .doesNotContain("History Title", "history summary")
+                .doesNotContain("Unselected Source", "unselected summary");
+    }
+
+    @Test
+    void noFinalWindowIsInsufficientEvenWhenCandidateSourcesExist() {
+        NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(
+                recallPlan(), List.of(metadata()), List.of());
+        EvidenceBundle bundle = new EvidenceBundle(
+                "bundle", NoteAnswerModeStrategy.PLAN_VERSION, List.of(), false,
+                List.of(), Instant.now(),
+                Map.of(NoteRetrievalSnapshotCodec.METADATA_KEY, codec.encode(snapshot))
+        );
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query", Set.of(), Map.of(), Instant.now());
+
+        var prompt = strategy.compose(context, bundle);
+
+        assertThat(prompt.refusal()).isTrue();
+        assertThat(prompt.userPrompt()).contains("资料不足");
+    }
+
     private NoteRecallPlan recallPlan() {
         CandidateSource candidate = candidate();
         return new NoteRecallPlan(

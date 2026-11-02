@@ -217,7 +217,7 @@ class WikiEvidenceRetrieverTest {
                 .containsEntry("graph_hops_used", 1L)
                 .containsEntry("graph_nodes_used", 1L)
                 .containsEntry("graph_edges_used", 1L)
-                .containsEntry("graph_characters_used", 4L);
+                .containsEntry("graph_characters_used", (long) WikiPageEvidence.cost(neighbor.page()));
     }
 
     @Test
@@ -248,7 +248,57 @@ class WikiEvidenceRetrieverTest {
         EvidenceBundle.Evidence evidence = result.evidence().get(0);
         assertThat(evidence.excerpt()).hasSizeLessThanOrEqualTo(4001);
         assertThat(evidence.excerpt()).hasSize(4001).endsWith("…").startsWith("字");
-        assertThat(evidence.characterCost()).isEqualTo(evidence.excerpt().length());
+        // 成本包含真实正文与标题/编号包装开销，Judge、生成与清单共用同一口径
+        assertThat(evidence.characterCost()).isEqualTo(WikiPageEvidence.cost(page.page()));
+    }
+
+    @Test
+    void seedLimitIsSeparateFromTotalCandidateLimit() {
+        WikiRetrievalQueryPort queryPort = mock(WikiRetrievalQueryPort.class);
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        List<WikiPageContext> seeds = java.util.stream.IntStream.range(0, 10)
+                .mapToObj(index -> page("item-" + index, "version-" + index, "Page " + index))
+                .toList();
+        when(queryPort.findRelevantWikiPageContexts("workspace", "query")).thenReturn(seeds);
+        when(queryPort.citationIdsForWikiPages(eq("workspace"), any())).thenReturn(List.of());
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
+        // 即使计划把步内候选改成 35，种子上限仍然独立生效，总候选上限另由预算给出
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                WikiEvidenceRetriever.CHANNEL, 35, 1, Map.of());
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(35, 20_000, 0, 0));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()), plan, step);
+
+        assertThat(result.evidence()).hasSize(WikiEvidenceRetriever.SEED_CANDIDATE_LIMIT);
+    }
+
+    @Test
+    void totalCandidateLimitComesFromPlanBudgetRatherThanSeedLimit() {
+        WikiRetrievalQueryPort queryPort = mock(WikiRetrievalQueryPort.class);
+        WikiRetrievalSnapshotCodec codec =
+                new WikiRetrievalSnapshotCodec(new ObjectMapper().findAndRegisterModules());
+        List<WikiPageContext> seeds = java.util.stream.IntStream.range(0, 5)
+                .mapToObj(index -> page("item-" + index, "version-" + index, "Page " + index))
+                .toList();
+        when(queryPort.findRelevantWikiPageContexts("workspace", "query")).thenReturn(seeds);
+        when(queryPort.citationIdsForWikiPages(eq("workspace"), any())).thenReturn(List.of());
+        WikiEvidenceRetriever retriever = new WikiEvidenceRetriever(queryPort, codec);
+        RetrievalPlan.Step step = new RetrievalPlan.Step(
+                WikiEvidenceRetriever.CHANNEL, 5, 1, Map.of());
+        RetrievalPlan plan = new RetrievalPlan(
+                "wiki-test-v1", AnswerMode.WIKI, List.of(step),
+                new RetrievalPlan.Budget(2, 20_000, 0, 0));
+
+        var result = retriever.retrieve(
+                new AnswerContext("workspace", "conversation", "message", "query",
+                        Set.of(), Map.of(), Instant.now()), plan, step);
+
+        assertThat(result.evidence()).hasSize(2);
     }
 
     private WikiPageContext page(String itemId, String versionId, String title) {
