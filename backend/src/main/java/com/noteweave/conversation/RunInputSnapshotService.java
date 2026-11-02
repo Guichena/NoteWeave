@@ -75,6 +75,8 @@ public class RunInputSnapshotService {
         snapshot.put("task_parameters", material.taskParameters() == null ? "" : material.taskParameters());
         snapshot.put("task_parameters_unsupported", material.taskParametersUnsupported() == null
                 ? "" : material.taskParametersUnsupported());
+        snapshot.put("task_parameters_memory_refs", material.taskParametersMemoryRefs() == null
+                ? "" : material.taskParametersMemoryRefs());
         List<MemoryReferenceResponse> memoryRefs = material.chatControlPack() == null
                 ? List.of() : material.chatControlPack().memoryReferences();
         String compilerVersion = COMPILER_VERSION;
