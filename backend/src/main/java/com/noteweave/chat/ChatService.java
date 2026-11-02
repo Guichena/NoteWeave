@@ -74,6 +74,7 @@ public class ChatService {
     private final ResearchReportGrounding reportGrounding;
     private final ConversationWorkingSetService workingSetService;
     private final com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService;
+    private final com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -96,7 +97,8 @@ public class ChatService {
             ContextV2ShadowSnapshotService contextV2Snapshots,
             ResearchReportGrounding reportGrounding,
             ConversationWorkingSetService workingSetService,
-            com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService
+            com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService,
+            com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -119,6 +121,7 @@ public class ChatService {
         this.reportGrounding = reportGrounding;
         this.workingSetService = workingSetService;
         this.researchCellFollowUpService = researchCellFollowUpService;
+        this.sessionPreferenceService = sessionPreferenceService;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -324,7 +327,18 @@ public class ChatService {
             controlSection = controlSection.isBlank()
                     ? preferenceLine : controlSection + "\n\n" + preferenceLine;
         }
+        var sessionRequirements = sessionPreferenceService.activeRequirementTexts(workspaceId, conversationId);
+        if (!sessionRequirements.isEmpty()) {
+            String sessionLine = "会话要求（只用于本对话）：" + String.join("；", sessionRequirements);
+            controlSection = controlSection.isBlank()
+                    ? sessionLine : controlSection + "\n\n" + sessionLine;
+        }
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION, controlSection);
+        attributes.put("conversation_session_requirement_count",
+                Integer.toString(sessionRequirements.size()));
+        if (!sessionRequirements.isEmpty()) {
+            attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS, "true");
+        }
         attributes.put("task_parameters", preferenceLine);
         String unsupportedParameters = preferenceParameters.unsupported().stream()
                 .map(item -> item.targetKey() + ":" + item.reason())
