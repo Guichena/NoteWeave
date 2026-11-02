@@ -18,6 +18,7 @@ export type RestoredMessage = {
   answerRunId?: string;
   citations?: string[];
   researchRunId?: string;
+  researchProjectionJson?: string;
 };
 
 export type RestoredWorkspaceSession = {
@@ -135,6 +136,9 @@ function toRestoredMessage(message: ConversationMessage): RestoredMessage {
     }
     if (message.research_run_id) {
       restored.researchRunId = message.research_run_id;
+    }
+    if (message.research_projection_json) {
+      restored.researchProjectionJson = message.research_projection_json;
     }
   }
   return restored;

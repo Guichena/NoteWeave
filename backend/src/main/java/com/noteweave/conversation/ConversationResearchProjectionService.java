@@ -1,5 +1,7 @@
 package com.noteweave.conversation;
 
+import com.noteweave.context.ResearchProjection;
+import com.noteweave.research.ResearchProjectionService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -13,13 +15,16 @@ public class ConversationResearchProjectionService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ConversationSegmentBuildService segmentBuildService;
+    private final ResearchProjectionService projectionService;
 
     public ConversationResearchProjectionService(
             JdbcTemplate jdbcTemplate,
-            ConversationSegmentBuildService segmentBuildService
+            ConversationSegmentBuildService segmentBuildService,
+            ResearchProjectionService projectionService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.segmentBuildService = segmentBuildService;
+        this.projectionService = projectionService;
     }
 
     public void projectCompletedReport(
@@ -47,18 +52,54 @@ public class ConversationResearchProjectionService {
         if (messageId == null || messageId.isBlank()) {
             return;
         }
-        String body = contextBody(reportMarkdown);
-        String card = "研究报告已完成：" + reportTitle + (body.isEmpty() ? "" : "\n\n" + body)
-                + "\n\nresearch_run_id: " + researchRunId;
+        ResearchProjection projection = projectionService.build(
+                researchRunId, ResearchProjection.LEVEL_P2);
+        String projectionJson = projectionService.toJson(projection);
+        String card = card(projection.asLevel(ResearchProjection.LEVEL_P1), researchRunId, reportTitle);
         int projected = jdbcTemplate.update("""
                 update conversation_message
-                set content = ?, content_hash = ?, context_status = 'CURRENT'
+                set content = ?, content_hash = ?, research_projection_json = ?,
+                    context_status = 'CURRENT'
                 where workspace_id = ? and conversation_id = ? and id = ?
                   and context_status = 'PENDING'
-                """, card, sha256(card), workspaceId, conversationId, messageId);
+                """, card, sha256(card), projectionJson, workspaceId, conversationId, messageId);
         if (projected == 1 && conversationId != null && !conversationId.isBlank()) {
             segmentBuildService.queueBuildForActivePrefix(workspaceId, conversationId);
         }
+    }
+
+    /**
+     * 结论卡只由结构化投影生成：P0 身份/标题/状态，P1 执行摘要与需求覆盖。
+     * 历史报告结构缺失时使用显式兼容说明，不从报告正文推断“已核实”结论。
+     */
+    private String card(ResearchProjection projection, String researchRunId, String reportTitle) {
+        String title = projection.title().isBlank()
+                ? (reportTitle == null ? "" : reportTitle) : projection.title();
+        StringBuilder builder = new StringBuilder("研究报告");
+        builder.append(switch (projection.status()) {
+            case "COMPLETED" -> "已完成";
+            case "RUNNING" -> "进行中";
+            case "FAILED" -> "失败";
+            case "CANCELLED" -> "已取消";
+            default -> "等待开始";
+        });
+        if (!title.isBlank()) {
+            builder.append("：").append(title);
+        }
+        builder.append("\n\nresearch_run_id: ").append(researchRunId);
+        if (!projection.executiveSummary().isBlank()) {
+            builder.append("\n\n执行摘要：").append(projection.executiveSummary());
+        }
+        if (!projection.requirements().isEmpty()) {
+            builder.append("\n\n需求覆盖：");
+            for (ResearchProjection.Requirement requirement : projection.requirements()) {
+                builder.append("\n- [").append(requirement.coverage()).append("] ")
+                        .append(requirement.label());
+            }
+        } else {
+            builder.append("\n\n历史报告缺少结构化投影，详见研究详情。");
+        }
+        return builder.toString();
     }
 
     private static final int CONTEXT_BODY_CHARS = 6000;

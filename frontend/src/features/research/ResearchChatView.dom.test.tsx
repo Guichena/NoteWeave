@@ -106,4 +106,25 @@ describe("ResearchChatView", () => {
     expect(screen.getByText("第 2 轮：核验证据")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /查看完整报告/ })).toBeNull();
   });
+
+  it("结论卡由后端结构化投影生成，不依赖报告正文推断", () => {
+    renderChat(buildRun(), {
+      projection: {
+        schema_version: "research-projection-v1",
+        research_run_id: "run-1",
+        status: "COMPLETED",
+        level: "P1",
+        title: "投影标题",
+        executive_summary: "后端结构化执行摘要",
+        requirements: [
+          { code: "deployment", label: "部署方式", coverage: "COVERED", note: "1/1 已核实" }
+        ]
+      }
+    });
+
+    const card = screen.getByRole("article", { name: "研究结论卡：投影标题" });
+    expect(within(card).getByText("后端结构化执行摘要")).toBeTruthy();
+    expect(within(card).getByText("已覆盖")).toBeTruthy();
+    expect(within(card).getByText("部署方式")).toBeTruthy();
+  });
 });

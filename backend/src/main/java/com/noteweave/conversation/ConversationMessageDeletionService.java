@@ -33,7 +33,9 @@ public class ConversationMessageDeletionService {
         new com.noteweave.answer.AnswerRunLifecycleGuard(jdbcTemplate)
                 .revokeForDeletedMessage(workspaceId, conversationId, messageId);
         int changed = jdbcTemplate.update("""
-                update conversation_message set content = '', content_hash = ?, context_status = 'DELETED'
+                update conversation_message
+                set content = '', content_hash = ?, context_status = 'DELETED',
+                    research_projection_json = null
                 where id = ? and workspace_id = ? and conversation_id = ? and context_status <> 'DELETED'
                 """, EMPTY_CONTENT_SHA256, messageId, workspaceId, conversationId);
         if (changed == 0) {

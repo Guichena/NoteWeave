@@ -94,7 +94,7 @@ public class ConversationService {
         int safeLimit = Math.max(1, Math.min(limit, 200));
         List<ConversationMessageResponse> messages = jdbcTemplate.query("""
                 select m.id, m.message_seq, m.role, m.answer_mode, m.content, m.reply_to_message_id,
-                       m.context_status, m.content_hash, r.status as answer_status,
+                       m.context_status, m.content_hash, m.research_projection_json, r.status as answer_status,
                        r.error_message as answer_error, m.created_at, r.id as answer_run_id,
                        (select rr.id from research_run rr
                         where rr.workspace_id = m.workspace_id and rr.answer_message_id = m.id
@@ -118,7 +118,8 @@ public class ConversationService {
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getString("answer_run_id"),
                 List.of(),
-                rs.getString("research_run_id")
+                rs.getString("research_run_id"),
+                rs.getString("research_projection_json")
         ), workspaceId, conversationId, safeAfter, safeLimit);
         if (messages.isEmpty()) return messages;
         List<String> ids = messages.stream().map(ConversationMessageResponse::messageId).toList();
@@ -175,7 +176,7 @@ public class ConversationService {
                     message.role(), message.requestedTurnMode(),
                     "此回答引用的资料已撤销，内容不可查看。", message.replyToMessageId(),
                     "REDACTED", null, message.answerStatus(), null, message.createdAt(), null, List.of(),
-                    message.researchRunId())
+                    message.researchRunId(), null)
                 : withCitations(message, citationsByMessage.get(message.messageId()))).toList();
     }
 
@@ -186,7 +187,8 @@ public class ConversationService {
         return new ConversationMessageResponse(message.messageId(), message.messageSeq(), message.role(),
                 message.requestedTurnMode(), message.content(), message.replyToMessageId(),
                 message.contextStatus(), message.contentHash(), message.answerStatus(), message.answerError(),
-                message.createdAt(), message.answerRunId(), citations, message.researchRunId());
+                message.createdAt(), message.answerRunId(), citations, message.researchRunId(),
+                message.researchProjectionJson());
     }
 
     private static String citationLine(String title, String quote) {

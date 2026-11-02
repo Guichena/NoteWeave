@@ -34,6 +34,71 @@ function text(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
+/** F3-03：后端结构化研究投影（SNAKE_CASE），缺失或损坏时返回 null。 */
+export type ResearchProjectionView = {
+  schema_version: string;
+  research_run_id: string;
+  status: string;
+  level: string;
+  title: string;
+  executive_summary: string;
+  requirements?: {
+    code: string;
+    label: string;
+    coverage: string;
+    note?: string;
+  }[];
+  cells?: {
+    cell_id: string;
+    object_name: string;
+    dimension_name: string;
+    status: string;
+    conclusion: string;
+    evidence_ids: string[];
+  }[];
+  pending_cell_count?: number;
+};
+
+export function parseResearchProjection(json?: string | null): ResearchProjectionView | null {
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json) as ResearchProjectionView;
+    if (!parsed || typeof parsed !== "object" || typeof parsed.schema_version !== "string") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+const COVERAGE_LABEL: Record<string, string> = {
+  COVERED: "已覆盖",
+  PARTIAL: "部分核实",
+  UNVERIFIED: "未核实",
+  MISSING: "缺失"
+};
+
+/** 对话里的研究结论卡：只使用后端投影的身份、摘要与需求覆盖，不从未核实正文推断结论。 */
+function ResearchProjectionCard({ projection }: { projection: ResearchProjectionView }) {
+  const requirements = projection.requirements ?? [];
+  return (
+    <article className="research-projection-card" aria-label={`研究结论卡：${projection.title}`}>
+      <header>
+        <strong>{projection.title || "研究报告"}</strong>
+        <span className="research-run-state">{projection.status}</span>
+      </header>
+      {projection.executive_summary ? <p>{projection.executive_summary}</p> : null}
+      <ul aria-label="需求覆盖">
+        {requirements.map((requirement) => (
+          <li key={requirement.code}>
+            <span>{COVERAGE_LABEL[requirement.coverage] ?? requirement.coverage}</span>
+            {requirement.label}
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 /** 报告标题已经在别处展示，正文开头重复的一级标题去掉。 */
 export function stripLeadingTitle(markdown: string) {
   return markdown.replace(/^\s*#\s+[^\n]*\n+/, "");
@@ -59,6 +124,8 @@ type ResearchChatViewProps = {
   onOpenReport: () => void;
   onExport: () => void;
   onSaveAsSource: () => void;
+  /** F3-03：对话消息携带的结构化研究投影；研究页没有该字段时按运行详情渲染。 */
+  projection?: ResearchProjectionView | null;
 };
 
 /**
@@ -73,7 +140,8 @@ export function ResearchChatView({
   onStart,
   onOpenReport,
   onExport,
-  onSaveAsSource
+  onSaveAsSource,
+  projection = null
 }: ResearchChatViewProps) {
   const conversationRef = useRef<HTMLDivElement>(null);
   const state = run ? resolveRunState(run) : null;
@@ -130,6 +198,7 @@ export function ResearchChatView({
               <div className="message-content">
                 <ResearchRunTurn
                   run={run}
+                  projection={projection}
                   progressMessage={progressMessage}
                   canSave={!isBusy && !run.saved_report_source && state !== "insufficient"}
                   onOpenReport={onOpenReport}
@@ -154,13 +223,14 @@ type ResearchRunTurnProps = {
   onOpenReport: () => void;
   onExport?: () => void;
   onSaveAsSource?: () => void;
+  projection?: ResearchProjectionView | null;
 };
 
 /**
  * 一次深度研究在对话里的助手消息：研究计划、可展开的研究过程、进行中的进度，完成后是报告消息。
  * 研究页的对话和问答页里用深度研究发起的轮次都用它渲染。
  */
-export function ResearchRunTurn({ run, progressMessage = "", canSave = false, onOpenReport, onExport, onSaveAsSource }: ResearchRunTurnProps) {
+export function ResearchRunTurn({ run, progressMessage = "", canSave = false, onOpenReport, onExport, onSaveAsSource, projection = null }: ResearchRunTurnProps) {
   const state = resolveRunState(run);
   const table = useMemo(() => buildResearchTable(run.closed_loop_state), [run.closed_loop_state]);
   const rounds = useMemo(() => buildRounds(run), [run]);
@@ -220,6 +290,8 @@ export function ResearchRunTurn({ run, progressMessage = "", canSave = false, on
           研究运行失败，可以在完整报告页的过程中从最近的检查点恢复。
         </p>
       ) : null}
+
+      {projection ? <ResearchProjectionCard projection={projection} /> : null}
 
       {hasReport && run ? (
         <ResearchReportMessage
