@@ -50,6 +50,8 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
             RetrievalPlan.Step step
     ) {
         RetrievalChannels channels = QueryRewrite.channelsFrom(step.filters(), context.query());
+        java.util.Set<String> preferredSources = preferredSources(
+                context.attributes().getOrDefault("context_working_set_sources", ""));
         NoteRecallPlan recallPlan;
         List<NoteEntryMetadata> metadataEntries;
         NoteReadingRetriever.ReadingResult reading;
@@ -69,6 +71,8 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
         // 空正文与未装载窗口不占候选上限，也不能成为证据
         List<ReadingWindow> windows = reading.windows().stream()
                 .filter(window -> window.content() != null && !window.content().isBlank())
+                .sorted(java.util.Comparator.comparingInt(
+                        window -> preferredSources.contains(window.sourceId()) ? 0 : 1))
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
         NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(recallPlan, metadataEntries, windows);
@@ -88,6 +92,21 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
                 List.copyOf(degradationReasons),
                 Map.copyOf(measurements)
         );
+    }
+
+    /** 工作集资料身份，损坏项跳过；空串表示没有会话信号。 */
+    private static java.util.Set<String> preferredSources(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> sources = new java.util.LinkedHashSet<>();
+        for (String value : encoded.split(",")) {
+            String trimmed = value.trim();
+            if (!trimmed.isEmpty()) {
+                sources.add(trimmed);
+            }
+        }
+        return java.util.Set.copyOf(sources);
     }
 
     private EvidenceBundle.Evidence toEvidence(
