@@ -282,6 +282,11 @@ class AnswerGenerationOrchestratorTest {
         assertThat(events).extracting(AnswerDeliveryEvent::eventType)
                 .contains("answer.delta", "answer.completed");
         assertThat(events).anySatisfy(event -> assertThat(event.data()).contains("最终正文"));
+        assertThat(events.stream().map(AnswerDeliveryEvent::data)
+                .filter(java.util.Objects::nonNull)
+                .anyMatch(data -> data.contains("草稿正文"))).isFalse();
+        verify(gateway, never()).generateInConversation(
+                any(), anyString(), any(), anyString(), anyInt(), any());
     }
 
     private AnswerGenerationOrchestrator orchestrator(
