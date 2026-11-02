@@ -130,10 +130,8 @@ public class WikiGraphBudgeter {
     }
 
     private int excerptLength(WikiPageContext context) {
-        KnowledgePageHit page = context.page();
-        String summary = page.summary();
-        String excerpt = summary == null || summary.isBlank() ? page.content() : summary;
-        return excerpt == null ? 0 : excerpt.length();
+        // 图预算与证据预算按同一份正文和同一包装开销计费
+        return WikiPageEvidence.cost(context.page());
     }
 
     @FunctionalInterface

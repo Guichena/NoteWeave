@@ -56,12 +56,19 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 AnswerMode.WIKI,
                 List.of(new RetrievalPlan.Step(
                         WikiEvidenceRetriever.CHANNEL,
-                        5,
+                        // 这里是种子上限；总候选上限由下面的预算单独给出，两者不能合并成一个数字
+                        WikiEvidenceRetriever.SEED_CANDIDATE_LIMIT,
                         1.0,
                         filters
                 )),
                 // 检索候选 5 条，图扩展最多 30 个节点。证据上限取两者之和，扩展页才不会被种子占满后丢掉。
-                new RetrievalPlan.Budget(5 + 30, 20_000, WikiPersonalizedPageRank.MAX_HOPS, 30, 60, 4_000)
+                new RetrievalPlan.Budget(
+                        WikiEvidenceRetriever.SEED_CANDIDATE_LIMIT + 30,
+                        20_000,
+                        WikiPersonalizedPageRank.MAX_HOPS,
+                        30,
+                        60,
+                        4_000)
         );
     }
 
@@ -96,16 +103,22 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
             );
         }
         Map<String, List<String>> paths = new LinkedHashMap<>();
+        Map<String, String> excerptsByVersion = new LinkedHashMap<>();
         for (EvidenceBundle.Evidence evidence : bundle.evidence()) {
+            if (!"KNOWLEDGE_VERSION".equals(evidence.kind()) || evidence.knowledgeVersionId() == null) {
+                continue;
+            }
+            // 生成提示直接使用证据正文，不在展示层重新裁剪另一份内容
+            excerptsByVersion.put(evidence.knowledgeVersionId(), evidence.excerpt());
             List<String> path = snapshotCodec.decodeGraphPath(
                     evidence.metadata().get(WikiEvidenceRetriever.GRAPH_PATH_METADATA));
-            if (!path.isEmpty() && evidence.knowledgeVersionId() != null) {
+            if (!path.isEmpty()) {
                 paths.put(evidence.knowledgeVersionId(), path);
             }
         }
         return new PromptSpec(
                 "Answer from the selected Knowledge Versions and preserve their source provenance.",
-                renderAnswer(context, selectedContexts, paths),
+                renderAnswer(context, selectedContexts, paths, excerptsByVersion),
                 bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId).toList(),
                 planVersion(bundle)
         );
@@ -148,7 +161,8 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
     private String renderAnswer(
             AnswerContext context,
             List<NumberedPage> contexts,
-            Map<String, List<String>> paths
+            Map<String, List<String>> paths,
+            Map<String, String> excerptsByVersion
     ) {
         StringBuilder builder = new StringBuilder();
         builder.append("用户问题：").append(context.attributes().getOrDefault(
@@ -170,10 +184,8 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
             WikiPageContext pageContext = numbered.context();
             KnowledgePageHit page = pageContext.page();
             builder.append("[").append(numbered.number()).append("] ").append(page.title()).append("\n");
-            if (!page.summary().isBlank()) {
-                builder.append("摘要：").append(trim(page.summary(), 300)).append("\n");
-            }
-            builder.append("正文：").append(trim(page.content(), 1_500)).append("\n");
+            String excerpt = excerptsByVersion.getOrDefault(page.versionId(), WikiPageEvidence.excerpt(page));
+            builder.append("正文：").append(excerpt).append("\n");
             List<String> related = pageContext.outgoingLinks().stream().map(WikiLinkResponse::targetTitle)
                     .filter(title -> title != null && !title.isBlank()).distinct().limit(8).toList();
             if (!related.isEmpty()) {

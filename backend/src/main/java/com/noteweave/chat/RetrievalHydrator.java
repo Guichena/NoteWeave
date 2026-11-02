@@ -179,8 +179,13 @@ public class RetrievalHydrator {
                         effectiveBudget.totalLimit()));
         Map<String, List<ReadingWindow>> bySourceId = new LinkedHashMap<>();
         for (WindowIdentity identity : index.windows()) {
+            String content = bodies.contentById().get(identity.id());
+            // 空正文/未装载窗口不进入阅读候选，避免占掉阅读角色与 topN 名额
+            if (content == null || content.isBlank()) {
+                continue;
+            }
             bySourceId.computeIfAbsent(identity.sourceId(), ignored -> new ArrayList<>())
-                    .add(identity.toReadingWindow(bodies.contentById().getOrDefault(identity.id(), "")));
+                    .add(identity.toReadingWindow(content));
         }
         Map<String, List<ReadingWindow>> immutable = new LinkedHashMap<>();
         bySourceId.forEach((sourceId, windows) -> immutable.put(sourceId, List.copyOf(windows)));
@@ -203,6 +208,17 @@ public class RetrievalHydrator {
         }
     }
 
+    /**
+     * 候选来源作用域：窗口只能取自该来源在召回阶段确定的快照。
+     * 空快照表示旧调用方没有快照列，按当前快照处理，不能当任意快照通配。
+     */
+    public record SourceScope(String sourceId, String sourceSnapshotId) {
+        public SourceScope {
+            sourceId = sourceId == null ? "" : sourceId;
+            sourceSnapshotId = sourceSnapshotId == null ? "" : sourceSnapshotId;
+        }
+    }
+
     /** 正文装载预算：总字节、单窗口字节与窗口数上限，均按 UTF-8 实际字节数计。 */
     public record WindowBodyBudget(int maxTotalBytes, int maxSingleWindowBytes, int maxWindowCount) {
         public static WindowBodyBudget defaults() {
@@ -213,7 +229,7 @@ public class RetrievalHydrator {
         }
     }
 
-    /** 窗口身份：除正文外的全部字段；anchorKind 记录进入候选池的原因。 */
+    /** 窗口身份：除正文外的全部字段；anchorKind 记录进入候选池的原因，relevance 只在同类锚点内比较。 */
     public record WindowIdentity(
             String id,
             String sourceId,
@@ -226,8 +242,32 @@ public class RetrievalHydrator {
             String generatedRefId,
             int windowNo,
             String locationInfo,
-            String anchorKind
+            String anchorKind,
+            double relevance
     ) {
+        public WindowIdentity(
+                String id,
+                String sourceId,
+                String sourceSnapshotId,
+                String chunkId,
+                int chunkNo,
+                String heading,
+                String title,
+                String generatedBy,
+                String generatedRefId,
+                int windowNo,
+                String locationInfo,
+                String anchorKind
+        ) {
+            this(id, sourceId, sourceSnapshotId, chunkId, chunkNo, heading, title, generatedBy,
+                    generatedRefId, windowNo, locationInfo, anchorKind, 0.0d);
+        }
+
+        public WindowIdentity withRelevance(double nextRelevance) {
+            return new WindowIdentity(id, sourceId, sourceSnapshotId, chunkId, chunkNo, heading, title,
+                    generatedBy, generatedRefId, windowNo, locationInfo, anchorKind, nextRelevance);
+        }
+
         public ReadingWindow toReadingWindow(String content) {
             // ReadingWindow 首字段是 chunkId（基线语义）：证据 passageId 与语义分都按 chunk 身份匹配；
             // source_window 行 id 只在本类内部用于正文装载，不外泄
@@ -242,14 +282,24 @@ public class RetrievalHydrator {
             List<WindowIdentity> windows,
             int semanticAnchorCount,
             int lexicalAnchorCount,
-            int headFallbackCount
+            int headFallbackCount,
+            int droppedSnapshotSources
     ) {
+        public WindowIndexResult(
+                List<WindowIdentity> windows,
+                int semanticAnchorCount,
+                int lexicalAnchorCount,
+                int headFallbackCount
+        ) {
+            this(windows, semanticAnchorCount, lexicalAnchorCount, headFallbackCount, 0);
+        }
     }
 
-    /** 正文装载结果：窗口 ID 到正文的映射。 */
+    /** 正文装载结果：窗口 ID 到正文的映射；插入顺序即预算消费顺序，不能被无序遍历打乱。 */
     public record BodyLoadResult(Map<String, String> contentById) {
         public BodyLoadResult {
-            contentById = contentById == null ? Map.of() : Map.copyOf(contentById);
+            contentById = contentById == null ? Map.of()
+                    : java.util.Collections.unmodifiableMap(new LinkedHashMap<>(contentById));
         }
     }
 
@@ -258,7 +308,8 @@ public class RetrievalHydrator {
      *
      * <p>语义命中 chunk 的全部窗口（含同 chunk 邻接窗口）优先；词法命中按查询词在
      * heading/content/location 上做有界 LIKE 预筛；头部窗口只做无信号回退。
-     * 三路身份按来源公平配额与全局轮转合并，来源顺序遵循输入顺序而非字典序。</p>
+     * 三路身份按来源公平配额合并，同类锚点内按相关性排序，跨来源按轮询顺序交替输出；
+     * 正文预算随后严格按这个顺序消费，不依赖 SQL 返回行序。</p>
      */
     public WindowIndexResult loadWindowIndex(
             String workspaceId,
@@ -267,16 +318,46 @@ public class RetrievalHydrator {
             List<String> lexicalTerms,
             WindowIndexBudget budget
     ) {
-        List<String> ids = distinctIds(sourceIds);
-        if (ids.isEmpty()) {
-            return new WindowIndexResult(List.of(), 0, 0, 0);
+        List<SourceScope> scopes = distinctIds(sourceIds).stream()
+                .map(sourceId -> new SourceScope(sourceId, ""))
+                .toList();
+        return loadWindowIndex(workspaceId, scopes, semanticChunkIds, Map.of(), lexicalTerms, budget);
+    }
+
+    /**
+     * 候选来源透传召回阶段的快照：窗口只能来自该来源当时选中的快照。
+     * 快照已经不是当前 INDEXED 版本时整源退出本次读取并计数，不能悄悄改用新快照的窗口。
+     */
+    public WindowIndexResult loadWindowIndex(
+            String workspaceId,
+            List<SourceScope> scopes,
+            List<String> semanticChunkIds,
+            Map<String, Double> semanticScoreByChunkId,
+            List<String> lexicalTerms,
+            WindowIndexBudget budget
+    ) {
+        List<SourceScope> requested = scopes == null ? List.of() : scopes.stream()
+                .filter(scope -> scope != null && scope.sourceId() != null && !scope.sourceId().isBlank())
+                .toList();
+        if (requested.isEmpty()) {
+            return new WindowIndexResult(List.of(), 0, 0, 0, 0);
         }
         WindowIndexBudget effectiveBudget = budget == null ? WindowIndexBudget.defaults() : budget;
+        Map<String, String> pinnedSnapshots = new LinkedHashMap<>();
+        for (SourceScope scope : requested) {
+            pinnedSnapshots.putIfAbsent(scope.sourceId(), scope.sourceSnapshotId());
+        }
+        SnapshotScopeResult snapshotScope = resolveSnapshotScope(workspaceId, pinnedSnapshots);
+        List<String> ids = snapshotScope.activeSources();
+        if (ids.isEmpty()) {
+            return new WindowIndexResult(List.of(), 0, 0, 0, snapshotScope.droppedSources());
+        }
+        Map<String, Double> safeScores = semanticScoreByChunkId == null ? Map.of() : semanticScoreByChunkId;
         Map<String, WindowIdentity> byId = new LinkedHashMap<>();
         int semanticCount = 0;
         if (semanticChunkIds != null && !semanticChunkIds.isEmpty()) {
             for (WindowIdentity identity : querySemanticIdentities(workspaceId,
-                    distinctIds(semanticChunkIds), 512)) {
+                    distinctIds(semanticChunkIds), snapshotScope.snapshotBySource(), safeScores, 512)) {
                 if (byId.putIfAbsent(identity.id(), identity) == null) {
                     semanticCount++;
                 }
@@ -285,7 +366,8 @@ public class RetrievalHydrator {
         int lexicalCount = 0;
         List<String> terms = boundedTerms(lexicalTerms, effectiveBudget.maxLexicalTerms());
         if (!terms.isEmpty() && effectiveBudget.lexicalPerSourceLimit() > 0) {
-            for (WindowIdentity identity : queryRankedIdentities(workspaceId, ids, terms,
+            for (WindowIdentity identity : queryRankedIdentities(workspaceId, ids,
+                    snapshotScope.snapshotBySource(), terms,
                     effectiveBudget.lexicalPerSourceLimit(), "lexical-anchor")) {
                 if (byId.putIfAbsent(identity.id(), identity) == null) {
                     lexicalCount++;
@@ -294,7 +376,8 @@ public class RetrievalHydrator {
         }
         int headCount = 0;
         if (effectiveBudget.headFallbackPerSource() > 0) {
-            for (WindowIdentity identity : queryRankedIdentities(workspaceId, ids, null,
+            for (WindowIdentity identity : queryRankedIdentities(workspaceId, ids,
+                    snapshotScope.snapshotBySource(), null,
                     effectiveBudget.headFallbackPerSource(), "head-fallback")) {
                 if (byId.putIfAbsent(identity.id(), identity) == null) {
                     headCount++;
@@ -303,14 +386,83 @@ public class RetrievalHydrator {
         }
         List<WindowIdentity> fair = fairAllocate(new ArrayList<>(byId.values()), ids,
                 effectiveBudget.perSourceIdentityLimit(), effectiveBudget.totalIdentityLimit());
-        return new WindowIndexResult(List.copyOf(fair), semanticCount, lexicalCount, headCount);
+        return new WindowIndexResult(List.copyOf(fair), semanticCount, lexicalCount, headCount,
+                snapshotScope.droppedSources());
+    }
+
+    /** 按候选来源核对召回快照是否仍是当前 INDEXED 版本；变更来源整源退出。 */
+    private SnapshotScopeResult resolveSnapshotScope(String workspaceId, Map<String, String> pinnedSnapshots) {
+        Map<String, String> current = currentSnapshotIds(workspaceId, List.copyOf(pinnedSnapshots.keySet()));
+        List<String> activeSources = new ArrayList<>();
+        Map<String, String> snapshotBySource = new LinkedHashMap<>();
+        int droppedSources = 0;
+        for (Map.Entry<String, String> entry : pinnedSnapshots.entrySet()) {
+            String sourceId = entry.getKey();
+            String pinned = entry.getValue();
+            String currentSnapshot = current.get(sourceId);
+            if (pinned == null || pinned.isBlank()) {
+                // 旧调用方没有快照列：按当前快照处理，空值不做任意快照通配
+                if (currentSnapshot == null || currentSnapshot.isBlank()) {
+                    droppedSources++;
+                    continue;
+                }
+                activeSources.add(sourceId);
+                snapshotBySource.put(sourceId, currentSnapshot);
+                continue;
+            }
+            if (!pinned.equals(currentSnapshot)) {
+                droppedSources++;
+                continue;
+            }
+            activeSources.add(sourceId);
+            snapshotBySource.put(sourceId, pinned);
+        }
+        return new SnapshotScopeResult(List.copyOf(activeSources), Map.copyOf(snapshotBySource), droppedSources);
+    }
+
+    private Map<String, String> currentSnapshotIds(String workspaceId, List<String> sourceIds) {
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Object> parameters = new ArrayList<>();
+        parameters.add(workspaceId);
+        parameters.addAll(sourceIds);
+        List<String[]> rows = new ArrayList<>();
+        jdbcTemplate.query("""
+                select ss.source_id, ss.id
+                from source_snapshot ss
+                join source s on s.id = ss.source_id and s.workspace_id = ?
+                where ss.source_id in (%s)
+                  and ss.index_status = 'INDEXED'
+                  and ss.version_no = (
+                      select max(current_ss.version_no)
+                      from source_snapshot current_ss
+                      where current_ss.source_id = ss.source_id
+                        and current_ss.index_status = 'INDEXED'
+                  )
+                """.formatted(placeholders(sourceIds.size())), rs -> {
+            rows.add(new String[] {rs.getString("source_id"), rs.getString("id")});
+        }, parameters.toArray());
+        Map<String, String> bySourceId = new LinkedHashMap<>();
+        for (String[] row : rows) {
+            bySourceId.put(row[0], row[1]);
+        }
+        return Map.copyOf(bySourceId);
+    }
+
+    private record SnapshotScopeResult(
+            List<String> activeSources,
+            Map<String, String> snapshotBySource,
+            int droppedSources
+    ) {
     }
 
     /**
      * 阶段二：按身份优先级有界装载正文。
      *
-     * <p>窗口按入参顺序分批查询，预算先消耗在优先级高的窗口上；
-     * 单窗口超限或预算耗尽的窗口被跳过并计数，不截断正文冒充完整内容。</p>
+     * <p>已经写好的窗口顺序（同类锚点内相关性、跨来源轮询）就是预算消费顺序；
+     * 每批 SQL 取回行后按身份列表逐条消费，不按数据库返回行序重新分配预算。
+     * 空正文、超限和预算耗尽的窗口都不保留，分别计数，不截断正文冒充完整内容。</p>
      */
     public BodyLoadResult hydrateWindowBodies(
             String workspaceId,
@@ -318,7 +470,7 @@ public class RetrievalHydrator {
             WindowBodyBudget budget
     ) {
         if (windows == null || windows.isEmpty()) {
-            lastWindowLoadBudget = new WindowLoadUsage(0, 0, false, 0, 0, 0, 0, 0);
+            lastWindowLoadBudget = new WindowLoadUsage(0, 0, false, 0, 0, 0, 0, 0, 0);
             return new BodyLoadResult(Map.of());
         }
         WindowBodyBudget effectiveBudget = budget == null ? WindowBodyBudget.defaults() : budget;
@@ -328,6 +480,7 @@ public class RetrievalHydrator {
         boolean byteTruncated = false;
         int droppedOversized = 0;
         int droppedByBudget = 0;
+        int droppedEmpty = 0;
         List<String> orderedIds = windows.stream().map(WindowIdentity::id).distinct().toList();
         for (List<String> batch : partition(orderedIds, 100)) {
             if (loadedWindows >= effectiveBudget.maxWindowCount()) {
@@ -337,7 +490,7 @@ public class RetrievalHydrator {
             List<Object> parameters = new ArrayList<>();
             parameters.add(workspaceId);
             parameters.addAll(batch);
-            List<String[]> rows = new ArrayList<>();
+            Map<String, String> fetched = new LinkedHashMap<>();
             jdbcTemplate.query("""
                     select w.id, w.content
                     from source_window w
@@ -345,10 +498,18 @@ public class RetrievalHydrator {
                     where c.workspace_id = ? and w.id in (%s)
                     """.formatted(placeholders(batch.size())), rs -> {
                 // RowCallbackHandler 由 Spring 逐行回调，这里不调用 rs.next()
-                rows.add(new String[] {rs.getString("id"), rs.getString("content")});
+                fetched.put(rs.getString("id"), rs.getString("content"));
             }, parameters.toArray());
-            for (String[] row : rows) {
-                String content = row[1];
+            // 预算按调用方给定的窗口顺序消费；SQL 行序只决定取回顺序，不决定谁占预算
+            for (String id : batch) {
+                if (!fetched.containsKey(id)) {
+                    continue;
+                }
+                String content = fetched.get(id);
+                if (content == null || content.isBlank()) {
+                    droppedEmpty++;
+                    continue;
+                }
                 int contentBytes = utf8Bytes(content);
                 if (contentBytes > effectiveBudget.maxSingleWindowBytes()) {
                     droppedOversized++;
@@ -362,11 +523,11 @@ public class RetrievalHydrator {
                 }
                 loadedBytes += contentBytes;
                 loadedWindows++;
-                contentById.put(row[0], content == null ? "" : content);
+                contentById.put(id, content);
             }
         }
         lastWindowLoadBudget = new WindowLoadUsage(loadedBytes, loadedWindows, byteTruncated,
-                droppedOversized, droppedByBudget, 0, 0, 0);
+                droppedOversized, droppedByBudget, 0, 0, 0, droppedEmpty);
         return new BodyLoadResult(contentById);
     }
 
@@ -374,11 +535,18 @@ public class RetrievalHydrator {
     private List<WindowIdentity> querySemanticIdentities(
             String workspaceId,
             List<String> chunkIds,
+            Map<String, String> snapshotBySource,
+            Map<String, Double> semanticScoreByChunkId,
             int limit
     ) {
+        List<String> snapshotIds = snapshotBySource.values().stream().distinct().toList();
+        String snapshotFilter = snapshotIds.isEmpty()
+                ? ""
+                : " and c.source_snapshot_id in (" + placeholders(snapshotIds.size()) + ")";
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
         parameters.addAll(chunkIds);
+        parameters.addAll(snapshotIds);
         parameters.add(limit);
         List<WindowIdentity> rows = new ArrayList<>();
         jdbcTemplate.query("""
@@ -394,7 +562,7 @@ public class RetrievalHydrator {
                   on s.id = c.source_id and s.workspace_id = c.workspace_id
                 join source_snapshot ss
                   on ss.id = c.source_snapshot_id and ss.source_id = s.id
-                where c.workspace_id = ? and c.id in (%s)
+                where c.workspace_id = ? and c.id in (%s)%s
                   and s.status = 'READY'
                   and s.index_status = 'INDEXED'
                   and ss.index_status = 'INDEXED'
@@ -407,7 +575,7 @@ public class RetrievalHydrator {
                   and c.projection_status = 'PROJECTED'
                 order by c.source_id asc, c.chunk_no asc, w.window_no asc
                 limit ?
-                """.formatted(placeholders(chunkIds.size())), rs -> {
+                """.formatted(placeholders(chunkIds.size()), snapshotFilter), rs -> {
             // RowCallbackHandler 由 Spring 逐行回调，这里不调用 rs.next()
             rows.add(new WindowIdentity(
                     rs.getString("id"),
@@ -423,20 +591,30 @@ public class RetrievalHydrator {
                     rs.getString("location_info"),
                     "semantic-anchor"));
         }, parameters.toArray());
-        return filterGenerated(workspaceId, rows);
+        return filterGenerated(workspaceId, rows).stream()
+                .filter(identity -> matchesPinnedSnapshot(identity, snapshotBySource))
+                .map(identity -> identity.withRelevance(
+                        semanticScoreByChunkId.getOrDefault(identity.chunkId(), 0.0d)))
+                .toList();
     }
 
     /** 按来源配额的排名路径：词法命中（可选）或头部回退，避免单一来源耗尽全局名额。 */
     private List<WindowIdentity> queryRankedIdentities(
             String workspaceId,
             List<String> sourceIds,
+            Map<String, String> snapshotBySource,
             List<String> lexicalTerms,
             int perSourceLimit,
             String anchorKind
     ) {
+        List<String> snapshotIds = snapshotBySource.values().stream().distinct().toList();
+        String snapshotFilter = snapshotIds.isEmpty()
+                ? ""
+                : " and c0.source_snapshot_id in (" + placeholders(snapshotIds.size()) + ")";
         List<Object> parameters = new ArrayList<>();
         parameters.add(workspaceId);
         parameters.addAll(sourceIds);
+        parameters.addAll(snapshotIds);
         StringBuilder lexicalFilter = new StringBuilder();
         if (lexicalTerms != null && !lexicalTerms.isEmpty()) {
             lexicalFilter.append(" and (");
@@ -476,7 +654,7 @@ public class RetrievalHydrator {
                     join source_chunk c0 on c0.id = w0.source_chunk_id
                     join source s0 on s0.id = c0.source_id and s0.workspace_id = c0.workspace_id
                     join source_snapshot ss0 on ss0.id = c0.source_snapshot_id and ss0.source_id = s0.id
-                    where c0.workspace_id = ? and c0.source_id in (%s)
+                    where c0.workspace_id = ? and c0.source_id in (%s)%s
                       and s0.status = 'READY'
                       and s0.index_status = 'INDEXED'
                       and ss0.index_status = 'INDEXED'
@@ -490,7 +668,7 @@ public class RetrievalHydrator {
                 ) ranked
                 where ranked.source_rank <= ?
                 order by ranked.source_id asc, ranked.chunk_no asc, ranked.window_no asc
-                """.formatted(placeholders(sourceIds.size()), lexicalFilter), rs -> {
+                """.formatted(placeholders(sourceIds.size()), snapshotFilter, lexicalFilter), rs -> {
             rows.add(new WindowIdentity(
                     rs.getString("id"),
                     rs.getString("source_id"),
@@ -503,9 +681,39 @@ public class RetrievalHydrator {
                     rs.getString("generated_ref_id"),
                     rs.getInt("window_no"),
                     rs.getString("location_info"),
-                    anchorKind));
+                    anchorKind,
+                    lexicalRelevance(rs.getString("heading"), rs.getString("location_info"), lexicalTerms)));
         }, parameters.toArray());
-        return filterGenerated(workspaceId, rows);
+        return filterGenerated(workspaceId, rows).stream()
+                .filter(identity -> matchesPinnedSnapshot(identity, snapshotBySource))
+                .toList();
+    }
+
+    /** 词法锚点没有正文可算分，用命中词数占查询词数的比例做同类锚点内的排序依据。 */
+    private double lexicalRelevance(String heading, String locationInfo, List<String> lexicalTerms) {
+        if (lexicalTerms == null || lexicalTerms.isEmpty()) {
+            return 0.0d;
+        }
+        String haystack = (text(heading) + "\n" + text(locationInfo)).toLowerCase(java.util.Locale.ROOT);
+        if (haystack.isBlank()) {
+            return 0.0d;
+        }
+        int matched = 0;
+        for (String term : lexicalTerms) {
+            if (term != null && !term.isBlank() && haystack.contains(term.toLowerCase(java.util.Locale.ROOT))) {
+                matched++;
+            }
+        }
+        return matched / (double) lexicalTerms.size();
+    }
+
+    private boolean matchesPinnedSnapshot(WindowIdentity identity, Map<String, String> snapshotBySource) {
+        String pinned = snapshotBySource.get(identity.sourceId());
+        return pinned == null || pinned.isBlank() || pinned.equals(identity.sourceSnapshotId());
+    }
+
+    private String text(String value) {
+        return value == null ? "" : value;
     }
 
     private List<WindowIdentity> filterGenerated(String workspaceId, List<WindowIdentity> rows) {
@@ -525,7 +733,13 @@ public class RetrievalHydrator {
         return visible;
     }
 
-    /** 来源间公平配额：单来源上限 + 按输入来源顺序轮转消耗全局配额。 */
+    /**
+     * 来源间公平配额：单来源上限 + 跨来源轮询。
+     *
+     * <p>来源内先按锚点类型（语义 &gt; 词法 &gt; 头部回退）再按同类锚点的相关性排序；
+     * 不同锚点的相关性量纲不同，因此不跨类型直接比较分数。输出按轮次交替取各来源的下一条，
+     * 正文预算和候选上限按这个顺序消费。</p>
+     */
     private List<WindowIdentity> fairAllocate(
             List<WindowIdentity> identities,
             List<String> sourceOrder,
@@ -534,10 +748,6 @@ public class RetrievalHydrator {
     ) {
         if (identities.isEmpty() || perSourceLimit <= 0 || totalLimit <= 0) {
             return List.of();
-        }
-        Map<String, Integer> orderIndex = new LinkedHashMap<>();
-        for (int i = 0; i < sourceOrder.size(); i++) {
-            orderIndex.put(sourceOrder.get(i), i);
         }
         Map<String, List<WindowIdentity>> bySource = new LinkedHashMap<>();
         for (String sourceId : sourceOrder) {
@@ -553,34 +763,25 @@ public class RetrievalHydrator {
                 int byPriority = Integer.compare(priority.getOrDefault(right.anchorKind(), 0),
                         priority.getOrDefault(left.anchorKind(), 0));
                 if (byPriority != 0) return byPriority;
+                int byRelevance = Double.compare(right.relevance(), left.relevance());
+                if (byRelevance != 0) return byRelevance;
                 int byChunk = Integer.compare(left.chunkNo(), right.chunkNo());
                 if (byChunk != 0) return byChunk;
                 return Integer.compare(left.windowNo(), right.windowNo());
             });
         }
-        List<WindowIdentity> allocated = new ArrayList<>();
-        int[] cursor = new int[bySource.size()];
         List<List<WindowIdentity>> pools = new ArrayList<>(bySource.values());
-        boolean progressed = true;
-        while (allocated.size() < totalLimit && progressed) {
-            progressed = false;
-            for (int i = 0; i < pools.size() && allocated.size() < totalLimit; i++) {
-                if (cursor[i] < Math.min(pools.get(i).size(), perSourceLimit)) {
-                    allocated.add(pools.get(i).get(cursor[i]));
-                    cursor[i]++;
-                    progressed = true;
+        List<WindowIdentity> allocated = new ArrayList<>();
+        for (int round = 0; round < perSourceLimit && allocated.size() < totalLimit; round++) {
+            for (List<WindowIdentity> pool : pools) {
+                if (allocated.size() >= totalLimit) {
+                    break;
+                }
+                if (round < pool.size()) {
+                    allocated.add(pool.get(round));
                 }
             }
         }
-        allocated.sort((left, right) -> {
-            int leftOrder = orderIndex.getOrDefault(left.sourceId(), Integer.MAX_VALUE);
-            int rightOrder = orderIndex.getOrDefault(right.sourceId(), Integer.MAX_VALUE);
-            int byOrder = Integer.compare(leftOrder, rightOrder);
-            if (byOrder != 0) return byOrder;
-            int byChunk = Integer.compare(left.chunkNo(), right.chunkNo());
-            if (byChunk != 0) return byChunk;
-            return Integer.compare(left.windowNo(), right.windowNo());
-        });
         return allocated;
     }
 
@@ -635,7 +836,7 @@ public class RetrievalHydrator {
         }
     }
 
-    /** 窗口装载使用情况；字节按 UTF-8 计数，丢弃窗口分别按超限与预算耗尽计数。 */
+    /** 窗口装载使用情况；字节按 UTF-8 计数，丢弃窗口分别按超限、预算耗尽与空正文计数。 */
     public record WindowLoadUsage(
             long loadedBytes,
             int loadedWindows,
@@ -644,13 +845,28 @@ public class RetrievalHydrator {
             int droppedByBudget,
             int semanticAnchorCount,
             int lexicalAnchorCount,
-            int headFallbackCount
+            int headFallbackCount,
+            int droppedEmpty
     ) {
         public static final WindowLoadUsage NONE =
-                new WindowLoadUsage(0, 0, false, 0, 0, 0, 0, 0);
+                new WindowLoadUsage(0, 0, false, 0, 0, 0, 0, 0, 0);
+
+        public WindowLoadUsage(
+                long loadedBytes,
+                int loadedWindows,
+                boolean byteTruncated,
+                int droppedOversized,
+                int droppedByBudget,
+                int semanticAnchorCount,
+                int lexicalAnchorCount,
+                int headFallbackCount
+        ) {
+            this(loadedBytes, loadedWindows, byteTruncated, droppedOversized, droppedByBudget,
+                    semanticAnchorCount, lexicalAnchorCount, headFallbackCount, 0);
+        }
 
         public WindowLoadUsage(long loadedBytes, int loadedWindows, boolean byteTruncated) {
-            this(loadedBytes, loadedWindows, byteTruncated, 0, 0, 0, 0, 0);
+            this(loadedBytes, loadedWindows, byteTruncated, 0, 0, 0, 0, 0, 0);
         }
     }
 
