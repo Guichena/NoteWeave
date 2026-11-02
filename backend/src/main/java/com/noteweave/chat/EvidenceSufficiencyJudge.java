@@ -184,32 +184,15 @@ public class EvidenceSufficiencyJudge {
     }
 
     private static String trim(String value) {
-        String text = hitText(value);
-        if (text.length() <= EXCERPT_LIMIT) {
-            return text;
-        }
-        return text.substring(0, EXCERPT_LIMIT);
+        return hitText(value);
     }
 
     /**
-     * QA 证据正文在命中段落前后拼有相邻段落。只截取开头时，看到的大多是前一段，
-     * 命中段落反而被截掉，所以先去掉前后的相邻段落块；只剩相邻段落时退回原文。
+     * 证据正文已经是命中块自己的正文，不再需要剥离相邻段落。
+     * 保留这个入口是为了让调用方与既有测试继续按同一份正文工作。
      */
     static String hitText(String value) {
-        String original = value == null ? "" : value.trim();
-        String text = original;
-        while (text.startsWith(QaHybridRetriever.ADJACENT_MARKER)) {
-            int end = text.indexOf("\n\n");
-            if (end < 0) {
-                return original;
-            }
-            text = text.substring(end + 2).trim();
-        }
-        int next = text.indexOf("\n\n" + QaHybridRetriever.ADJACENT_MARKER);
-        if (next >= 0) {
-            text = text.substring(0, next).trim();
-        }
-        return text.isEmpty() ? original : text;
+        return value == null ? "" : value.trim();
     }
 
     private static String text(String value) {
