@@ -93,8 +93,9 @@ public class ResearchRunCommandService {
         // 研究问题作为相关度查询，按需记忆按这次研究选取
         MemoryControlPackResponse controlPack = memoryCompilerService.compileResearchControlPack(
                 workspaceId, profileKey, request.question());
-        ResearchAcquisitionPolicy acquisitionPolicy = ResearchAcquisitionPolicy.compile(
-                request, externalEvidencePolicy);
+        String sourcePolicy = sourcePolicy(controlPack);
+        ResearchAcquisitionPolicy acquisitionPolicy = applySourcePolicy(
+                ResearchAcquisitionPolicy.compile(request, externalEvidencePolicy), sourcePolicy);
         List<String> sourceScopeIds = resolveRequestedSourceScopeIds(
                 workspaceId, acquisitionPolicy.seedSourceIds());
         jdbcTemplate.update("""
@@ -123,7 +124,8 @@ public class ResearchRunCommandService {
                 "research_intent", objectMapper.convertValue(
                         researchIntent, new TypeReference<Map<String, Object>>() { }),
                 "retrieval_mode", acquisitionPolicy.mode().name(),
-                "source_scope_count", sourceScopeIds.size()
+                "source_scope_count", sourceScopeIds.size(),
+                "source_policy", sourcePolicy == null ? "" : sourcePolicy
         ));
         memoryCompilerService.logPackUsage(
                 workspaceId, "RESEARCH", "RESEARCH_RUN", researchRunId, controlPack);
@@ -476,4 +478,33 @@ public class ResearchRunCommandService {
             String controlPackJson,
             ResearchRetrievalMode retrievalMode
     ) { }
+
+    /**
+     * F5-02：来源偏好只在允许的研究策略里收紧范围，不越过权限或显式种子。
+     * workspace_only 且没有种子时明确失败，不静默退回网页研究。
+     */
+    static ResearchAcquisitionPolicy applySourcePolicy(
+            ResearchAcquisitionPolicy policy,
+            String sourcePolicy
+    ) {
+        if (policy == null || !"workspace_only".equals(sourcePolicy)
+                || !policy.mode().usesWeb()) {
+            return policy;
+        }
+        if (policy.seedSourceIds().isEmpty()) {
+            throw new BusinessException(
+                    "RESEARCH_SOURCE_POLICY_CONFLICT",
+                    "当前偏好只用工作台资料，但研究没有可用种子资料");
+        }
+        return new ResearchAcquisitionPolicy(
+                ResearchRetrievalMode.SOURCES_ONLY, policy.seedSourceIds(), false, false);
+    }
+
+    static String sourcePolicy(MemoryControlPackResponse controlPack) {
+        if (controlPack == null) {
+            return null;
+        }
+        return com.noteweave.preference.PreferenceParameterCompiler.compile(controlPack)
+                .parameters().get("source_policy");
+    }
 }
