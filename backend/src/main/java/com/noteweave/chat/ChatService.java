@@ -73,6 +73,7 @@ public class ChatService {
     private final ContextV2ShadowSnapshotService contextV2Snapshots;
     private final ResearchReportGrounding reportGrounding;
     private final ConversationWorkingSetService workingSetService;
+    private final com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -94,7 +95,8 @@ public class ChatService {
             ContextV2RolloutService contextV2Rollout,
             ContextV2ShadowSnapshotService contextV2Snapshots,
             ResearchReportGrounding reportGrounding,
-            ConversationWorkingSetService workingSetService
+            ConversationWorkingSetService workingSetService,
+            com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -116,6 +118,7 @@ public class ChatService {
         this.contextV2Snapshots = contextV2Snapshots;
         this.reportGrounding = reportGrounding;
         this.workingSetService = workingSetService;
+        this.researchCellFollowUpService = researchCellFollowUpService;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -326,6 +329,13 @@ public class ChatService {
                 .filter(entry -> entry.kind() == com.noteweave.context.ConversationWorkingSet.EntryKind.RESEARCH_RUN)
                 .map(entry -> entry.refId()).distinct()
                 .reduce((left, right) -> left + "," + right).orElse(""));
+        var cellMatches = researchCellFollowUpService.match(workspaceId, conversationId,
+                conversationContext.currentQuestion(), currentSeq == null ? 0 : currentSeq);
+        attributes.put("context_research_cell_matches", cellMatches.stream()
+                .map(match -> match.cellId() + ":" + match.status())
+                .reduce((left, right) -> left + "," + right).orElse(""));
+        attributes.put("context_research_cell_ambiguous",
+                Boolean.toString(cellMatches.stream().anyMatch(match -> match.ambiguous())));
         attributes.putAll(rewrite.attributes(conversationContext.currentQuestion()));
         attributes.put(QaAnswerModeStrategy.ATTRIBUTE_WORKSPACE_CHANNEL,
                 Boolean.toString(!reportChannel || retrievalConfig.channels().contains("WORKSPACE")));
