@@ -190,7 +190,7 @@ describe("引用绑定协议事件", () => {
     ]);
   });
 
-  it("重复投递的协议事件不覆盖已有绑定", () => {
+  it("冲突协议不能覆盖原绑定，转为 INVALID", () => {
     const store = new AnswerRunStore();
     store.applyConversationEvent(event("1", "evidence.ready", 1, readyData));
     store.applyConversationEvent(event("2", "evidence.ready", 2, JSON.stringify({
@@ -199,12 +199,12 @@ describe("引用绑定协议事件", () => {
       citation_bindings: []
     })));
 
-    expect(store.get("run")?.citationProtocol?.allowedEvidenceIds).toEqual(["knowledge-version:k1"]);
+    expect(store.get("run")?.citationProtocol).toMatchObject({ state: "INVALID", diagnostic: "CONFLICTING_FROZEN_PROTOCOL" });
   });
 
-  it("历史回答没有协议事件时保持 null，旧协议解析不被改写", () => {
+  it("无协议事件保持 UNKNOWN，不把新运行当历史", () => {
     const state = reduceAnswerRunState(createAnswerRunState("run"), "answer.delta", "旧回答 [1]", 1);
-    expect(state.citationProtocol).toBeNull();
+    expect(state.citationProtocol).toMatchObject({ state: "UNKNOWN" });
   });
 
   it("无法解析的协议正文不影响正文累计", () => {
@@ -213,6 +213,53 @@ describe("引用绑定协议事件", () => {
     store.applyConversationEvent(event("2", "answer.delta", 2, "answer"));
 
     expect(store.get("run")?.content).toBe("answer");
-    expect(store.get("run")?.citationProtocol).toBeNull();
+    expect(store.get("run")?.citationProtocol).toMatchObject({ state: "INVALID" });
   });
+});
+
+describe("F1 快照和冲突反例", () => {
+  const ready = { protocol_state: "BINDING_V1", protocol_version: "citation-binding-v1", allowed_evidence_ids: ["p:1"], citation_bindings: [{ number: 1, evidence_id: "p:1", citation_ids: [] }] };
+  it("页面刷新通过快照恢复协议且冲突事件转 INVALID", () => {
+    const store = new AnswerRunStore();
+    store.applySnapshot(JSON.stringify({ answer_runs: [{ id: "run", status: "GENERATING", content: "答案[1]", citation_protocol: ready }] }));
+    expect(store.get("run")?.citationProtocol).toMatchObject({ state: "BINDING_V1" });
+    store.applyConversationEvent(event("2", "evidence.ready", 2, JSON.stringify({ ...ready, allowed_evidence_ids: ["p:2"], citation_bindings: [{ number: 1, evidence_id: "p:2", citation_ids: [] }] })));
+    expect(store.get("run")?.citationProtocol).toMatchObject({ state: "INVALID" });
+  });
+});
+
+
+describe("F1 运行级快照", () => {
+  const protocol = { protocol_state: "BINDING_V1", protocol_version: "citation-binding-v1", allowed_evidence_ids: ["p:1"], citation_bindings: [{ number: 1, evidence_id: "p:1", citation_ids: [] }] };
+  it("生成中快照只恢复绑定，不把草稿或水位冒充已恢复的正文", () => {
+    let current = createAnswerRunState("run");
+    current = reduceAnswerRunState(current, "run.snapshot", JSON.stringify({ id: "run", status: "GENERATING", content: "SECRET DRAFT", event_sequence: 5, citation_protocol: protocol }));
+    expect(current.content).toBe("");
+    expect(current.citationProtocol).toMatchObject({ state: "BINDING_V1" });
+    expect(current.lastRunSequence).toBe(0);
+    current = reduceAnswerRunState(current, "answer.delta", "可见正文[1]", 3);
+    expect(current.content).toBe("可见正文[1]");
+  });
+  it("完成快照恢复正文与水位，重放增量不会重复拼接", () => {
+    let current = createAnswerRunState("run");
+    current = reduceAnswerRunState(current, "run.snapshot", JSON.stringify({ id: "run", status: "COMPLETED", content: "最终正文[1]", event_sequence: 5, citation_protocol: protocol }));
+    current = reduceAnswerRunState(current, "answer.delta", "重复正文", 3);
+    expect(current.content).toBe("最终正文[1]");
+    expect(current.lastRunSequence).toBe(5);
+  });
+  it("其他运行的快照不能覆盖当前正文或绑定", () => {
+    const current = reduceAnswerRunState(createAnswerRunState("run"), "run.snapshot", JSON.stringify({ id: "other", status: "COMPLETED", content: "其他正文", citation_protocol: protocol }));
+    expect(current.content).toBe("");
+    expect(current.citationProtocol).toMatchObject({ state: "INVALID" });
+  });
+});
+
+
+it("同一事件ID和序号的冲突协议仍可诊断，不能被去重提前吞掉", () => {
+  const store = new AnswerRunStore();
+  const payload = (id: string) => JSON.stringify({ protocol_state: "BINDING_V1", protocol_version: "citation-binding-v1", allowed_evidence_ids: [id], citation_bindings: [{ number: 1, evidence_id: id, citation_ids: [] }] });
+  store.applyConversationEvent(event("same", "evidence.ready", 1, payload("p:1")));
+  store.applyConversationEvent(event("same", "evidence.ready", 1, payload("p:2")));
+  expect(store.get("run")?.citationProtocol).toMatchObject({ state: "INVALID", diagnostic: "CONFLICTING_FROZEN_PROTOCOL" });
+  expect(store.get("run")?.lastRunSequence).toBe(1);
 });

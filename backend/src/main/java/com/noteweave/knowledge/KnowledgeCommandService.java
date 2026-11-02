@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class KnowledgeCommandService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.noteweave.chat.CitationBindingService citationBindings;
     private final WorkspaceQueryPort workspaceQueryPort;
     private final AuditActorProvider auditActorProvider;
     private final KnowledgeVersionService knowledgeVersionService;
@@ -59,6 +60,7 @@ public class KnowledgeCommandService {
             WikiIndexOutbox wikiIndexOutbox
     ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.citationBindings = new com.noteweave.chat.CitationBindingService(jdbcTemplate);
         this.workspaceQueryPort = workspaceQueryPort;
         this.auditActorProvider = auditActorProvider;
         this.knowledgeVersionService = knowledgeVersionService;
@@ -451,7 +453,8 @@ public class KnowledgeCommandService {
     ) {
         List<String> normalizedCitationIds = citationIds == null
                 ? List.of() : List.copyOf(citationIds);
-        citationReadGate.requireCitationIdsReadable(workspaceId, normalizedCitationIds);
+        citationBindings.lockBindingConversations(workspaceId, null, normalizedCitationIds);
+        citationReadGate.requireCitationIdsCurrent(workspaceId, normalizedCitationIds);
         String normalizedContent = content;
         String pageKind = null;
         if ("WIKI".equals(itemType)) {
@@ -735,12 +738,7 @@ public class KnowledgeCommandService {
             List<String> directCitationIds
     ) {
         if (sourceMessageId != null && !sourceMessageId.isBlank()) {
-            MessageSnapshot message = loadAssistantMessage(sourceMessageId);
-            if (!workspaceId.equals(message.workspaceId())) {
-                throw new BusinessException(
-                        "MESSAGE_WORKSPACE_MISMATCH", "消息不属于当前工作台");
-            }
-            return citationIdsForMessage(sourceMessageId);
+            return citationBindings.citationIdsForPublishedMessage(workspaceId, sourceMessageId);
         }
         return directCitationIds == null ? List.of() : List.copyOf(directCitationIds);
     }
@@ -755,13 +753,10 @@ public class KnowledgeCommandService {
     }
 
     private void bindVersionCitations(String versionId, List<String> citationIds) {
-        for (int index = 0; index < citationIds.size(); index++) {
-            jdbcTemplate.update("""
-                    insert into knowledge_version_citation(
-                        id, knowledge_version_id, citation_id, sort_order
-                    ) values (?, ?, ?, ?)
-                    """, Ids.newId(), versionId, citationIds.get(index), index);
-        }
+        String workspaceId = jdbcTemplate.queryForObject(
+                "select i.workspace_id from knowledge_version v join knowledge_item i on i.id=v.item_id where v.id=?",
+                String.class, versionId);
+        citationBindings.bindToKnowledgeVersion(workspaceId, versionId, citationIds);
     }
 
     private void requireWorkspace(String workspaceId) {

@@ -38,6 +38,7 @@ public class RunReplayRedactionService {
     }
 
     public void redactDeletedSource(String workspaceId, String sourceId) {
+        redactAffectedAnswerRuns(workspaceId, sourceId);
         jdbcTemplate.update("""
                 update answer_run_evidence_manifest
                 set excerpt = '', content_hash = ?, character_cost = 0
@@ -77,7 +78,95 @@ public class RunReplayRedactionService {
                 """, workspaceId, workspaceId, sourceId);
     }
 
+    /** 来源父行优先，再锁全部受影响会话/run/知识对象，最后才处理citation正文。 */
+    private void redactAffectedAnswerRuns(String workspaceId, String sourceId) {
+        jdbcTemplate.queryForList("select id from source where workspace_id=? and id=? for update", String.class,workspaceId,sourceId);
+        jdbcTemplate.queryForList("select id from source_snapshot where source_id=? order by id for update",String.class,sourceId);
+        jdbcTemplate.queryForList("select id from source_chunk where workspace_id=? and source_id=? order by id for update",String.class,workspaceId,sourceId);
+        boolean compliance = Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "select case when delete_reason='COMPLIANCE' then true else false end from source where workspace_id=? and id=?",
+                Boolean.class,workspaceId,sourceId));
+        List<String> versions = jdbcTemplate.queryForList("""
+                select distinct kvc.knowledge_version_id from knowledge_version_citation kvc
+                join citation c on c.id=kvc.citation_id where c.workspace_id=? and c.source_id=?
+                order by kvc.knowledge_version_id
+                """,String.class,workspaceId,sourceId);
+        java.util.TreeSet<String> runIds = new java.util.TreeSet<>(jdbcTemplate.queryForList("""
+                select distinct m.answer_run_id from answer_run_evidence_manifest m
+                where m.workspace_id=? and (m.source_id=? or m.knowledge_version_id in (
+                    select kvc.knowledge_version_id from knowledge_version_citation kvc
+                    join citation c on c.id=kvc.citation_id where c.workspace_id=? and c.source_id=?))
+                """,String.class,workspaceId,sourceId,workspaceId,sourceId));
+        List<String> researchIds = jdbcTemplate.queryForList("""
+                select r.id from research_run r where r.workspace_id=? and (
+                    r.source_scope_json like ? or exists(select 1 from source_evidence e where e.research_run_id=r.id and e.source_id=?)
+                    or exists(select 1 from research_evidence_manifest m join research_evidence_manifest_item i on i.manifest_id=m.id
+                              where m.research_run_id=r.id and m.workspace_id=? and i.source_id=?))
+                """,String.class,workspaceId,"%\""+sourceId+"\"%",sourceId,workspaceId,sourceId);
+        for (String researchId : researchIds) {
+            runIds.addAll(jdbcTemplate.queryForList("select distinct answer_run_id from answer_run_evidence_manifest where workspace_id=? and evidence_kind='RESEARCH_EVIDENCE' and evidence_id like ?",
+                    String.class,workspaceId,"research-evidence:"+researchId+":%"));
+        }
+        java.util.TreeSet<String> conversations = new java.util.TreeSet<>();
+        for(String runId:runIds) conversations.addAll(jdbcTemplate.queryForList("select conversation_id from answer_run where workspace_id=? and id=?",String.class,workspaceId,runId));
+        for(String id:conversations) jdbcTemplate.queryForList("select id from conversation where workspace_id=? and id=? for update",String.class,workspaceId,id);
+        for(String id:runIds) jdbcTemplate.queryForList("select id from answer_run where workspace_id=? and id=? for update",String.class,workspaceId,id);
+        java.util.TreeSet<String> itemIds = new java.util.TreeSet<>();
+        for(String version:versions) itemIds.addAll(jdbcTemplate.queryForList("select item_id from knowledge_version where id=?",String.class,version));
+        for(String id:itemIds) jdbcTemplate.queryForList("select id from knowledge_item where workspace_id=? and id=? for update",String.class,workspaceId,id);
+        for(String runId:runIds) {
+            String state=jdbcTemplate.queryForObject("select status from answer_run where workspace_id=? and id=?",String.class,workspaceId,runId);
+            if(!compliance && List.of("COMPLETED","FAILED","CANCELLED").contains(state)) continue;
+            jdbcTemplate.update("""
+                    update answer_run set status='CANCELLED',error_code='ANSWER_EVIDENCE_REVOKED',error_message='来源已撤销',
+                        stream_owner=null,stream_lease_until=null,finished_at=coalesce(finished_at,current_timestamp),
+                        version=version+1,updated_at=current_timestamp where workspace_id=? and id=?
+                    """,workspaceId,runId);
+            redactAnswerRun(workspaceId,runId);
+        }
+        if(compliance) {
+            for(String version:versions) {
+                jdbcTemplate.update("update knowledge_version set content='',summary='' where id=?",version);
+                if(wikiPageVersionCache!=null) {
+                    String item=jdbcTemplate.queryForObject("select item_id from knowledge_version where id=?",String.class,version);
+                    String itemId = item;
+                    String versionId = version;
+                    if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                        org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                                new org.springframework.transaction.support.TransactionSynchronization() {
+                                    @Override public void afterCommit() {
+                                        wikiPageVersionCache.invalidate(workspaceId, itemId, versionId);
+                                    }
+                                });
+                    } else {
+                        wikiPageVersionCache.invalidate(workspaceId, itemId, versionId);
+                    }
+                }
+            }
+        }
+    }
+
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
+    @Autowired(required=false)
+    void setEventPublisher(org.springframework.context.ApplicationEventPublisher publisher) {
+        this.eventPublisher = publisher;
+    }
+
+    private com.noteweave.knowledge.WikiPageVersionCache wikiPageVersionCache;
+    @Autowired(required=false)
+    void setWikiPageVersionCache(com.noteweave.knowledge.WikiPageVersionCache cache) {
+        this.wikiPageVersionCache=cache;
+    }
+
     public void redactDeletedConversationMessage(String workspaceId, String messageId) {
+        List<String> runIds = jdbcTemplate.queryForList("""
+                select id from answer_run where workspace_id=?
+                  and (query_message_id=? or answer_message_id=? or id in (
+                      select answer_run_id from run_input_snapshot where workspace_id=?
+                        and execution_kind='ANSWER' and snapshot_json like ?)) order by id
+                """, String.class, workspaceId, messageId, messageId, workspaceId, "%"+messageId+"%");
+        for (String runId : runIds) redactAnswerRun(workspaceId, runId);
         redactFrozenResearchProjection("MESSAGE", messageId);
         String reference = "%" + messageId + "%";
         jdbcTemplate.update("""
@@ -86,6 +175,48 @@ public class RunReplayRedactionService {
                   and (query_message_id = ? or assistant_message_id = ? or snapshot_json like ?)
                 """, workspaceId, messageId, messageId, reference);
         if (shadowSnapshots != null) shadowSnapshots.redactReference("MESSAGE", messageId);
+    }
+
+    /** 保留身份、hash、计数；正文副本必须物理清理，不能只依赖接口CASE隐藏。 */
+    public void redactAnswerRun(String workspaceId, String runId) {
+        jdbcTemplate.update("update message_revision set content='',status='PARTIAL',updated_at=current_timestamp where workspace_id=? and answer_run_id=?", workspaceId,runId);
+        jdbcTemplate.update("""
+                update answer_run_evidence_manifest set title='',excerpt='',location_info=null,
+                    graph_path_json=null,character_cost=0 where workspace_id=? and answer_run_id=?
+                """,workspaceId,runId);
+        jdbcTemplate.update("""
+                update conversation_message set content='',content_hash=?
+                where workspace_id=? and id in (select answer_message_id from answer_run where workspace_id=? and id=?)
+                """,EMPTY_CONTENT_SHA256,workspaceId,workspaceId,runId);
+        String contract=jdbcTemplate.query("select generation_contract_json from answer_run where workspace_id=? and id=?",
+                rs->rs.next()?rs.getString(1):null,workspaceId,runId);
+        if(contract!=null && !contract.isBlank()) {
+            try {
+                JsonNode node=objectMapper.readTree(contract);
+                if(!(node instanceof ObjectNode object)) throw new IllegalStateException("生成契约不是对象");
+                object.put("systemPrompt", "");
+                object.putArray("allowedPageTitles");
+                jdbcTemplate.update("update answer_run set generation_contract_json=? where workspace_id=? and id=?",
+                        objectMapper.writeValueAsString(object),workspaceId,runId);
+            } catch(JsonProcessingException ex) {
+                throw new IllegalStateException("生成契约无法脱敏",ex);
+            }
+        }
+        jdbcTemplate.update("""
+                update answer_event set payload_json='{}'
+                where workspace_id=? and answer_run_id=? and event_type in ('citation.upsert','answer.delta','evidence.ready')
+                """,workspaceId,runId);
+        List<String> messages=jdbcTemplate.queryForList("select answer_message_id from answer_run where workspace_id=? and id=? and answer_message_id is not null",String.class,workspaceId,runId);
+        var bindings=new com.noteweave.chat.CitationBindingService(jdbcTemplate);
+        for(String message:messages) bindings.unbindAndRedactOwned(workspaceId,message);
+        if (eventPublisher != null) {
+            String conversationId = jdbcTemplate.queryForObject(
+                    "select conversation_id from answer_run where workspace_id=? and id=?",
+                    String.class, workspaceId, runId);
+            // 监听器必须AFTER_COMMIT：回滚不能清理仍合法的实时缓冲。
+            eventPublisher.publishEvent(new com.noteweave.answer.AnswerReplayRevoked(
+                    workspaceId, conversationId, runId));
+        }
     }
 
     public void redactDeletedSummaryRevision(String revisionId) {

@@ -1,150 +1,142 @@
 package com.noteweave.answer.generation;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
-/**
- * 流式输出里的引用标记规范化。
- *
- * <p>模型只写编号 {@code [n]} 和页面名 {@code [[页面名]]}。越界编号和未选页面名不属于本次允许的引用，
- * 在流式发送之前改成普通文字并计数，流式内容、返回值和落库正文因此保持一致，不会出现「发送时是角标、
- * 落库后是普通文字」这种前后不一致。</p>
- *
- * <p>标记可能跨多个 token 到达，未闭合的部分先暂存；暂存长度有上限，避免一直等不到闭合而卡住流式输出。</p>
- */
+/** 只在正文引用位置规范化编号；所有未决语法在发送前完成判定。 */
 public final class CitationMarkerNormalizer {
-
-    /** 单个标记允许的最大长度，超过就按普通文字输出，不再等待闭合。 */
     public static final int MAX_MARKER_LENGTH = 64;
-
-    private static final Pattern NUMBER_MARKER = Pattern.compile("\\[(\\d{1,4})]");
-    private static final Pattern PAGE_MARKER = Pattern.compile("\\[\\[([^\\[\\]\\n]{1,80})]]");
-    /** 改成普通文字时使用全角括号，视觉不变但不再被当作引用标记解析。 */
-    private static final String FULL_WIDTH_OPEN = "［";
-    private static final String FULL_WIDTH_CLOSE = "］";
-
+    public static final int MAX_CITATION_NUMBER = 9999;
     private final GenerationContract contract;
     private final StringBuilder pending = new StringBuilder();
     private int outOfRangeNumbers;
-    private int unknownPages;
+    private int inlineTicks;
+    private char fence;
+    private int fenceLength;
+    private boolean closingFenceLine;
+    private int bracketDepth;
+    private int linkDepth;
+    private boolean afterLabel;
+    private boolean escaped;
+    private boolean linePrefix = true;
+    private int indent;
+    private char previous;
 
-    public CitationMarkerNormalizer(GenerationContract contract) {
-        this.contract = contract;
-    }
+    public CitationMarkerNormalizer(GenerationContract contract) { this.contract = contract; }
 
-    /** 接收一个流式片段，返回可以立刻发送的安全文本。 */
     public String accept(String chunk) {
-        if (chunk == null || chunk.isEmpty()) {
-            return "";
-        }
+        if (chunk == null || chunk.isEmpty()) return "";
         pending.append(chunk);
-        int safe = safeLength();
-        if (safe <= 0) {
-            return "";
-        }
-        String out = normalize(pending.substring(0, safe));
-        pending.delete(0, safe);
-        return out;
+        return drain(false);
     }
 
-    /** 生成结束后把暂存部分输出；未闭合的标记按普通文字发送。 */
-    public String flush() {
-        if (pending.length() == 0) {
-            return "";
-        }
-        String out = normalize(pending.toString());
-        pending.setLength(0);
-        return out;
-    }
+    public String flush() { return drain(true); }
+    public int outOfRangeNumbers() { return outOfRangeNumbers; }
+    /** 页面链接是普通导航，不作为证据标记，也不计非法证据。 */
+    public int unknownPages() { return 0; }
 
-    public int outOfRangeNumbers() {
-        return outOfRangeNumbers;
-    }
-
-    public int unknownPages() {
-        return unknownPages;
-    }
-
-    /**
-     * 从尾部找可能还没写完的标记，返回可以安全处理的前缀长度。
-     *
-     * <p>只有以 {@code [} 开头、还没出现闭合括号且长度未超过上限的尾段才需要等待。</p>
-     */
-    private int safeLength() {
-        int length = pending.length();
-        int open = pending.lastIndexOf("[");
-        if (open < 0) {
-            return length;
-        }
-        // 连续的 [ 要一起留在缓冲区，否则 [[页面名]] 会被拆成两个片段
-        int start = open;
-        while (start > 0 && pending.charAt(start - 1) == '[') {
-            start--;
-        }
-        String tail = pending.substring(start);
-        if (tail.length() > MAX_MARKER_LENGTH) {
-            return length;
-        }
-        if (tail.indexOf(']') >= 0) {
-            return length;
-        }
-        return start;
-    }
-
-    private String normalize(String text) {
-        if (text.isEmpty()) {
-            return "";
-        }
-        String normalized = replaceNumbers(text);
-        return replacePages(normalized);
-    }
-
-    private String replaceNumbers(String text) {
-        if (contract == null) {
-            return text;
-        }
-        Matcher matcher = NUMBER_MARKER.matcher(text);
-        StringBuilder builder = new StringBuilder();
-        while (matcher.find()) {
-            String digits = matcher.group(1);
-            int number;
-            try {
-                number = Integer.parseInt(digits);
-            } catch (NumberFormatException exception) {
-                number = -1;
+    private String drain(boolean end) {
+        StringBuilder output = new StringBuilder();
+        int i = 0;
+        while (i < pending.length()) {
+            char c = pending.charAt(i);
+            if (escaped) {
+                append(output, c); i++; escaped = false; continue;
             }
-            String replacement;
-            if (number > 0 && contract.hasNumber(number)) {
-                replacement = matcher.group();
-            } else {
-                outOfRangeNumbers++;
-                replacement = FULL_WIDTH_OPEN + digits + FULL_WIDTH_CLOSE;
+            if (c == '\\' && fence == 0 && inlineTicks == 0) {
+                append(output, c); i++; escaped = true; continue;
             }
-            matcher.appendReplacement(builder, Matcher.quoteReplacement(replacement));
+            if (linkDepth > 0) {
+                if (c == '(') linkDepth++;
+                if (c == ')') linkDepth--;
+                append(output, c); i++; continue;
+            }
+            if (bracketDepth > 0) {
+                if (c == '[') bracketDepth++;
+                if (c == ']') {
+                    bracketDepth--;
+                    if (bracketDepth == 0) afterLabel = true;
+                }
+                append(output, c); i++; continue;
+            }
+            if (afterLabel) {
+                afterLabel = false;
+                if (c == '(') { linkDepth = 1; append(output, c); i++; continue; }
+                if (c == '[') { bracketDepth = 1; append(output, c); i++; continue; }
+            }
+            if (fence != 0) {
+                if (linePrefix && c == fence) {
+                    int run = runLength(i, c);
+                    if (i + run == pending.length() && !end) break;
+                    closingFenceLine = run >= fenceLength;
+                    for (int j = 0; j < run; j++) append(output, c);
+                    i += run; continue;
+                }
+                if (closingFenceLine) {
+                    if (c == '\n' || c == '\r') { fence = 0; fenceLength = 0; closingFenceLine = false; }
+                    else if (c != ' ' && c != '\t') closingFenceLine = false;
+                }
+                append(output, c); i++; continue;
+            }
+            if (c == '`' || (inlineTicks == 0 && linePrefix && c == '~')) {
+                int run = runLength(i, c);
+                if (i + run == pending.length() && !end) break;
+                if (inlineTicks > 0) {
+                    if (c == '`' && run == inlineTicks) inlineTicks = 0;
+                } else if (linePrefix && run >= 3) {
+                    fence = c; fenceLength = run;
+                } else if (c == '`') inlineTicks = run;
+                for (int j = 0; j < run; j++) append(output, c);
+                i += run; continue;
+            }
+            if (inlineTicks > 0) { append(output, c); i++; continue; }
+            if (c != '[' || contract == null) { append(output, c); i++; continue; }
+            if (i + 1 == pending.length() && !end) break;
+            char next = i + 1 < pending.length() ? pending.charAt(i + 1) : 0;
+            // 标题导航、普通链接标签与标识符下标不参与引用规范化。
+            if (next == '[' || identifier(previous) || !digit(next)) {
+                bracketDepth = 1; append(output, c); i++; continue;
+            }
+            int close = i + 1;
+            while (close < pending.length() && digit(pending.charAt(close))
+                    && close - i < MAX_MARKER_LENGTH) close++;
+            if (close == pending.length() && !end && close - i < MAX_MARKER_LENGTH) break;
+            if (close - i >= MAX_MARKER_LENGTH || close == pending.length() || pending.charAt(close) != ']') {
+                bracketDepth = 1; append(output, c); i++; continue;
+            }
+            if (close + 1 == pending.length() && !end) break;
+            char following = close + 1 < pending.length() ? pending.charAt(close + 1) : 0;
+            if (following == '(' || linePrefix && following == ':' || following == '[' && close + 2 < pending.length()
+                    && !digit(pending.charAt(close + 2))) {
+                bracketDepth = 1; append(output, c); i++; continue;
+            }
+            // 下一标记既可能是相邻编号，也可能是引用式链接，等一个字符再决定。
+            if (following == '[' && close + 2 == pending.length() && !end) break;
+            String digits = pending.substring(i + 1, close);
+            int number = digits.length() <= 4 ? Integer.parseInt(digits) : -1;
+            boolean allowed = number > 0 && number <= MAX_CITATION_NUMBER && !contract.refusal()
+                    && contract.hasNumber(number) && contract.allows(contract.evidenceIdOf(number));
+            if (allowed) output.append(pending, i, close + 1);
+            else { output.append('［').append(digits).append('］'); outOfRangeNumbers++; }
+            previous = ']'; linePrefix = false;
+            i = close + 1;
         }
-        matcher.appendTail(builder);
-        return builder.toString();
+        pending.delete(0, i);
+        return output.toString();
     }
 
-    private String replacePages(String text) {
-        if (contract == null) {
-            return text;
-        }
-        Matcher matcher = PAGE_MARKER.matcher(text);
-        StringBuilder builder = new StringBuilder();
-        while (matcher.find()) {
-            String title = matcher.group(1);
-            String replacement;
-            if (contract.allowsPage(title)) {
-                replacement = matcher.group();
-            } else {
-                unknownPages++;
-                replacement = FULL_WIDTH_OPEN + FULL_WIDTH_OPEN + title
-                        + FULL_WIDTH_CLOSE + FULL_WIDTH_CLOSE;
-            }
-            matcher.appendReplacement(builder, Matcher.quoteReplacement(replacement));
-        }
-        matcher.appendTail(builder);
-        return builder.toString();
+    private int runLength(int start, char c) {
+        int end = start;
+        while (end < pending.length() && pending.charAt(end) == c) end++;
+        return end - start;
+    }
+
+    private void append(StringBuilder output, char c) {
+        output.append(c);
+        previous = c;
+        if (c == '\n' || c == '\r') { linePrefix = true; indent = 0; }
+        else if (linePrefix && c == ' ' && indent < 3) indent++;
+        else linePrefix = false;
+    }
+    private static boolean digit(char c) { return c >= '0' && c <= '9'; }
+    private static boolean identifier(char c) {
+        return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || digit(c) || c == '_' || c == '$';
     }
 }

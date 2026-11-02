@@ -88,9 +88,9 @@ describe("buildCitationViews", () => {
 });
 
 describe("parseCitationProtocol", () => {
-  it("历史回答没有 protocol_version 时返回 null，保持旧协议解析", () => {
-    expect(parseCitationProtocol({ run_id: "run-1", evidence: [] })).toBeNull();
-    expect(parseCitationProtocol({ protocol_version: "" })).toBeNull();
+  it("没有明确协议时保持 UNKNOWN，不猜测历史", () => {
+    expect(parseCitationProtocol({ run_id: "run-1", evidence: [] })).toMatchObject({ state: "UNKNOWN" });
+    expect(parseCitationProtocol({ protocol_version: "" })).toMatchObject({ state: "INVALID" });
   });
 
   it("解析新协议的允许集合与编号绑定，并按下划线字段名读取", () => {
@@ -104,6 +104,7 @@ describe("parseCitationProtocol", () => {
     });
 
     expect(protocol).toEqual({
+      state: "BINDING_V1" as const,
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["knowledge-version:v2", "passage:c1"],
       citationBindings: [
@@ -113,7 +114,7 @@ describe("parseCitationProtocol", () => {
     });
   });
 
-  it("丢掉缺编号或重复编号的绑定，避免渲染出点不开的角标", () => {
+  it("缺编号或重复编号使整个协议 INVALID，不能挑合法行继续显示", () => {
     const protocol = parseCitationProtocol({
       protocol_version: "citation-binding-v1",
       citation_bindings: [
@@ -125,10 +126,10 @@ describe("parseCitationProtocol", () => {
       ]
     });
 
-    expect(protocol?.citationBindings).toEqual([{ number: 1, evidenceId: "passage:c1", citationIds: [] }]);
+    expect(protocol).toMatchObject({ state: "INVALID", citationBindings: [] });
   });
 
-  it("流式 evidence.ready 事件的正文就是协议本身，解析失败按未知处理", () => {
+  it("流式 evidence.ready 事件的正文就是协议本身，解析失败标为 INVALID", () => {
     const protocol = parseCitationProtocolEvent(JSON.stringify({
       protocol_version: "citation-binding-v1",
       allowed_evidence_ids: ["passage:c1"],
@@ -137,8 +138,8 @@ describe("parseCitationProtocol", () => {
 
     expect(protocol?.protocolVersion).toBe("citation-binding-v1");
     expect(protocol?.citationBindings).toHaveLength(1);
-    expect(parseCitationProtocolEvent("not-json")).toBeNull();
-    expect(parseCitationProtocolEvent("")).toBeNull();
+    expect(parseCitationProtocolEvent("not-json")).toMatchObject({ state: "INVALID" });
+    expect(parseCitationProtocolEvent("")).toMatchObject({ state: "INVALID" });
   });
 });
 
@@ -159,7 +160,7 @@ describe("parseAnswerEvidenceManifest", () => {
       source_snapshot_id: null,
       knowledge_version_id: "v2"
     });
-    expect(manifest.citation_protocol).toBeNull();
+    expect(manifest.citation_protocol).toMatchObject({ state: "UNKNOWN" });
     expect(manifest.evidence_sufficiency).toBe("SUFFICIENT");
   });
 });
@@ -167,6 +168,7 @@ describe("parseAnswerEvidenceManifest", () => {
 describe("buildBoundCitationViews", () => {
   it("按编号绑定取证据，不按标题或排名猜，并带上数据版本身份", () => {
     const protocol = {
+      state: "BINDING_V1" as const,
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["knowledge-version:v2", "passage:c1"],
       citationBindings: [
@@ -196,6 +198,7 @@ describe("buildBoundCitationViews", () => {
 
   it("证据清单还没到手时按绑定占位，不退回标题匹配", () => {
     const views = buildBoundCitationViews({
+      state: "BINDING_V1" as const,
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["passage:c1"],
       citationBindings: [{ number: 4, evidenceId: "passage:c1", citationIds: [] }]
@@ -209,6 +212,7 @@ describe("buildBoundCitationViews", () => {
 describe("allowedCitationNumbers", () => {
   it("只放行同时在绑定与允许集合里的编号", () => {
     expect(allowedCitationNumbers({
+      state: "BINDING_V1" as const,
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["passage:c1"],
       citationBindings: [
@@ -216,5 +220,19 @@ describe("allowedCitationNumbers", () => {
         { number: 2, evidenceId: "passage:revoked", citationIds: [] }
       ]
     })).toEqual([1]);
+  });
+});
+
+describe("F1 协议状态反例", () => {
+  const ready = { protocol_state: "BINDING_V1", protocol_version: "citation-binding-v1", allowed_evidence_ids: ["p:1"], citation_bindings: [{ number: 1, evidence_id: "p:1", citation_ids: [] }] };
+  it("缺失不是历史，未知版本与损坏绑定不是 v1", () => {
+    expect(parseCitationProtocol({})).toMatchObject({ state: "UNKNOWN" });
+    expect(parseCitationProtocol({ protocol_state: "LEGACY" })).toMatchObject({ state: "LEGACY" });
+    expect(parseCitationProtocol({ ...ready, protocol_version: "future-v2" })).toMatchObject({ state: "INVALID" });
+    expect(parseCitationProtocol({ ...ready, citation_bindings: [...ready.citation_bindings, ...ready.citation_bindings] })).toMatchObject({ state: "INVALID" });
+    expect(parseCitationProtocolEvent("bad-json")).toMatchObject({ state: "INVALID" });
+  });
+  it("manifest 使用与事件相同的嵌套冻结对象", () => {
+    expect(parseAnswerEvidenceManifest({ run_id: "run", citation_protocol: ready }).citation_protocol).toMatchObject({ state: "BINDING_V1", citationBindings: [{ number: 1, evidenceId: "p:1", citationIds: [] }] });
   });
 });

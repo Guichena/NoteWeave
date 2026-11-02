@@ -339,6 +339,7 @@ export function useChatSessionController({
         content: buffered?.content ?? "",
         answerMode: turnMode,
         citations: buffered?.citations ?? [],
+        citationProtocol: buffered?.citationProtocol,
         answerRunId: sent.answer_run_id,
         answerStatus: buffered?.status ?? "GENERATING",
         answerError: buffered?.error ?? "",
@@ -361,7 +362,7 @@ export function useChatSessionController({
       }
       let fallback = createAnswerRunState(sent.answer_run_id);
       await streamEvents(sent.answer_stream_url || sent.stream_url, (event) => {
-        fallback = reduceAnswerRunState(fallback, event.event, event.data);
+        fallback = reduceAnswerRunState(fallback, event.event, event.data, event.id ? Number(event.id) : undefined);
         if (fallback.status === "FAILED" || fallback.status === "CANCELLED") {
           setMessages((current) => updateLastAssistantMessage(current, fallback));
           throw new Error(fallback.error || "回答流失败");

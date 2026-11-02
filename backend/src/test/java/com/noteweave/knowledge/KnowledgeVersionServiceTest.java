@@ -177,97 +177,11 @@ class KnowledgeVersionServiceTest {
     }
 
     private void createSchema() {
-        jdbcTemplate.execute("""
-                create table knowledge_item(
-                    id varchar(36) primary key,
-                    workspace_id varchar(36) not null,
-                    item_type varchar(32) not null,
-                    page_kind varchar(32),
-                    title varchar(300) not null,
-                    status varchar(32) not null,
-                    latest_version_id varchar(36),
-                    updated_by varchar(80),
-                    wiki_page_state varchar(32),
-                    origin varchar(32),
-                    updated_at timestamp default current_timestamp
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table knowledge_version(
-                    id varchar(36) primary key,
-                    item_id varchar(36) not null,
-                    version_no int not null,
-                    content clob not null,
-                    summary varchar(1000),
-                    source_message_id varchar(36),
-                    created_at timestamp default current_timestamp,
-                    unique(item_id, version_no)
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table knowledge_version_citation(
-                    id varchar(36) primary key,
-                    knowledge_version_id varchar(36) not null,
-                    citation_id varchar(36) not null,
-                    sort_order int not null
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table citation(
-                    id varchar(36) primary key,
-                    workspace_id varchar(36) not null default 'workspace',
-                    source_id varchar(36) not null,
-                    research_run_id varchar(36),
-                    title varchar(300) not null,
-                    quote_text varchar(1000) not null,
-                    page_no int,
-                    location_info varchar(300)
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table source(
-                    id varchar(36) primary key,
-                    generated_by varchar(64),
-                    generated_ref_id varchar(128)
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table conversation_message(
-                    id varchar(36) primary key,
-                    workspace_id varchar(36) not null,
-                    role varchar(32) not null,
-                    content clob not null
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table message_citation(
-                    message_id varchar(36) not null,
-                    citation_id varchar(36) not null,
-                    sort_order int not null
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table knowledge_item_link(
-                    id varchar(36) primary key,
-                    workspace_id varchar(36) not null,
-                    source_item_id varchar(36) not null,
-                    target_item_id varchar(36),
-                    target_title varchar(300) not null,
-                    relation_type varchar(64) not null,
-                    relation_status varchar(32) not null,
-                    mention_count int not null,
-                    updated_at timestamp default current_timestamp
-                )
-                """);
-        jdbcTemplate.execute("""
-                create table wiki_log_entry(
-                    id varchar(36) primary key,
-                    workspace_id varchar(36) not null,
-                    item_id varchar(36),
-                    event_type varchar(64) not null,
-                    message varchar(1000) not null
-                )
-                """);
+        org.flywaydb.core.Flyway.configure().dataSource(jdbcTemplate.getDataSource())
+                .locations("classpath:db/migration").load().migrate();
+        jdbcTemplate.update("insert into workspace(id,owner_id,name,status) values ('workspace','local-user','测试','ACTIVE')");
+        jdbcTemplate.update("insert into conversation(id,workspace_id,title,conversation_type,status) values ('conv','workspace','测试','QA','ACTIVE')");
+        jdbcTemplate.update("insert into file_object(id,workspace_id,object_key,sha256,file_size) values ('file','workspace','key',?,1)", "a".repeat(64));
     }
 
     private void seedItem(
@@ -291,14 +205,14 @@ class KnowledgeVersionServiceTest {
     }
 
     private void seedCitation(String citationId, String title) {
-        jdbcTemplate.update("""
-                merge into source key(id)
-                values ('source', '', '')
-                """);
+        if (jdbcTemplate.queryForObject("select count(*) from source where id='source'",Integer.class)==0) {
+            jdbcTemplate.update("insert into source(id,workspace_id,file_object_id,title,source_type,status,parse_status,index_status) values ('source','workspace','file','来源','TEXT','READY','PARSED','INDEXED')");
+            jdbcTemplate.update("insert into source_snapshot(id,source_id,file_object_id,version_no,object_key,sha256,parse_status,index_status) values ('snapshot','source','file',1,'key',?,'PARSED','INDEXED')","a".repeat(64));
+        }
         jdbcTemplate.update("""
                 insert into citation(
-                    id, source_id, title, quote_text, page_no, location_info
-                ) values (?, 'source', ?, ?, 1, 'page:1')
+                    id, workspace_id, source_id, source_snapshot_id, title, quote_text, page_no, location_info
+                ) values (?, 'workspace', 'source', 'snapshot', ?, ?, 1, 'page:1')
                 """, citationId, title, "quote " + title);
     }
 }

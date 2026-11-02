@@ -109,6 +109,32 @@ class NoteReadingRetrieverTest {
         assertThat(result.windows().get(0).readRole()).isEqualTo("primary-window");
     }
 
+    @Test
+    void actualWindowRerankKeepsFallbackOriginRegardlessOfSourceOrigin() {
+        RetrievalHydrator hydrator = mock(RetrievalHydrator.class);
+        RerankClient rerank = mock(RerankClient.class);
+        var info = com.noteweave.answer.strategy.ScoreInfo.llmFallback("llm-listwise-v1", 0.01);
+        when(rerank.isEnabled()).thenReturn(true);
+        when(rerank.rerank(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new RerankClient.RerankResult(List.of(new RerankClient.Hit(0, 0.01, 1, info)), "not-a-source-label"));
+        when(hydrator.loadWindowIndex(org.mockito.ArgumentMatchers.eq("workspace"), org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.WindowIndexResult(List.of(identity("chunk-a", 1, 1)), 0, 0, 1));
+        when(hydrator.hydrateWindowBodies(org.mockito.ArgumentMatchers.eq("workspace"),
+                org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new RetrievalHydrator.BodyLoadResult(Map.of("chunk-a", "query")));
+        var candidate = source("source-a").withSourceScoreInfo(com.noteweave.answer.strategy.ScoreInfo.provider("source-model", 0.9));
+        var retriever = new NoteReadingRetriever(hydrator, new NoteReadingPlanner(), null, null, rerank);
+        var result = retriever.retrieveWithDiagnostics("workspace", List.of(candidate), "query");
+        assertThat(result.windows()).hasSize(1);
+        assertThat(result.windows().get(0).scoreInfo()).isEqualTo(info);
+        assertThat(candidate.sourceScoreInfo().origin()).isEqualTo("PROVIDER_MODEL");
+        when(rerank.isEnabled()).thenReturn(false);
+        var failed = retriever.retrieveWithDiagnostics("workspace", List.of(candidate), "query");
+        assertThat(failed.windows().get(0).scoreInfo().origin()).isEqualTo("FUSION_FALLBACK");
+        assertThat(failed.windows().get(0).scoreInfo().value()).isNull();
+    }
+
     private CandidateSource source(String id) {
         return new CandidateSource(id, "Source", "PDF", 1, 1, "", "", "summary",
                 "[]", "{}", "sample", 1, "", List.of(), List.of(), 0, 0, "", "");

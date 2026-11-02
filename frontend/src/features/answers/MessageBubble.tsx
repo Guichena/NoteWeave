@@ -5,8 +5,10 @@ import {
 import { type Message } from "./messageTypes";
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { routes } from "../../routes";
+import { citationNumbers } from "../../shared/ui/citationSyntax";
 import {
   buildBoundCitationViews,
+  mergeCitationProtocol,
   buildCitationViews,
   type AnswerEvidenceManifest,
   type CitationView,
@@ -72,7 +74,7 @@ export function MessageBubble(props: MessageBubbleProps) {
   if (props.message.role !== "assistant" || !props.message.answerMode) {
     return <div className="bubble-body">{props.message.content}</div>;
   }
-  return <AssistantMessage {...props} />;
+  return <AssistantMessage key={props.message.answerRunId} {...props} />;
 }
 
 function AssistantMessage({
@@ -106,10 +108,10 @@ function AssistantMessage({
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
   // 流式阶段先下发引用协议，历史回答要等补拉证据清单后才知道协议
-  const protocol = message.citationProtocol ?? manifest?.citation_protocol ?? null;
-  const bindingMode = Boolean(protocol && protocol.protocolVersion);
-  // 清单已加载却没有协议版本：这条回答来自旧协议，保留按标题解析并明确标注
-  const legacyProtocol = Boolean(manifest) && !manifestUnavailable && !bindingMode;
+  const protocol = mergeCitationProtocol(message.citationProtocol, manifest?.citation_protocol);
+  const bindingMode = protocol.state === "BINDING_V1" && protocol.protocolVersion === "citation-binding-v1";
+  // 只有服务端明确声明历史协议，才允许旧编号解释。
+  const legacyProtocol = protocol.state === "LEGACY" && !manifestUnavailable;
   const citationViews = bindingMode && protocol
     ? buildBoundCitationViews(protocol, manifest?.evidence ?? null)
     : buildCitationViews(sourceItems, manifest?.evidence ?? null);
@@ -118,7 +120,7 @@ function AssistantMessage({
     ? { title: "来源引用", items: [], note: "" }
     : null);
   // 正文里标注过的引用排在前面，其余检索到但没被引用的资料折叠在后面
-  const { cited: citedViews, uncited: uncitedViews } = splitCitedViews(citationViews, body);
+  const { cited: citedViews, uncited: uncitedViews } = splitCitedViews(citationViews, [body, ...presentation.cards.map((card) => card.content)].join("\n\n"));
   const rewrite = manifest?.retrieval_rewrite;
   const route = routes.find((item) => item.key === message.answerMode) ?? routes[0];
   const ModeIcon = MODE_ICONS[route.key];
@@ -178,6 +180,10 @@ function AssistantMessage({
     loadEvidence(answerRunId)
       .then((loaded) => {
         if (cancelled) return;
+        if (loaded.run_id !== answerRunId) {
+          setManifest({ run_id: answerRunId, evidence: [], citation_protocol: { state: "INVALID", protocolVersion: null, allowedEvidenceIds: [], citationBindings: [], diagnostic: "MANIFEST_RUN_MISMATCH" } });
+          return;
+        }
         setManifest(loaded);
         setManifestUnavailable(false);
       })
@@ -241,6 +247,19 @@ function AssistantMessage({
     }
   }
 
+  const citationProps = {
+    compactCitations: bindingMode,
+    citationBindings: bindingMode ? protocol.citationBindings : undefined,
+    allowedEvidenceIds: bindingMode ? protocol.allowedEvidenceIds : undefined,
+    evidenceOrder: bindingMode ? protocol.citationBindings.map((binding) => binding.evidenceId) : undefined,
+    activeEvidence: activeEvidenceId,
+    onEvidenceClick: bindingMode ? focusEvidence : undefined,
+    citations: legacyProtocol ? citationViews.map((view) => view.title) : undefined,
+    activeCitation: legacyProtocol ? activeCitation : null,
+    onCitationClick: legacyProtocol ? focusCitation : undefined,
+    onWikiLinkClick: onOpenWikiPage
+  };
+
   return (
     <div className="assistant-message" aria-live={isGenerating ? "polite" : undefined}>
       {isGenerating ? (
@@ -272,25 +291,12 @@ function AssistantMessage({
         </div>
       ) : null}
       {!isFailed ? <SufficiencyNotice value={manifest?.evidence_sufficiency} /> : null}
+      {!isFailed && protocol.state === "INVALID" ? <div className="answer-sufficiency-notice" role="status">引用协议无效，已停用证据角标（{protocol.diagnostic}）。</div> : null}
       {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
       <MarkdownSurface
         content={body}
         className="bubble-body"
-        // 新协议走证据绑定：显式开角标、给证据顺序与点击回调，不再让任意数字自动成角标
-        compactCitations={bindingMode || undefined}
-        citationBindings={bindingMode ? protocol?.citationBindings : undefined}
-        allowedEvidenceIds={bindingMode ? protocol?.allowedEvidenceIds : undefined}
-        evidenceOrder={bindingMode
-          ? protocol?.citationBindings.map((binding) => binding.evidenceId)
-          : undefined}
-        activeEvidence={activeEvidenceId}
-        onEvidenceClick={bindingMode ? focusEvidence : undefined}
-        citations={bindingMode
-          ? undefined
-          : citationViews.length > 0 ? citationViews.map((view) => view.title) : undefined}
-        activeCitation={bindingMode ? null : activeCitation}
-        onCitationClick={bindingMode ? undefined : focusCitation}
-        onWikiLinkClick={onOpenWikiPage}
+        {...citationProps}
       />
       {!isFailed && presentation.cards.length > 0 ? (
         <div className="bubble-cards">
@@ -301,7 +307,7 @@ function AssistantMessage({
                 <span>{card.preview}</span>
                 <ChevronDown className="message-card-chevron" size={15} aria-hidden="true" />
               </summary>
-              <MarkdownSurface content={card.content} className="message-card-body" />
+              <MarkdownSurface content={card.content} className="message-card-body" {...citationProps} />
             </details>
           ))}
         </div>
@@ -364,7 +370,7 @@ function AssistantMessage({
               <MemoryReferenceList references={manifest.memory_references} />
             </div>
           ) : null}
-          {sourcesPanel.note ? <MarkdownSurface content={sourcesPanel.note} className="message-sources-note" /> : null}
+          {sourcesPanel.note ? <MarkdownSurface content={sourcesPanel.note} className="message-sources-note" {...citationProps} /> : null}
         </details>
       ) : null}
       {!isGenerating && !isFailed && presentation.body ? (
@@ -716,7 +722,7 @@ function trimText(value: string, limit: number) {
 
 /** 按正文里出现的 [n] 把引用分成已引用和未引用两组，已引用的按编号排列。 */
 export function splitCitedViews<T extends { index: number }>(views: T[], body: string) {
-  const cited = new Set(Array.from(body.matchAll(/\[(\d{1,3})\]/g), (match) => Number(match[1])));
+  const cited = new Set(citationNumbers(body));
   return {
     cited: views.filter((view) => cited.has(view.index)),
     uncited: views.filter((view) => !cited.has(view.index))

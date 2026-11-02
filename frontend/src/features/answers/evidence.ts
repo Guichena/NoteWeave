@@ -1,6 +1,6 @@
 import type { MemoryReference } from "../memory/model";
 
-/** 后端冻结的引用协议标识；历史回答没有这个值，前端按旧协议解析。 */
+/** 后端冻结的引用协议标识；历史回答必须由显式 LEGACY 状态确认。 */
 export const CITATION_BINDING_PROTOCOL = "citation-binding-v1";
 
 /** 回答证据清单中的一条证据，与后端 /answer-runs/{id}/evidence 的响应字段一致。 */
@@ -46,9 +46,13 @@ export type CitationBinding = {
   citationIds: string[];
 };
 
-/** 引用协议信息：新协议带允许集合与编号绑定，历史回答没有这份信息。 */
+/** 引用协议信息：新协议带允许集合与编号绑定，历史回答使用显式 LEGACY 状态。 */
+export type CitationProtocolState = "UNKNOWN" | "LEGACY" | "BINDING_V1" | "INVALID";
+
 export type CitationProtocol = {
-  /** 有值表示新协议（citation-binding-v1）；null 表示历史回答，按旧协议解析。 */
+  state: CitationProtocolState;
+  diagnostic?: string;
+  /** 仅 BINDING_V1 使用 citation-binding-v1；null 的语义由 state 区分。 */
   protocolVersion: string | null;
   /** 本次回答允许引用的证据 ID；正文里不在集合内的编号只渲染成普通文字。 */
   allowedEvidenceIds: string[];
@@ -69,7 +73,7 @@ export type AnswerEvidenceManifest = {
   evidence_sufficiency?: EvidenceSufficiency | string | null;
   /** 这次回答实际编入的记忆（2C）。 */
   memory_references?: MemoryReference[] | null;
-  /** 冻结的引用协议；历史回答没有这个值，前端按旧协议解析。 */
+  /** 冻结的引用协议；历史回答必须由显式 LEGACY 状态确认。 */
   citation_protocol?: CitationProtocol | null;
 };
 
@@ -219,50 +223,82 @@ export function parseAnswerEvidenceManifest(raw: unknown): AnswerEvidenceManifes
     memory_references: Array.isArray(record.memory_references)
       ? record.memory_references as MemoryReference[]
       : [],
-    citation_protocol: parseCitationProtocol(record)
+    citation_protocol: parseCitationProtocol(record.citation_protocol ?? record.citationProtocol ?? record)
   };
 }
 
-/** 读出引用协议；没有 protocol_version 表示历史回答，保持旧协议解析。 */
-export function parseCitationProtocol(raw: unknown): CitationProtocol | null {
+/** 协议缺失与历史记录分离；损坏对象整体拒绝，不能挑选其中的合法行。 */
+export function unknownCitationProtocol(): CitationProtocol {
+  return { state: "UNKNOWN", protocolVersion: null, allowedEvidenceIds: [], citationBindings: [] };
+}
+
+export function invalidCitationProtocol(diagnostic: string): CitationProtocol {
+  return { ...unknownCitationProtocol(), state: "INVALID", diagnostic };
+}
+
+export function parseCitationProtocol(raw: unknown): CitationProtocol {
   const record = asRecord(raw);
-  const protocolVersion = text(record.protocol_version ?? record.protocolVersion);
-  if (!protocolVersion) return null;
-  return {
-    protocolVersion,
-    allowedEvidenceIds: stringList(record.allowed_evidence_ids ?? record.allowedEvidenceIds),
-    citationBindings: parseCitationBindings(record.citation_bindings ?? record.citationBindings)
-  };
-}
-
-/** 流式 evidence.ready 事件的正文就是协议本身；解析失败按未知处理。 */
-export function parseCitationProtocolEvent(data: string): CitationProtocol | null {
-  if (!data.trim()) return null;
-  try {
-    return parseCitationProtocol(JSON.parse(data));
-  } catch {
-    return null;
+  const version = record.protocol_version ?? record.protocolVersion;
+  const state = record.protocol_state ?? record.state;
+  if (state === "INVALID") return invalidCitationProtocol("SERVER_PROTOCOL_INVALID");
+  if (state === "UNKNOWN" || state == null && version == null) return unknownCitationProtocol();
+  if (state === "LEGACY") {
+    if (version != null && version !== "") return invalidCitationProtocol("LEGACY_VERSION_CONFLICT");
+    return { ...unknownCitationProtocol(), state: "LEGACY" };
   }
-}
-
-function parseCitationBindings(raw: unknown): CitationBinding[] {
-  if (!Array.isArray(raw)) return [];
-  const seen = new Set<number>();
+  // 兼容已经明确声明 v1 的旧版 evidence.ready；没有版本绝不推断为历史。
+  if (version !== CITATION_BINDING_PROTOCOL || state != null && state !== "BINDING_V1") {
+    return invalidCitationProtocol("UNSUPPORTED_PROTOCOL");
+  }
+  const allowed = record.allowed_evidence_ids ?? record.allowedEvidenceIds;
+  const rawBindings = record.citation_bindings ?? record.citationBindings;
+  if (!strictStrings(allowed) || new Set(allowed).size !== allowed.length || !Array.isArray(rawBindings)) {
+    return invalidCitationProtocol("INVALID_PROTOCOL_FIELDS");
+  }
+  const numbers = new Set<number>();
+  const identities = new Set<string>();
   const bindings: CitationBinding[] = [];
-  for (const value of raw) {
-    const record = asRecord(value);
-    const number = Number(record.number);
-    const evidenceId = text(record.evidence_id ?? record.evidenceId);
-    // 没有编号或证据身份的绑定不可用，丢掉，避免渲染出点不开的角标
-    if (!Number.isInteger(number) || number <= 0 || !evidenceId || seen.has(number)) continue;
-    seen.add(number);
-    bindings.push({
-      number,
-      evidenceId,
-      citationIds: stringList(record.citation_ids ?? record.citationIds)
-    });
+  for (const value of rawBindings) {
+    const binding = asRecord(value);
+    const number = binding.number;
+    const evidenceId = binding.evidence_id ?? binding.evidenceId;
+    const citationIds = binding.citation_ids ?? binding.citationIds;
+    if (typeof number !== "number" || !Number.isInteger(number) || number < 1 || number > 9999
+      || numbers.has(number) || typeof evidenceId !== "string" || !allowed.includes(evidenceId)
+      || identities.has(evidenceId) || !strictStrings(citationIds) || new Set(citationIds).size !== citationIds.length) {
+      return invalidCitationProtocol("INVALID_CITATION_BINDING");
+    }
+    numbers.add(number);
+    identities.add(evidenceId);
+    bindings.push({ number, evidenceId, citationIds: [...citationIds] });
   }
-  return bindings.sort((left, right) => left.number - right.number);
+  if (identities.size !== allowed.length) return invalidCitationProtocol("INCOMPLETE_CITATION_BINDINGS");
+  return { state: "BINDING_V1", protocolVersion: CITATION_BINDING_PROTOCOL,
+    allowedEvidenceIds: [...allowed], citationBindings: bindings.sort((a, b) => a.number - b.number) };
+}
+
+export function parseCitationProtocolEvent(data: string): CitationProtocol {
+  try { return parseCitationProtocol(JSON.parse(data)); }
+  catch { return invalidCitationProtocol("MALFORMED_PROTOCOL_JSON"); }
+}
+
+/** 同一运行协议只冻结一次；冲突可诊断，且不能改写原绑定继续显示角标。 */
+export function mergeCitationProtocol(current: CitationProtocol | null | undefined, incoming: CitationProtocol | null | undefined): CitationProtocol {
+  if (current?.state === "INVALID") return current;
+  if (!incoming || incoming.state === "UNKNOWN") return current ?? unknownCitationProtocol();
+  if (!current || current.state === "UNKNOWN") return incoming;
+  if (incoming.state === "INVALID") return incoming;
+  const canonical = (value: CitationProtocol) => JSON.stringify({
+    state: value.state, version: value.protocolVersion,
+    allowed: [...value.allowedEvidenceIds].sort(),
+    bindings: value.citationBindings.map((binding) => ({ ...binding, citationIds: [...binding.citationIds].sort() }))
+      .sort((a, b) => a.number - b.number)
+  });
+  return canonical(current) === canonical(incoming) ? current : invalidCitationProtocol("CONFLICTING_FROZEN_PROTOCOL");
+}
+
+function strictStrings(raw: unknown): raw is string[] {
+  return Array.isArray(raw) && raw.every((value) => typeof value === "string" && value.trim().length > 0);
 }
 
 function stringList(value: unknown): string[] {

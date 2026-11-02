@@ -1,5 +1,6 @@
 package com.noteweave.knowledge;
 
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.noteweave.common.text.LexicalTerms;
 import com.noteweave.retrieval.lexical.Bm25fScorer;
 import com.noteweave.retrieval.provider.EmbeddingClient;
@@ -117,7 +118,7 @@ final class KnowledgeWikiSearchEngine {
             return List.of();
         }
         return rank(workspaceId, query, parsed, safeBoost).stream()
-                .map(row -> row.row().toPageHit((int) Math.round(row.score() * 100)))
+                .map(row -> row.row().toPageHit((int) Math.round(row.score() * 100), row.scoreInfo()))
                 .toList();
     }
 
@@ -164,7 +165,7 @@ final class KnowledgeWikiSearchEngine {
             }
             double authority = Math.min(AUTHORITY_CAP,
                     AUTHORITY_WEIGHT * Math.log1p(row.citationCount() + row.backlinkCount()));
-            scored.add(new ScoredWikiRow(row, score * (1.0d + authority)));
+            scored.add(new ScoredWikiRow(row, score * (1.0d + authority), ScoreInfo.lexical("wiki-bm25f-link-v1", score * (1.0d + authority))));
         }
         double top = scored.stream().mapToDouble(ScoredWikiRow::score).max().orElse(0.0d);
         return scored.stream()
@@ -228,7 +229,7 @@ final class KnowledgeWikiSearchEngine {
         degradation.set(List.copyOf(reasons));
         List<ScoredWikiRow> scored = new ArrayList<>();
         for (WikiHybridRanker.Ranked ranked : reranked) {
-            scored.add(new ScoredWikiRow(withCounts(rows.get(ranked.itemId()), ranked), ranked.score()));
+            scored.add(new ScoredWikiRow(withCounts(rows.get(ranked.itemId()), ranked), ranked.score(), ranked.scoreInfo()));
         }
         return Optional.of(scored);
     }
@@ -536,7 +537,7 @@ final class KnowledgeWikiSearchEngine {
         return value == null ? Instant.now() : value.toInstant();
     }
 
-    private record ScoredWikiRow(WikiSearchRow row, double score) {
+    private record ScoredWikiRow(WikiSearchRow row, double score, ScoreInfo scoreInfo) {
     }
 
     private static Set<String> boostTokens(List<String> terms) {
@@ -620,6 +621,10 @@ record WikiSearchRow(
                 itemId, "WIKI", pageKind, title, "ACTIVE", versionId, versionNo,
                 summary, updatedAt, outgoingCount, backlinkCount, citationCount, unresolvedCount,
                 wikiPageState);
+    }
+
+    KnowledgePageHit toPageHit(int score, ScoreInfo info) {
+        return new KnowledgePageHit(itemId, versionId, versionNo, title, content, summary, score, info);
     }
 
     KnowledgePageHit toPageHit(int score) {

@@ -1,6 +1,7 @@
 package com.noteweave.knowledge;
 
 import com.noteweave.retrieval.provider.RerankClient;
+import com.noteweave.answer.strategy.ScoreInfo;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -36,8 +37,12 @@ final class WikiHybridRanker {
             int outgoingCount,
             int backlinkCount,
             int citationCount,
-            int unresolvedCount
+            int unresolvedCount,
+            ScoreInfo scoreInfo
     ) {
+        Ranked(String itemId, double score, int outgoingCount, int backlinkCount, int citationCount, int unresolvedCount) {
+            this(itemId, score, outgoingCount, backlinkCount, citationCount, unresolvedCount, ScoreInfo.fusion());
+        }
     }
 
     static List<Ranked> fuse(List<ChannelHit> lexical, List<ChannelHit> vector) {
@@ -99,7 +104,7 @@ final class WikiHybridRanker {
                     original.outgoingCount(),
                     original.backlinkCount(),
                     original.citationCount(),
-                    original.unresolvedCount()));
+                    original.unresolvedCount(), hit.scoreInfo()));
         }
         for (int index = 0; index < window; index++) {
             if (!seen.contains(index)) {

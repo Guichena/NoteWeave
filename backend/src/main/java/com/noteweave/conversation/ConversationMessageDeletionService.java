@@ -30,6 +30,8 @@ public class ConversationMessageDeletionService {
         jdbcTemplate.queryForObject("""
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, String.class, conversationId, workspaceId);
+        new com.noteweave.answer.AnswerRunLifecycleGuard(jdbcTemplate)
+                .revokeForDeletedMessage(workspaceId, conversationId, messageId);
         int changed = jdbcTemplate.update("""
                 update conversation_message set content = '', content_hash = ?, context_status = 'DELETED'
                 where id = ? and workspace_id = ? and conversation_id = ? and context_status <> 'DELETED'
@@ -110,11 +112,8 @@ public class ConversationMessageDeletionService {
                 """, workspaceId, conversationId);
         // 消息自有的引用：解除绑定并清空正文副本，只留身份与位置。
         // 被其他页面或其他消息共用的引用行不动，不能为了删一条消息清空整表仍在使用的引用。
-        jdbcTemplate.update("delete from message_citation where message_id = ?", messageId);
-        jdbcTemplate.update("""
-                update citation set title = '', quote_text = '', location_info = null
-                where workspace_id = ? and owner_message_id = ?
-                """, workspaceId, messageId);
+        new com.noteweave.chat.CitationBindingService(jdbcTemplate)
+                .unbindAndRedactOwned(workspaceId, messageId);
         return new DeletedConversationMessageResponse(messageId, "DELETED");
     }
 }

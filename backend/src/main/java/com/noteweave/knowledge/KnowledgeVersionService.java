@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class KnowledgeVersionService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final com.noteweave.chat.CitationBindingService citationBindings;
     private final AuditActorProvider auditActorProvider;
     private final KnowledgeWikiMutationService wikiMutationService;
     private final KnowledgeCitationReadGate citationReadGate;
@@ -26,6 +27,7 @@ public class KnowledgeVersionService {
             KnowledgeCitationReadGate citationReadGate
     ) {
         this.jdbcTemplate = jdbcTemplate;
+        this.citationBindings = new com.noteweave.chat.CitationBindingService(jdbcTemplate);
         this.auditActorProvider = auditActorProvider;
         this.wikiMutationService = wikiMutationService;
         this.citationReadGate = citationReadGate;
@@ -49,6 +51,10 @@ public class KnowledgeVersionService {
             AppendKnowledgeVersionRequest request,
             String actor
     ) {
+        KnowledgeItemRef observed = loadKnowledgeItem(itemId, false);
+        List<String> citationIds = citationIdsFromRequest(
+                observed.workspaceId(), request.sourceMessageId(), request.citationIds());
+        citationBindings.lockBindingConversations(observed.workspaceId(), null, citationIds);
         KnowledgeItemRef item = loadKnowledgeItem(itemId, true);
         String content = request.content() == null ? "" : request.content().trim();
         if (content.isBlank()) {
@@ -64,9 +70,7 @@ public class KnowledgeVersionService {
             normalizedContent = prepared.content();
             pageKind = prepared.pageKind();
         }
-        List<String> citationIds = citationIdsFromRequest(
-                item.workspaceId(), request.sourceMessageId(), request.citationIds());
-        citationReadGate.requireCitationIdsReadable(item.workspaceId(), citationIds);
+        citationReadGate.requireCitationIdsCurrent(item.workspaceId(), citationIds);
         Integer currentVersion = jdbcTemplate.queryForObject("""
                 select coalesce(max(version_no), 0)
                 from knowledge_version
@@ -236,17 +240,7 @@ public class KnowledgeVersionService {
             List<String> directCitationIds
     ) {
         if (sourceMessageId != null && !sourceMessageId.isBlank()) {
-            MessageSnapshot message = loadAssistantMessage(sourceMessageId);
-            if (!workspaceId.equals(message.workspaceId())) {
-                throw new BusinessException(
-                        "MESSAGE_WORKSPACE_MISMATCH", "消息不属于当前工作台");
-            }
-            return jdbcTemplate.queryForList("""
-                    select citation_id
-                    from message_citation
-                    where message_id = ?
-                    order by sort_order asc
-                    """, String.class, sourceMessageId);
+            return citationBindings.citationIdsForPublishedMessage(workspaceId, sourceMessageId);
         }
         return directCitationIds == null ? List.of() : List.copyOf(directCitationIds);
     }
@@ -272,13 +266,10 @@ public class KnowledgeVersionService {
     }
 
     private void bindVersionCitations(String versionId, List<String> citationIds) {
-        for (int i = 0; i < citationIds.size(); i++) {
-            jdbcTemplate.update("""
-                    insert into knowledge_version_citation(
-                        id, knowledge_version_id, citation_id, sort_order
-                    ) values (?, ?, ?, ?)
-                    """, Ids.newId(), versionId, citationIds.get(i), i);
-        }
+        String workspaceId = jdbcTemplate.queryForObject(
+                "select i.workspace_id from knowledge_version v join knowledge_item i on i.id=v.item_id where v.id=?",
+                String.class, versionId);
+        citationBindings.bindToKnowledgeVersion(workspaceId, versionId, citationIds);
     }
 
     private List<KnowledgeCitationResponse> citationsForVersion(String versionId) {

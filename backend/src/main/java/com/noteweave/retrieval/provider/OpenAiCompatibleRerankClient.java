@@ -1,5 +1,6 @@
 package com.noteweave.retrieval.provider;
 
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.config.NoteWeaveProperties;
@@ -28,6 +29,8 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
     private final boolean enabled;
     private final URI endpoint;
     private final String model;
+    private final String scoreScale;
+    private final String thresholdPolicy;
     private final String apiKey;
     private final int batchSize;
     private final int maxDocumentCharacters;
@@ -56,6 +59,8 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
                 ? ProviderEndpointSecurity.requireSecureOrLocal(config.endpoint())
                 : URI.create("http://localhost/disabled");
         this.model = text(config.model());
+        this.scoreScale = config.scoreScale();
+        this.thresholdPolicy = config.thresholdPolicy();
         this.apiKey = text(config.apiKey());
         this.batchSize = Math.max(1, config.batchSize());
         this.maxDocumentCharacters = Math.max(1, config.maxDocumentCharacters());
@@ -141,22 +146,36 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
             if (!results.isArray()) {
                 throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank response is missing results");
             }
+            if (results.isEmpty()) {
+                throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank response has no results");
+            }
             List<Hit> hits = new ArrayList<>();
+            java.util.Set<Integer> seen = new java.util.HashSet<>();
+            String responseModel = root.path("model").asText(model);
             int rank = 1;
             for (JsonNode item : results) {
-                int index = item.path("index").asInt(-1);
-                if (index < 0 || index >= documentCount) {
-                    throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank response contains an invalid index");
+                JsonNode indexNode = item.path("index");
+                if (!indexNode.isIntegralNumber() || !indexNode.canConvertToInt()) {
+                    throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank index must be an integer");
                 }
-                double score = item.has("relevance_score")
-                        ? item.path("relevance_score").asDouble()
-                        : item.path("score").asDouble();
-                hits.add(new Hit(index, score, rank++));
-                if (hits.size() >= topN) {
-                    break;
+                int index = indexNode.intValue();
+                if (index < 0 || index >= documentCount || !seen.add(index)) {
+                    throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank index is out of range or duplicated");
+                }
+                JsonNode scoreNode = item.has("relevance_score") ? item.path("relevance_score") : item.path("score");
+                if (!scoreNode.isNumber() || !Double.isFinite(scoreNode.doubleValue())) {
+                    throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank score must be a finite number");
+                }
+                double score = scoreNode.doubleValue();
+                if (ScoreInfo.UNIT_INTERVAL.equals(scoreScale) && (score < 0 || score > 1)) {
+                    throw new RetrievalProviderException(ERROR_RESPONSE, "Rerank score is outside declared scale");
+                }
+                // 先验证全部响应项，不能让 topN 后的非法项被截取隐藏。
+                if (hits.size() < topN) {
+                    hits.add(new Hit(index, score, rank++,
+                            ScoreInfo.provider(responseModel, score, scoreScale, thresholdPolicy)));
                 }
             }
-            String responseModel = root.path("model").asText(model);
             return new RerankResult(hits, responseModel);
         } catch (RetrievalProviderException ex) {
             throw ex;

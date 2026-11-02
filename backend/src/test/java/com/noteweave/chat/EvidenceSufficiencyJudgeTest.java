@@ -143,9 +143,9 @@ class EvidenceSufficiencyJudgeTest {
         assertThat(combine(EvidenceSufficiency.SUFFICIENT, provider(Double.NaN)).reasons())
                 .containsExactly(EvidenceSufficiencyJudge.REASON_NO_PROVIDER_SCORE);
         assertThat(combine(EvidenceSufficiency.SUFFICIENT, provider(12.0)).reasons())
-                .containsExactly(EvidenceSufficiencyJudge.REASON_NO_PROVIDER_SCORE);
+                .containsExactly("PROVIDER_THRESHOLD_POLICY_NOT_APPLICABLE");
         assertThat(combine(EvidenceSufficiency.SUFFICIENT, provider(-1.0)).reasons())
-                .containsExactly(EvidenceSufficiencyJudge.REASON_NO_PROVIDER_SCORE);
+                .containsExactly("PROVIDER_THRESHOLD_POLICY_NOT_APPLICABLE");
     }
 
     @Test
@@ -154,7 +154,7 @@ class EvidenceSufficiencyJudgeTest {
         EvidenceBundle.Evidence high = new EvidenceBundle.Evidence(
                 "passage:two", "PASSAGE", "source", "snapshot", "passage", "", "",
                 "另一份资料", "摘录", "location", 0, 0.9, 0.9,
-                "scope", Instant.now(), "selected", 4, Map.of(), ScoreInfo.provider("rerank-v1", 0.90));
+                "scope", Instant.now(), "selected", 4, Map.of(), ScoreInfo.provider("rerank-v1", 0.90, ScoreInfo.UNIT_INTERVAL, ScoreInfo.KNOWN_PROVIDER_015_035));
 
         EvidenceSufficiencyJudge.Judgement judgement =
                 EvidenceSufficiencyJudge.combine(EvidenceSufficiency.SUFFICIENT, List.of(low, high));
@@ -211,7 +211,7 @@ class EvidenceSufficiencyJudgeTest {
     }
 
     private EvidenceBundle.Evidence provider(double value) {
-        return scored(ScoreInfo.provider("rerank-v1", value));
+        return scored(ScoreInfo.provider("rerank-v1", value, ScoreInfo.UNIT_INTERVAL, ScoreInfo.KNOWN_PROVIDER_015_035));
     }
 
     private EvidenceBundle.Evidence scored(ScoreInfo scoreInfo) {

@@ -48,6 +48,13 @@ public class SourceCompliancePurgeService {
         this.transactionTemplate = transactionTemplate;
     }
 
+    private com.noteweave.conversation.RunReplayRedactionService replayRedactionService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    void setReplayRedactionService(com.noteweave.conversation.RunReplayRedactionService service) {
+        this.replayRedactionService = service;
+    }
+
     /** 合规删除事务内调用：清空该资料的正文、引用摘录与摘要元数据。 */
     @Transactional
     public PurgeReport purge(String workspaceId, String sourceId) {
@@ -111,10 +118,16 @@ public class SourceCompliancePurgeService {
     }
 
     private PurgeReport purgeContent(String workspaceId, String sourceId) {
+        // 补偿任务也遵守source→snapshot→chunk→conversation/run→knowledge→citation顺序。
+        jdbcTemplate.queryForList("select id from source where workspace_id=? and id=? for update", String.class, workspaceId, sourceId);
+        jdbcTemplate.queryForList("select id from source_snapshot where source_id=? order by id for update", String.class, sourceId);
+        jdbcTemplate.queryForList("select id from source_chunk where workspace_id=? and source_id=? order by id for update", String.class, workspaceId, sourceId);
+        if (replayRedactionService != null) replayRedactionService.redactDeletedSource(workspaceId, sourceId);
         int citationsRedacted = jdbcTemplate.update("""
                 update citation
-                set quote_text = ''
-                where workspace_id = ? and source_id = ? and quote_text <> ''
+                set title = '', quote_text = '', location_info = null
+                where workspace_id = ? and source_id = ?
+                  and (quote_text <> '' or title <> '' or location_info is not null)
                 """, workspaceId, sourceId);
         int windowsDeleted = jdbcTemplate.update("""
                 delete from source_window

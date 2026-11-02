@@ -62,7 +62,7 @@ public class QaRerankService {
                 }
                 FusedHit candidate = safeCandidates.get(rerankHit.documentIndex());
                 ranked.add(new RankedHit(candidate, rerankHit.score(), rerankHit.rank(),
-                        ScoreOrigins.fromRerankModel(result.model(), rerankHit.score())));
+                        rerankHit.scoreInfo()));
             }
             boolean hasScored = !ranked.isEmpty();
             double minScored = hasScored

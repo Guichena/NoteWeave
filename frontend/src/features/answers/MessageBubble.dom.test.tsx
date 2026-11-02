@@ -173,6 +173,7 @@ describe("MessageBubble 检索链路与证据", () => {
           answerMode: "note",
           answerStatus: "COMPLETED",
           answerRunId: "run-1",
+          citationProtocol: { state: "LEGACY", protocolVersion: null, allowedEvidenceIds: [], citationBindings: [] },
           content: "先定位、再连续阅读 [1]。",
           citations: ["RAG 检索链路设计.md | 命中锚点窗口后向前后各扩展一个窗口"]
         }}
@@ -213,6 +214,7 @@ function evidenceItem(overrides: Partial<AnswerEvidence> = {}): AnswerEvidence {
 function completedAnswer(overrides: Partial<Message> = {}): Message {
   return {
     role: "assistant", answerMode: "qa", answerStatus: "COMPLETED", answerRunId: "run-9",
+    citationProtocol: { state: "LEGACY", protocolVersion: null, allowedEvidenceIds: [], citationBindings: [] },
     content: "按名次融合 [1]。", citations: ["RRF 融合排序 | 按名次融合"], ...overrides
   };
 }
@@ -296,6 +298,7 @@ describe("splitCitedViews", () => {
 
 function boundProtocol(overrides: Partial<CitationProtocol> = {}): CitationProtocol {
   return {
+    state: "BINDING_V1",
     protocolVersion: "citation-binding-v1",
     allowedEvidenceIds: ["knowledge-version:k1"],
     citationBindings: [{ number: 1, evidenceId: "knowledge-version:k1", citationIds: ["citation-1"] }],
@@ -320,7 +323,7 @@ describe("MessageBubble 引用绑定协议", () => {
       <MessageBubble
         loadEvidence={loadEvidence}
         onOpenWikiVersion={onOpenWikiVersion}
-        message={{ ...completedAnswer(), answerMode: "wiki" }}
+        message={{ ...completedAnswer(), citationProtocol: boundProtocol(), answerMode: "wiki" }}
       />
     );
 
@@ -340,7 +343,7 @@ describe("MessageBubble 引用绑定协议", () => {
       <MessageBubble
         loadEvidence={loadEvidence}
         onOpenWikiVersion={onOpenWikiVersion}
-        message={{ ...completedAnswer(), answerMode: "wiki" }}
+        message={{ ...completedAnswer(), citationProtocol: boundProtocol(), answerMode: "wiki" }}
       />
     );
 
@@ -355,7 +358,7 @@ describe("MessageBubble 引用绑定协议", () => {
     render(
       <MessageBubble
         loadEvidence={loadEvidence}
-        message={{ ...completedAnswer(), content: "按名次融合 [1]，另见 [9]。" }}
+        message={{ ...completedAnswer(), citationProtocol: boundProtocol(), content: "按名次融合 [1]，另见 [9]。" }}
       />
     );
 
@@ -401,4 +404,25 @@ describe("MessageBubble 引用绑定协议", () => {
     await screen.findByText(/来源引用/);
     expect(screen.queryByText("旧协议")).toBeNull();
   });
+});
+
+describe("F1 全区域和未知协议", () => {
+  it("没有明确协议的正文不猜测角标", () => {
+    render(<MessageBubble message={completedAnswer({ citationProtocol: null })} />);
+    expect(document.querySelector(".bubble-body .citation-chip")).toBeNull();
+  });
+  it("折叠区和表格与正文使用同一个绑定", () => {
+    render(<MessageBubble message={completedAnswer({ citationProtocol: boundProtocol(), content: "## 直接回答\n结论 [1]。\n## 展开\n详情 [1]。\n\n| 项目 | 说明 |\n| --- | --- |\n| 证据 | 依据 [1] |" })} />);
+    expect(document.querySelectorAll(".message-card-body .citation-chip")).toHaveLength(2);
+  });
+});
+
+
+it("组件复用于另一运行时不沿用前一轮manifest绑定", async () => {
+  const loadEvidence = vi.fn(async () => boundManifest());
+  const { rerender } = render(<MessageBubble loadEvidence={loadEvidence} message={completedAnswer({ citationProtocol: boundProtocol() })} />);
+  fireEvent.click(screen.getByRole("button", { name: "查看来源 1" }));
+  await screen.findByText("Wiki 页面");
+  rerender(<MessageBubble message={completedAnswer({ answerRunId: "run-other", citationProtocol: null })} />);
+  expect(document.querySelector(".bubble-body .citation-chip")).toBeNull();
 });

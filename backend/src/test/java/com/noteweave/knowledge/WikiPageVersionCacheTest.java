@@ -46,15 +46,29 @@ class WikiPageVersionCacheTest {
         cache.put("workspace-1", snapshot);
 
         ArgumentCaptor<String> json = ArgumentCaptor.forClass(String.class);
-        verify(valueOperations).set(
-                eq("noteweave:v1:cache:wiki_page_version:workspace-1:item-1:version-2"),
-                json.capture(),
-                eq(Duration.ofSeconds(600)));
+        verify(redisTemplate).execute(
+                org.mockito.ArgumentMatchers.any(org.springframework.data.redis.core.script.RedisScript.class),
+                eq(List.of("noteweave:v1:cache:wiki_page_version:workspace-1:item-1:version-2",
+                        "noteweave:v1:cache:wiki_page_version:workspace-1:item-1:version-2:revoked")),
+                json.capture(), eq("600000"));
         when(valueOperations.get(anyString())).thenReturn(json.getValue());
         assertThat(cache.get("workspace-1", "item-1", "version-2"))
                 .contains(snapshot);
         assertThat(metric("load")).isEqualTo(1.0);
         assertThat(metric("hit")).isEqualTo(1.0);
+    }
+
+    @Test
+    void complianceInvalidationAtomicallyMarksTombstoneAndDeletesTheExactVersion() {
+        WikiPageVersionCache cache = cache(true, redisTemplate, 600, 0);
+        cache.invalidate("workspace-1", "item-1", "version-2");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<org.springframework.data.redis.core.script.RedisScript<Long>> script =
+                ArgumentCaptor.forClass(org.springframework.data.redis.core.script.RedisScript.class);
+        verify(redisTemplate).execute(script.capture(), eq(List.of(
+                "noteweave:v1:cache:wiki_page_version:workspace-1:item-1:version-2",
+                "noteweave:v1:cache:wiki_page_version:workspace-1:item-1:version-2:revoked")));
+        assertThat(script.getValue().getScriptAsString()).contains("SET", "DEL");
     }
 
     @Test

@@ -79,3 +79,12 @@ describe("WikiPageDetailPanel", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+
+it("引用版本正文为空时不回退到最新正文或摘要", () => {
+  const props = buildProps();
+  props.selection.selectedWikiVersionDetail = { item_id: "page-1", version_id: "old-v1", version_no: 1, content: "", citations: [] };
+  render(<WikiPageDetailPanel {...props} />);
+  expect(screen.queryByText("正文内容")).toBeNull();
+  expect(screen.getByText("引用版本正文已不可用。")).toBeTruthy();
+});

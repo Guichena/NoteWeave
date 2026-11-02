@@ -37,7 +37,7 @@ public class NoteSourceRerankService {
                 }
             }
             List<ScoredCandidate> ranked = hits.stream()
-                    .map(hit -> candidates.get(hit.documentIndex()).withRerankScore(hit.score()))
+                    .map(hit -> candidates.get(hit.documentIndex()).withRerankScore(hit.score(), hit.scoreInfo()))
                     .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
             for (int index = 0; index < candidates.size(); index++) {
                 if (!returned.contains(index)) ranked.add(candidates.get(index));

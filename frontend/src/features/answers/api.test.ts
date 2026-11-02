@@ -58,16 +58,17 @@ describe("AnswersApi 证据清单", () => {
 
     expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/answer-runs/run/evidence");
     expect(manifest.citation_protocol).toEqual({
+      state: "BINDING_V1",
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["passage:c1"],
       citationBindings: [{ number: 1, evidenceId: "passage:c1", citationIds: ["citation-1"] }]
     });
   });
 
-  it("历史回答不带 protocol_version 时协议为 null", async () => {
+  it("缺协议字段时为 UNKNOWN，不推断历史", async () => {
     const get = vi.fn(async () => ({ run_id: "run", evidence: [] }));
     const api = new AnswersApi({ get } as unknown as ApiClient);
 
-    expect((await api.getEvidence("workspace", "run")).citation_protocol).toBeNull();
+    expect((await api.getEvidence("workspace", "run")).citation_protocol).toMatchObject({ state: "UNKNOWN" });
   });
 });

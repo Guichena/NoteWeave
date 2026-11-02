@@ -20,6 +20,9 @@ import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamRecords;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import com.noteweave.common.BusinessException;
+import org.springframework.http.HttpStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,47 +50,122 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
         this.ttl = Duration.ofSeconds(Math.max(60, ttlSeconds));
     }
 
+    private static final String APPEND_SCRIPT = """
+            if redis.call('EXISTS',KEYS[1]) == 1 then return -1 end
+            if redis.call('EXISTS',KEYS[2]) == 0 then
+              local high=tonumber(redis.call('GET',KEYS[5]) or '0')
+              local floor=tonumber(redis.call('GET',KEYS[4]) or '0')
+              if high > floor then redis.call('SET',KEYS[4],high) end
+            end
+            local seq=tonumber(ARGV[1])
+            if ARGV[7] == 'conversation' then
+              local last=redis.call('XREVRANGE',KEYS[2],'+','-','COUNT',1)
+              local floor=tonumber(redis.call('GET',KEYS[3]) or '0')
+              if #last > 0 then
+                local lastid=tonumber(string.match(last[1][1],'^(%d+)'))
+                if lastid > floor then redis.call('SET',KEYS[3],lastid) end
+              end
+              seq=redis.call('INCR',KEYS[3])
+              redis.call('PERSIST',KEYS[3])
+            else
+              local last=redis.call('XREVRANGE',KEYS[2],'+','-','COUNT',1)
+              if #last > 0 and tonumber(string.match(last[1][1],'^(%d+)')) >= seq then return 0 end
+            end
+            redis.call('XADD',KEYS[2],seq..'-0','sequence',seq,'type',ARGV[2],'data',ARGV[3],
+                       'occurred_at',ARGV[4],'run_id',ARGV[5],'run_sequence',ARGV[1])
+            local excess=redis.call('XLEN',KEYS[2])-tonumber(ARGV[6])
+            if excess > 0 then
+              local removed=redis.call('XRANGE',KEYS[2],'-','+','COUNT',excess)
+              for _,entry in ipairs(removed) do
+                redis.call('XDEL',KEYS[2],entry[1])
+                redis.call('SET',KEYS[4],string.match(entry[1],'^(%d+)'))
+              end
+            end
+            redis.call('EXPIRE',KEYS[2],ARGV[8])
+            redis.call('SET',KEYS[5],seq)
+            return seq
+            """;
+    private static final DefaultRedisScript<Long> APPEND = new DefaultRedisScript<>(APPEND_SCRIPT,Long.class);
+    private static final DefaultRedisScript<Long> REDACT = new DefaultRedisScript<>("""
+            redis.call('SET',KEYS[1],'1')
+            redis.call('SET',KEYS[2],'1')
+            redis.call('DEL',KEYS[3])
+            local entries=redis.call('XRANGE',KEYS[4],'-','+')
+            local count=0
+            for _,entry in ipairs(entries) do
+              local fields=entry[2]
+              for i=1,#fields,2 do
+                if fields[i]=='run_id' and fields[i+1]==ARGV[1] then
+                  count=count+redis.call('XDEL',KEYS[4],entry[1]); break
+                end
+              end
+            end
+            return count
+            """,Long.class);
+
     @Override
     public void publish(String runId, AnswerLiveEvent event) {
-        String key = streamKey(runId);
-        Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("sequence", Long.toString(event.sequence()));
-        fields.put("type", event.eventType());
-        fields.put("data", event.data());
-        fields.put("occurred_at", event.occurredAt().toString());
+        append(runId,null,event);
+    }
+
+    private long append(String runId,String conversationId,AnswerLiveEvent event) {
+        String key=conversationId==null?streamKey(runId):conversationStreamKey(conversationId);
         try {
-            MapRecord<String, String, String> record = StreamRecords.string(fields)
-                    .withStreamKey(key)
-                    .withId(RecordId.of(event.sequence() + "-0"));
-            redisTemplate.opsForStream().add(record);
-            redisTemplate.opsForStream().trim(key, maxLength, true);
-            redisTemplate.expire(key, ttl);
-            meterRegistry.counter("noteweave.answer.redis.publish", "type", event.eventType()).increment();
-        } catch (RuntimeException ex) {
-            // A duplicate custom ID means this event is already bridged; other errors degrade to local mux.
-            String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
-            if (message.contains("equal or smaller")) {
-                meterRegistry.counter("noteweave.answer.redis.duplicate", "operation", "publish").increment();
-                return;
-            }
-            meterRegistry.counter("noteweave.answer.redis.error", "operation", "publish").increment();
-            throw unavailable("answer publish", ex);
-        }
+            Long seq=redisTemplate.execute(APPEND,List.of(revokedKey(runId),key,
+                    conversationId==null?key+":unused":conversationSequenceKey(conversationId),key+":trimmed",key+":highwater"),
+                    Long.toString(event.sequence()),event.eventType(),event.data(),event.occurredAt().toString(),runId,
+                    Integer.toString(maxLength),conversationId==null?"run":"conversation",Long.toString(ttl.toSeconds()));
+            if(seq==null) throw new IllegalStateException("Redis未返回事件序号");
+            if(seq<0) throw new BusinessException("ANSWER_REPLAY_REVOKED","回答回放已撤销",HttpStatus.CONFLICT);
+            return seq;
+        } catch (BusinessException ex) { throw ex; }
+        catch (RuntimeException ex) { throw unavailable("atomic publish",ex); }
+    }
+
+    @Override
+    public void redact(String conversationId,String runId) {
+        try {
+            redisTemplate.execute(REDACT,List.of(revokedKey(runId),cancelKey(runId),streamKey(runId),conversationStreamKey(conversationId)),runId);
+        } catch(RuntimeException ex) { throw unavailable("redact",ex); }
+    }
+
+    @Override
+    public boolean isReplayRevoked(String runId) {
+        try { return Boolean.TRUE.equals(redisTemplate.hasKey(revokedKey(runId))); }
+        catch(RuntimeException ex) { throw unavailable("replay revocation",ex); }
+    }
+
+    private void requireWindow(String key,long after,String code) {
+        String floor=redisTemplate.opsForValue().get(key+":trimmed");
+        String high=redisTemplate.opsForValue().get(key+":highwater");
+        boolean expired=floor!=null && after<Long.parseLong(floor);
+        if(!Boolean.TRUE.equals(redisTemplate.hasKey(key)) && high!=null && after<Long.parseLong(high)) expired=true;
+        if(expired) throw new BusinessException(code,"事件正文已超出恢复窗口，需等待完整完成快照",HttpStatus.CONFLICT);
+    }
+
+    private StreamReadOptions readOptions(Duration timeout) {
+        StreamReadOptions options=StreamReadOptions.empty().count(maxLength+1);
+        return timeout==null || timeout.isZero() || timeout.isNegative()?options:options.block(timeout);
     }
 
     @Override
     public List<AnswerLiveEvent> readAfter(String runId, long after, Duration blockTimeout) {
         try {
+            if(isReplayRevoked(runId)) return List.of();
+            requireWindow(streamKey(runId),after,"ANSWER_EVENT_CURSOR_EXPIRED");
             var records = redisTemplate.opsForStream().read(
-                    StreamReadOptions.empty().count(64).block(blockTimeout),
+                    readOptions(blockTimeout),
                     StreamOffset.create(streamKey(runId), ReadOffset.from(Math.max(0, after) + "-0"))
             );
             if (records == null || records.isEmpty()) {
                 return List.of();
             }
+            requireWindow(streamKey(runId),after,"ANSWER_EVENT_CURSOR_EXPIRED");
+            if(isReplayRevoked(runId)) return List.of();
             meterRegistry.counter("noteweave.answer.redis.read").increment(records.size());
             return records.stream().map(this::toEvent).toList();
-        } catch (RuntimeException ex) {
+        } catch (BusinessException ex) { throw ex; }
+        catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.answer.redis.error", "operation", "read").increment();
             throw unavailable("answer read", ex);
         }
@@ -108,7 +186,8 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 return publishConversationOnce(conversationId, runId, event);
-            } catch (RuntimeException ex) {
+            } catch (BusinessException ex) { throw ex; }
+            catch (RuntimeException ex) {
                 lastFailure = ex;
                 if (attempt == 0) {
                     try {
@@ -124,33 +203,9 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
         throw unavailable("conversation publish", lastFailure);
     }
 
-    private ConversationLiveEvent publishConversationOnce(
-            String conversationId,
-            String runId,
-            AnswerLiveEvent event
-    ) {
-        String streamKey = conversationStreamKey(conversationId);
-        String sequenceKey = conversationSequenceKey(conversationId);
-        Long sequence = redisTemplate.opsForValue().increment(sequenceKey);
-        if (sequence == null) {
-            throw new IllegalStateException("Redis did not return a conversation sequence");
-        }
-        Map<String, String> fields = new LinkedHashMap<>();
-        fields.put("sequence", Long.toString(sequence));
-        fields.put("run_id", runId);
-        fields.put("run_sequence", Long.toString(event.sequence()));
-        fields.put("type", event.eventType());
-        fields.put("data", event.data());
-        fields.put("occurred_at", event.occurredAt().toString());
-        redisTemplate.opsForStream().add(StreamRecords.string(fields)
-                .withStreamKey(streamKey)
-                .withId(RecordId.of(sequence + "-0")));
-        redisTemplate.opsForStream().trim(streamKey, maxLength, true);
-        redisTemplate.expire(streamKey, ttl);
-        redisTemplate.expire(sequenceKey, ttl);
-        meterRegistry.counter("noteweave.conversation.redis.publish", "type", event.eventType()).increment();
-        return new ConversationLiveEvent(
-                sequence, runId, event.sequence(), event.eventType(), event.data(), event.occurredAt());
+    private ConversationLiveEvent publishConversationOnce(String conversationId,String runId,AnswerLiveEvent event) {
+        long sequence=append(runId,conversationId,event);
+        return new ConversationLiveEvent(sequence,runId,event.sequence(),event.eventType(),event.data(),event.occurredAt());
     }
 
     @Override
@@ -160,8 +215,9 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             Duration blockTimeout
     ) {
         try {
+            requireWindow(conversationStreamKey(conversationId),after,"CONVERSATION_EVENT_CURSOR_EXPIRED");
             var records = redisTemplate.opsForStream().read(
-                    StreamReadOptions.empty().count(64).block(blockTimeout),
+                    readOptions(blockTimeout),
                     StreamOffset.create(
                             conversationStreamKey(conversationId),
                             ReadOffset.from(Math.max(0, after) + "-0"))
@@ -169,9 +225,11 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
             if (records == null || records.isEmpty()) {
                 return List.of();
             }
+            requireWindow(conversationStreamKey(conversationId),after,"CONVERSATION_EVENT_CURSOR_EXPIRED");
             meterRegistry.counter("noteweave.conversation.redis.read").increment(records.size());
-            return records.stream().map(this::toConversationEvent).toList();
-        } catch (RuntimeException ex) {
+            return records.stream().map(this::toConversationEvent).filter(event -> !isReplayRevoked(event.runId())).toList();
+        } catch (BusinessException ex) { throw ex; }
+        catch (RuntimeException ex) {
             meterRegistry.counter("noteweave.conversation.redis.error", "operation", "read").increment();
             throw unavailable("conversation read", ex);
         }
@@ -225,6 +283,8 @@ public class RedisAnswerRealtimeBridge implements AnswerRealtimeBridge {
                 occurredAt == null ? Instant.now() : Instant.parse(String.valueOf(occurredAt))
         );
     }
+
+    private String revokedKey(String runId) { return "noteweave:v1:revoked:answer:"+runId; }
 
     private String streamKey(String runId) {
         return "noteweave:v1:stream:answer:" + runId;

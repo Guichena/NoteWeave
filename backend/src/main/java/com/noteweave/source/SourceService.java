@@ -248,6 +248,7 @@ public class SourceService {
                         set delete_reason = 'COMPLIANCE', updated_by = ?, updated_at = current_timestamp
                         where workspace_id = ? and id = ? and status = 'DELETED'
                         """, actor, workspaceId, sourceId);
+                runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
                 revokeNotesReferencingSource(workspaceId, sourceId, actor);
                 // 由 USER 升级为 COMPLIANCE 时正文同样必须清除（此前只改原因，正文永久残留）
                 compliancePurgeService.purge(workspaceId, sourceId);
@@ -291,12 +292,12 @@ public class SourceService {
                 set parse_status = 'DELETED', index_status = 'DELETED'
                 where source_id = ?
                 """, sourceId);
+        runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         if (DELETE_REASON_COMPLIANCE.equals(deleteReason)) {
             revokeNotesReferencingSource(workspaceId, sourceId, actor);
             // 合规删除承诺正文不再残留：同事务清空分块正文、窗口、引用摘录与摘要元数据
             compliancePurgeService.purge(workspaceId, sourceId);
         }
-        runReplayRedactionService.redactDeletedSource(workspaceId, sourceId);
         cancelPendingSourceTasks(workspaceId, sourceId);
         // AU-001 / RB-008：派生对象（解析文档/提取正文/转写/向量批次）清理意图与删除同事务
         // 登记 RELEASED；物理删除由 B 的孤儿对账按登记执行，共享对象不受影响

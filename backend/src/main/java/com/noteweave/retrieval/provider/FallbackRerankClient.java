@@ -1,5 +1,6 @@
 package com.noteweave.retrieval.provider;
 
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.ChatLlmClient;
@@ -119,14 +120,14 @@ public class FallbackRerankClient implements RerankClient {
         }
         List<Hit> hits = new ArrayList<>();
         for (int index = 0; index < count; index++) {
-            hits.add(new Hit(index, scores.get(index), 0));
+            hits.add(new Hit(index, scores.get(index), 0, ScoreInfo.llmFallback(LLM_MODEL, scores.get(index))));
         }
         // 分数相同时保留原来的融合排名
         hits.sort(Comparator.comparingDouble(Hit::score).reversed().thenComparingInt(Hit::documentIndex));
         List<Hit> ranked = new ArrayList<>();
         for (int rank = 0; rank < Math.min(topN, hits.size()); rank++) {
             Hit hit = hits.get(rank);
-            ranked.add(new Hit(hit.documentIndex(), hit.score(), rank + 1));
+            ranked.add(new Hit(hit.documentIndex(), hit.score(), rank + 1, hit.scoreInfo()));
         }
         return new RerankResult(ranked, LLM_MODEL);
     }
@@ -141,7 +142,7 @@ public class FallbackRerankClient implements RerankClient {
             if (!scores.isArray() || scores.size() != count) return null;
             List<Double> values = new ArrayList<>();
             for (JsonNode score : scores) {
-                if (!score.isNumber()) return null;
+                if (!score.isNumber() || !Double.isFinite(score.doubleValue()) || score.doubleValue() < 0 || score.doubleValue() > 10) return null;
                 values.add(Math.max(0d, Math.min(10d, score.asDouble())) / 10d);
             }
             return values;

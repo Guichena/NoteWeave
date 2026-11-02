@@ -1,5 +1,5 @@
 import { type RawSseEvent } from "../../shared/event-stream";
-import { parseCitationProtocolEvent } from "./evidence";
+import { invalidCitationProtocol, mergeCitationProtocol, parseCitationProtocol, parseCitationProtocolEvent, unknownCitationProtocol } from "./evidence";
 import { type AnswerRunSnapshot, type AnswerRunState } from "./model";
 
 type ConversationEventEnvelope = {
@@ -37,10 +37,19 @@ export class AnswerRunStore {
     if (event.event === "conversation.snapshot") {
       return this.applySnapshot(event.data);
     }
-    if (!this.admitEventId(event.id)) {
-      return [];
-    }
     const envelope = parseConversationEventEnvelope(event.data);
+    // 协议是冻结身份。先检查冲突，再对普通数据事件按游标去重。
+    if (event.event === "evidence.ready" && envelope.runId) {
+      const current = this.states.get(envelope.runId) ?? createAnswerRunState(envelope.runId);
+      const next = { ...current,
+        citationProtocol: mergeCitationProtocol(current.citationProtocol, parseCitationProtocolEvent(envelope.data)),
+        lastRunSequence: Math.max(current.lastRunSequence, envelope.runSequence) };
+      this.admitEventId(event.id);
+      this.states.set(envelope.runId, next);
+      this.settle(envelope.runId, next);
+      return [next];
+    }
+    if (!this.admitEventId(event.id)) return [];
     if (!envelope.runId) {
       return [];
     }
@@ -78,7 +87,9 @@ export class AnswerRunStore {
         content: text(run.content),
         status: text(run.status),
         error_code: text(run.error_code),
-        error_message: text(run.error_message)
+        error_message: text(run.error_message),
+        citation_protocol: parseCitationProtocol(run.citation_protocol),
+        event_sequence: finiteNumber(run.event_sequence)
       }));
     }
     return updates;
@@ -89,13 +100,14 @@ export class AnswerRunStore {
     const snapshotStatus = snapshot.status || current.status;
     // NR24：会话快照不带引用，不得清空已恢复消息的引用；
     // 终态后的快照幂等补元数据（引用保留为并集，不重复）
+    const authoritativeBody = snapshotStatus === "COMPLETED";
     const next: AnswerRunState = {
       ...current,
-      content: snapshot.content === "" && current.content !== ""
-        ? current.content
-        : snapshot.content,
+      content: authoritativeBody && snapshot.content !== "" ? snapshot.content : current.content,
       citations: [...current.citations],
       status: snapshotStatus,
+      citationProtocol: mergeCitationProtocol(current.citationProtocol, snapshot.citation_protocol),
+      lastRunSequence: authoritativeBody ? Math.max(current.lastRunSequence, snapshot.event_sequence ?? 0) : current.lastRunSequence,
       error: snapshot.error_message || snapshot.error_code || ""
     };
     this.states.set(snapshot.id, next);
@@ -183,7 +195,7 @@ export function createAnswerRunState(runId = ""): AnswerRunState {
     status: "GENERATING",
     error: "",
     lastRunSequence: 0,
-    citationProtocol: null
+    citationProtocol: unknownCitationProtocol()
   };
 }
 
@@ -193,16 +205,34 @@ export function reduceAnswerRunState(
   data: string,
   runSequence = current.lastRunSequence + 1
 ): AnswerRunState {
+  if (eventType === "run.snapshot") {
+    try {
+      const snapshot = asRecord(JSON.parse(data));
+      const id = text(snapshot.id ?? snapshot.run_id);
+      if (!id || id !== current.runId) return { ...current, citationProtocol: invalidCitationProtocol("SNAPSHOT_RUN_MISMATCH") };
+      const status = text(snapshot.status) || current.status;
+      const completed = status === "COMPLETED";
+      return {
+        ...current, status,
+        content: completed ? text(snapshot.content) : current.content,
+        error: text(snapshot.error_message ?? snapshot.error_code),
+        citationProtocol: mergeCitationProtocol(current.citationProtocol, parseCitationProtocol(snapshot.citation_protocol)),
+        lastRunSequence: completed ? Math.max(current.lastRunSequence, finiteNumber(snapshot.event_sequence)) : current.lastRunSequence
+      };
+    } catch {
+      return { ...current, citationProtocol: invalidCitationProtocol("MALFORMED_RUN_SNAPSHOT") };
+    }
+  }
+  if (eventType === "evidence.ready") {
+    return { ...current, citationProtocol: mergeCitationProtocol(current.citationProtocol, parseCitationProtocolEvent(data)),
+      lastRunSequence: Math.max(current.lastRunSequence, runSequence) };
+  }
+  if (runSequence <= current.lastRunSequence) return current;
   if (isTerminal(current.status)) {
     // NR24：终态后允许幂等补引用元数据（重复投递不产生副作用）
     if (eventType === "citation.upsert" && !current.citations.includes(data)) {
       const supplemented = { ...current, citations: [...current.citations, data] };
       return supplemented;
-    }
-    // 引用协议在首个正文增量之前下发，晚到或重放时补一次，已有值不再覆盖
-    if (eventType === "evidence.ready" && !current.citationProtocol) {
-      const lateProtocol = parseCitationProtocolEvent(data);
-      return lateProtocol ? { ...current, citationProtocol: lateProtocol } : current;
     }
     return current;
   }
@@ -223,14 +253,6 @@ export function reduceAnswerRunState(
         next.citations.push(data);
       }
       return next;
-    case "evidence.ready": {
-      // 冻结的引用协议：允许集合与编号绑定，先于正文增量到达；重复投递不覆盖已冻结的绑定
-      if (next.citationProtocol) {
-        return next;
-      }
-      const protocol = parseCitationProtocolEvent(data);
-      return protocol ? { ...next, citationProtocol: protocol } : next;
-    }
     case "answer.completed":
       next.status = "COMPLETED";
       return next;

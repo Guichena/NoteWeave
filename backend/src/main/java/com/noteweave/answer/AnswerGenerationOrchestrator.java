@@ -54,10 +54,16 @@ public class AnswerGenerationOrchestrator {
     }
 
     public void stream(String assistantRequestId, Consumer<AnswerDeliveryEvent> consumer) {
-        AnswerGenerationMaterial material = generationGateway.load(assistantRequestId);
         AnswerRunRef run = answerRunService.requireByAssistantRequest(assistantRequestId);
+        if (run != null && ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status()))) {
+            deliver(consumer, new AnswerDeliveryEvent("", "CANCELLED".equals(run.status())
+                    ? "answer.cancelled" : "answer.failed", run.status()));
+            return;
+        }
+        if (run != null) answerRunService.requireReplayReadable(run.workspaceId(), run.runId());
+        AnswerGenerationMaterial material = generationGateway.load(assistantRequestId);
         if (run != null && "COMPLETED".equals(run.status())) {
-            replayCompleted(material, consumer);
+            replayCompleted(material, run, consumer);
             return;
         }
         if (run != null && ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status()))) {
@@ -92,6 +98,7 @@ public class AnswerGenerationOrchestrator {
             String draft = generationGateway.prepareDraft(material.content());
             // 冻结与生成之间证据可能失效：调用模型之前按冻结契约复核，失效时整个运行失败
             if (run != null) {
+                answerRunService.requireStreamEligible(run.workspaceId(), run.runId(), streamOwner);
                 contractGuard.requireEligible(run.workspaceId(), run.runId(), material.contract());
             }
             // 引用绑定必须先于首个正文增量下发，前端角标才能从第一段正文起按绑定渲染；
@@ -100,20 +107,29 @@ public class AnswerGenerationOrchestrator {
             // 越界编号与未选页面名在这里改成普通文字；流式、返回值与落库都用同一份规范文本
             CitationMarkerNormalizer normalizer = new CitationMarkerNormalizer(material.contract());
             StringBuilder normalized = new StringBuilder();
+            AtomicBoolean receivedCallback = new AtomicBoolean();
             Consumer<String> sink = token -> {
+                if (token != null && !token.isEmpty()) {
+                    receivedCallback.set(true);
+                }
                 String safe = normalizer.accept(token);
                 if (!safe.isEmpty()) {
                     normalized.append(safe);
                     deltaEmitter.accept(safe);
                 }
             };
+            String returned;
             if (run == null) {
-                generationGateway.generate(
+                returned = generationGateway.generate(
                         material.contract(), draft, material.maximumOutputTokens(), sink);
             } else {
-                generationGateway.generateInConversation(
+                returned = generationGateway.generateInConversation(
                         run.workspaceId(), run.conversationId(), material.contract(), draft,
                         material.maximumOutputTokens(), sink);
+            }
+            // 仅返回整段正文的适配器也必须经过同一个规范化入口；已有回调时不重复追加返回值。
+            if (!receivedCallback.get() && returned != null && !returned.isBlank()) {
+                sink.accept(returned);
             }
             String tail = normalizer.flush();
             if (!tail.isEmpty()) {
@@ -122,6 +138,10 @@ public class AnswerGenerationOrchestrator {
             }
             deltaEmitter.flush();
             streamed = normalized.toString();
+            if (run != null) {
+                answerRunService.recordCitationNormalization(run.workspaceId(), run.runId(), streamOwner,
+                        normalizer.outOfRangeNumbers(), normalizer.unknownPages());
+            }
         } catch (AnswerRunCancelledException ex) {
             persistAndEmitCancellation(run, streamOwner, fallbackSequence, consumer);
             return;
@@ -131,17 +151,19 @@ public class AnswerGenerationOrchestrator {
             }
             return;
         } catch (Exception ex) {
+            String errorCode = ex instanceof com.noteweave.common.BusinessException business
+                    ? business.code() : "ANSWER_STREAM_FAILED";
+            String terminalMessage = errorCode + ": " + (ex.getMessage() == null ? "" : ex.getMessage());
             if (run != null) {
                 answerRunService.advanceEventSequence(
                         run.workspaceId(), run.runId(), runEventMux.currentSequence(run.runId()));
                 answerRunService.fail(run.workspaceId(), run.runId(), streamOwner,
-                        "ANSWER_STREAM_FAILED", ex.getMessage());
-                AnswerLiveEvent terminal = publishTerminal(run, "answer.failed", ex.getMessage());
-                emitTerminal(consumer, fallbackSequence, terminal, "answer.failed",
-                        "回答流式调用失败：" + ex.getMessage());
+                        errorCode, ex.getMessage());
+                AnswerLiveEvent terminal = publishTerminal(run, "answer.failed", terminalMessage);
+                emitTerminal(consumer, fallbackSequence, terminal, "answer.failed", terminalMessage);
                 return;
             }
-            emit(consumer, fallbackSequence, "answer.failed", "回答流式调用失败：" + ex.getMessage(), null);
+            emit(consumer, fallbackSequence, "answer.failed", terminalMessage, null);
             return;
         } finally {
             if (leaseRenewal != null) {
@@ -171,10 +193,10 @@ public class AnswerGenerationOrchestrator {
             emitTerminal(consumer, fallbackSequence, terminal, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE");
             return;
         }
-        for (String citation : material.citationLines()) {
-            emit(consumer, fallbackSequence, "citation.upsert", citation, run);
-        }
         if (run == null) {
+            for (String citation : material.citationLines()) {
+                emit(consumer, fallbackSequence, "citation.upsert", citation, null);
+            }
             // 没有运行记录的旧路径自己写回；有运行记录时正文写回并入 complete 的同一事务
             generationGateway.persistContent(material.workspaceId(), material.messageId(), streamed);
             emit(consumer, fallbackSequence, "answer.completed", material.messageId(), null);
@@ -182,9 +204,14 @@ public class AnswerGenerationOrchestrator {
         }
 
         try {
+            for (String citation : material.citationLines()) {
+                answerRunService.requireStreamEligible(run.workspaceId(), run.runId(), streamOwner);
+                emit(consumer, fallbackSequence, "citation.upsert", citation, run);
+            }
             answerRunService.advanceEventSequence(
                     run.workspaceId(), run.runId(), runEventMux.currentSequence(run.runId()));
             answerRunService.persistCitationEvents(run.workspaceId(), run.runId(), material.citationLines());
+            contractGuard.requireEligible(run.workspaceId(), run.runId(), material.contract());
             AnswerRunService.CompletionOutcome completionOutcome = answerRunService.complete(
                     run.workspaceId(), run.runId(), streamOwner, streamed == null ? "" : streamed, null);
             if (completionOutcome == AnswerRunService.CompletionOutcome.SUPERSEDED) {
@@ -208,17 +235,20 @@ public class AnswerGenerationOrchestrator {
             // ANS-01：收尾失败必须显式落 FAILED 并发出终态事件，
             // 不能让运行停在 GENERATING、把客户端晾在打开的流上。
             failFinalization(run, streamOwner, ex);
-            AnswerLiveEvent failed = publishTerminal(run, "answer.failed", "ANSWER_FINALIZE_FAILED");
+            String errorCode = ex instanceof com.noteweave.common.BusinessException business
+                    ? business.code() : "ANSWER_FINALIZE_FAILED";
+            AnswerLiveEvent failed = publishTerminal(run, "answer.failed", errorCode);
             emitTerminal(consumer, fallbackSequence, failed, "answer.failed",
-                    "回答收尾失败：" + (ex.getMessage() == null ? "" : ex.getMessage()));
+                    errorCode + ": " + (ex.getMessage() == null ? "" : ex.getMessage()));
         }
     }
 
     /** 收尾异常落库；运行已经是终态时以既有状态为准，不覆盖也不上抛。 */
     private void failFinalization(AnswerRunRef run, String streamOwner, RuntimeException failure) {
         try {
-            answerRunService.fail(run.workspaceId(), run.runId(), streamOwner,
-                    "ANSWER_FINALIZE_FAILED", failure.getMessage());
+            String errorCode = failure instanceof com.noteweave.common.BusinessException business
+                    ? business.code() : "ANSWER_FINALIZE_FAILED";
+            answerRunService.fail(run.workspaceId(), run.runId(), streamOwner, errorCode, failure.getMessage());
         } catch (RuntimeException ignored) {
             log.warn("回答收尾失败时无法标记运行失败: run={}, cause={}", run.runId(), failure.toString());
         }
@@ -250,20 +280,25 @@ public class AnswerGenerationOrchestrator {
 
     private void replayCompleted(
             AnswerGenerationMaterial material,
+            AnswerRunRef run,
             Consumer<AnswerDeliveryEvent> consumer
     ) {
+        Consumer<AnswerDeliveryEvent> guardedConsumer = event -> {
+            if (run != null) answerRunService.requireReplayReadable(run.workspaceId(), run.runId());
+            consumer.accept(event);
+        };
         AtomicLong sequence = new AtomicLong();
         if (material.content() == null || material.content().isBlank()) {
-            emit(consumer, sequence, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE", null);
+            emit(guardedConsumer, sequence, "answer.failed", "ANSWER_LLM_EMPTY_RESPONSE", null);
             return;
         }
         // 已完成回放同样先给绑定，新订阅与重连都不必等补拉证据清单
-        emitEvidenceReady(consumer, sequence, material, null, null);
+        emitEvidenceReady(guardedConsumer, sequence, material, null, null);
         generationGateway.replayChunks(material.content())
-                .forEach(piece -> emit(consumer, sequence, "answer.delta", piece, null));
+                .forEach(piece -> emit(guardedConsumer, sequence, "answer.delta", piece, null));
         material.citationLines().forEach(citation ->
-                emit(consumer, sequence, "citation.upsert", citation, null));
-        emit(consumer, sequence, "answer.completed", material.messageId(), null);
+                emit(guardedConsumer, sequence, "citation.upsert", citation, null));
+        emit(guardedConsumer, sequence, "answer.completed", material.messageId(), null);
     }
 
     private void followExistingGeneration(
@@ -273,7 +308,7 @@ public class AnswerGenerationOrchestrator {
     ) {
         AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
         if ("COMPLETED".equals(current.status())) {
-            replayCompleted(material, consumer);
+            replayCompleted(material, run, consumer);
             return;
         }
         if ("FAILED".equals(current.status()) || "CANCELLED".equals(current.status())) {
@@ -332,6 +367,7 @@ public class AnswerGenerationOrchestrator {
             throw new AnswerStreamLeaseLostException();
         }
         ensureNotCancelled(run);
+        if (run != null) answerRunService.requireStreamEligible(run.workspaceId(), run.runId(), streamOwner);
         if (run != null && firstToken.compareAndSet(false, true)) {
             answerRunService.markFirstToken(run.workspaceId(), run.runId(), streamOwner);
         }

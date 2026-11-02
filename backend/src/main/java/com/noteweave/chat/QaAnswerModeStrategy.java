@@ -191,7 +191,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
         answer.append("\n")
                 .append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
         return new PromptSpec(
-                "Answer only from the provided EvidenceBundle and cite its evidence ids.",
+                "Answer only from the provided EvidenceBundle and cite only its frozen numbered markers [n].",
                 answer.toString(),
                 bundle.evidence().stream().map(EvidenceBundle.Evidence::evidenceId).toList(),
                 bundle.retrievalPlanVersion()

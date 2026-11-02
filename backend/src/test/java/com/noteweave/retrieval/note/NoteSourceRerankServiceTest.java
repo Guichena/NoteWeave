@@ -64,6 +64,21 @@ class NoteSourceRerankServiceTest {
         assertThat(result.candidates()).extracting(ScoredCandidate::sourceId).containsExactly("a", "b");
     }
 
+    @Test
+    void partialSourceResultPreservesActualProducerAndUnscoredTail() {
+        RerankClient client = mock(RerankClient.class);
+        when(client.isEnabled()).thenReturn(true);
+        var info = com.noteweave.answer.strategy.ScoreInfo.llmFallback("llm-listwise-v1", 0.01);
+        when(client.rerank(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(new RerankClient.RerankResult(List.of(new RerankClient.Hit(1, 0.01, 1, info)), "unrelated-global"));
+        var result = new NoteSourceRerankService(client).rerank("q", List.of(candidate("a", "A"), candidate("b", "B")), 2);
+        assertThat(result.candidates()).extracting(ScoredCandidate::sourceId).containsExactly("b", "a");
+        assertThat(result.candidates().get(0).scoreInfo()).isEqualTo(info);
+        assertThat(result.candidates().get(0).source().sourceScoreInfo()).isEqualTo(info);
+        assertThat(result.candidates().get(1).scoreInfo().origin()).isEqualTo("FUSION_FALLBACK");
+        assertThat(result.candidates().get(1).scoreInfo().value()).isNull();
+    }
+
     private ScoredCandidate candidate(String id, String title) {
         CandidateSource source = new CandidateSource(id, title, "PDF", 1, 1, "", "",
                 "summary", "[]", "{}", "sample", 10, "", List.of(), List.of(), 0, 0, "", "");

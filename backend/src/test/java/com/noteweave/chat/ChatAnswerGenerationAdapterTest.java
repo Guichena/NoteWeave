@@ -97,11 +97,11 @@ class ChatAnswerGenerationAdapterTest {
         jdbc.execute("create table conversation_message(id varchar(36), workspace_id varchar(36), content varchar(500), assistant_request_id varchar(36))");
         jdbc.execute("create table answer_run(assistant_request_id varchar(36), maximum_output_tokens int, generation_contract_json varchar(4000))");
         jdbc.execute("create table source(id varchar(36), generated_by varchar(64), generated_ref_id varchar(36))");
-        jdbc.execute("create table citation(id varchar(36), workspace_id varchar(36), source_id varchar(36), title varchar(100), quote_text varchar(500))");
+        jdbc.execute("create table citation(id varchar(36), workspace_id varchar(36), source_id varchar(36), title varchar(100), quote_text varchar(500), source_snapshot_id varchar(36), source_chunk_id varchar(36), page_no int, location_info varchar(1000), created_at timestamp default current_timestamp, research_run_id varchar(36), research_evidence_key varchar(64), owner_message_id varchar(36))");
         jdbc.execute("create table message_citation(message_id varchar(36), citation_id varchar(36), sort_order int)");
         jdbc.update("insert into conversation_message values ('message', 'workspace', 'draft', 'request')");
         jdbc.update("insert into source values ('source', 'research_agent', 'run')");
-        jdbc.update("insert into citation values ('citation', 'workspace', 'source', 'Report', 'secret quote')");
+        jdbc.update("insert into citation(id,workspace_id,source_id,title,quote_text) values ('citation', 'workspace', 'source', 'Report', 'secret quote')");
         jdbc.update("insert into message_citation values ('message', 'citation', 0)");
         ResearchGeneratedSourceReadGate gate = mock(ResearchGeneratedSourceReadGate.class);
         ChatAnswerGenerationAdapter adapter = new ChatAnswerGenerationAdapter(

@@ -75,9 +75,17 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 .filter(evidence -> "KNOWLEDGE_VERSION".equals(evidence.kind()))
                 .map(EvidenceBundle.Evidence::knowledgeVersionId)
                 .collect(java.util.stream.Collectors.toSet());
-        List<WikiPageContext> selectedContexts = snapshot.contexts().stream()
-                .filter(contextItem -> selectedVersionIds.contains(contextItem.page().versionId()))
-                .toList();
+        Map<String, WikiPageContext> contextsByVersion = snapshot.contexts().stream()
+                .collect(java.util.stream.Collectors.toMap(item -> item.page().versionId(), item -> item, (a, b) -> a));
+        // 编号取证据包位置加一，与引用卡片顺序一致；快照里多出来的页面不再占编号。
+        List<NumberedPage> selectedContexts = new java.util.ArrayList<>();
+        List<EvidenceBundle.Evidence> evidenceList = bundle.evidence();
+        for (int index = 0; index < evidenceList.size(); index++) {
+            EvidenceBundle.Evidence evidence = evidenceList.get(index);
+            if (!"KNOWLEDGE_VERSION".equals(evidence.kind())) continue;
+            WikiPageContext matched = contextsByVersion.get(evidence.knowledgeVersionId());
+            if (matched != null) selectedContexts.add(new NumberedPage(index + 1, matched));
+        }
         if (selectedContexts.isEmpty()) {
             return new PromptSpec(
                     "Answer only from formal workspace Wiki pages.",
@@ -135,11 +143,11 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
      * Wiki 回答的生成提示：用户问题、命中页面的正文和页面之间的关系。
      *
      * <p>原来的草稿只有固定的过程说明、页面清单和拼出来的综合结论，没有用户问题，模型只能润色这段文字，
-     * 回答常常答非所问。现在把问题和页面正文交给模型，先直接回答，再用 [[页面名]] 标注依据的页面。</p>
+     * 回答常常答非所问。现在把问题和页面正文交给模型，先直接回答，再用冻结编号 [n] 标注依据的页面。</p>
      */
     private String renderAnswer(
             AnswerContext context,
-            List<WikiPageContext> contexts,
+            List<NumberedPage> contexts,
             Map<String, List<String>> paths
     ) {
         StringBuilder builder = new StringBuilder();
@@ -153,14 +161,15 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
                 .append("回答要求：\n")
                 .append("- 第一段用一两句话直接回答问题，再按问题的结构展开；需要综合多个页面时，说明它们之间的联系。\n")
                 .append("- 只使用下面页面中的内容，不补写页面里没有的事实；与问题无关的页面内容不要写进来。\n")
-                .append("- 依据某个页面的句子末尾用 [[页面名]] 标注页面，页面名必须与下面给出的完全一致。\n")
+                .append("- 依据页面作出的事实陈述末尾只使用下面的编号 [n]，不得使用页面名或证据 ID 作为引用。\n")
                 .append("- 不要描述你如何检索或组织这次回答，不要列出页面版本、链接数量等统计，不要在末尾另列来源清单。\n")
                 .append("- 页面只覆盖问题的一部分时，先回答能回答的部分，再说明还缺哪方面的信息。\n\n");
         ConversationWindow.append(builder, context);
         builder.append("Wiki 页面：\n");
-        for (WikiPageContext pageContext : contexts) {
+        for (NumberedPage numbered : contexts) {
+            WikiPageContext pageContext = numbered.context();
             KnowledgePageHit page = pageContext.page();
-            builder.append("[[").append(page.title()).append("]]\n");
+            builder.append("[").append(numbered.number()).append("] ").append(page.title()).append("\n");
             if (!page.summary().isBlank()) {
                 builder.append("摘要：").append(trim(page.summary(), 300)).append("\n");
             }
@@ -183,6 +192,10 @@ public class WikiAnswerModeStrategy implements AnswerModeStrategy {
         }
         builder.append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));
         return builder.toString();
+    }
+
+    /** 页面与其冻结引用编号。 */
+    private record NumberedPage(int number, WikiPageContext context) {
     }
 
     private void appendWikiLinks(StringBuilder builder, List<WikiLinkResponse> links, String emptyMessage) {

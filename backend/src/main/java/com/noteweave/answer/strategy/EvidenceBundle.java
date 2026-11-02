@@ -76,7 +76,7 @@ public record EvidenceBundle(
         }
 
         /**
-         * 兼容历史调用：没有显式声明评分来源时按融合分处理。
+         * 兼容历史调用：没有显式声明评分来源时保留历史未知。
          * 三条检索链路和会话证据通道都显式传入 {@link ScoreInfo}，这条路径只留给测试与历史数据。
          */
         public Evidence(
@@ -101,7 +101,7 @@ public record EvidenceBundle(
         ) {
             this(evidenceId, kind, sourceId, sourceSnapshotId, passageId, knowledgeItemId,
                     knowledgeVersionId, title, excerpt, location, rawScore, fusedScore, rerankScore,
-                    accessScope, freshAt, selectionReason, characterCost, metadata, ScoreInfo.fusion());
+                    accessScope, freshAt, selectionReason, characterCost, metadata, ScoreInfo.unknown());
         }
     }
 }

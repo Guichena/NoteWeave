@@ -249,6 +249,17 @@ public class AnswerRunService {
         if (terminal != null) {
             return terminal;
         }
+        try {
+            new AnswerRunLifecycleGuard(jdbcTemplate).lockForCompletion(workspaceId, runId, streamOwner);
+        } catch (BusinessException revoked) {
+            CompletionOutcome latestTerminal = terminalOutcome(requireRef(workspaceId, runId).status());
+            if (latestTerminal != null) return latestTerminal;
+            CompletionSnapshot snapshot = completionSnapshot(workspaceId, runId);
+            if (snapshot != null && !java.util.Objects.equals(streamOwner, snapshot.streamOwner())) {
+                return CompletionOutcome.SUPERSEDED;
+            }
+            return failRunInternal(workspaceId, runId, streamOwner, revoked.code(), revoked.getMessage());
+        }
         requireNonBlankFinalContent(finalContent);
         String actor = actor();
         // ANS-01：收尾的这一条 CAS 同时判定三件事——运行还在 GENERATING、流持有者是我、
@@ -284,10 +295,13 @@ public class AnswerRunService {
         }
         // 正文写回与运行收尾在同一事务里完成：消息已删除时不写回，晚到结果不能复活已删消息
         if (current.answerMessageId() != null && !current.answerMessageId().isBlank()) {
-            jdbcTemplate.update("""
+            int messageWritten = jdbcTemplate.update("""
                     update conversation_message set content = ?, content_hash = ?
                     where workspace_id = ? and id = ? and context_status <> 'DELETED'
                     """, finalContent, sha256(finalContent), workspaceId, current.answerMessageId());
+            if (messageWritten != 1) {
+                throw new BusinessException("ANSWER_RUN_REVOKED", "回答消息已失效，完成事务回滚");
+            }
         }
         int completed = jdbcTemplate.update("""
                 update answer_run
@@ -509,12 +523,16 @@ public class AnswerRunService {
         return get(workspaceId, runId);
     }
 
+    public void requireReplayReadable(String workspaceId, String runId) {
+        new AnswerReplayAccessGuard(jdbcTemplate).requireReadable(workspaceId, runId);
+    }
+
     public AnswerRunResponse get(String workspaceId, String runId) {
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
                        r.retrieval_plan_version, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json, r.evidence_sufficiency,
+                       r.evidence_bundle_json, r.evidence_sufficiency, r.generation_contract_json, r.event_seq,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status,
@@ -574,7 +592,38 @@ public class AnswerRunService {
                 contract == null ? List.of() : contract.citationBindings().stream()
                         .map(binding -> new AnswerEvidenceManifestResponse.CitationBindingView(
                                 binding.number(), binding.evidenceId(), binding.citationIds()))
-                        .toList());
+                        .toList(),
+                decodeCitationProtocol(storedPlan.contractJson(), "prepared"));
+    }
+
+    public EvidenceReadyEvent citationProtocol(String workspaceId, String runId) {
+        return jdbcTemplate.query("""
+                select generation_contract_json, retrieval_plan_version from answer_run
+                where workspace_id = ? and id = ?
+                """, rs -> {
+            if (!rs.next()) {
+                throw notFound();
+            }
+            return decodeCitationProtocol(rs.getString(1), rs.getString(2));
+        }, workspaceId, runId);
+    }
+
+    private EvidenceReadyEvent decodeCitationProtocol(String json, String planVersion) {
+        if (json == null || json.isBlank()) {
+            return "pending".equals(planVersion) ? EvidenceReadyEvent.unknown() : EvidenceReadyEvent.legacy();
+        }
+        try {
+            GenerationContract contract = objectMapper.readValue(json, GenerationContract.class);
+            contract.requireValid();
+            if (!GenerationContract.SCHEMA_VERSION.equals(contract.schemaVersion())
+                    || contract.mode().isBlank() || contract.promptVersion().isBlank()
+                    || contract.evidenceBundleId().isBlank()) {
+                return EvidenceReadyEvent.invalid();
+            }
+            return EvidenceReadyEvent.from(contract);
+        } catch (Exception exception) {
+            return EvidenceReadyEvent.invalid();
+        }
     }
 
     /** 历史回答没有冻结契约，按旧协议返回 null，前端不得从标题猜绑定关系。 */
@@ -585,8 +634,8 @@ public class AnswerRunService {
         try {
             return objectMapper.readValue(json, GenerationContract.class);
         } catch (Exception exception) {
-            log.warn("生成契约无法解析，按旧协议返回：{}", exception.getMessage());
-            return null;
+            throw new BusinessException("ANSWER_GENERATION_CONTRACT_INVALID",
+                    "冻结生成契约无法解析", HttpStatus.CONFLICT);
         }
     }
 
@@ -644,7 +693,7 @@ public class AnswerRunService {
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
                        r.retrieval_plan_version, r.model, r.maximum_output_tokens,
-                       r.evidence_bundle_json, r.evidence_sufficiency,
+                       r.evidence_bundle_json, r.evidence_sufficiency, r.generation_contract_json, r.event_seq,
                        r.started_at, r.first_token_at, r.finished_at,
                        r.error_code, r.error_message,
                        mr.revision_no, mr.status as revision_status,
@@ -696,7 +745,10 @@ public class AnswerRunService {
 
     @Transactional
     public void persistCitationEvents(String workspaceId, String runId, List<String> citationLines) {
-        requireRef(workspaceId, runId);
+        AnswerRunRef run = requireRef(workspaceId, runId);
+        String owner = jdbcTemplate.queryForObject(
+                "select stream_owner from answer_run where workspace_id = ? and id = ?", String.class, workspaceId, runId);
+        new AnswerRunLifecycleGuard(jdbcTemplate).lockForCompletion(workspaceId, runId, owner);
         for (String citationLine : citationLines) {
             appendEvent(runId, workspaceId, "citation.upsert", Map.of(
                     "text", citationLine == null ? "" : citationLine));
@@ -711,6 +763,23 @@ public class AnswerRunService {
             throw notFound();
         }
         return sequence;
+    }
+
+    public void requireStreamEligible(String workspaceId, String runId, String streamOwner) {
+        new AnswerRunLifecycleGuard(jdbcTemplate).requireStreamEligible(workspaceId, runId, streamOwner);
+    }
+
+    @Transactional
+    public void recordCitationNormalization(String workspaceId, String runId, String streamOwner,
+            int invalidNumbers, int unknownPages) {
+        new AnswerRunLifecycleGuard(jdbcTemplate).lockForCompletion(workspaceId, runId, streamOwner);
+        Integer existing = jdbcTemplate.queryForObject("""
+                select count(*) from answer_event where workspace_id = ? and answer_run_id = ?
+                  and event_type = 'citation.normalization'
+                """, Integer.class, workspaceId, runId);
+        if (existing != null && existing > 0) return;
+        appendEvent(runId, workspaceId, "citation.normalization", Map.of(
+                "out_of_range_numbers", invalidNumbers, "unknown_pages", unknownPages));
     }
 
     public boolean hasActiveStream(String workspaceId, String runId) {
@@ -882,7 +951,9 @@ public class AnswerRunService {
                 instant(rs.getTimestamp("first_token_at")), instant(rs.getTimestamp("finished_at")),
                 text(rs.getString("error_code")), text(rs.getString("error_message")),
                 QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json")),
-                rs.getString("evidence_sufficiency")
+                rs.getString("evidence_sufficiency"),
+                decodeCitationProtocol(rs.getString("generation_contract_json"), rs.getString("retrieval_plan_version")),
+                rs.getLong("event_seq")
         );
     }
 

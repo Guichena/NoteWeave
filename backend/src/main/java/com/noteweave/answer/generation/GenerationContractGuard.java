@@ -1,148 +1,125 @@
 package com.noteweave.answer.generation;
 
 import com.noteweave.common.BusinessException;
+import com.noteweave.knowledge.KnowledgeCitationReadGate;
+import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import com.noteweave.source.eligibility.AccessPurpose;
-import com.noteweave.source.eligibility.EligibilityDecision;
 import com.noteweave.source.eligibility.MaterialEligibilityPort;
 import com.noteweave.source.eligibility.OriginRef;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-/**
- * 生成前复核冻结契约里允许引用的证据是否仍然有效。
- *
- * <p>冻结与生成之间可能发生删除、来源失效或正文改写。三种情况都要在调用模型之前判定，
- * 失效时整个运行失败并返回 {@code ANSWER_EVIDENCE_REVOKED}，不能先生成再撤回已发出的正文。</p>
- *
- * <p>复核依据是本次运行的证据清单：编号绑定的证据必须仍在清单里，正文摘要必须与冻结时一致，
- * 资料来源还要经过 C1 资格端口按当前证据用途判定。</p>
- */
+/** 按冻结身份复查当前资格；旧历史无契约的兼容由调用方运行状态门禁限制。 */
 @Service
 public class GenerationContractGuard {
-
-    static final String CODE_REVOKED = "ANSWER_EVIDENCE_REVOKED";
-    private static final String KIND_KNOWLEDGE_VERSION = "KNOWLEDGE_VERSION";
-    private static final String KIND_PASSAGE = "PASSAGE";
-
-    private final JdbcTemplate jdbcTemplate;
-    private final MaterialEligibilityPort eligibilityPort;
-
-    public GenerationContractGuard(JdbcTemplate jdbcTemplate, MaterialEligibilityPort eligibilityPort) {
-        this.jdbcTemplate = jdbcTemplate;
-        this.eligibilityPort = eligibilityPort;
+    public static final String CODE_REVOKED="ANSWER_EVIDENCE_REVOKED";
+    private final JdbcTemplate jdbc;
+    private final MaterialEligibilityPort eligibility;
+    private final KnowledgeCitationReadGate knowledge;
+    private final ResearchGeneratedSourceReadGate research;
+    public GenerationContractGuard(JdbcTemplate jdbc,MaterialEligibilityPort eligibility) {
+        this(jdbc,eligibility,new KnowledgeCitationReadGate(jdbc,eligibility),null);
     }
-
-    /** 契约缺失（历史运行）时不复核，由调用方按旧协议处理。 */
-    public void requireEligible(String workspaceId, String runId, GenerationContract contract) {
-        if (contract == null || contract.refusal() || contract.allowedEvidenceIds().isEmpty()) {
+    @Autowired
+    public GenerationContractGuard(JdbcTemplate jdbc,MaterialEligibilityPort eligibility,
+                                   KnowledgeCitationReadGate knowledge,ResearchGeneratedSourceReadGate research) {
+        this.jdbc=jdbc; this.eligibility=eligibility; this.knowledge=knowledge; this.research=research;
+    }
+    public void requireEligible(String workspaceId,String runId,GenerationContract contract) {
+        if(contract==null) return;
+        contract.requireValid();
+        if(!GenerationContract.SCHEMA_VERSION.equals(contract.schemaVersion())) throw invalid("未知生成契约版本");
+        List<String> allowed=contract.allowedEvidenceIds();
+        if(contract.refusal()) {
+            if(!allowed.isEmpty() || !contract.citationBindings().isEmpty()) throw invalid("拒答不能包含引用");
             return;
         }
-        Map<String, ManifestRow> manifest = loadManifest(workspaceId, runId, contract.allowedEvidenceIds());
-        List<String> revoked = new ArrayList<>();
-        List<OriginRef> origins = new ArrayList<>();
-        Map<String, String> originToEvidence = new LinkedHashMap<>();
-        List<String> knowledgeVersionIds = new ArrayList<>();
-        for (String evidenceId : contract.allowedEvidenceIds()) {
-            ManifestRow row = manifest.get(evidenceId);
-            if (row == null) {
-                revoked.add(evidenceId + ":MISSING_FROM_MANIFEST");
-                continue;
-            }
-            String expected = contract.evidenceTextHashes().get(evidenceId);
-            if (expected != null && !expected.equals(row.contentHash())) {
-                revoked.add(evidenceId + ":CONTENT_CHANGED");
-                continue;
-            }
-            if (KIND_KNOWLEDGE_VERSION.equals(row.kind())) {
-                if (row.knowledgeVersionId() != null) {
-                    knowledgeVersionIds.add(row.knowledgeVersionId());
+        Set<String> identities=new HashSet<>();
+        for(String id:allowed) if(blank(id) || !identities.add(id)) throw invalid("重复或缺失的证据身份");
+        if(contract.citationBindings().size()!=allowed.size()) throw invalid("编号绑定不完整");
+        Set<Integer> numbers=new HashSet<>();
+        Set<String> bound=new HashSet<>();
+        for(CitationBinding binding:contract.citationBindings()) {
+            if(binding.number()<1 || binding.number()>allowed.size() || !numbers.add(binding.number())
+                    || !bound.add(binding.evidenceId()) || !allowed.get(binding.number()-1).equals(binding.evidenceId()))
+                throw invalid("编号绑定与允许集合不一致");
+        }
+        for(String id:allowed) {
+            String expected=contract.evidenceTextHashes().get(id);
+            if(expected==null || !expected.matches("[0-9a-fA-F]{64}")) throw invalid("证据缺少正文hash");
+            List<Row> rows=jdbc.query("""
+                    select evidence_id,evidence_kind,source_id,source_snapshot_id,passage_id,
+                        knowledge_item_id,knowledge_version_id,content_hash
+                    from answer_run_evidence_manifest where workspace_id=? and answer_run_id=? and evidence_id=?
+                    """,(rs,n)->new Row(rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4),
+                            rs.getString(5),rs.getString(6),rs.getString(7),rs.getString(8)),workspaceId,runId,id);
+            if(rows.size()!=1) throw revoked(id+":MISSING_FROM_MANIFEST");
+            Row row=rows.get(0);
+            if(!expected.equals(row.hash())) throw revoked(id+":CONTENT_CHANGED");
+            switch(row.kind()==null?"":row.kind()) {
+                case "PASSAGE" -> passage(workspaceId,row);
+                case "KNOWLEDGE_VERSION" -> {
+                    if(blank(row.item()) || blank(row.version())) throw invalid("知识身份不完整");
+                    try { knowledge.requireCurrentVersionEligible(workspaceId,row.item(),row.version()); }
+                    catch(BusinessException ex) { throw revoked(id+":"+ex.code()); }
                 }
-                continue;
-            }
-            if (KIND_PASSAGE.equals(row.kind()) && row.sourceId() != null) {
-                OriginRef origin = OriginRef.internalSnapshot(row.sourceId(), row.sourceSnapshotId());
-                origins.add(origin);
-                originToEvidence.put(origin.originKey(), evidenceId);
+                case "RESEARCH_EVIDENCE" -> research(workspaceId,runId,row);
+                default -> throw invalid("未知证据种类");
             }
         }
-        if (!origins.isEmpty()) {
-            Map<String, EligibilityDecision> decisions = eligibilityPort.assess(
-                    workspaceId, origins, AccessPurpose.CURRENT_EVIDENCE);
-            for (Map.Entry<String, String> entry : originToEvidence.entrySet()) {
-                EligibilityDecision decision = decisions.get(entry.getKey());
-                if (decision == null || !decision.allowed(AccessPurpose.CURRENT_EVIDENCE)) {
-                    revoked.add(entry.getValue() + ":SOURCE_NOT_ELIGIBLE");
-                }
-            }
-        }
-        if (!knowledgeVersionIds.isEmpty()) {
-            List<String> active = jdbcTemplate.queryForList("""
-                    select v.id from knowledge_version v
-                    join knowledge_item i on i.id = v.item_id
-                    where i.workspace_id = ? and v.id in (%s)
-                    """.formatted(placeholders(knowledgeVersionIds.size())),
-                    String.class, concat(workspaceId, knowledgeVersionIds));
-            for (String versionId : knowledgeVersionIds) {
-                if (!active.contains(versionId)) {
-                    revoked.add("knowledge-version:" + versionId + ":NOT_ACTIVE");
-                }
-            }
-        }
-        if (!revoked.isEmpty()) {
-            throw new BusinessException(CODE_REVOKED,
-                    "冻结的引用证据已失效：" + String.join(",", revoked), HttpStatus.CONFLICT);
+    }
+    private void passage(String workspaceId,Row row) {
+        if(blank(row.source()) || blank(row.snapshot()) || blank(row.passage())) throw invalid("资料身份不完整");
+        // 每条绑定快照独立检查，绝不按sourceId覆盖另一代snapshot的决定。
+        OriginRef ref = OriginRef.internalSnapshot(row.source(), row.snapshot());
+        var decision = eligibility.assess(workspaceId, List.of(ref), AccessPurpose.CURRENT_EVIDENCE).get(ref.originKey());
+        if(decision == null || !decision.allowed(AccessPurpose.CURRENT_EVIDENCE) || !row.snapshot().equals(decision.snapshotId()))
+            throw revoked(row.id()+":SOURCE_NOT_ELIGIBLE");
+        Integer exists=jdbc.queryForObject("""
+                select count(*) from source_chunk c join source_snapshot s on s.id=c.source_snapshot_id
+                where c.workspace_id=? and c.id=? and c.source_id=? and c.source_snapshot_id=? and s.source_id=c.source_id
+                """,Integer.class,workspaceId,row.passage(),row.source(),row.snapshot());
+        if(exists==null || exists!=1) throw revoked(row.id()+":PASSAGE_NOT_OWNED");
+        if(row.id().startsWith("note-window:")) {
+            String suffix=row.id().substring("note-window:".length());
+            int separator=suffix.lastIndexOf(':');
+            if(separator<1 || !suffix.substring(0,separator).equals(row.passage())) throw invalid("Note窗口身份不完整");
+            int window;
+            try { window=Integer.parseInt(suffix.substring(separator+1)); }
+            catch(NumberFormatException ex) { throw invalid("Note窗口编号非法"); }
+            Integer windows=jdbc.queryForObject("select count(*) from source_window where source_chunk_id=? and window_no=?",Integer.class,row.passage(),window);
+            if(window<0 || windows==null || windows!=1) throw revoked(row.id()+":WINDOW_NOT_OWNED");
         }
     }
-
-    private Map<String, ManifestRow> loadManifest(String workspaceId, String runId, List<String> evidenceIds) {
-        Map<String, ManifestRow> rows = new LinkedHashMap<>();
-        jdbcTemplate.query("""
-                select evidence_id, evidence_kind, source_id, source_snapshot_id, knowledge_version_id, content_hash
-                from answer_run_evidence_manifest
-                where workspace_id = ? and answer_run_id = ? and evidence_id in (%s)
-                """.formatted(placeholders(evidenceIds.size())), rs -> {
-            rows.put(rs.getString("evidence_id"), new ManifestRow(
-                    rs.getString("evidence_id"),
-                    rs.getString("evidence_kind"),
-                    rs.getString("source_id"),
-                    rs.getString("source_snapshot_id"),
-                    rs.getString("knowledge_version_id"),
-                    rs.getString("content_hash")));
-        }, concat(workspaceId, runId, evidenceIds));
-        return rows;
+    private void research(String workspaceId,String answerRunId,Row row) {
+        String prefix="research-evidence:";
+        if(!row.id().startsWith(prefix) || blank(row.passage())) throw invalid("研究证据身份不完整");
+        String suffix=":"+row.passage();
+        if(!row.id().endsWith(suffix)) throw invalid("研究证据键与身份不一致");
+        String researchId=row.id().substring(prefix.length(),row.id().length()-suffix.length());
+        if(blank(researchId)) throw invalid("研究运行身份缺失");
+        List<String> snapshots=jdbc.query("""
+                select coalesce(s.replay_availability,'FULL') as availability
+                from research_run r left join run_input_snapshot s on s.id=r.context_snapshot_id
+                where r.workspace_id=? and r.id=? and r.status='COMPLETED'
+                  and exists(select 1 from source_evidence e where e.research_run_id=r.id and e.evidence_key=?)
+                  and (r.query_message_id is null or exists(select 1 from conversation_message m
+                       where m.id=r.query_message_id and m.workspace_id=r.workspace_id and m.context_status<>'DELETED'))
+                  and (r.answer_message_id is null or exists(select 1 from conversation_message m
+                       where m.id=r.answer_message_id and m.workspace_id=r.workspace_id and m.context_status<>'DELETED'))
+                """,(rs,n)->rs.getString(1),workspaceId,researchId,row.passage());
+        if(snapshots.size()!=1 || !"FULL".equals(snapshots.get(0))) throw revoked(row.id()+":RESEARCH_NOT_ELIGIBLE");
+        if(research!=null && !research.visible(workspaceId,"research_agent",researchId)) throw revoked(row.id()+":RESEARCH_CONTEXT_REDACTED");
+        if(!eligibility.assessGeneratedDependenciesDetailed(workspaceId,"research_agent",researchId,AccessPurpose.CURRENT_EVIDENCE)
+                .allAllowed(AccessPurpose.CURRENT_EVIDENCE)) throw revoked(row.id()+":RESEARCH_DEPENDENCY_REVOKED");
     }
-
-    private static String placeholders(int count) {
-        return String.join(",", java.util.Collections.nCopies(count, "?"));
-    }
-
-    private static Object[] concat(String workspaceId, String runId, List<String> ids) {
-        List<Object> parameters = new ArrayList<>(ids.size() + 2);
-        parameters.add(workspaceId);
-        parameters.add(runId);
-        parameters.addAll(ids);
-        return parameters.toArray();
-    }
-
-    private static Object[] concat(String workspaceId, List<String> ids) {
-        List<Object> parameters = new ArrayList<>(ids.size() + 1);
-        parameters.add(workspaceId);
-        parameters.addAll(ids);
-        return parameters.toArray();
-    }
-
-    record ManifestRow(
-            String evidenceId,
-            String kind,
-            String sourceId,
-            String sourceSnapshotId,
-            String knowledgeVersionId,
-            String contentHash
-    ) {
-    }
+    private boolean blank(String value) { return value==null || value.isBlank(); }
+    private BusinessException invalid(String reason) { return new BusinessException("ANSWER_GENERATION_CONTRACT_INVALID",reason,HttpStatus.CONFLICT); }
+    private BusinessException revoked(String reason) { return new BusinessException(CODE_REVOKED,"冻结证据已失效："+reason,HttpStatus.CONFLICT); }
+    private record Row(String id,String kind,String source,String snapshot,String passage,String item,String version,String hash) {}
 }

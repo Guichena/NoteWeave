@@ -17,7 +17,7 @@ public record EvidenceBundleSnapshot(
         Instant createdAt,
         List<EvidenceSnapshot> evidence
 ) {
-    public static final String SCHEMA_VERSION = "evidence-bundle-snapshot-v1";
+    public static final String SCHEMA_VERSION = "evidence-bundle-snapshot-v2";
 
     public EvidenceBundleSnapshot {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
@@ -62,9 +62,20 @@ public record EvidenceBundleSnapshot(
             String accessScope,
             Instant freshAt,
             String selectionReason,
-            int characterCost
+            int characterCost,
+            ScoreInfo scoreInfo
     ) {
+        public EvidenceSnapshot(int rank, String evidenceId, String kind, String sourceId,
+                String sourceSnapshotId, String passageId, String knowledgeItemId, String knowledgeVersionId,
+                double rawScore, double fusedScore, double rerankScore, String accessScope,
+                Instant freshAt, String selectionReason, int characterCost) {
+            this(rank, evidenceId, kind, sourceId, sourceSnapshotId, passageId, knowledgeItemId,
+                    knowledgeVersionId, rawScore, fusedScore, rerankScore, accessScope, freshAt,
+                    selectionReason, characterCost, ScoreInfo.unknown());
+        }
+
         public EvidenceSnapshot {
+            scoreInfo = scoreInfo == null ? ScoreInfo.unknown() : scoreInfo;
             rank = Math.max(1, rank);
             characterCost = Math.max(0, characterCost);
         }
@@ -85,7 +96,8 @@ public record EvidenceBundleSnapshot(
                     evidence.accessScope(),
                     evidence.freshAt(),
                     evidence.selectionReason(),
-                    evidence.characterCost()
+                    evidence.characterCost(),
+                    evidence.scoreInfo()
             );
         }
     }

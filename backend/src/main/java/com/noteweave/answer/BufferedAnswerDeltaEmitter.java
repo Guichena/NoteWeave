@@ -29,35 +29,25 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
         if (token == null || token.isEmpty()) {
             return;
         }
-        String immediate = null;
         synchronized (monitor) {
-            if (failure != null) {
-                throw failure;
-            }
+            throwStoredFailure(true);
             if (closed) {
                 return;
             }
             pending.append(token);
             if (pending.length() >= MAX_BATCH_CHARS) {
-                immediate = drainLocked();
+                deliverLocked();
             } else if (scheduledFlush == null) {
                 scheduledFlush = scheduler.schedule(this::flushFromScheduler, MAX_BATCH_DELAY_MS, TimeUnit.MILLISECONDS);
             }
         }
-        if (immediate != null) {
-            sink.accept(immediate);
-        }
     }
 
     public void flush() {
-        String batch;
         synchronized (monitor) {
-            batch = drainLocked();
+            throwStoredFailure(true);
+            deliverLocked();
         }
-        if (batch != null) {
-            sink.accept(batch);
-        }
-        throwStoredFailure(true);
     }
 
     @Override
@@ -67,15 +57,27 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
                 return;
             }
             closed = true;
+            if (failure == null) {
+                deliverLocked();
+            }
+            throwStoredFailure(false);
         }
-        String batch;
-        synchronized (monitor) {
-            batch = drainLocked();
+    }
+
+    // 排出和发送共享同一把锁，定时线程不能被后续生产线程越过。
+    // 这里只串行化本运行的有界增量，不持有数据库锁或模型调用锁。
+    private void deliverLocked() {
+        String batch = drainLocked();
+        if (batch == null) {
+            return;
         }
-        if (batch != null) {
+        try {
             sink.accept(batch);
+        } catch (RuntimeException ex) {
+            failure = ex;
+            failureObserved = true;
+            throw ex;
         }
-        throwStoredFailure(false);
     }
 
     private String drainLocked() {
@@ -97,6 +99,7 @@ public final class BufferedAnswerDeltaEmitter implements AutoCloseable {
         } catch (RuntimeException ex) {
             synchronized (monitor) {
                 failure = ex;
+                failureObserved = false;
             }
         }
     }

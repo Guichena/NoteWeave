@@ -139,7 +139,14 @@ class KnowledgeGovernanceSourceRevokedTest {
                     source_id varchar(36) not null,
                     research_run_id varchar(36),
                     title varchar(300),
-                    quote_text varchar(1000)
+                    quote_text varchar(1000),
+                    source_snapshot_id varchar(36),
+                    source_chunk_id varchar(36),
+                    page_no int,
+                    location_info varchar(1000),
+                    created_at timestamp default current_timestamp,
+                    research_evidence_key varchar(64),
+                    owner_message_id varchar(36)
                 )
                 """);
         jdbcTemplate.execute("""

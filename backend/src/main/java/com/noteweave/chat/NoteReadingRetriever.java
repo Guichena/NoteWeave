@@ -169,7 +169,8 @@ public class NoteReadingRetriever {
             double semantic = semanticByChunk.getOrDefault(window.chunkId(), 0.0d);
             double value = fused.getOrDefault(windowKey(window), 0.0d);
             int score = NoteRetrievalStrategyProfile.scaled(value);
-            return window.withRawScore(semantic).withScore(score);
+            return window.withRawScore(semantic).withScore(score)
+                    .withScoreInfo(com.noteweave.answer.strategy.ScoreInfo.fusion());
         }).toList();
     }
 
@@ -252,7 +253,7 @@ public class NoteReadingRetriever {
                 }
             }
             List<ReadingWindow> reranked = result.hits().stream()
-                    .map(hit -> candidates.get(hit.documentIndex()).withRerankScore(hit.score()))
+                    .map(hit -> candidates.get(hit.documentIndex()).withRerankScore(hit.score(), hit.scoreInfo()))
                     .toList();
             return new WindowRerankResult(reranked, List.of(), reranked.size(), reranked.size());
         } catch (RuntimeException ex) {

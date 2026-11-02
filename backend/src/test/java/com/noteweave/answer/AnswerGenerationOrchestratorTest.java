@@ -123,7 +123,8 @@ class AnswerGenerationOrchestratorTest {
         orchestrator(answerRunService, gateway).stream("request-keys", events::add);
 
         JsonNode payload = JSON.readTree(events.get(0).data());
-        assertThat(keysOf(payload)).containsExactly("protocol_version", "allowed_evidence_ids", "citation_bindings");
+        assertThat(keysOf(payload)).containsExactly("protocol_version", "allowed_evidence_ids", "citation_bindings", "protocol_state");
+        assertThat(payload.path("protocol_state").asText()).isEqualTo("BINDING_V1");
         assertThat(keysOf(payload.path("citation_bindings").get(0)))
                 .containsExactly("number", "evidence_id", "citation_ids");
     }
@@ -169,6 +170,44 @@ class AnswerGenerationOrchestratorTest {
         assertThat(types.indexOf("evidence.ready")).isZero();
         assertThat(types.indexOf("evidence.ready")).isLessThan(types.indexOf("answer.delta"));
         assertThat(types).contains("answer.completed");
+    }
+
+    @Test
+    void returnOnlyAdapterMustEmitAndPersistItsCanonicalText() {
+        AnswerRunService runs = mock(AnswerRunService.class);
+        AnswerGenerationGateway gateway = mock(AnswerGenerationGateway.class);
+        when(gateway.load("return-only"))
+                .thenReturn(new AnswerGenerationMaterial("message", "workspace", "draft", List.of(), 100));
+        when(gateway.prepareDraft("draft")).thenReturn("prepared");
+        when(gateway.generate(any(), anyString(), anyInt(), any())).thenReturn("仅返回完整正文");
+        List<AnswerDeliveryEvent> events = new ArrayList<>();
+        orchestrator(runs, gateway).stream("return-only", events::add);
+        assertThat(events.stream().filter(event -> event.eventType().equals("answer.delta"))
+                .map(AnswerDeliveryEvent::data).collect(java.util.stream.Collectors.joining()))
+                .isEqualTo("仅返回完整正文");
+        verify(gateway).persistContent("workspace", "message", "仅返回完整正文");
+        assertThat(events).extracting(AnswerDeliveryEvent::eventType).contains("answer.completed");
+    }
+
+    @Test
+    void revokedEvidenceMustPreserveBusinessCodeAndNeverCallModel() {
+        AnswerRunService runs = mock(AnswerRunService.class);
+        AnswerGenerationGateway gateway = mock(AnswerGenerationGateway.class);
+        stubLiveRun(runs, gateway, "revoked", "不应生成");
+        GenerationContractGuard guard = mock(GenerationContractGuard.class);
+        org.mockito.Mockito.doThrow(new com.noteweave.common.BusinessException(
+                "ANSWER_EVIDENCE_REVOKED", "证据已撤销", org.springframework.http.HttpStatus.CONFLICT))
+                .when(guard).requireEligible(anyString(), anyString(), any());
+        AnswerGenerationOrchestrator orchestrator = new AnswerGenerationOrchestrator(
+                runs, mock(AnswerCancellationRegistry.class), sequentialEventMux(),
+                mock(ConversationEventMux.class), gateway, guard,
+                mock(ScheduledExecutorService.class), mock(ScheduledExecutorService.class), JSON);
+        List<AnswerDeliveryEvent> events = new ArrayList<>();
+        orchestrator.stream("revoked", events::add);
+        verify(gateway, never()).generateInConversation(anyString(), anyString(), any(), anyString(), anyInt(), any());
+        verify(runs).fail("workspace-1", "run-live", "stream-owner", "ANSWER_EVIDENCE_REVOKED", "证据已撤销");
+        assertThat(events).filteredOn(event -> event.eventType().equals("answer.failed"))
+                .allSatisfy(event -> assertThat(event.data()).contains("ANSWER_EVIDENCE_REVOKED"));
     }
 
     /** 有冻结契约的实时生成：模型吐两个 token，运行在收尾前一直可写。 */

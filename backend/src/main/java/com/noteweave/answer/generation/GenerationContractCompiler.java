@@ -28,7 +28,7 @@ public final class GenerationContractCompiler {
             你是 NoteWeave 知识工作台的统一聊天助手。用户消息是系统整理的回答草稿，或者回答要求加资料片段，请据此写出自然通顺的中文回答。
             回答必须基于其中的资料证据与检索元信息，不要编造未在证据中出现的来源、链接、引用或数字。
             草稿中每个以 ## 开头的二级标题都要原样保留，名称和顺序不变，只改写标题下面的内容；不要新增草稿里没有的二级标题。
-            保留引用标注（例如 [1]、[[页面名]]）和列表结构。
+            事实引用只使用本次冻结编号 [n]，例如 [1]；页面名链接仅是普通导航，不作为事实出处。保留列表结构。
             不要在正文里复述系统内部字段，例如 RESOLVED、UNRESOLVED、出链数、反链数、来源计数、chunk 编号。
             最终结果直接作为聊天正文，不要加前言或解释。
             """.trim();
@@ -47,6 +47,9 @@ public final class GenerationContractCompiler {
         }
         CitationAssemblyResult safeAssembly = assembly == null ? CitationAssemblyResult.empty() : assembly;
         List<String> allowed = List.copyOf(prompt.referencedEvidenceIds());
+        if ((prompt.refusal() && !allowed.isEmpty()) || new java.util.HashSet<>(allowed).size() != allowed.size()) {
+            throw new IllegalArgumentException("拒答或重复证据不满足生成契约");
+        }
         Map<String, String> hashes = new LinkedHashMap<>();
         Map<String, EvidenceBundle.Evidence> byId = new LinkedHashMap<>();
         for (EvidenceBundle.Evidence evidence : bundle.evidence()) {
@@ -54,9 +57,8 @@ public final class GenerationContractCompiler {
         }
         for (String evidenceId : allowed) {
             EvidenceBundle.Evidence evidence = byId.get(evidenceId);
-            if (evidence != null) {
-                hashes.put(evidenceId, sha256(evidence.excerpt()));
-            }
+            if (evidence == null) throw new IllegalArgumentException("允许证据不属于最终证据包");
+            hashes.put(evidenceId, sha256(evidence.excerpt()));
         }
         List<CitationBinding> bindings = new ArrayList<>();
         for (int index = 0; index < allowed.size(); index++) {

@@ -243,29 +243,16 @@ export function useWikiWorkbenchController({
       return;
     }
     await run(`打开引用版本《${target.title}》`, async () => {
-      const home = wikiHome ?? await refreshWikiFromServer("", {
-        mode: wikiGraphMode,
-        graphKinds: wikiGraphKindFilters
-      });
-      const page = home?.pages.find((entry) => entry.item_id === target.itemId);
-      if (!page) {
-        setStatus(`知识库中已找不到证据对应的页面「${target.title}」`);
+      // 只加载工作台导航，不选择页面或展示其最新正文。
+      if (!wikiHome) await refreshWikiHome();
+      const version = await loadKnowledgeVersionById(target.itemId, target.versionId);
+      if (!version) {
+        setStatus(`《${target.title}》引用的版本已不可用，未打开最新正文`);
         return;
       }
       setView("wiki");
       navigateAppView("wiki");
-      const detail = await selectKnowledgePage(page);
-      if (detail?.latest_version_id === target.versionId) {
-        setStatus(`已打开《${page.title}》引用的版本`);
-        return;
-      }
-      const version = await loadKnowledgeVersionById(page.item_id, target.versionId);
-      if (version) {
-        setStatus(`已打开《${page.title}》第 ${version.version_no} 版，即本次回答引用的版本`);
-      } else {
-        // 找不到那一版时保持当前页面的最新正文并明确说明，不假装它就是证据对应的版本
-        setStatus(`《${page.title}》引用的版本已不在当前版本列表中，未用最新正文代替`);
-      }
+      setStatus(`已打开《${target.title}》第 ${version.version_no} 版，即本次回答引用的版本`);
     }, "wiki");
   }
 

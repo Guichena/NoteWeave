@@ -40,6 +40,7 @@ describe("useKnowledgeActions.loadVersionById", () => {
     ];
     const api = {
       getVersions: vi.fn(async () => versions),
+      getItem: vi.fn(async () => ({ item_id: "item-1", latest_version_id: "version-3", content: "最新正文" })),
       getVersion: vi.fn(async (_itemId: string, versionNo: number) => versionDetail("version-2", versionNo))
     } as unknown as KnowledgeApi;
     const dispatch = vi.fn();
@@ -59,8 +60,8 @@ describe("useKnowledgeActions.loadVersionById", () => {
     expect(api.getVersions).toHaveBeenCalledWith("item-1", expect.anything());
     expect(api.getVersion).toHaveBeenCalledWith("item-1", 2, expect.anything());
     expect(dispatch).toHaveBeenCalledWith({
-      type: "version",
-      version: expect.objectContaining({ version_id: "version-2", version_no: 2 })
+      type: "selection",
+      snapshot: expect.objectContaining({ version: expect.objectContaining({ version_id: "version-2", version_no: 2 }) })
     });
   });
 

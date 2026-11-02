@@ -64,9 +64,9 @@ export function WikiPageDetailPanel({
   const viewingHistory = Boolean(
     props.selectedWikiVersionDetail && props.selectedWikiVersionDetail.version_no !== latestVersion
   );
-  const pageContent = (props.selectedWikiVersionDetail?.version_no === latestVersion
-    ? props.selectedWikiDetail?.content
-    : props.selectedWikiVersionDetail?.content) || props.selectedWikiDetail?.content || page.summary || "这个页面暂时还没有正文。";
+  const pageContent = props.selectedWikiVersionDetail
+    ? (props.selectedWikiVersionDetail.content || "引用版本正文已不可用。")
+    : (props.selectedWikiDetail?.content || page.summary || "这个页面暂时还没有正文。");
   const resolveLinkTarget = (title: string) => {
     const normalized = title.trim().toLocaleLowerCase();
     const fromLinks = props.selectedWikiDetail?.outgoing_links?.find(

@@ -41,6 +41,8 @@ public class SessionEventMux {
     private final int maxRetainedChannels;
     private final AnswerRealtimeBridge realtimeBridge;
     private final Executor bridgeExecutor;
+    private AnswerReplayAccessGuard replayAccessGuard;
+    private final java.util.Set<String> revokedRuns = ConcurrentHashMap.newKeySet();
     private final AtomicInteger activeSubscribers = new AtomicInteger();
 
     @Autowired
@@ -49,6 +51,7 @@ public class SessionEventMux {
             @Qualifier("answerBridgeExecutor") Executor bridgeExecutor,
             ObjectProvider<AnswerRealtimeBridge> bridgeProvider,
             MeterRegistry meterRegistry,
+            AnswerReplayAccessGuard replayAccessGuard,
             @Value("${noteweave.answer.events.replay-capacity:512}") int replayCapacity,
             @Value("${noteweave.answer.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity,
             @Value("${noteweave.answer.events.channel-retention-seconds:900}") long channelRetentionSeconds,
@@ -58,6 +61,7 @@ public class SessionEventMux {
         this.bridgeExecutor = bridgeExecutor;
         this.realtimeBridge = bridgeProvider.getIfAvailable();
         this.meterRegistry = meterRegistry;
+        this.replayAccessGuard = java.util.Objects.requireNonNull(replayAccessGuard);
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
         this.channelRetention = Duration.ofSeconds(Math.max(1, channelRetentionSeconds));
@@ -74,11 +78,13 @@ public class SessionEventMux {
     }
 
     public AnswerLiveEvent publish(String runId, String eventType, String data) {
+        requireReadable(runId);
         cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         AnswerLiveEvent event;
         List<Subscriber> subscribers;
         synchronized (channel) {
+            requireReadable(runId);
             event = new AnswerLiveEvent(++channel.sequence, eventType, data == null ? "" : data, Instant.now());
             appendToReplay(channel, event);
             if (isTerminal(eventType)) {
@@ -96,11 +102,13 @@ public class SessionEventMux {
     }
 
     public AnswerLiveEvent publishAt(String runId, long sequence, String eventType, String data) {
+        requireReadable(runId);
         cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
         AnswerLiveEvent event;
         List<Subscriber> subscribers;
         synchronized (channel) {
+            requireReadable(runId);
             channel.sequence = Math.max(channel.sequence, sequence);
             event = new AnswerLiveEvent(sequence, eventType, data == null ? "" : data, Instant.now());
             appendToReplay(channel, event);
@@ -118,6 +126,20 @@ public class SessionEventMux {
         return event;
     }
 
+    public void redact(String runId) {
+        revokedRuns.add(runId);
+        RunChannel channel = channels.get(runId);
+        if (channel == null) return;
+        synchronized (channel) {
+            channel.replay.clear();
+            channel.terminal = true;
+            channel.terminalAt = Instant.now();
+        }
+        List<Subscriber> subscribers;
+        synchronized (channel) { subscribers = new ArrayList<>(channel.subscribers); }
+        subscribers.forEach(Subscriber::close);
+    }
+
     public long currentSequence(String runId) {
         cleanupRetiredChannels();
         RunChannel channel = channels.get(runId);
@@ -132,19 +154,18 @@ public class SessionEventMux {
     public void follow(String runId, long after, Consumer<AnswerLiveEvent> consumer, Duration timeout) {
         cleanupRetiredChannels();
         RunChannel channel = channels.computeIfAbsent(runId, ignored -> new RunChannel());
-        Subscriber subscriber = new Subscriber(channel, consumer);
+        requireReadable(runId);
+        List<AnswerLiveEvent> remote = realtimeBridge == null ? List.of()
+                : realtimeBridge.readAfter(runId, after, Duration.ZERO);
+        Subscriber subscriber = new Subscriber(runId, channel, consumer);
         List<AnswerLiveEvent> replay;
         synchronized (channel) {
-            long oldest = channel.replay.isEmpty() ? channel.sequence + 1 : channel.replay.peekFirst().sequence();
-            if (after > 0 && after < oldest - 1) {
-                meterRegistry.counter("noteweave.answer.events.cursor_expired").increment();
-                throw new BusinessException(
-                        "ANSWER_EVENT_CURSOR_EXPIRED",
-                        "事件游标已超出单实例恢复窗口，请读取 AnswerRun snapshot 后重新订阅",
-                        HttpStatus.CONFLICT
-                );
-            }
-            replay = channel.replay.stream().filter(event -> event.sequence() > after).toList();
+            if (realtimeBridge == null && after < channel.evictedThrough) throw expired();
+            java.util.TreeMap<Long,AnswerLiveEvent> merged = new java.util.TreeMap<>();
+            remote.stream().filter(event -> event.sequence()>after).forEach(event -> merged.put(event.sequence(),event));
+            channel.replay.stream().filter(event -> event.sequence()>after).forEach(event -> merged.put(event.sequence(),event));
+            replay = new ArrayList<>(merged.values());
+            subscriber.lastSequence = after;
             channel.subscribers.add(subscriber);
             activeSubscribers.incrementAndGet();
             subscriber.prime(replay);
@@ -154,6 +175,7 @@ public class SessionEventMux {
         meterRegistry.counter("noteweave.answer.events.replayed").increment(replay.size());
         try {
             subscriber.await(timeout);
+            if (subscriber.failure != null) throw subscriber.failure;
         } finally {
             subscriber.close();
         }
@@ -240,6 +262,19 @@ public class SessionEventMux {
         );
     }
 
+    private boolean readable(String runId) {
+        if (revokedRuns.contains(runId)) return false;
+        if (replayAccessGuard != null && !replayAccessGuard.isReadable(runId)) return false;
+        return realtimeBridge == null || !realtimeBridge.isReplayRevoked(runId);
+    }
+    private void requireReadable(String runId) {
+        if (!readable(runId)) throw new BusinessException("ANSWER_REPLAY_REVOKED", "回答回放已撤销", HttpStatus.CONFLICT);
+    }
+    private BusinessException expired() {
+        meterRegistry.counter("noteweave.answer.events.cursor_expired").increment();
+        return new BusinessException("ANSWER_EVENT_CURSOR_EXPIRED", "事件正文不完整，需要完成快照恢复", HttpStatus.CONFLICT);
+    }
+
     private void ensureBridgePump(String runId, RunChannel channel, long after) {
         if (realtimeBridge == null) {
             return;
@@ -263,7 +298,7 @@ public class SessionEventMux {
     private void pumpBridge(String runId, RunChannel channel, long after) {
         long cursor;
         synchronized (channel) {
-            cursor = Math.max(after, channel.sequence);
+            cursor = Math.max(after, channel.cachedSequence);
         }
         try {
             while (true) {
@@ -295,6 +330,10 @@ public class SessionEventMux {
                     acceptRemote(runId, channel, event);
                 }
             }
+        } catch (BusinessException ex) {
+            List<Subscriber> affected;
+            synchronized (channel) { affected = new ArrayList<>(channel.subscribers); }
+            for (Subscriber subscriber : affected) { subscriber.failure = ex; subscriber.close(); }
         } finally {
             synchronized (channel) {
                 channel.bridgePumpRunning = false;
@@ -314,10 +353,8 @@ public class SessionEventMux {
     private void acceptRemote(String runId, RunChannel channel, AnswerLiveEvent event) {
         List<Subscriber> subscribers;
         synchronized (channel) {
-            if (event.sequence() <= channel.sequence) {
-                return;
-            }
-            channel.sequence = event.sequence();
+            if (!readable(runId) || channel.replay.stream().anyMatch(existing -> existing.sequence()==event.sequence())) return;
+            channel.sequence = Math.max(channel.sequence,event.sequence());
             appendToReplay(channel, event);
             if (isTerminal(event.eventType())) {
                 channel.terminal = true;
@@ -330,9 +367,10 @@ public class SessionEventMux {
     }
 
     private void appendToReplay(RunChannel channel, AnswerLiveEvent event) {
+        channel.cachedSequence = Math.max(channel.cachedSequence,event.sequence());
         channel.replay.addLast(event);
         while (channel.replay.size() > replayCapacity) {
-            channel.replay.removeFirst();
+            channel.evictedThrough = Math.max(channel.evictedThrough,channel.replay.removeFirst().sequence());
             meterRegistry.counter("noteweave.answer.events.replay_trimmed").increment();
         }
     }
@@ -370,6 +408,9 @@ public class SessionEventMux {
     }
 
     private final class Subscriber {
+        private final String runId;
+        private long lastSequence;
+        private RuntimeException failure;
         private final RunChannel channel;
         private final Consumer<AnswerLiveEvent> consumer;
         private final Deque<AnswerLiveEvent> pending = new ArrayDeque<>();
@@ -377,7 +418,8 @@ public class SessionEventMux {
         private boolean draining;
         private boolean closed;
 
-        private Subscriber(RunChannel channel, Consumer<AnswerLiveEvent> consumer) {
+        private Subscriber(String runId, RunChannel channel, Consumer<AnswerLiveEvent> consumer) {
+            this.runId = runId;
             this.channel = channel;
             this.consumer = consumer;
         }
@@ -460,7 +502,10 @@ public class SessionEventMux {
                     }
                 }
                 try {
+                    if (!readable(runId)) { redact(runId); return; }
+                    if (event.sequence() <= lastSequence) continue;
                     consumer.accept(event);
+                    lastSequence = event.sequence();
                 } catch (RuntimeException ex) {
                     close();
                     return;
@@ -502,6 +547,8 @@ public class SessionEventMux {
 
     private final class RunChannel {
         private long sequence;
+        private long cachedSequence;
+        private long evictedThrough;
         private boolean terminal;
         private Instant terminalAt;
         private boolean bridgePumpRunning;

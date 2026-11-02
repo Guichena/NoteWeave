@@ -1,5 +1,6 @@
 package com.noteweave.chat;
 
+import com.noteweave.answer.strategy.ScoreInfo;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.chat.RetrievalHydrator.NoteSourceStats;
@@ -134,18 +135,33 @@ public class NoteRetrievalService {
             int coveredQueryTerms,
             int totalQueryTerms,
             String selectionReason,
-            String verifyAdmissionReason
+            String verifyAdmissionReason,
+            ScoreInfo sourceScoreInfo
     ) {
+        public CandidateSource { sourceScoreInfo = sourceScoreInfo == null ? ScoreInfo.unknown() : sourceScoreInfo; }
+        public CandidateSource(String sourceId, String title, String sourceType, int chunkCount, int windowCount,
+                String generatedBy, String generatedRefId, String summary, String tagsJson, String metadataJson,
+                String sampleText, int score, String recallSignals, List<String> matchedFields, List<String> coverageTerms,
+                int coveredQueryTerms, int totalQueryTerms, String selectionReason, String verifyAdmissionReason) {
+            this(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson,
+                    metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms,
+                    totalQueryTerms, selectionReason, verifyAdmissionReason, ScoreInfo.unknown());
+        }
+        CandidateSource withSourceScoreInfo(ScoreInfo info) {
+            return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId,
+                    summary, tagsJson, metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms,
+                    coveredQueryTerms, totalQueryTerms, selectionReason, verifyAdmissionReason, info);
+        }
         CandidateSource withScore(int nextScore) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     nextScore, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, verifyAdmissionReason);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
         }
 
         CandidateSource withRecallSignals(String nextRecallSignals) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, nextRecallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, verifyAdmissionReason);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
         }
 
         CandidateSource withMetadataRank(
@@ -156,19 +172,19 @@ public class NoteRetrievalService {
         ) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, nextMatchedFields, nextCoverageTerms, nextCoveredQueryTerms, nextTotalQueryTerms,
-                    selectionReason, verifyAdmissionReason);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
         }
 
         CandidateSource withSelectionReason(String nextSelectionReason) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    nextSelectionReason, verifyAdmissionReason);
+                    nextSelectionReason, verifyAdmissionReason, sourceScoreInfo);
         }
 
         CandidateSource withVerifyAdmissionReason(String nextVerifyAdmissionReason) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, nextVerifyAdmissionReason);
+                    selectionReason, nextVerifyAdmissionReason, sourceScoreInfo);
         }
 
         String metadataForScoring() {
@@ -194,8 +210,23 @@ public class NoteRetrievalService {
             String readObjective,
             double rawScore,
             double fusedScore,
-            double rerankScore
+            double rerankScore,
+            ScoreInfo scoreInfo
     ) {
+        public ReadingWindow { scoreInfo = scoreInfo == null ? ScoreInfo.unknown() : scoreInfo; }
+        public ReadingWindow(String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
+                String heading, String title, String generatedBy, String generatedRefId, int windowNo,
+                String content, String locationInfo, int score, String readRole, int anchorWindowNo,
+                String readObjective, double rawScore, double fusedScore, double rerankScore) {
+            this(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId,
+                    windowNo, content, locationInfo, score, readRole, anchorWindowNo, readObjective,
+                    rawScore, fusedScore, rerankScore, ScoreInfo.unknown());
+        }
+        ReadingWindow withScoreInfo(ScoreInfo info) {
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy,
+                    generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, readObjective,
+                    rawScore, fusedScore, rerankScore, info);
+        }
         public ReadingWindow(
                 String chunkId, String sourceId, String sourceSnapshotId, int chunkNo,
                 String heading, String title, String generatedBy, String generatedRefId,
@@ -208,27 +239,30 @@ public class NoteRetrievalService {
         }
 
         ReadingWindow withScore(int nextScore) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, nextScore, readRole, anchorWindowNo, readObjective, rawScore, nextScore, rerankScore);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, nextScore, readRole, anchorWindowNo, readObjective, rawScore, nextScore, rerankScore, scoreInfo);
         }
 
         ReadingWindow withRawScore(double nextRawScore) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, readObjective, nextRawScore, fusedScore, rerankScore);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, readObjective, nextRawScore, fusedScore, rerankScore, scoreInfo);
         }
 
         ReadingWindow withRerankScore(double nextRerankScore) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, (int) Math.round(nextRerankScore * 1000), readRole, anchorWindowNo, readObjective, rawScore, fusedScore, nextRerankScore);
+            return withRerankScore(nextRerankScore, ScoreInfo.unknown());
+        }
+        ReadingWindow withRerankScore(double nextRerankScore, ScoreInfo info) {
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, (int) Math.round(nextRerankScore * 1000), readRole, anchorWindowNo, readObjective, rawScore, fusedScore, nextRerankScore, info);
         }
 
         ReadingWindow withReadRole(String nextReadRole) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, nextReadRole, anchorWindowNo, readObjective, rawScore, fusedScore, rerankScore);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, nextReadRole, anchorWindowNo, readObjective, rawScore, fusedScore, rerankScore, scoreInfo);
         }
 
         ReadingWindow withAnchorWindowNo(int nextAnchorWindowNo) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, nextAnchorWindowNo, readObjective, rawScore, fusedScore, rerankScore);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, nextAnchorWindowNo, readObjective, rawScore, fusedScore, rerankScore, scoreInfo);
         }
 
         ReadingWindow withReadObjective(String nextReadObjective) {
-            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, nextReadObjective, rawScore, fusedScore, rerankScore);
+            return new ReadingWindow(chunkId, sourceId, sourceSnapshotId, chunkNo, heading, title, generatedBy, generatedRefId, windowNo, content, locationInfo, score, readRole, anchorWindowNo, nextReadObjective, rawScore, fusedScore, rerankScore, scoreInfo);
         }
 
     }

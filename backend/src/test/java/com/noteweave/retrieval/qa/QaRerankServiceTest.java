@@ -81,8 +81,8 @@ class QaRerankServiceTest {
             @Override public boolean isEnabled() { return true; }
             @Override public RerankResult rerank(String query, List<String> documents, int topN) {
                 return new RerankResult(List.of(
-                        new Hit(2, 0.80, 1),
-                        new Hit(0, 0.20, 2)), "rerank-v1");
+                        new Hit(2, 0.80, 1, com.noteweave.answer.strategy.ScoreInfo.provider("rerank-v1", 0.80)),
+                        new Hit(0, 0.20, 2, com.noteweave.answer.strategy.ScoreInfo.provider("rerank-v1", 0.20))), "rerank-v1");
             }
         });
 

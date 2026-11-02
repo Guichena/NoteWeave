@@ -130,6 +130,7 @@ export const evidenceMetaByRun: Record<
   "answer-note": { evidence_sufficiency: "PARTIAL" },
   "answer-wiki": {
     citation_protocol: {
+      state: "BINDING_V1",
       protocolVersion: "citation-binding-v1",
       allowedEvidenceIds: ["knowledge-version:hybrid-v3", "knowledge-version:rrf-v2", "knowledge-version:rerank-v1"],
       citationBindings: [

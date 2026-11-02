@@ -104,7 +104,10 @@ public class EvidenceSufficiencyJudge {
         }
         Double score = modelScore(evidence);
         if (score == null) {
-            return new Judgement(modelVerdict, List.of(REASON_NO_PROVIDER_SCORE));
+            boolean unknownPolicy = evidence != null && evidence.stream().anyMatch(item ->
+                    item != null && item.scoreInfo() != null && item.scoreInfo().isProviderModelScore());
+            return new Judgement(modelVerdict, List.of(unknownPolicy
+                    ? "PROVIDER_THRESHOLD_POLICY_NOT_APPLICABLE" : REASON_NO_PROVIDER_SCORE));
         }
         if (score < INSUFFICIENT_BELOW
                 && (modelVerdict == EvidenceSufficiency.SUFFICIENT
@@ -124,7 +127,7 @@ public class EvidenceSufficiencyJudge {
         }
         Double best = null;
         for (EvidenceBundle.Evidence item : evidence) {
-            if (item == null || item.scoreInfo() == null || !item.scoreInfo().isProviderModelScore()) {
+            if (item == null || item.scoreInfo() == null || !item.scoreInfo().eligibleForThreshold()) {
                 continue;
             }
             double value = item.scoreInfo().value();

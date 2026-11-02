@@ -167,6 +167,39 @@ class KnowledgeWikiSearchEngineHybridTest {
         assertThat(index.keywordCalls).isZero();
     }
 
+    @Test
+    void actualSearchPreservesPartialRerankProvenanceAndPrecision() {
+        index.keyword = WikiPageIndex.SearchResult.ready(List.of(
+                new WikiPageIndex.Hit("item-a", 1, 0, 0, 0, 0),
+                new WikiPageIndex.Hit("item-b", 1, 0, 0, 0, 0)));
+        var info = com.noteweave.answer.strategy.ScoreInfo.provider("actual", 0.149);
+        KnowledgeWikiSearchEngine engine = engine(null, new RerankClient() {
+            public boolean isEnabled() { return true; }
+            public RerankResult rerank(String query, List<String> documents, int topN) {
+                return new RerankResult(List.of(new Hit(1, 0.149, 1, info)), "ignored-global-model");
+            }
+        });
+        var hits = engine.findRelevantPages("workspace", "alpha");
+        assertThat(hits).extracting(KnowledgePageHit::itemId).containsExactly("item-b", "item-a");
+        assertThat(hits.get(0).score()).isEqualTo(15);
+        assertThat(hits.get(0).scoreInfo()).isEqualTo(info);
+        assertThat(hits.get(1).scoreInfo().origin()).isEqualTo("FUSION_FALLBACK");
+        assertThat(hits.get(1).scoreInfo().value()).isNull();
+    }
+
+    @Test
+    void actualLexicalSearchNeverInfersProviderFromMissingRerankError() {
+        index.available = false;
+        var engine = engine(null, null);
+        var hits = engine.findRelevantPages("workspace", "alpha beta");
+        assertThat(hits).isNotEmpty().allSatisfy(hit -> {
+            assertThat(hit.scoreInfo().origin()).isEqualTo("LEXICAL");
+            assertThat(hit.scoreInfo().value()).isPositive();
+            assertThat(hit.scoreInfo().hasModelScore()).isFalse();
+        });
+        assertThat(engine.consumeDegradationReasons()).containsExactly("WIKI_INDEX_UNAVAILABLE");
+    }
+
     private KnowledgeWikiSearchEngine engine(EmbeddingClient embedding, RerankClient rerank) {
         return new KnowledgeWikiSearchEngine(jdbcTemplate, index, embedding, rerank);
     }

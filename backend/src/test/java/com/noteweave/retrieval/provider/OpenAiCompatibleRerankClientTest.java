@@ -47,8 +47,8 @@ class OpenAiCompatibleRerankClientTest {
 
             assertThat(result.model()).isEqualTo("rerank-v1");
             assertThat(result.hits()).containsExactly(
-                    new RerankClient.Hit(1, 0.91, 1),
-                    new RerankClient.Hit(0, 0.72, 2));
+                    new RerankClient.Hit(1, 0.91, 1, com.noteweave.answer.strategy.ScoreInfo.provider("rerank-v1", 0.91)),
+                    new RerankClient.Hit(0, 0.72, 2, com.noteweave.answer.strategy.ScoreInfo.provider("rerank-v1", 0.72)));
             JsonNode payload = mapper.readTree(requestBody.get());
             assertThat(payload.path("query").asText()).isEqualTo("question");
             assertThat(payload.path("documents")).hasSize(2);

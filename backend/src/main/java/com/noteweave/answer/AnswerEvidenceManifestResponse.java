@@ -18,10 +18,19 @@ public record AnswerEvidenceManifestResponse(
         /** 本次回答允许引用的证据集合，前端只给集合内的编号出角标。 */
         List<String> allowedEvidenceIds,
         /** 编号到证据身份与引用行的绑定。 */
-        List<CitationBindingView> citationBindings
+        List<CitationBindingView> citationBindings,
+        @JsonProperty("citation_protocol") EvidenceReadyEvent citationProtocol
 ) {
     /** 新协议的标识；历史回答不带这个值。 */
     public static final String PROTOCOL_VERSION = "citation-binding-v1";
+
+    public AnswerEvidenceManifestResponse(String runId, List<Evidence> evidence,
+            QueryRewrite.View retrievalRewrite, List<MemoryReferenceResponse> memoryReferences,
+            String evidenceSufficiency, String protocolVersion, List<String> allowedEvidenceIds,
+            List<CitationBindingView> citationBindings) {
+        this(runId, evidence, retrievalRewrite, memoryReferences, evidenceSufficiency,
+                protocolVersion, allowedEvidenceIds, citationBindings, EvidenceReadyEvent.unknown());
+    }
 
     public AnswerEvidenceManifestResponse {
         evidence = evidence == null ? List.of() : List.copyOf(evidence);

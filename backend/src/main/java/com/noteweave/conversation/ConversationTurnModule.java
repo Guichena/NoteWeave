@@ -336,6 +336,10 @@ public class ConversationTurnModule {
             ChatService.PreparedAnswerMaterial material,
             String recoveryLeaseOwner
     ) {
+        new com.noteweave.chat.CitationBindingService(jdbcTemplate).lockEvidenceParents(
+                prepared.workspaceId(), material.evidenceBundle(), material.existingCitationIds());
+        new com.noteweave.answer.AnswerRunLifecycleGuard(jdbcTemplate).lockForPreparation(
+                prepared.workspaceId(), prepared.receipt().answerRunId(), material.existingCitationIds());
         if (recoveryLeaseOwner != null) {
             int activeLease = jdbcTemplate.update("""
                     update turn_submission

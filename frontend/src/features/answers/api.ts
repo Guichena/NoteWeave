@@ -1,5 +1,5 @@
 import { apiClient, type ApiClient } from "../../shared/api";
-import { parseAnswerEvidenceManifest, type AnswerEvidenceManifest } from "./evidence";
+import { parseAnswerEvidenceManifest, parseCitationProtocol, type AnswerEvidenceManifest } from "./evidence";
 import {
   type AnswerFeedbackInput,
   type AnswerRunSnapshot,
@@ -20,7 +20,7 @@ export class AnswersApi {
   getRun(workspaceId: string, runId: string) {
     return this.client.get<AnswerRunSnapshot>(
       `/api/v2/workspaces/${workspaceId}/answer-runs/${runId}`
-    );
+    ).then((run) => ({ ...run, citation_protocol: parseCitationProtocol(run.citation_protocol) }));
   }
 
   /** 证据清单：按后端冻结的协议解析，编号绑定与允许集合以协议为准。 */

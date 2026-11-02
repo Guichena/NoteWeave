@@ -38,6 +38,8 @@ export type AnswerRunSnapshot = {
   content: string;
   error_code?: string;
   error_message?: string;
+  citation_protocol?: CitationProtocol;
+  event_sequence?: number;
 };
 
 export type AnswerRunState = {

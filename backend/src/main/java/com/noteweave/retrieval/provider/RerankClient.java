@@ -1,5 +1,6 @@
 package com.noteweave.retrieval.provider;
 
+import com.noteweave.answer.strategy.ScoreInfo;
 import java.util.Comparator;
 import java.util.List;
 
@@ -27,6 +28,10 @@ public interface RerankClient {
         }
     }
 
-    record Hit(int documentIndex, double score, int rank) {
+    record Hit(int documentIndex, double score, int rank, ScoreInfo scoreInfo) {
+        public Hit { scoreInfo = scoreInfo == null ? ScoreInfo.unknown() : scoreInfo; }
+        public Hit(int documentIndex, double score, int rank) {
+            this(documentIndex, score, rank, ScoreInfo.unknown());
+        }
     }
 }

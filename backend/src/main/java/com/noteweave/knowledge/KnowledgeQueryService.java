@@ -552,7 +552,8 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                         rs.getString("title"),
                         rs.getString("content"),
                         rs.getString("summary"),
-                        0
+                        0,
+                        com.noteweave.answer.strategy.ScoreInfo.unknown()
                 )), args);
         List<String> versionIds = hits.values().stream().map(KnowledgePageHit::versionId).toList();
         Set<String> readable = citationReadGate.readableVersionIds(workspaceId, versionIds);

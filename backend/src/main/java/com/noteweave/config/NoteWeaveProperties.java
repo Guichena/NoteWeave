@@ -237,8 +237,20 @@ public record NoteWeaveProperties(
             int batchSize,
             int maxDocumentCharacters,
             long timeoutSeconds,
-            int maxAttempts
+            int maxAttempts,
+            String scoreScale,
+            String thresholdPolicy
     ) {
+        @ConstructorBinding
+        public Rerank {
+            scoreScale = scoreScale == null || scoreScale.isBlank() ? "UNKNOWN" : scoreScale;
+            thresholdPolicy = thresholdPolicy == null || thresholdPolicy.isBlank() ? "NOT_APPLICABLE" : thresholdPolicy;
+        }
+        public Rerank(boolean enabled, String endpoint, String model, String apiKey,
+                      int batchSize, int maxDocumentCharacters, long timeoutSeconds, int maxAttempts) {
+            this(enabled, endpoint, model, apiKey, batchSize, maxDocumentCharacters,
+                    timeoutSeconds, maxAttempts, "UNKNOWN", "NOT_APPLICABLE");
+        }
     }
 
     public record Llm(

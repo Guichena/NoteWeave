@@ -187,23 +187,29 @@ public class ChatController {
         try {
             sseConnectionExecutor.execute(() -> {
                 try {
+                    answerRunService.requireReplayReadable(workspaceId, runId);
+                    AnswerRunResponse snapshot = answerRunService.get(workspaceId, runId);
+                    // 恢复元数据不伪造事件序号；生成中的content是草稿，客户端只消费其协议和状态。
+                    emitter.send(SseEmitter.event().name("run.snapshot")
+                            .data(snapshot));
                     java.util.List<AnswerEventResponse> stored = answerRunService.eventsAfter(workspaceId, runId, cursor);
                     java.util.concurrent.atomic.AtomicLong sequence = new java.util.concurrent.atomic.AtomicLong(cursor);
                     for (AnswerEventResponse event : stored) {
                         sequence.set(Math.max(sequence.get(), event.sequence()));
                         if (!isTerminalEvent(event.eventType())) {
+                            answerRunService.requireReplayReadable(workspaceId, runId);
                             send(emitter, new ChatStreamEvent(
                                     Long.toString(event.sequence()), event.eventType(), event.payloadJson()));
                         }
                     }
-                    AnswerRunResponse snapshot = answerRunService.get(workspaceId, runId);
                     if ("COMPLETED".equals(snapshot.status())) {
+                        answerRunService.requireReplayReadable(workspaceId, runId);
                         long terminalSequence = answerRunService.currentEventSequence(workspaceId, runId);
                         if (cursor < terminalSequence) {
                             send(emitter, new ChatStreamEvent(
                                     Long.toString(terminalSequence), "answer.snapshot", snapshot.content()));
                             send(emitter, new ChatStreamEvent(
-                                    Long.toString(terminalSequence + 1), "answer.completed", snapshot.answerMessageId()));
+                                    Long.toString(terminalSequence), "answer.completed", snapshot.answerMessageId()));
                         }
                     } else if ("CANCELLED".equals(snapshot.status())) {
                         long terminalSequence = answerRunService.currentEventSequence(workspaceId, runId);

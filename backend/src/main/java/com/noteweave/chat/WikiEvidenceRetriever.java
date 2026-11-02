@@ -6,7 +6,6 @@ import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.RetrievalPlan;
 import com.noteweave.answer.strategy.ScoreInfo;
-import com.noteweave.answer.strategy.ScoreOrigins;
 import com.noteweave.knowledge.KnowledgePageHit;
 import com.noteweave.knowledge.WikiLexicalBoost;
 import com.noteweave.knowledge.WikiResolvedLink;
@@ -111,15 +110,12 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                     return loaded == null ? List.of() : loaded;
                 });
         List<WikiPageContext> contexts = graph.contexts();
-        // 重排没跑成时，种子页上的分数来自词法融合，不能当作模型重排分
-        boolean modelReranked = !ScoreOrigins.rerankUnavailable(degradationReasons);
         List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(context.workspaceId(),
                 contexts.stream().map(WikiPageContext::page).toList());
         WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(contexts, citationIds);
         List<EvidenceBundle.Evidence> evidence = java.util.stream.IntStream.range(0, contexts.size())
                 .mapToObj(index -> toEvidence(
-                        contexts.get(index), index, contexts.size(), step.weight(), graph.graphPaths(),
-                        modelReranked))
+                        contexts.get(index), index, contexts.size(), step.weight(), graph.graphPaths()))
                 .toList();
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put(WikiRetrievalSnapshotCodec.METADATA_KEY, snapshotCodec.encode(snapshot));
@@ -176,8 +172,7 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             int index,
             int total,
             double weight,
-            java.util.Map<String, List<String>> graphPaths,
-            boolean modelReranked
+            java.util.Map<String, List<String>> graphPaths
     ) {
         KnowledgePageHit page = context.page();
         String excerpt = page.summary().isBlank() ? boundedContent(page.content()) : page.summary();
@@ -199,16 +194,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
         // The shared evidence budgeter ranks by fusedScore. Preserve the query
         // adapter's relevance score instead of replacing it with list position.
         double orderingScore = page.score() * weight;
-        // Wiki 的排序分是百分制整数。模型重排成功时在这里还原到 0 到 1，充分性判定不再自己换算；
-        // 图扩展页按图关系进入，不参与分数比较。
-        ScoreInfo scoreInfo;
-        if (path != null && path.size() >= 2) {
-            scoreInfo = ScoreInfo.graph();
-        } else if (modelReranked) {
-            scoreInfo = ScoreInfo.provider("", normalizeWikiScore(orderingScore));
-        } else {
-            scoreInfo = ScoreInfo.lexical("", null);
-        }
+        // 原始模型分独立于展示整数与排序权重，直接透传生产来源。
+        ScoreInfo scoreInfo = path != null && path.size() >= 2 ? ScoreInfo.graph() : page.scoreInfo();
         return new EvidenceBundle.Evidence(
                 "knowledge-version:" + page.versionId(),
                 "KNOWLEDGE_VERSION",
@@ -230,14 +217,6 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 metadata,
                 scoreInfo
         );
-    }
-
-    /** 百分制排序分还原到 0 到 1，超出范围时截断。 */
-    static double normalizeWikiScore(double orderingScore) {
-        if (!Double.isFinite(orderingScore) || orderingScore <= 0.0d) {
-            return 0.0d;
-        }
-        return Math.min(1.0d, orderingScore / 100.0d);
     }
 
     private static String boundedContent(String content) {

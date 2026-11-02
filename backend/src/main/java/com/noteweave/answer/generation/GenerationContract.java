@@ -29,7 +29,7 @@ public record GenerationContract(
     public static final String SCHEMA_VERSION = "generation-contract-v1";
 
     public GenerationContract {
-        schemaVersion = schemaVersion == null || schemaVersion.isBlank() ? SCHEMA_VERSION : schemaVersion;
+        schemaVersion = schemaVersion == null ? "" : schemaVersion;
         mode = mode == null ? "" : mode;
         promptVersion = promptVersion == null ? "" : promptVersion;
         systemPrompt = systemPrompt == null ? "" : systemPrompt;
@@ -40,6 +40,34 @@ public record GenerationContract(
                 ? Map.of()
                 : Map.copyOf(new LinkedHashMap<>(evidenceTextHashes));
         allowedPageTitles = allowedPageTitles == null ? List.of() : List.copyOf(allowedPageTitles);
+    }
+
+    /** 新契约损坏时显式失败，不得借空集合或缺失字段进入历史兼容。 */
+    public void requireValid() {
+        boolean invalid = !SCHEMA_VERSION.equals(schemaVersion)
+                || !java.util.Set.of("QA", "NOTE", "WIKI").contains(mode)
+                || promptVersion.isBlank() || evidenceBundleId.isBlank() || systemPrompt.isBlank()
+                || allowedEvidenceIds.stream().anyMatch(id -> id == null || id.isBlank())
+                || new java.util.HashSet<>(allowedEvidenceIds).size() != allowedEvidenceIds.size()
+                || (refusal && (!allowedEvidenceIds.isEmpty() || !citationBindings.isEmpty()))
+                || citationBindings.size() != allowedEvidenceIds.size();
+        java.util.Set<Integer> numbers = new java.util.HashSet<>();
+        java.util.Set<String> bound = new java.util.HashSet<>();
+        for (CitationBinding binding : citationBindings) {
+            invalid |= binding.number() < 1 || binding.number() > 9999
+                    || !numbers.add(binding.number()) || !bound.add(binding.evidenceId())
+                    || !allowedEvidenceIds.contains(binding.evidenceId())
+                    || binding.citationIds().stream().anyMatch(id -> id == null || id.isBlank());
+        }
+        for (String id : allowedEvidenceIds) {
+            String hash = evidenceTextHashes.get(id);
+            invalid |= hash == null || hash.isBlank();
+        }
+        if (invalid) {
+            throw new com.noteweave.common.BusinessException("ANSWER_GENERATION_CONTRACT_INVALID",
+                    "冻结生成契约缺少必要身份、正文摘要或唯一引用绑定",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
     }
 
     /** 拒答时不允许引用任何证据。 */

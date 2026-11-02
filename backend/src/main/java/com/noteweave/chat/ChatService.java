@@ -150,16 +150,27 @@ public class ChatService {
             String answerMode,
             PreparedAnswerMaterial material
     ) {
-        jdbcTemplate.update("""
+        new CitationBindingService(jdbcTemplate).lockEvidenceParents(
+                workspaceId, material.evidenceBundle(), material.existingCitationIds());
+        new com.noteweave.answer.AnswerRunLifecycleGuard(jdbcTemplate)
+                .lockForPreparation(workspaceId, runId, material.existingCitationIds());
+        int preparedMessage = jdbcTemplate.update("""
                 update conversation_message
                 set content = ?
                 where workspace_id = ? and id = ? and context_status = 'PENDING'
                 """, material.answer(), workspaceId, assistantMessageId);
+        if (preparedMessage != 1) {
+            throw new BusinessException("ANSWER_RUN_REVOKED", "回答消息不再允许准备");
+        }
         CitationAssemblyResult citationAssembly = evidenceCitationAssembler.persist(
                 workspaceId, assistantMessageId, material.evidenceBundle(), material.promptSpec());
-        bindExistingCitations(
-                workspaceId, assistantMessageId, material.existingCitationIds(),
-                citationAssembly.persistedCount());
+        CitationBindingService.BindResult bound = new CitationBindingService(jdbcTemplate).bindToMessage(
+                workspaceId, assistantMessageId, material.existingCitationIds(), citationAssembly.persistedCount());
+        citationAssembly = new CitationAssemblyResult(citationAssembly.bindings().stream()
+                .map(binding -> new com.noteweave.answer.generation.CitationBinding(
+                        binding.number(), binding.evidenceId(), binding.citationIds().stream()
+                                .map(id -> bound.copiedIds().getOrDefault(id, id)).toList()))
+                .toList(), citationAssembly.persistedCount());
         // 引用落库之后冻结生成契约：编号绑定与本次实际生成的引用行一一对应
         GenerationContract generationContract = GenerationContractCompiler.compile(
                 answerMode, material.promptSpec(), material.evidenceBundle(), citationAssembly);
@@ -518,17 +529,6 @@ public class ChatService {
             return;
         }
         builder.append(prefix).append(String.join("；", values)).append("\n");
-    }
-
-    private void bindExistingCitations(String workspaceId, String messageId, List<String> citationIds, int sortOffset) {
-        for (int i = 0; i < citationIds.size(); i++) {
-            jdbcTemplate.update("""
-                    insert into message_citation(id, message_id, citation_id, sort_order)
-                    select ?, ?, c.id, ?
-                    from citation c
-                    where c.workspace_id = ? and c.id = ?
-                    """, Ids.newId(), messageId, sortOffset + i, workspaceId, citationIds.get(i));
-        }
     }
 
     private ConversationRef findConversation(String conversationId) {

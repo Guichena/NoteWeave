@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from "react";
+import { inlineTokens } from "./citationSyntax";
 
 /** 编号到证据的最小绑定视图：[n] 对应哪条证据。 */
 export type CitationBindingView = { number: number; evidenceId: string };
@@ -81,11 +82,12 @@ export function MarkdownSurface({
       continue;
     }
 
-    if (line.trim().startsWith("```")) {
-      const language = line.trim().slice(3).trim();
+    const fence = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const language = fence[2].trim();
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+      while (index < lines.length && !new RegExp(`^ {0,3}${fence[1][0]}{${fence[1].length},}\\s*$`).test(lines[index])) {
         codeLines.push(lines[index]);
         index += 1;
       }
@@ -190,7 +192,7 @@ export function MarkdownSurface({
 
 function isBlockStart(line: string) {
   const trimmed = line.trim();
-  return trimmed.startsWith("```")
+  return /^(?:`{3,}|~{3,})/.test(trimmed)
     || headingPattern.test(trimmed)
     || trimmed.startsWith(">")
     || orderedItemPattern.test(trimmed)
@@ -219,17 +221,8 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
     compactCitations, citations, activeCitation, onCitationClick, onWikiLinkClick, resolveWikiLink,
     onEvidenceClick, evidenceOrder, activeEvidence, allowedEvidenceIds, citationBindings
   } = context;
-  const bindingMode = Boolean(citationBindings && citationBindings.length > 0);
+  const bindingMode = citationBindings !== undefined;
   const numberedCitations = Boolean((citations && citations.length > 0) || bindingMode);
-  const parts = [
-    "`[^`]+`",
-    "\\[\\[[^\\]]+\\]\\]",
-    "\\*\\*[^*]+\\*\\*",
-    "\\[[^\\]]+\\]\\(https?:\\/\\/[^\\s)]+\\)",
-    ...(compactCitations ? ["\\[evidence(?::|-)[^\\]]+\\]", PENDING_MARKER.source] : []),
-    // 转义字面量 \\[7] 不是引用，交给普通文字渲染
-    ...(numberedCitations ? ["(?<!\\\\)\\[\\d{1,2}\\](?!\\()"] : [])
-  ];
   const allowedEvidence = allowedEvidenceIds ? new Set(allowedEvidenceIds) : null;
   const bindingByNumber = new Map(
     (citationBindings ?? []).map((binding) => [binding.number, binding.evidenceId])
@@ -243,13 +236,14 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
   function isAllowedEvidence(evidenceId: string) {
     return !allowedEvidence || allowedEvidence.has(evidenceId);
   }
-  const pattern = new RegExp(`(${parts.join("|")})`, "g");
-  const tokens = value.split(pattern);
+  const parsed = inlineTokens(value);
+  const tokens = parsed.map((token) => token.text);
   // 引用角标后紧跟的标点与角标放在同一个不换行单元里，避免标点单独折到下一行。
   const trailing: string[] = [];
   tokens.forEach((token, index) => {
+    if (parsed[index].literal) return;
     const isEvidenceCitation = compactCitations && /^\[evidence(?::|-)[^\]]+\]$/.test(token);
-    const isNumberedCitation = numberedCitations && /^\[\d{1,2}\]$/.test(token);
+    const isNumberedCitation = numberedCitations && /^\[[0-9]{1,4}\]$/.test(token);
     // 绑定模式下只有真正会渲染成角标的编号才和标点粘连
     const isCitation = bindingMode
       ? (isEvidenceCitation && isAllowedEvidence(token.slice(1, -1).replace(/^evidence[:-]/, "").trim()))
@@ -269,6 +263,8 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
   });
 
   function renderInlineToken(token: string, index: number) {
+    if (parsed[index].code !== undefined) return <code key={index}>{parsed[index].code}</code>;
+    if (parsed[index].literal) return <Fragment key={index}>{token.replace(/\\([\[\]`*\\])/g, "$1")}</Fragment>;
     if (token.startsWith("`") && token.endsWith("`") && token.length > 1) {
       return <code key={index}>{token.slice(1, -1)}</code>;
     }
@@ -292,7 +288,7 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
       );
     }
     if (token.startsWith("**") && token.endsWith("**") && token.length > 4) {
-      return <strong key={index}>{token.slice(2, -2)}</strong>;
+      return <strong key={index}>{renderInlineMarkdown(token.slice(2, -2), context)}</strong>;
     }
     if (compactCitations && new RegExp(`^(?:${PENDING_MARKER.source})$`).test(token)) {
       return (
@@ -325,7 +321,7 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
       const order = evidenceOrder?.indexOf(evidenceId) ?? -1;
       return <sup className="research-citation-ref" title={token.slice(1, -1)} key={index}>{order >= 0 ? `[${order + 1}]` : "[证据]"}</sup>;
     }
-    if (numberedCitations && /^\[\d{1,2}\]$/.test(token)) {
+    if (numberedCitations && /^\[[0-9]{1,4}\]$/.test(token)) {
       const citationNumber = Number(token.slice(1, -1));
       if (bindingMode) {
         const evidenceId = boundEvidenceId(citationNumber);
@@ -349,7 +345,8 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
         }
         return <sup className="research-citation-ref" key={index}>{citationNumber}</sup>;
       }
-      const label = citations?.[citationNumber - 1] ?? `来源 ${citationNumber}`;
+      if (citationNumber < 1 || !citations?.[citationNumber - 1]) return <Fragment key={index}>{token}</Fragment>;
+      const label = citations[citationNumber - 1];
       return (
         <button
           type="button"
@@ -373,6 +370,6 @@ function renderInlineMarkdown(value: string, context: InlineContext) {
 
 const TRAILING_PUNCTUATION = /^[。，、；：！？）」』》.,;:!?)]/;
 // 转义的编号方括号是正文里的字面量，渲染时去掉反斜杠，不当引用处理
-const ESCAPED_NUMBERED_BRACKET = /\\\[(\d{1,2})\\?\]/g;
+const ESCAPED_NUMBERED_BRACKET = /\\\[([0-9]{1,4})\\?\]/g;
 // 研究报告里线索的标注，显示成待核实标签（Worker 现在写（待核实），旧报告里是（未经核实））
 const PENDING_MARKER = /（待核实）|（未经核实）|（该项尚未完成核验）|\(unverified\)/;

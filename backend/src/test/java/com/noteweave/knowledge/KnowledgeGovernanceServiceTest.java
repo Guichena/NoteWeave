@@ -126,10 +126,11 @@ class KnowledgeGovernanceServiceTest {
 
     @Test
     void shouldRebuildLinksThroughImmutableVersionAndPreserveCitations() {
+        seedCitationSource();
         jdbcTemplate.update("""
-                insert into citation(id, source_id, title, quote_text)
-                values ('citation-a', 'source', 'Source', 'quote a'),
-                       ('citation-b', 'source', 'Source', 'quote b')
+                insert into citation(id, source_id, source_snapshot_id, title, quote_text)
+                values ('citation-a', 'source', 'snapshot', 'Source', 'quote a'),
+                       ('citation-b', 'source', 'snapshot', 'Source', 'quote b')
                 """);
         KnowledgeItemResponse sourcePage = commandService.createItemWithVersion(
                 "workspace",
@@ -206,9 +207,10 @@ class KnowledgeGovernanceServiceTest {
 
     @Test
     void shouldCollapseDuplicateSourceCitationsAndOrderRelatedPagesByLatestUpdate() {
+        seedCitationSource();
         jdbcTemplate.update("""
-                insert into citation(id, source_id, title, quote_text)
-                values (?, ?, ?, ?), (?, ?, ?, ?)
+                insert into citation(id, source_id, source_snapshot_id, title, quote_text)
+                values (?, ?, 'snapshot', ?, ?), (?, ?, 'snapshot', ?, ?)
                 """,
                 "citation-a", "source", "Source", "quote a",
                 "citation-b", "source", "Source", "quote b");
@@ -235,7 +237,14 @@ class KnowledgeGovernanceServiceTest {
                 .containsExactly(newer.itemId(), older.itemId());
     }
 
+    private void seedCitationSource() {
+        jdbcTemplate.update("insert into source(id,workspace_id,title,status,index_status) values ('source','workspace','Source','READY','INDEXED')");
+        jdbcTemplate.update("insert into source_snapshot(id,source_id,version_no) values ('snapshot','source',1)");
+    }
+
     private void createSchema() {
+        jdbcTemplate.execute("create table source_snapshot(id varchar(36) primary key,source_id varchar(36),version_no int)");
+        jdbcTemplate.execute("create table conversation(id varchar(36) primary key,workspace_id varchar(36))");
         jdbcTemplate.execute("""
                 create table workspace(
                     id varchar(36) primary key,
@@ -291,7 +300,12 @@ class KnowledgeGovernanceServiceTest {
                     title varchar(300),
                     quote_text varchar(1000),
                     page_no int,
-                    location_info varchar(300)
+                    location_info varchar(1000),
+                    source_snapshot_id varchar(36),
+                    source_chunk_id varchar(36),
+                    created_at timestamp default current_timestamp,
+                    research_evidence_key varchar(64),
+                    owner_message_id varchar(36)
                 )
                 """);
         jdbcTemplate.execute("""
@@ -346,6 +360,8 @@ class KnowledgeGovernanceServiceTest {
         jdbcTemplate.execute("""
                 create table conversation_message(
                     id varchar(36) primary key,
+                    conversation_id varchar(36),
+                    context_status varchar(32) default 'CURRENT',
                     workspace_id varchar(36) not null,
                     role varchar(32) not null,
                     content clob not null

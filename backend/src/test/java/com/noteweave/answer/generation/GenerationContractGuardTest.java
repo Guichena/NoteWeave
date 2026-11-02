@@ -32,19 +32,17 @@ class GenerationContractGuardTest {
     void setUp() {
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
                 "jdbc:h2:mem:guard-" + System.nanoTime() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        org.flywaydb.core.Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();
         jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("""
-                create table answer_run_evidence_manifest(
-                    id varchar(36) primary key, workspace_id varchar(36), answer_run_id varchar(36),
-                    rank_no int, evidence_id varchar(200), evidence_kind varchar(64),
-                    source_id varchar(36), source_snapshot_id varchar(36), passage_id varchar(100),
-                    knowledge_item_id varchar(36), knowledge_version_id varchar(36),
-                    title varchar(500), excerpt clob, content_hash char(64),
-                    location_info varchar(1000), fresh_at timestamp, character_cost int,
-                    created_at timestamp default current_timestamp)
-                """);
-        jdbc.execute("create table knowledge_item(id varchar(36), workspace_id varchar(36))");
-        jdbc.execute("create table knowledge_version(id varchar(36), item_id varchar(36))");
+        jdbc.update("insert into workspace(id,owner_id,name,status) values ('ws','local-user','测试','ACTIVE')");
+        jdbc.update("insert into conversation(id,workspace_id,title,conversation_type,status) values ('conv','ws','测试','QA','ACTIVE')");
+        jdbc.update("insert into conversation_message(id,workspace_id,conversation_id,message_seq,role,content) values ('q','ws','conv',1,'USER','问题')");
+        jdbc.update("insert into answer_run(id,workspace_id,conversation_id,mode,status,query_message_id,created_by,updated_by) values ('run','ws','conv','QA','GENERATING','q','test','test')");
+        jdbc.update("insert into file_object(id,workspace_id,object_key,sha256,file_size) values ('file','ws','key',?,1)",HASH_A);
+        jdbc.update("insert into source(id,workspace_id,file_object_id,title,source_type,status,parse_status,index_status) values ('source-1','ws','file','来源','TEXT','READY','PARSED','INDEXED')");
+        jdbc.update("insert into source_snapshot(id,source_id,file_object_id,version_no,object_key,sha256,parse_status,index_status) values ('snapshot-1','source-1','file',1,'key',?,'PARSED','INDEXED')",HASH_A);
+        jdbc.update("insert into source_chunk(id,workspace_id,source_id,source_snapshot_id,chunk_no,content,token_estimate) values ('passage-1','ws','source-1','snapshot-1',0,'正文',1)");
+
     }
 
     @Test
@@ -99,15 +97,17 @@ class GenerationContractGuardTest {
                 List.of("knowledge-version:one"), Map.of("knowledge-version:one", HASH_A))))
                 .isInstanceOfSatisfying(BusinessException.class, error -> {
                     assertThat(error.code()).isEqualTo(GenerationContractGuard.CODE_REVOKED);
-                    assertThat(error.getMessage()).contains("NOT_ACTIVE");
+                    assertThat(error.getMessage()).contains("KNOWLEDGE_CITATION_REVOKED");
                 });
     }
 
     @Test
     void knowledgeVersionThatStillExistsPasses() {
         manifest("knowledge-version:one", "KNOWLEDGE_VERSION", null, null, "version-1", HASH_A);
-        jdbc.update("insert into knowledge_item(id, workspace_id) values ('item-1', 'ws')");
-        jdbc.update("insert into knowledge_version(id, item_id) values ('version-1', 'item-1')");
+        jdbc.update("insert into knowledge_item(id,workspace_id,item_type,title,status,latest_version_id,wiki_page_state) values ('item-1','ws','WIKI','页面','ACTIVE','version-1','MANUAL')");
+        jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('version-1','item-1',1,'正文')");
+        jdbc.update("insert into citation(id,workspace_id,source_id,source_snapshot_id,source_chunk_id,title,quote_text) values ('c','ws','source-1','snapshot-1','passage-1','来源','正文')");
+        jdbc.update("insert into knowledge_version_citation(id,knowledge_version_id,citation_id,sort_order) values ('kvc','version-1','c',0)");
 
         assertThatCode(() -> guard().requireEligible("ws", "run", contract(
                 List.of("knowledge-version:one"), Map.of("knowledge-version:one", HASH_A))))
@@ -127,7 +127,7 @@ class GenerationContractGuardTest {
     private GenerationContract contract(List<String> allowed, Map<String, String> hashes) {
         List<CitationBinding> bindings = new java.util.ArrayList<>();
         for (int index = 0; index < allowed.size(); index++) {
-            bindings.add(new CitationBinding(index + 1, allowed.get(index), List.of()));
+            bindings.add(new CitationBinding(index + 1, allowed.get(index), List.of("c")));
         }
         return new GenerationContract(
                 GenerationContract.SCHEMA_VERSION, "QA", "qa-v1", "system", false,
@@ -139,8 +139,8 @@ class GenerationContractGuardTest {
         jdbc.update("""
                 insert into answer_run_evidence_manifest(
                     id, workspace_id, answer_run_id, rank_no, evidence_id, evidence_kind,
-                    source_id, source_snapshot_id, knowledge_version_id, content_hash, excerpt, character_cost)
-                values (?, 'ws', 'run', 1, ?, ?, ?, ?, ?, ?, '摘录', 2)
+                    source_id, source_snapshot_id, passage_id, knowledge_item_id, knowledge_version_id, content_hash, excerpt, character_cost)
+                values (?, 'ws', 'run', 1, ?, ?, ?, ?, 'passage-1', 'item-1', ?, ?, '摘录', 2)
                 """, java.util.UUID.randomUUID().toString(), evidenceId, kind,
                 sourceId, snapshotId, knowledgeVersionId, contentHash);
     }

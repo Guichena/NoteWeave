@@ -51,6 +51,7 @@ export type KnowledgeSelectionSnapshot = {
   detail: KnowledgeItemDetail;
   versions: KnowledgeVersionSummary[];
   graph?: WikiGraph;
+  version?: KnowledgeVersionDetail;
 };
 
 export type KnowledgeStateAction =
@@ -139,7 +140,7 @@ export function reduceKnowledgeServerState(
         selectedWikiItemId: action.snapshot.itemId,
         selectedWikiDetail: action.snapshot.detail,
         selectedWikiVersions: action.snapshot.versions,
-        selectedWikiVersionDetail: toLatestVersion(action.snapshot.detail),
+        selectedWikiVersionDetail: action.snapshot.version ?? toLatestVersion(action.snapshot.detail),
         selectedWikiLog: [],
         wikiGraph: action.snapshot.graph ?? state.wikiGraph
       };

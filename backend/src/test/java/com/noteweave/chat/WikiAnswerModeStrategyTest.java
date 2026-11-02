@@ -48,9 +48,10 @@ class WikiAnswerModeStrategyTest {
         assertThat(prompt.referencedEvidenceIds()).containsExactly("knowledge-version:version");
         assertThat(prompt.userPrompt())
                 .contains("用户问题：")
-                .contains("[[Wiki Page]]")
+                .contains("[1] Wiki Page")
+                .doesNotContain("[[")
                 .contains("链接到的页面：Related")
-                .contains("用 [[页面名]] 标注页面")
+                .contains("只使用下面的编号 [n]")
                 .contains("## 表达控制")
                 .doesNotContain("关联路径", "我优先检索", "出链", "反链");
         assertThat(strategy.plan(answerContext).budget().maxGraphHops()).isEqualTo(3);
@@ -162,7 +163,7 @@ class WikiAnswerModeStrategyTest {
         var prompt = strategy.compose(context, bundle);
 
         assertThat(prompt.userPrompt())
-                .contains("[[Page 4]]")
+                .contains("[4] Page 4")
                 .contains("被这些页面引用：OnlyOnFourth");
     }
 

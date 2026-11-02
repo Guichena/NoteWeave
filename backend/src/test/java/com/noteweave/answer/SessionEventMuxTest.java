@@ -160,6 +160,35 @@ class SessionEventMuxTest {
         }
     }
 
+
+    @Test
+    void redactionIsPermanentAgainstLatePublishEvenWithoutExistingChannel() {
+        SessionEventMux mux = new SessionEventMux(Runnable::run, new SimpleMeterRegistry(), 32, 8);
+        mux.redact("deleted");
+        assertThatThrownBy(() -> mux.publish("deleted", "answer.delta", "secret"))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void zeroCursorCannotSilentlyReplayTrimmedTail() {
+        SessionEventMux mux = new SessionEventMux(Runnable::run, new SimpleMeterRegistry(), 32, 8);
+        for (int i=0;i<40;i++) mux.publish("trimmed", "answer.delta", "x");
+        assertThatThrownBy(() -> mux.follow("trimmed",0,ignored->{},Duration.ofMillis(5)))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void coldPeerDoesNotSkipBridgeEventsAtOrBelowDatabaseSeed() {
+        InMemoryBridge bridge = new InMemoryBridge();
+        bridge.publish("cold",new AnswerLiveEvent(5,"answer.delta","body",java.time.Instant.now()));
+        bridge.publish("cold",new AnswerLiveEvent(6,"answer.completed","done",java.time.Instant.now()));
+        SessionEventMux peer = new SessionEventMux(Runnable::run,Runnable::run,bridge,new SimpleMeterRegistry(),64,16);
+        peer.seed("cold",6);
+        List<AnswerLiveEvent> received = new ArrayList<>();
+        peer.follow("cold",4,received::add,Duration.ofMillis(10));
+        assertThat(received).extracting(AnswerLiveEvent::data).containsExactly("body","done");
+    }
+
     private static final class InMemoryBridge implements AnswerRealtimeBridge {
         private final Map<String, List<AnswerLiveEvent>> events = new ConcurrentHashMap<>();
         private final java.util.Set<String> cancellations = ConcurrentHashMap.newKeySet();

@@ -748,7 +748,15 @@ class QaAnswerRunShadowExportServiceTest {
                     workspace_id varchar(64) not null,
                     source_id varchar(64) not null,
                     source_snapshot_id varchar(64) not null,
-                    source_chunk_id varchar(64) not null
+                    source_chunk_id varchar(64) not null,
+                    title varchar(300) default '',
+                    quote_text longtext default '',
+                    page_no int,
+                    location_info varchar(1000),
+                    created_at timestamp default current_timestamp,
+                    research_run_id varchar(36),
+                    research_evidence_key varchar(64),
+                    owner_message_id varchar(36)
                 )
                 """);
         jdbcTemplate.execute("""

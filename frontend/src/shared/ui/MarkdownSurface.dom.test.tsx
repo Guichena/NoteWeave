@@ -113,3 +113,12 @@ describe("MarkdownSurface 编号绑定角标", () => {
     expect(onCitationClick).toHaveBeenCalledWith(1);
   });
 });
+
+describe("F1 引用有效位置", () => {
+  it("数组、不同长度代码标记和普通链接不产生角标，四位编号可用", () => {
+    render(<MarkdownSurface content={"array[1] 与 ``value`[1]`` 以及 [1](https://example.org)；正文 [1000] 与 **依据 [1]**。"} citationBindings={[{ number: 1, evidenceId: "p:1" }, { number: 1000, evidenceId: "p:1000" }]} allowedEvidenceIds={["p:1", "p:1000"]} onEvidenceClick={() => undefined} />);
+    expect(screen.getAllByRole("button", { name: /查看来源/ })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "查看来源 1000" })).toBeTruthy();
+    expect(screen.getByRole("link").getAttribute("href")).toBe("https://example.org");
+  });
+});

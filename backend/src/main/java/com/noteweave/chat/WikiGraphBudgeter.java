@@ -76,7 +76,7 @@ public class WikiGraphBudgeter {
                 selected.add(new WikiPageContext(
                         new KnowledgePageHit(
                                 hit.itemId(), hit.versionId(), hit.versionNo(), hit.title(),
-                                hit.content(), hit.summary(), score),
+                                hit.content(), hit.summary(), score, com.noteweave.answer.strategy.ScoreInfo.graph()),
                         page.outgoingLinks(),
                         page.backlinks(),
                         page.citations()));

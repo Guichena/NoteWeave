@@ -29,6 +29,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class ConversationEventMux {
 
+    private final Map<String, Long> sequenceHighWater = new ConcurrentHashMap<>();
     private final Map<String, Channel> channels = new ConcurrentHashMap<>();
     private final AnswerRealtimeBridge bridge;
     private final Executor bridgeExecutor;
@@ -38,6 +39,8 @@ public class ConversationEventMux {
     private final int subscriberQueueCapacity;
     private final Duration channelRetention;
     private final int maxRetainedChannels;
+    private AnswerReplayAccessGuard replayAccessGuard;
+    private final java.util.Set<String> revokedRuns = ConcurrentHashMap.newKeySet();
     private final AtomicInteger activeSubscribers = new AtomicInteger();
 
     @Autowired
@@ -46,6 +49,7 @@ public class ConversationEventMux {
             @Qualifier("answerBridgeExecutor") Executor bridgeExecutor,
             @Qualifier("sseDispatchExecutor") Executor dispatchExecutor,
             MeterRegistry meterRegistry,
+            AnswerReplayAccessGuard replayAccessGuard,
             @Value("${noteweave.conversation.events.replay-capacity:512}") int replayCapacity,
             @Value("${noteweave.conversation.events.subscriber-queue-capacity:64}") int subscriberQueueCapacity,
             @Value("${noteweave.conversation.events.channel-retention-seconds:900}") long channelRetentionSeconds,
@@ -55,6 +59,7 @@ public class ConversationEventMux {
         this.bridgeExecutor = bridgeExecutor;
         this.dispatchExecutor = dispatchExecutor;
         this.meterRegistry = meterRegistry;
+        this.replayAccessGuard = java.util.Objects.requireNonNull(replayAccessGuard);
         this.replayCapacity = Math.max(32, replayCapacity);
         this.subscriberQueueCapacity = Math.max(8, subscriberQueueCapacity);
         this.channelRetention = Duration.ofSeconds(Math.max(1, channelRetentionSeconds));
@@ -106,11 +111,13 @@ public class ConversationEventMux {
     }
 
     public ConversationLiveEvent publish(String conversationId, String runId, AnswerLiveEvent runEvent) {
+        requireReadable(runId);
         cleanupIdleChannels();
-        Channel channel = channels.computeIfAbsent(conversationId, ignored -> new Channel());
+        Channel channel = channels.computeIfAbsent(conversationId, ignored -> newChannel(conversationId));
         ConversationLiveEvent event = publishToBridge(conversationId, runId, runEvent);
         List<Subscriber> subscribers;
         synchronized (channel) {
+            requireReadable(runId);
             if (event == null) {
                 event = new ConversationLiveEvent(
                         ++channel.sequence,
@@ -127,6 +134,7 @@ public class ConversationEventMux {
             channel.sequence = Math.max(channel.sequence, event.sequence());
             channel.lastTouchedAt = Instant.now();
             append(channel, event);
+            sequenceHighWater.merge(conversationId,channel.sequence,Math::max);
             subscribers = new ArrayList<>(channel.subscribers);
         }
         meterRegistry.counter(
@@ -134,6 +142,19 @@ public class ConversationEventMux {
         ConversationLiveEvent delivered = event;
         subscribers.forEach(subscriber -> subscriber.enqueue(delivered));
         return event;
+    }
+
+    public void redact(String conversationId, String runId) {
+        revokedRuns.add(runId);
+        Channel channel = channels.get(conversationId);
+        if (channel == null) return;
+        synchronized (channel) {
+            channel.replay.removeIf(event -> runId.equals(event.runId()));
+            // 关闭现有订阅清除已排队副本，客户端用快照恢复其他运行。
+        }
+        List<Subscriber> subscribers;
+        synchronized (channel) { subscribers = new ArrayList<>(channel.subscribers); }
+        subscribers.forEach(Subscriber::close);
     }
 
     public boolean hasSubscribers(String conversationId) {
@@ -156,12 +177,20 @@ public class ConversationEventMux {
             boolean closeOnAnswerTerminal
     ) {
         cleanupIdleChannels();
-        Channel channel = channels.computeIfAbsent(conversationId, ignored -> new Channel());
+        Channel channel = channels.computeIfAbsent(conversationId, ignored -> newChannel(conversationId));
+        List<ConversationLiveEvent> remote = bridge == null ? List.of()
+                : bridge.readConversationAfter(conversationId,after,Duration.ZERO);
         Subscriber subscriber = new Subscriber(channel, consumer, closeOnAnswerTerminal);
         List<ConversationLiveEvent> replay;
         synchronized (channel) {
             channel.lastTouchedAt = java.time.Instant.now();
-            replay = channel.replay.stream().filter(event -> event.sequence() > after).toList();
+            if (bridge == null && after < channel.evictedThrough) throw new com.noteweave.common.BusinessException(
+                    "CONVERSATION_EVENT_CURSOR_EXPIRED", "事件正文不完整，需要完成快照恢复", org.springframework.http.HttpStatus.CONFLICT);
+            java.util.TreeMap<Long,ConversationLiveEvent> merged = new java.util.TreeMap<>();
+            remote.stream().filter(event -> event.sequence()>after).forEach(event -> merged.put(event.sequence(),event));
+            channel.replay.stream().filter(event -> event.sequence()>after).forEach(event -> merged.put(event.sequence(),event));
+            replay = new ArrayList<>(merged.values());
+            subscriber.lastSequence = after;
             channel.subscribers.add(subscriber);
             activeSubscribers.incrementAndGet();
             subscriber.prime(replay);
@@ -170,9 +199,31 @@ public class ConversationEventMux {
         ensureBridgePump(conversationId, channel, Math.max(after, currentSequence(channel)));
         try {
             subscriber.await(timeout);
+            if (subscriber.failure != null) throw subscriber.failure;
         } finally {
             subscriber.close();
         }
+    }
+
+    private boolean readable(String runId) {
+        if (revokedRuns.contains(runId)) return false;
+        if (replayAccessGuard != null && !replayAccessGuard.isReadable(runId)) return false;
+        return bridge == null || !bridge.isReplayRevoked(runId);
+    }
+    private void requireReadable(String runId) {
+        if (!readable(runId)) throw new com.noteweave.common.BusinessException("ANSWER_REPLAY_REVOKED", "回答回放已撤销", org.springframework.http.HttpStatus.CONFLICT);
+    }
+    /** 新通道从高水位续号，避免清理后重新从 1 开始。 */
+    private Channel newChannel(String conversationId) {
+        Channel created = new Channel();
+        created.sequence = sequenceHighWater.getOrDefault(conversationId, 0L);
+        created.evictedThrough = created.sequence;
+        return created;
+    }
+
+    private void redactEvent(Channel channel,String runId) {
+        revokedRuns.add(runId);
+        synchronized (channel) { channel.replay.removeIf(event -> runId.equals(event.runId())); }
     }
 
     private void ensureBridgePump(String conversationId, Channel channel, long after) {
@@ -224,9 +275,13 @@ public class ConversationEventMux {
                 }
                 for (ConversationLiveEvent event : events) {
                     cursor = Math.max(cursor, event.sequence());
-                    acceptRemote(channel, event);
+                    acceptRemote(conversationId,channel, event);
                 }
             }
+        } catch (com.noteweave.common.BusinessException ex) {
+            List<Subscriber> affected;
+            synchronized (channel) { affected = new ArrayList<>(channel.subscribers); }
+            for (Subscriber subscriber : affected) { subscriber.failure = ex; subscriber.close(); }
         } finally {
             synchronized (channel) {
                 channel.bridgePumpRunning = false;
@@ -251,15 +306,17 @@ public class ConversationEventMux {
         }
     }
 
-    private void acceptRemote(Channel channel, ConversationLiveEvent event) {
+    private void acceptRemote(String conversationId,Channel channel, ConversationLiveEvent event) {
         List<Subscriber> subscribers;
         synchronized (channel) {
+            if (!readable(event.runId())) return;
             if (event.sequence() <= channel.sequence && contains(channel, event.sequence())) {
                 return;
             }
             channel.sequence = Math.max(channel.sequence, event.sequence());
             channel.lastTouchedAt = Instant.now();
             append(channel, event);
+            sequenceHighWater.merge(conversationId,channel.sequence,Math::max);
             subscribers = new ArrayList<>(channel.subscribers);
         }
         meterRegistry.counter(
@@ -270,7 +327,7 @@ public class ConversationEventMux {
     private void append(Channel channel, ConversationLiveEvent event) {
         channel.replay.addLast(event);
         while (channel.replay.size() > replayCapacity) {
-            channel.replay.removeFirst();
+            channel.evictedThrough = Math.max(channel.evictedThrough,channel.replay.removeFirst().sequence());
             meterRegistry.counter("noteweave.conversation.events.replay_trimmed").increment();
         }
     }
@@ -322,6 +379,8 @@ public class ConversationEventMux {
         private final boolean closeOnAnswerTerminal;
         private final CountDownLatch finished = new CountDownLatch(1);
         private final Deque<ConversationLiveEvent> pending = new ArrayDeque<>();
+        private long lastSequence;
+        private RuntimeException failure;
         private boolean draining;
         private boolean closed;
 
@@ -421,7 +480,10 @@ public class ConversationEventMux {
                     }
                 }
                 try {
+                    if (!readable(event.runId())) { redactEvent(channel,event.runId()); continue; }
+                    if (event.sequence() <= lastSequence) continue;
                     consumer.accept(event);
+                    lastSequence = event.sequence();
                 } catch (RuntimeException ex) {
                     close();
                     return;
@@ -463,6 +525,7 @@ public class ConversationEventMux {
 
     private final class Channel {
         private long sequence;
+        private long evictedThrough;
         private boolean bridgePumpRunning;
         private Instant lastTouchedAt = Instant.now();
         private final Deque<ConversationLiveEvent> replay = new ArrayDeque<>();

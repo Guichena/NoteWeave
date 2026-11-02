@@ -5,8 +5,6 @@ import com.noteweave.answer.strategy.EvidenceBundle;
 import com.noteweave.answer.strategy.EvidenceRetrievalResult;
 import com.noteweave.answer.strategy.EvidenceRetriever;
 import com.noteweave.answer.strategy.RetrievalPlan;
-import com.noteweave.answer.strategy.ScoreInfo;
-import com.noteweave.answer.strategy.ScoreOrigins;
 import com.noteweave.chat.NoteRetrievalService.NoteEntryMetadata;
 import com.noteweave.chat.NoteRetrievalService.NoteRecallPlan;
 import com.noteweave.chat.NoteRetrievalService.ReadingWindow;
@@ -73,10 +71,9 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
                 .toList();
         NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(recallPlan, metadataEntries, windows);
         // 窗口重排没跑成时，窗口上的分数来自融合阶段，不能当作模型分数用
-        boolean windowReranked = !ScoreOrigins.rerankUnavailable(reading.degradationReasons());
         List<EvidenceBundle.Evidence> evidence = java.util.stream.IntStream.range(0, windows.size())
                 .mapToObj(index -> toEvidence(
-                        windows.get(index), index, windows.size(), step.weight(), windowReranked))
+                        windows.get(index), index, windows.size(), step.weight()))
                 .toList();
         LinkedHashSet<String> degradationReasons = new LinkedHashSet<>(recallPlan.degradationReasons());
         degradationReasons.addAll(reading.degradationReasons());
@@ -95,8 +92,7 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
             ReadingWindow window,
             int index,
             int total,
-            double weight,
-            boolean windowReranked
+            double weight
     ) {
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("raw_title", text(window.title()));
@@ -130,9 +126,7 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
                 text(window.readRole()).isBlank() ? "source-window" : window.readRole(),
                 window.content() == null ? 0 : window.content().length(),
                 metadata,
-                windowReranked
-                        ? ScoreInfo.provider("", window.rerankScore())
-                        : ScoreInfo.lexical("", null)
+                window.scoreInfo()
         );
     }
 

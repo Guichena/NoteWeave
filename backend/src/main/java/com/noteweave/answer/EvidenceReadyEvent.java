@@ -17,7 +17,8 @@ import java.util.List;
 public record EvidenceReadyEvent(
         @JsonProperty("protocol_version") String protocolVersion,
         @JsonProperty("allowed_evidence_ids") List<String> allowedEvidenceIds,
-        @JsonProperty("citation_bindings") List<Binding> citationBindings
+        @JsonProperty("citation_bindings") List<Binding> citationBindings,
+        @JsonProperty("protocol_state") String protocolState
 ) {
 
     /** 事件名，与前端 {@code evidence.ready} 分支一致。 */
@@ -25,6 +26,22 @@ public record EvidenceReadyEvent(
 
     /** 协议版本，与证据清单接口的 protocolVersion 取同一个值。 */
     public static final String PROTOCOL_VERSION = AnswerEvidenceManifestResponse.PROTOCOL_VERSION;
+
+    public EvidenceReadyEvent(String version, List<String> allowed, List<Binding> bindings) {
+        this(version, allowed, bindings, "BINDING_V1");
+    }
+
+    public static EvidenceReadyEvent unknown() {
+        return new EvidenceReadyEvent(null, List.of(), List.of(), "UNKNOWN");
+    }
+
+    public static EvidenceReadyEvent legacy() {
+        return new EvidenceReadyEvent(null, List.of(), List.of(), "LEGACY");
+    }
+
+    public static EvidenceReadyEvent invalid() {
+        return new EvidenceReadyEvent(null, List.of(), List.of(), "INVALID");
+    }
 
     public EvidenceReadyEvent {
         allowedEvidenceIds = allowedEvidenceIds == null ? List.of() : List.copyOf(allowedEvidenceIds);

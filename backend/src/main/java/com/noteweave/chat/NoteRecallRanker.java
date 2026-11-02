@@ -220,7 +220,8 @@ public class NoteRecallRanker {
     ) {
         public ScoredCandidate(CandidateSource source, int metadataScore, int semanticScore,
                                int noteScore, int relationScore, int readinessScore, double rerankScore) {
-            this(source, metadataScore, semanticScore, noteScore, relationScore, readinessScore,
+            this(source.withSourceScoreInfo(com.noteweave.answer.strategy.ScoreInfo.fusion()),
+                    metadataScore, semanticScore, noteScore, relationScore, readinessScore,
                     rerankScore, source.score());
         }
 
@@ -246,9 +247,13 @@ public class NoteRecallRanker {
                     noteScore, relationScore, readinessScore, rerankScore, originalScore);
         }
 
+        public com.noteweave.answer.strategy.ScoreInfo scoreInfo() { return source.sourceScoreInfo(); }
         public ScoredCandidate withRerankScore(double score) {
+            return withRerankScore(score, com.noteweave.answer.strategy.ScoreInfo.unknown());
+        }
+        public ScoredCandidate withRerankScore(double score, com.noteweave.answer.strategy.ScoreInfo info) {
             int normalized = (int) Math.round(score * 1000);
-            return new ScoredCandidate(source.withScore(normalized), metadataScore, semanticScore,
+            return new ScoredCandidate(source.withScore(normalized).withSourceScoreInfo(info), metadataScore, semanticScore,
                     noteScore, relationScore, readinessScore, score, originalScore);
         }
     }

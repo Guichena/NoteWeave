@@ -179,17 +179,22 @@ export function useKnowledgeActions({
 
   /** 按版本 ID 加载指定版本：证据绑定的是版本身份，不按标题或最新版代替。 */
   const loadVersionById = useCallback(async (itemId: string, versionId: string) => {
-    const lease = gate.begin("version", workspaceId);
+    gate.cancel("version");
+    const lease = gate.begin("selection", workspaceId);
     try {
-      const versions = await api.getVersions(itemId, { signal: lease.signal });
+      const request = { signal: lease.signal };
+      const versions = await api.getVersions(itemId, request);
       const target = versions.find((entry) => entry.version_id === versionId);
-      if (!target) {
-        return null;
+      if (!target || !lease.isCurrent()) return null;
+      const [version, detail] = await Promise.all([
+        api.getVersion(itemId, target.version_no, request), api.getItem(itemId, request)
+      ]);
+      if (!lease.isCurrent()) return null;
+      if (version.item_id !== itemId || version.version_id !== versionId || detail.item_id !== itemId) {
+        throw new Error("引用版本身份不一致");
       }
-      const version = await api.getVersion(itemId, target.version_no, { signal: lease.signal });
-      if (lease.isCurrent()) {
-        dispatch({ type: "version", version });
-      }
+      // 目标与版本列表、页面元信息一起提交，不先展示最新正文。
+      dispatch({ type: "selection", snapshot: { itemId, detail, versions, version } });
       return version;
     } finally {
       lease.complete();

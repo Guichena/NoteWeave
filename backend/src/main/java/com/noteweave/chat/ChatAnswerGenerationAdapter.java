@@ -70,7 +70,9 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             return null;
         }
         try {
-            return objectMapper.readValue(json, GenerationContract.class);
+            GenerationContract contract = objectMapper.readValue(json, GenerationContract.class);
+            contract.requireValid();
+            return contract;
         } catch (Exception exception) {
             throw new BusinessException("ANSWER_GENERATION_CONTRACT_INVALID",
                     "冻结的生成契约无法解析：" + exception.getMessage(), HttpStatus.INTERNAL_SERVER_ERROR);

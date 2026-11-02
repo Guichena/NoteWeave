@@ -35,6 +35,54 @@ public class KnowledgeCitationReadGate {
         this.eligibilityPort = eligibilityPort;
     }
 
+    /** 生成准入：完整版本身份、当前版本及全部来源绑定快照必须仍然有效。 */
+    public void requireCurrentVersionEligible(String workspaceId,String itemId,String versionId) {
+        Integer current=jdbc.queryForObject("""
+                select count(*) from knowledge_item i join knowledge_version v on v.id=i.latest_version_id
+                where i.workspace_id=? and i.id=? and v.id=? and v.item_id=i.id and i.status='ACTIVE'
+                  and (i.origin is null or i.origin<>'SYSTEM_NAVIGATION')
+                """,Integer.class,workspaceId,itemId,versionId);
+        if(current==null || current!=1) throw revoked("知识页面或版本不再是当前有效证据");
+        String pageState = jdbc.queryForObject("select wiki_page_state from knowledge_item where workspace_id=? and id=?", String.class, workspaceId, itemId);
+        if (!"MANUAL".equals(pageState)) {
+            throw new BusinessException("KNOWLEDGE_PROVENANCE_UNVERIFIED",
+                    "自动知识版本缺少可信完整依赖标记，不能作为当前生成证据", HttpStatus.CONFLICT);
+        }
+        List<String> citations=jdbc.queryForList("select citation_id from knowledge_version_citation where knowledge_version_id=? order by sort_order,id",String.class,versionId);
+        // 本期不伪造旧自动页的完整依赖；资料编译型Wiki至少必须有来源身份。
+        if(citations.isEmpty()) throw revoked("知识版本缺少可验证依赖");
+        requireCitationIdsCurrent(workspaceId,citations);
+    }
+
+    public void requireCitationIdsCurrent(String workspaceId,List<String> citationIds) {
+        for(String id:citationIds.stream().distinct().toList()) {
+            List<String[]> origins=jdbc.query("select source_id,source_snapshot_id,research_run_id,research_evidence_key from citation where workspace_id=? and id=?",
+                    (rs,n)->new String[]{rs.getString(1),rs.getString(2),rs.getString(3),rs.getString(4)},workspaceId,id);
+            if(origins.size()!=1) throw revoked("引用不存在或不属于当前工作台");
+            String[] origin=origins.get(0);
+            if(origin[0]!=null && !origin[0].isBlank()) {
+                if(origin[1]==null || origin[1].isBlank()) throw revoked("引用缺少绑定快照");
+                OriginRef ref = OriginRef.internalSnapshot(origin[0], origin[1]);
+                var decision = eligibilityPort.assess(workspaceId, List.of(ref), AccessPurpose.CURRENT_EVIDENCE).get(ref.originKey());
+                if (decision == null || !decision.evidenceEligible() || !origin[1].equals(decision.snapshotId()))
+                    throw revoked("引用绑定快照失效或资格结果缺失");
+            } else if(origin[2]!=null && !origin[2].isBlank() && origin[3]!=null && !origin[3].isBlank()) {
+                Integer valid=jdbc.queryForObject("""
+                        select count(*) from research_run r join source_evidence e on e.research_run_id=r.id
+                        left join run_input_snapshot s on s.id=r.context_snapshot_id
+                        where r.workspace_id=? and r.id=? and r.status='COMPLETED' and e.evidence_key=?
+                          and (s.id is null or s.replay_availability='FULL')
+                        """,Integer.class,workspaceId,origin[2],origin[3]);
+                if(valid==null || valid!=1 || !eligibilityPort.assessGeneratedDependenciesDetailed(workspaceId,"research_agent",origin[2],AccessPurpose.CURRENT_EVIDENCE).allAllowed(AccessPurpose.CURRENT_EVIDENCE))
+                    throw revoked("研究引用身份或依赖已失效");
+            } else throw revoked("引用缺少合法来源身份");
+        }
+    }
+
+    private BusinessException revoked(String reason) {
+        return new BusinessException("KNOWLEDGE_CITATION_REVOKED",reason,HttpStatus.CONFLICT);
+    }
+
     /** 旧签名：当前证据语义，与既有行为一致。 */
     public void requireReadable(String workspaceId, String versionId) {
         requireReadable(workspaceId, versionId, AccessPurpose.CURRENT_EVIDENCE);

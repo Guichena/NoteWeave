@@ -110,7 +110,7 @@ class ConversationEventMuxTest {
                 "conversation-retained", "run-2", runEvent(2, "answer.delta", "new"));
 
         assertThat(first.sequence()).isEqualTo(1L);
-        assertThat(next.sequence()).isEqualTo(1L);
+        assertThat(next.sequence()).isEqualTo(2L);
     }
 
     @Test
@@ -138,6 +138,23 @@ class ConversationEventMuxTest {
         } finally {
             bridgeExecutor.shutdownNow();
         }
+    }
+
+
+    @Test
+    void redactionCannotBeRepopulatedByLatePublisher() {
+        ConversationEventMux mux = new ConversationEventMux((AnswerRealtimeBridge)null,Runnable::run,Runnable::run,new SimpleMeterRegistry(),32,8);
+        mux.redact("conversation","deleted");
+        assertThatThrownBy(() -> mux.publish("conversation","deleted",runEvent(1,"answer.delta","secret")))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
+    }
+
+    @Test
+    void trimmedConversationMustRequireRecoveryEvenFromZeroCursor() {
+        ConversationEventMux mux = new ConversationEventMux((AnswerRealtimeBridge)null,Runnable::run,Runnable::run,new SimpleMeterRegistry(),32,8);
+        for(int i=0;i<40;i++) mux.publish("trimmed","run",runEvent(i+1,"answer.delta","x"));
+        assertThatThrownBy(() -> mux.follow("trimmed",0,ignored->{},Duration.ofMillis(5),false))
+                .isInstanceOf(com.noteweave.common.BusinessException.class);
     }
 
     private AnswerLiveEvent runEvent(long sequence, String type, String data) {
