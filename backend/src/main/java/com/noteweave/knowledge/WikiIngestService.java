@@ -564,7 +564,8 @@ public class WikiIngestService {
         }
         // 在写入资料页之前清理旧概念页，写入时的自动链接就不会再指向即将删除的页面
         pruneOrphanedConceptPages(workspaceId, source.title(), concepts);
-        List<String> citationIds = createCitations(workspaceId, chunks, 3);
+        // 编译输入、正文模板与 citation 依赖使用同一份冻结片段集合：正文里出现的每个片段都要有依赖
+        List<String> citationIds = createCitations(workspaceId, chunks);
         KnowledgeItemResponse sourcePage = knowledgeCommandService
                 .upsertWikiSourcePageForInternalExecution(
                         workspaceId,
@@ -584,7 +585,9 @@ public class WikiIngestService {
                     concept,
                     6
             );
-            List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks, 4);
+            // 相关资料小节的来源级摘要也会进入正文；没有片段的来源补一条代表片段，避免摘要无血缘
+            relatedChunks = withSourceCoverage(workspaceId, relatedSources, relatedChunks);
+            List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks);
             String summaryFingerprint = summaryFingerprint(concept, relatedChunks);
             String summary = reusableSummary(workspaceId, concept, summaryFingerprint);
             if (summary == null) {
@@ -738,7 +741,7 @@ public class WikiIngestService {
         return loadChunksForSources(workspaceId, List.of(sourceId), 5);
     }
 
-    private List<ChunkForWiki> loadChunksForSources(String workspaceId, List<String> sourceIds, int limit) {
+    List<ChunkForWiki> loadChunksForSources(String workspaceId, List<String> sourceIds, int limit) {
         if (sourceIds == null || sourceIds.isEmpty()) {
             return List.of();
         }
@@ -747,10 +750,21 @@ public class WikiIngestService {
         params.add(workspaceId);
         params.addAll(sourceIds);
         params.add(limit);
+        // 编译只读当前 INDEXED 快照的已投影片段：旧快照正文不能进入页面正文或 citation 依赖
         return jdbcTemplate.query("""
                 select c.id, c.source_id, c.source_snapshot_id, c.heading, c.content, c.location_info
                 from source_chunk c
+                join source s on s.id = c.source_id and s.workspace_id = c.workspace_id
+                join source_snapshot ss on ss.id = c.source_snapshot_id and ss.source_id = s.id
                 where c.workspace_id = ? and c.source_id in (%s)
+                  and s.status = 'READY' and s.index_status = 'INDEXED'
+                  and ss.index_status = 'INDEXED'
+                  and ss.version_no = (
+                      select max(current_ss.version_no)
+                      from source_snapshot current_ss
+                      where current_ss.source_id = s.id and current_ss.index_status = 'INDEXED'
+                  )
+                  and c.projection_status = 'PROJECTED'
                 order by c.chunk_no asc
                 limit ?
                 """.formatted(placeholders), (rs, rowNum) -> new ChunkForWiki(
@@ -782,7 +796,17 @@ public class WikiIngestService {
         List<ChunkForWiki> mentioning = jdbcTemplate.query("""
                 select c.id, c.source_id, c.source_snapshot_id, c.heading, c.content, c.location_info
                 from source_chunk c
+                join source s on s.id = c.source_id and s.workspace_id = c.workspace_id
+                join source_snapshot ss on ss.id = c.source_snapshot_id and ss.source_id = s.id
                 where c.workspace_id = ? and c.source_id in (%s)
+                  and s.status = 'READY' and s.index_status = 'INDEXED'
+                  and ss.index_status = 'INDEXED'
+                  and ss.version_no = (
+                      select max(current_ss.version_no)
+                      from source_snapshot current_ss
+                      where current_ss.source_id = s.id and current_ss.index_status = 'INDEXED'
+                  )
+                  and c.projection_status = 'PROJECTED'
                   and (lower(c.content) like ? or lower(coalesce(c.heading, '')) like ?)
                 order by c.chunk_no asc
                 limit ?
@@ -802,6 +826,33 @@ public class WikiIngestService {
         for (ChunkForWiki chunk : loadChunksForSources(workspaceId, sourceIds, limit)) {
             if (result.size() >= limit) break;
             if (seen.add(chunk.chunkId())) result.add(chunk);
+        }
+        return result;
+    }
+
+    /**
+     * 概念页正文会引用相关资料摘要。没有任何片段的来源补一条代表片段，
+     * 让正文模板与 citation 依赖使用同一份完整集合，来源级摘要也有血缘故障。
+     */
+    List<ChunkForWiki> withSourceCoverage(
+            String workspaceId,
+            List<SourceForWiki> sources,
+            List<ChunkForWiki> chunks
+    ) {
+        java.util.Set<String> covered = new java.util.HashSet<>();
+        for (ChunkForWiki chunk : chunks) {
+            covered.add(chunk.sourceId());
+        }
+        List<ChunkForWiki> result = new ArrayList<>(chunks);
+        for (SourceForWiki source : sources) {
+            if (!covered.add(source.sourceId())) {
+                continue;
+            }
+            List<ChunkForWiki> representative = loadChunksForSources(
+                    workspaceId, List.of(source.sourceId()), 1);
+            if (!representative.isEmpty()) {
+                result.add(representative.get(0));
+            }
         }
         return result;
     }
@@ -867,8 +918,9 @@ public class WikiIngestService {
         ), workspaceId, keyword, keyword, keyword, limit);
     }
 
-    private List<String> createCitations(String workspaceId, List<ChunkForWiki> chunks, int limit) {
-        return chunks.stream().limit(limit).map(chunk -> {
+    /** 正文模板里使用的每个冻结片段都建立 citation 依赖，不再按展示前缀截断依赖集合。 */
+    List<String> createCitations(String workspaceId, List<ChunkForWiki> chunks) {
+        return chunks.stream().map(chunk -> {
             String citationId = Ids.newId();
             jdbcTemplate.update("""
                     insert into citation(id, workspace_id, source_id, source_snapshot_id, source_chunk_id, title, quote_text, page_no, location_info)
@@ -961,11 +1013,17 @@ public class WikiIngestService {
 
     private void refreshWorkspaceIndexPage(String workspaceId, String triggerTitle) {
         List<SimpleWikiPage> pages = loadActiveWikiPages(workspaceId);
-        List<ChunkForWiki> overviewChunks = loadRecentWorkspaceChunks(workspaceId, 4);
-        List<String> citationIds = createCitations(workspaceId, overviewChunks, 4);
         String content = buildWorkspaceIndexPageContent(workspaceId, triggerTitle, pages);
-        knowledgeCommandService.upsertWikiPageForInternalExecution(
-                workspaceId, "Wiki Index", content, citationIds);
+        // 导航目录只做页面导航：不再把最近资料片段复制进目录并绑定成来源依赖
+        KnowledgeItemResponse indexPage = knowledgeCommandService.upsertWikiPageForInternalExecution(
+                workspaceId, "Wiki Index", content, List.of());
+        // 目录页带导航身份，退出事实检索、PPR 证据集合与生成契约；与发布同一事务写入
+        jdbcTemplate.update("""
+                update knowledge_item
+                set origin = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ?
+                """, KnowledgeCitationReadGate.SYSTEM_NAVIGATION_ORIGIN,
+                workspaceId, indexPage.itemId());
     }
 
     private String buildWorkspaceIndexPageContent(String workspaceId, String triggerTitle, List<SimpleWikiPage> pages) {
@@ -1116,10 +1174,10 @@ public class WikiIngestService {
         return value.substring(0, Math.max(0, max - 1)) + "...";
     }
 
-    private record SourceForWiki(String sourceId, String title, String sourceType, String summary, String tagsJson) {
+    record SourceForWiki(String sourceId, String title, String sourceType, String summary, String tagsJson) {
     }
 
-    private record ChunkForWiki(String chunkId, String sourceId, String sourceSnapshotId, String heading, String content, String locationInfo) {
+    record ChunkForWiki(String chunkId, String sourceId, String sourceSnapshotId, String heading, String content, String locationInfo) {
     }
 
     private record SimpleWikiPage(String title, String pageKind, String summary) {

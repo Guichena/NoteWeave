@@ -83,8 +83,17 @@ public class NoteReadingPlanner {
     }
 
     private List<ReadingWindow> select(List<ReadingWindow> windows, int limit) {
-        if (windows.isEmpty()) return List.of();
-        List<ReadingWindow> ranked = windows.stream()
+        if (windows == null || windows.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        // 空正文与未装载窗口不进入阅读计划：不能占主窗口、延续窗口或次要窗口名额
+        List<ReadingWindow> usable = windows.stream()
+                .filter(window -> window.content() != null && !window.content().isBlank())
+                .toList();
+        if (usable.isEmpty()) {
+            return List.of();
+        }
+        List<ReadingWindow> ranked = usable.stream()
                 .sorted(Comparator.comparingInt(ReadingWindow::score).reversed()
                         .thenComparingInt(ReadingWindow::chunkNo).thenComparingInt(ReadingWindow::windowNo)).toList();
         ReadingWindow primary = ranked.get(0).withReadRole("primary-window")
@@ -94,10 +103,10 @@ public class NoteReadingPlanner {
         Set<String> seen = new LinkedHashSet<>();
         seen.add(key(primary));
         Map<Integer, Integer> maxWindowByChunk = new HashMap<>();
-        for (ReadingWindow window : windows) {
+        for (ReadingWindow window : usable) {
             maxWindowByChunk.merge(window.chunkNo(), window.windowNo(), Math::max);
         }
-        windows.stream().filter(window -> continuation(window, primary, maxWindowByChunk) && seen.add(key(window)))
+        usable.stream().filter(window -> continuation(window, primary, maxWindowByChunk) && seen.add(key(window)))
                 .sorted(Comparator.comparingInt((ReadingWindow window) -> Math.abs(window.chunkNo() - primary.chunkNo()) * 10
                                 + Math.abs(window.windowNo() - primary.windowNo()))
                         .thenComparing(Comparator.comparingInt(ReadingWindow::score).reversed()))
@@ -136,7 +145,9 @@ public class NoteReadingPlanner {
                 && primary.windowNo() == primaryMax;
     }
 
+    /** 窗口键包含来源、快照、块与窗口号四段；同源切换快照不能被合并成同一窗口。 */
     private String key(ReadingWindow window) {
-        return window.sourceId() + ":" + window.chunkNo() + ":" + window.windowNo();
+        return window.sourceId() + ":" + text(window.sourceSnapshotId()) + ":"
+                + window.chunkNo() + ":" + window.windowNo();
     }
 }

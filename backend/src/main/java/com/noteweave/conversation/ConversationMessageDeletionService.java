@@ -44,6 +44,14 @@ public class ConversationMessageDeletionService {
                 throw new BusinessException("CONVERSATION_MESSAGE_NOT_FOUND", "Conversation message not found", HttpStatus.NOT_FOUND);
             }
         }
+        // F2-04：删除来源消息时撤销会话前提并清空展示文本，冻结视图不能再回放该陈述
+        jdbcTemplate.update("""
+                update conversation_premise
+                set status = 'REVOKED', premise_text = '', invalid_after_seq = null,
+                    updated_at = current_timestamp
+                where workspace_id = ? and source_message_id = ?
+                  and status in ('ACTIVE', 'UNRESOLVED')
+                """, workspaceId, messageId);
         replayRedactionService.redactDeletedConversationMessage(workspaceId, messageId);
         jdbcTemplate.update("""
                 update conversation_segment set lock_version = lock_version + 1

@@ -36,7 +36,10 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
     public static final String GRAPH_CHARACTER_LIMIT_METADATA = "wiki_graph_character_limit";
     public static final String GRAPH_PATH_METADATA = "graph_path";
     /** Matches the per-item graph character cap in {@code WikiAnswerModeStrategy}. */
-    public static final int MAX_EXCERPT_CHARS = 4000;
+    public static final int MAX_EXCERPT_CHARS = WikiPageEvidence.MAX_EXCERPT_CHARS;
+
+    /** 种子候选上限与总候选上限分开：步内候选只限制召回种子，预算上限限制种子加图扩展的总量。 */
+    public static final int SEED_CANDIDATE_LIMIT = 5;
 
     private final WikiRetrievalQueryPort wikiRetrievalQueryPort;
     private final WikiRetrievalSnapshotCodec snapshotCodec;
@@ -79,7 +82,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 ? wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query)
                 : wikiRetrievalQueryPort.findRelevantWikiPageContexts(context.workspaceId(), query, boost))
                 .stream()
-                .limit(Math.max(0, step.candidateLimit()))
+                // 种子上限只限制召回页；图扩展名额由预算单独给出，不能把两者合成一个数字
+                .limit(Math.max(0, Math.min(step.candidateLimit(), SEED_CANDIDATE_LIMIT)))
                 .toList();
         List<String> degradationReasons = wikiRetrievalQueryPort.consumeWikiDegradationReasons();
         if (degradationReasons == null) {
@@ -109,7 +113,10 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                             workspaceId, itemIds);
                     return loaded == null ? List.of() : loaded;
                 });
-        List<WikiPageContext> contexts = graph.contexts();
+        // 总候选上限来自计划预算：种子与扩展共用这个上限，但扩大上限不会放宽种子上限
+        int totalCandidateLimit = plan.budget() == null
+                ? graph.contexts().size() : Math.max(0, plan.budget().maxEvidence());
+        List<WikiPageContext> contexts = graph.contexts().stream().limit(totalCandidateLimit).toList();
         List<String> citationIds = wikiRetrievalQueryPort.citationIdsForWikiPages(context.workspaceId(),
                 contexts.stream().map(WikiPageContext::page).toList());
         WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(contexts, citationIds);
@@ -175,7 +182,8 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
             java.util.Map<String, List<String>> graphPaths
     ) {
         KnowledgePageHit page = context.page();
-        String excerpt = page.summary().isBlank() ? boundedContent(page.content()) : page.summary();
+        // 正文、Judge、生成提示和成本计费共用同一份页面证据正文
+        String excerpt = WikiPageEvidence.excerpt(page);
         Map<String, String> metadata = new LinkedHashMap<>();
         metadata.put("version_no", Integer.toString(page.versionNo()));
         metadata.put("outgoing_link_count", Integer.toString(context.outgoingLinks().size()));
@@ -213,16 +221,9 @@ public class WikiEvidenceRetriever implements EvidenceRetriever {
                 "workspace-knowledge:" + page.itemId(),
                 java.time.Instant.now(),
                 "wiki-page-graph",
-                excerpt == null ? 0 : excerpt.length(),
+                WikiPageEvidence.cost(page),
                 metadata,
                 scoreInfo
         );
-    }
-
-    private static String boundedContent(String content) {
-        if (content == null || content.length() <= MAX_EXCERPT_CHARS) {
-            return content;
-        }
-        return content.substring(0, MAX_EXCERPT_CHARS) + "…";
     }
 }

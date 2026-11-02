@@ -179,14 +179,13 @@ class EvidenceSufficiencyJudgeTest {
     }
 
     @Test
-    void judgeReadsTheHitPassageInsteadOfTheLeadingAdjacentContext() {
-        String content = "[adjacent chunk 3 - 背景]\n" + "前".repeat(300) + "\n\n命中段落：RRF K 取 60"
-                + "\n\n[adjacent chunk 5]\n后续内容";
-
-        assertThat(EvidenceSufficiencyJudge.hitText(content)).isEqualTo("命中段落：RRF K 取 60");
+    void judgeReadsTheHitPassageDirectlyBecauseAdjacentBlocksAreNotMerged() {
+        // 邻块不再拼进命中块正文，判据收到什么就用什么，不再做字符串剥离
+        String content = "命中段落：RRF K 取 60";
+        assertThat(EvidenceSufficiencyJudge.hitText(content)).isEqualTo(content);
         assertThat(EvidenceSufficiencyJudge.hitText("没有相邻段落\n\n第二段")).isEqualTo("没有相邻段落\n\n第二段");
-        assertThat(EvidenceSufficiencyJudge.hitText("[adjacent chunk 1]\n只有相邻段落"))
-                .isEqualTo("[adjacent chunk 1]\n只有相邻段落");
+        assertThat(EvidenceSufficiencyJudge.hitText("  前后有空白  ")).isEqualTo("前后有空白");
+        assertThat(EvidenceSufficiencyJudge.hitText(null)).isEmpty();
     }
 
     private EvidenceSufficiencyJudge.Judgement combine(
