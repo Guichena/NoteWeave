@@ -49,6 +49,8 @@ class ResearchReportGroundingContractTest {
                         "grounding_refs", List.of(researchRunId)), 200);
         String runId = receipt.path("answer_run_id").asText();
         String assistantMessageId = receipt.path("assistant_message_id").asText();
+        // 提交回执先于生成返回，后面的断言依赖收尾后的正文与引用，先等运行结束再读
+        awaitAnswerCompleted(runId);
 
         // 只取报告正文引用过的证据，引用核对小节里才出现的证据键不参与；与问题词项重合多的排在前面
         List<Map<String, Object>> manifest = jdbc.queryForList("""
@@ -148,6 +150,28 @@ class ResearchReportGroundingContractTest {
                 Map.of("retrieval_strategy", "AUTO", "retrieval_channels", List.of("REPORT"),
                         "grounding_refs", List.of(running)), 200);
         assertThat(degradationOf(pending)).contains("RESEARCH_REPORT_NOT_COMPLETED");
+    }
+
+    // 提交回执先于生成返回，等运行进入终态再断言正文、引用与依赖校验
+    private void awaitAnswerCompleted(String runId) {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+        String status = null;
+        while (System.nanoTime() < deadline) {
+            status = jdbc.queryForObject("select status from answer_run where id = ?", String.class, runId);
+            if ("COMPLETED".equals(status)) {
+                return;
+            }
+            if ("FAILED".equals(status) || "CANCELLED".equals(status)) {
+                throw new IllegalStateException("回答运行没有成功结束: " + status);
+            }
+            try {
+                Thread.sleep(20L);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("等待回答运行时被中断", ex);
+            }
+        }
+        throw new IllegalStateException("等待回答运行结束超时: " + status);
     }
 
     // 回执在检索前生成，降级原因随证据快照保存在回答运行上

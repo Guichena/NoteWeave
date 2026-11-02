@@ -186,7 +186,7 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                         .append(item.metadata().getOrDefault(ResearchReportEvidenceRetriever.METADATA_REPORT_TITLE, ""))
                         .append("》引用的网页）");
             }
-            answer.append("：").append(trim(item.excerpt(), 900)).append("\n");
+            answer.append("：").append(item.excerpt()).append("\n");
         }
         answer.append("\n")
                 .append(context.attributes().getOrDefault(ATTRIBUTE_CHAT_CONTROL_SECTION, ""));

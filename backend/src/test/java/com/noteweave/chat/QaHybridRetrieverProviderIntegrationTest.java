@@ -51,8 +51,10 @@ class QaHybridRetrieverProviderIntegrationTest {
         assertThat(result.chunks()).extracting(QaPassageRetriever.RetrievedChunk::chunkId)
                 .containsExactly("keyword", "shared", "semantic");
         assertThat(result.chunks()).allMatch(chunk -> chunk.matchReason().contains("weighted-rrf"));
+        // 邻块不再并入命中块正文，正文只含命中块自己的内容
         assertThat(result.chunks().stream().filter(chunk -> chunk.chunkId().equals("shared")).findFirst().orElseThrow().content())
-                .contains("neighbor context", "checkpoint content shared");
+                .contains("checkpoint content shared")
+                .doesNotContain("neighbor context");
         assertThat(result.measurements())
                 .containsEntry("vector_candidate_count", 2L)
                 .containsEntry("keyword_candidate_count", 2L)

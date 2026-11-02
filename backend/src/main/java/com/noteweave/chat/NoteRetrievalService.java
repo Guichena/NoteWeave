@@ -136,32 +136,58 @@ public class NoteRetrievalService {
             int totalQueryTerms,
             String selectionReason,
             String verifyAdmissionReason,
-            ScoreInfo sourceScoreInfo
+            ScoreInfo sourceScoreInfo,
+            String sourceSnapshotId
     ) {
-        public CandidateSource { sourceScoreInfo = sourceScoreInfo == null ? ScoreInfo.unknown() : sourceScoreInfo; }
+        public CandidateSource {
+            sourceScoreInfo = sourceScoreInfo == null ? ScoreInfo.unknown() : sourceScoreInfo;
+            sourceSnapshotId = sourceSnapshotId == null ? "" : sourceSnapshotId;
+        }
+        /**
+         * 兼容构造：旧调用方没有快照列。空快照在窗口查询里按"当前快照"处理，
+         * 不能拿空值当成任意快照通配。
+         */
+        public CandidateSource(String sourceId, String title, String sourceType, int chunkCount, int windowCount,
+                String generatedBy, String generatedRefId, String summary, String tagsJson, String metadataJson,
+                String sampleText, int score, String recallSignals, List<String> matchedFields, List<String> coverageTerms,
+                int coveredQueryTerms, int totalQueryTerms, String selectionReason, String verifyAdmissionReason,
+                ScoreInfo sourceScoreInfo) {
+            this(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson,
+                    metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms,
+                    totalQueryTerms, selectionReason, verifyAdmissionReason, sourceScoreInfo, "");
+        }
+        public CandidateSource(String sourceId, String title, String sourceType, int chunkCount, int windowCount,
+                String generatedBy, String generatedRefId, String summary, String tagsJson, String metadataJson,
+                String sampleText, int score, String recallSignals, List<String> matchedFields, List<String> coverageTerms,
+                int coveredQueryTerms, int totalQueryTerms, String selectionReason, String verifyAdmissionReason,
+                String sourceSnapshotId) {
+            this(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson,
+                    metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms,
+                    totalQueryTerms, selectionReason, verifyAdmissionReason, ScoreInfo.unknown(), sourceSnapshotId);
+        }
         public CandidateSource(String sourceId, String title, String sourceType, int chunkCount, int windowCount,
                 String generatedBy, String generatedRefId, String summary, String tagsJson, String metadataJson,
                 String sampleText, int score, String recallSignals, List<String> matchedFields, List<String> coverageTerms,
                 int coveredQueryTerms, int totalQueryTerms, String selectionReason, String verifyAdmissionReason) {
             this(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson,
                     metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms,
-                    totalQueryTerms, selectionReason, verifyAdmissionReason, ScoreInfo.unknown());
+                    totalQueryTerms, selectionReason, verifyAdmissionReason, ScoreInfo.unknown(), "");
         }
         CandidateSource withSourceScoreInfo(ScoreInfo info) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId,
                     summary, tagsJson, metadataJson, sampleText, score, recallSignals, matchedFields, coverageTerms,
-                    coveredQueryTerms, totalQueryTerms, selectionReason, verifyAdmissionReason, info);
+                    coveredQueryTerms, totalQueryTerms, selectionReason, verifyAdmissionReason, info, sourceSnapshotId);
         }
         CandidateSource withScore(int nextScore) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     nextScore, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo, sourceSnapshotId);
         }
 
         CandidateSource withRecallSignals(String nextRecallSignals) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, nextRecallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo, sourceSnapshotId);
         }
 
         CandidateSource withMetadataRank(
@@ -172,19 +198,19 @@ public class NoteRetrievalService {
         ) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, nextMatchedFields, nextCoverageTerms, nextCoveredQueryTerms, nextTotalQueryTerms,
-                    selectionReason, verifyAdmissionReason, sourceScoreInfo);
+                    selectionReason, verifyAdmissionReason, sourceScoreInfo, sourceSnapshotId);
         }
 
         CandidateSource withSelectionReason(String nextSelectionReason) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    nextSelectionReason, verifyAdmissionReason, sourceScoreInfo);
+                    nextSelectionReason, verifyAdmissionReason, sourceScoreInfo, sourceSnapshotId);
         }
 
         CandidateSource withVerifyAdmissionReason(String nextVerifyAdmissionReason) {
             return new CandidateSource(sourceId, title, sourceType, chunkCount, windowCount, generatedBy, generatedRefId, summary, tagsJson, metadataJson, sampleText,
                     score, recallSignals, matchedFields, coverageTerms, coveredQueryTerms, totalQueryTerms,
-                    selectionReason, nextVerifyAdmissionReason, sourceScoreInfo);
+                    selectionReason, nextVerifyAdmissionReason, sourceScoreInfo, sourceSnapshotId);
         }
 
         String metadataForScoring() {

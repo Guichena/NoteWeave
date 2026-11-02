@@ -73,21 +73,35 @@ public class NoteReadingRetriever {
                     "note_window_rerank_count", 0L
             ));
         }
-        List<String> sourceIds = sources.stream().map(CandidateSource::sourceId).toList();
         // 语义命中先于装载：命中 chunk 集合驱动窗口身份选择，文末窗口可进入候选池
         SemanticScoreResult semantic = semanticChunkScores(
                 workspaceId, sources, safeChannels.vectorQuery());
         Map<String, Double> semanticByChunk = semantic.scores();
         Set<String> lexicalTerms = LexicalTerms.queryTerms(safeChannels.lexicalQuery());
+        // 候选来源把召回阶段选中的快照透传给窗口装载：同源多快照不串窗，快照已变更的来源整源退出
         RetrievalHydrator.WindowIndexResult index = hydrator.loadWindowIndex(
-                workspaceId, sourceIds, List.copyOf(semanticByChunk.keySet()),
-                List.copyOf(lexicalTerms), RetrievalHydrator.WindowIndexBudget.defaults());
+                workspaceId,
+                sources.stream()
+                        .map(source -> new RetrievalHydrator.SourceScope(
+                                source.sourceId(), source.sourceSnapshotId()))
+                        .toList(),
+                List.copyOf(semanticByChunk.keySet()),
+                semanticByChunk,
+                List.copyOf(lexicalTerms),
+                RetrievalHydrator.WindowIndexBudget.defaults());
         RetrievalHydrator.BodyLoadResult bodies = hydrator.hydrateWindowBodies(
                 workspaceId, index.windows(), RetrievalHydrator.WindowBodyBudget.defaults());
         Map<String, List<ReadingWindow>> windows = new LinkedHashMap<>();
+        int emptyBodyDropped = 0;
         for (RetrievalHydrator.WindowIdentity identity : index.windows()) {
+            String content = bodies.contentById().get(identity.id());
+            // 空正文与未装载窗口不进入阅读候选：不能占阅读角色，也不能占 topN
+            if (content == null || content.isBlank()) {
+                emptyBodyDropped++;
+                continue;
+            }
             windows.computeIfAbsent(identity.sourceId(), ignored -> new ArrayList<>())
-                    .add(identity.toReadingWindow(bodies.contentById().getOrDefault(identity.id(), "")));
+                    .add(identity.toReadingWindow(content));
         }
         List<ReadingWindow> selected = new ArrayList<>();
         for (CandidateSource source : sources) {
@@ -105,6 +119,10 @@ public class NoteReadingRetriever {
         LinkedHashSet<String> degradationReasons = new LinkedHashSet<>();
         degradationReasons.addAll(semantic.degradationReasons());
         degradationReasons.addAll(reranked.degradationReasons());
+        if (index.droppedSnapshotSources() > 0) {
+            // 召回时的快照已不是当前版本：整源退出，不混用新快照窗口
+            degradationReasons.add("NOTE_SOURCE_SNAPSHOT_CHANGED");
+        }
         RetrievalHydrator.WindowLoadUsage windowUsage = hydrator.lastWindowLoadUsage();
         if (windowUsage != null && windowUsage.byteTruncated()) {
             degradationReasons.add("NOTE_WINDOW_BYTE_BUDGET_EXCEEDED");
@@ -132,6 +150,9 @@ public class NoteReadingRetriever {
                 windowUsage == null ? 0L : windowUsage.droppedByBudget());
         measurements.put("note_window_dropped_oversized",
                 windowUsage == null ? 0L : windowUsage.droppedOversized());
+        // 空正文/未装载窗口不占阅读角色与 topN，只作为诊断计数
+        measurements.put("note_window_dropped_empty_body", (long) emptyBodyDropped);
+        measurements.put("note_window_snapshot_changed_sources", (long) index.droppedSnapshotSources());
         return new ReadingResult(
                 reranked.windows(),
                 !degradationReasons.isEmpty(),
@@ -205,8 +226,10 @@ public class NoteReadingRetriever {
         }
     }
 
+    /** 窗口键包含来源、快照、块与窗口号四段；同源切换快照不能被合并成同一窗口。 */
     private String windowKey(ReadingWindow window) {
-        return window.sourceId() + ":" + window.chunkNo() + ":" + window.windowNo();
+        return window.sourceId() + ":" + text(window.sourceSnapshotId()) + ":"
+                + window.chunkNo() + ":" + window.windowNo();
     }
 
     private String text(String value) {
@@ -222,9 +245,19 @@ public class NoteReadingRetriever {
         try {
             List<Float> vector = embeddingClient.embedQuery(query).singleVector();
             Set<String> scope = sources.stream().map(CandidateSource::sourceId).collect(java.util.stream.Collectors.toSet());
+            Map<String, String> snapshotBySource = new HashMap<>();
+            for (CandidateSource source : sources) {
+                snapshotBySource.putIfAbsent(source.sourceId(), source.sourceSnapshotId());
+            }
             Map<String, Double> scores = new HashMap<>();
             for (var hit : chunkSearchPort.vectorRetrieve(
                     new QaVectorQuery(workspaceId, query, vector, scope, 80, 0))) {
+                // 语义命中也要遵守候选来源的冻结快照：旧快照命中不能借新快照窗口进入证据
+                String expectedSnapshot = snapshotBySource.get(hit.sourceId());
+                if (expectedSnapshot != null && !expectedSnapshot.isBlank()
+                        && !expectedSnapshot.equals(hit.sourceSnapshotId())) {
+                    continue;
+                }
                 scores.put(hit.chunkId(), hit.score());
             }
             return new SemanticScoreResult(Map.copyOf(scores), List.of());

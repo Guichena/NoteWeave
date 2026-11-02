@@ -66,7 +66,9 @@ public class NoteEvidenceRetriever implements EvidenceRetriever {
             reading = readingRetriever.retrieveWithDiagnostics(
                     context.workspaceId(), recallPlan.verifySources(), channels);
         }
+        // 空正文与未装载窗口不占候选上限，也不能成为证据
         List<ReadingWindow> windows = reading.windows().stream()
+                .filter(window -> window.content() != null && !window.content().isBlank())
                 .limit(Math.max(0, step.candidateLimit()))
                 .toList();
         NoteRetrievalSnapshot snapshot = new NoteRetrievalSnapshot(recallPlan, metadataEntries, windows);

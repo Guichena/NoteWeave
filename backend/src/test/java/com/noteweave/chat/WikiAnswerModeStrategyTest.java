@@ -167,6 +167,35 @@ class WikiAnswerModeStrategyTest {
                 .contains("被这些页面引用：OnlyOnFourth");
     }
 
+    @Test
+    void promptUsesFrozenEvidenceExcerptInsteadOfReTrimmingPageContent() {
+        String excerpt = "统一正文" + "字".repeat(2_000);
+        WikiRetrievalSnapshot snapshot = new WikiRetrievalSnapshot(
+                List.of(new WikiPageContext(
+                        new KnowledgePageHit("item", "version", 2, "Wiki Page",
+                                "页面原始正文不应再被展示层二次裁剪", "summary", 8),
+                        List.of(), List.of(), List.of())),
+                List.of("citation"));
+        EvidenceBundle.Evidence frozen = new EvidenceBundle.Evidence(
+                "knowledge-version:version", "KNOWLEDGE_VERSION", "", "", "",
+                "item", "version", "Wiki Page", excerpt, "knowledge-version:version",
+                8, 1, 1, "workspace-knowledge:item", null, "wiki-page-graph",
+                excerpt.length(), Map.of());
+        EvidenceBundle bundle = new EvidenceBundle(
+                "bundle", WikiAnswerModeStrategy.PLAN_VERSION, List.of(frozen), false,
+                List.of(), Instant.now(),
+                Map.of(WikiRetrievalSnapshotCodec.METADATA_KEY, codec.encode(snapshot)));
+        AnswerContext context = new AnswerContext(
+                "workspace", "conversation", "message", "query", Set.of(), Map.of(), Instant.now());
+
+        var prompt = strategy.compose(context, bundle);
+
+        assertThat(prompt.userPrompt())
+                .contains("正文：" + excerpt)
+                .doesNotContain("页面原始正文不应再被展示层二次裁剪")
+                .doesNotContain("摘要：");
+    }
+
     private WikiPageContext pageContext() {
         KnowledgePageHit page = new KnowledgePageHit(
                 "item", "version", 2, "Wiki Page", "content", "summary", 8);
