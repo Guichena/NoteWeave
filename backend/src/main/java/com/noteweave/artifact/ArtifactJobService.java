@@ -117,13 +117,14 @@ public class ArtifactJobService {
                 ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey, userRequirement)
                 : memoryCompilerService.compileArtifactControlPackForActor(
                         workspaceId, skillKey, actorUserId, userRequirement);
+        Map<String, Object> inputsWithTaskParameters = withTaskParameters(inputs, controlPack);
         artifactJobWriteRepository.persistInitialJob(
                 artifactJobId,
                 workspaceId,
                 taskId,
                 skillKey,
                 userRequirement,
-                Json.write(objectMapper, inputs),
+                Json.write(objectMapper, inputsWithTaskParameters),
                 Json.write(objectMapper, sourceScopeIds),
                 Json.write(objectMapper, controlPack),
                 Json.write(objectMapper, sourceScopeSnapshot),
@@ -184,6 +185,8 @@ public class ArtifactJobService {
                 "QUEUED",
                 "产物版本再生成任务已创建"
         );
+        inputs = withTaskParameters(inputs,
+                artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()));
         artifactJobWriteRepository.persistRegeneration(
                 taskId,
                 artifactJobId,
@@ -873,6 +876,21 @@ public class ArtifactJobService {
         String prefix = "artifact-input-v1@sha256:";
         return compilerVersion != null && compilerVersion.startsWith(prefix)
                 ? compilerVersion.substring(prefix.length()) : "";
+    }
+
+    /** F5-02：把控制包里的结构化任务参数附到 Skill 输入，worker 可直接消费；缺省不改变原输入。 */
+    private static Map<String, Object> withTaskParameters(
+            Map<String, Object> inputs, MemoryControlPackResponse controlPack) {
+        var parameters = com.noteweave.preference.PreferenceParameterCompiler.compile(controlPack);
+        if (parameters.promptLine().isBlank()) {
+            return inputs;
+        }
+        Map<String, Object> enriched = new java.util.LinkedHashMap<>(inputs);
+        enriched.put("task_parameters", parameters.promptLine());
+        enriched.put("task_parameters_unsupported", parameters.unsupported().stream()
+                .map(item -> item.targetKey() + ":" + item.reason())
+                .reduce((left, right) -> left + "," + right).orElse(""));
+        return Map.copyOf(enriched);
     }
 
 }
