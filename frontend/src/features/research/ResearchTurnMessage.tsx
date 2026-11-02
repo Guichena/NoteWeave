@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ResearchRunDetail } from "./model";
-import { resolveRunState, ResearchRunTurn } from "./ResearchChatView";
+import { parseResearchProjection, resolveRunState, ResearchRunTurn, type ResearchProjectionView } from "./ResearchChatView";
 
 const POLL_MS = 5000;
 const RETRY_MS = 15000;
@@ -9,15 +9,23 @@ type ResearchTurnMessageProps = {
   researchRunId: string;
   loadRun: (researchRunId: string) => Promise<ResearchRunDetail>;
   onOpenReport: (researchRunId: string) => void;
+  /** F3-03：对话消息里的结构化研究投影；缺失时退回按运行详情渲染。 */
+  researchProjectionJson?: string | null;
 };
 
 /**
  * 问答页里用深度研究发起的一轮：按研究编号读取运行详情，研究进行中每 5 秒刷新一次，
- * 完成后显示报告消息；查看完整报告跳到研究页的完整报告。
+ * 完成后优先用后端结构化投影渲染结论卡；查看完整报告跳到研究页的完整报告。
  */
-export function ResearchTurnMessage({ researchRunId, loadRun, onOpenReport }: ResearchTurnMessageProps) {
+export function ResearchTurnMessage({
+  researchRunId,
+  loadRun,
+  onOpenReport,
+  researchProjectionJson,
+}: ResearchTurnMessageProps) {
   const [run, setRun] = useState<ResearchRunDetail | null>(null);
   const [failed, setFailed] = useState(false);
+  const projection: ResearchProjectionView | null = parseResearchProjection(researchProjectionJson);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,5 +58,5 @@ export function ResearchTurnMessage({ researchRunId, loadRun, onOpenReport }: Re
       </p>
     );
   }
-  return <ResearchRunTurn run={run} onOpenReport={() => onOpenReport(researchRunId)} />;
+  return <ResearchRunTurn run={run} projection={projection} onOpenReport={() => onOpenReport(researchRunId)} />;
 }

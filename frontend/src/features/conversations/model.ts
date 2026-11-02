@@ -33,6 +33,8 @@ export type ConversationMessage = {
   citations?: string[];
   /** 深度研究轮次的助手消息对应的研究运行，对话里据此展示研究进度与报告。 */
   research_run_id?: string | null;
+  /** F3-03 结构化研究投影 JSON，前端结论卡据此渲染。 */
+  research_projection_json?: string | null;
 };
 
 export type CreateConversationInput = {

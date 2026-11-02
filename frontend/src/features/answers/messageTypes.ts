@@ -15,6 +15,8 @@ export type Message = {
   retrievalDegradationReasons?: string[];
   /** 深度研究轮次的助手消息：按研究运行展示进度与报告，不走回答流 */
   researchRunId?: string;
+  /** F3-03：后端结构化研究投影 JSON，研究结论卡据此渲染。 */
+  researchProjectionJson?: string;
   /** 流式先到的引用协议；缺失时由 MessageBubble 补拉证据清单解析。 */
   citationProtocol?: CitationProtocol | null;
 };
