@@ -272,6 +272,8 @@ public class ChatService {
         QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
                 workspaceId, request.answerMode(), rewrite.standaloneQuery());
+        var preferenceParameters = com.noteweave.preference.PreferenceParameterCompiler
+                .compile(chatControlPack);
         AnswerMode mode = AnswerMode.parse(request.answerMode());
         Set<String> sourceScope = new LinkedHashSet<>(request.sourceScopeSourceIds());
         if (!sourceScope.isEmpty() && mode != AnswerMode.QA) {
@@ -307,11 +309,23 @@ public class ChatService {
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_ANCHOR, conversationContext.topicAnchor());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TOPIC_SUMMARY, conversationContext.topicSummary());
         String v2UserControls = renderV2UserConstraints(conversationContext.frozenV2());
+        String preferenceLine = preferenceParameters.promptLine();
+        MemoryControlPackResponse filteredControlPack = withoutConsumedPreferences(
+                chatControlPack, preferenceParameters.consumed());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_HAS_CHAT_CONTROLS,
-                Boolean.toString(chatControlPack.hasControls() || !v2UserControls.isBlank()));
-        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION,
-                renderChatControlSection(chatControlPack, conversationContext.frozenV2(),
-                        !conversationContext.contextApplied()));
+                Boolean.toString(filteredControlPack.hasControls() || !v2UserControls.isBlank()
+                        || !preferenceLine.isBlank()));
+        String controlSection = renderChatControlSection(filteredControlPack, conversationContext.frozenV2(),
+                !conversationContext.contextApplied());
+        if (!preferenceLine.isBlank()) {
+            controlSection = controlSection.isBlank()
+                    ? preferenceLine : controlSection + "\n\n" + preferenceLine;
+        }
+        attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CHAT_CONTROL_SECTION, controlSection);
+        attributes.put("task_parameters", preferenceLine);
+        attributes.put("task_parameters_unsupported", preferenceParameters.unsupported().stream()
+                .map(item -> item.targetKey() + ":" + item.reason())
+                .reduce((left, right) -> left + "," + right).orElse(""));
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_TEMPLATE_LABEL, templateLabel(mode));
         // F4-01：工作集只提供选择线索与信号摘要，正文与权限仍由各模式检索自己把关。
         Integer currentSeq = jdbcTemplate.queryForObject("""
@@ -536,6 +550,34 @@ public class ChatService {
             }
         });
         return keys;
+    }
+
+    /** 已进入结构化参数的原文从旧控制包中移除，保证同一要求只有一套实际输入。 */
+    private static MemoryControlPackResponse withoutConsumedPreferences(
+            MemoryControlPackResponse pack, java.util.Set<String> consumed) {
+        if (pack == null || consumed == null || consumed.isEmpty()) {
+            return pack;
+        }
+        return new MemoryControlPackResponse(
+                pack.packType(), pack.targetKey(), pack.taskNeighborhood(),
+                filterConsumed(pack.styleConstraints(), consumed),
+                filterConsumed(pack.structureConstraints(), consumed),
+                filterConsumed(pack.terminologyPolicy(), consumed),
+                filterConsumed(pack.forbiddenPatterns(), consumed),
+                filterConsumed(pack.evidencePolicy(), consumed),
+                filterConsumed(pack.interactionPolicy(), consumed),
+                filterConsumed(pack.reviewChecklist(), consumed),
+                pack.memoryObjectIds(), pack.memoryReferences(), pack.compilationTrace());
+    }
+
+    private static java.util.List<String> filterConsumed(java.util.List<String> values,
+                                                         java.util.Set<String> consumed) {
+        if (values == null || values.isEmpty()) {
+            return java.util.List.of();
+        }
+        return values.stream()
+                .filter(value -> value == null || !consumed.contains(value.strip()))
+                .toList();
     }
 
     /** 合并控制包与 v2 冻结用户约束，同一约束（归一化文本相同）只保留一次。 */
