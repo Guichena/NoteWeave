@@ -64,10 +64,10 @@ class WikiIngestFailureTransactionTest {
                     task_status varchar(32) not null,
                     target_type varchar(64),
                     target_id varchar(64),
-                    progress_phase varchar(128),
-                    progress_message varchar(512),
-                    result_ref varchar(512),
-                    error_message varchar(1024),
+                    progress_phase varchar(64),
+                    progress_message varchar(1000),
+                    result_ref varchar(500),
+                    error_message varchar(1000),
                     created_by varchar(80) not null,
                     updated_by varchar(80) not null,
                     created_at timestamp default current_timestamp,
@@ -79,7 +79,7 @@ class WikiIngestFailureTransactionTest {
                     id varchar(64) primary key,
                     task_id varchar(64) not null,
                     event_type varchar(64) not null,
-                    message varchar(512),
+                    message varchar(1000),
                     payload_json clob,
                     created_at timestamp default current_timestamp
                 )
