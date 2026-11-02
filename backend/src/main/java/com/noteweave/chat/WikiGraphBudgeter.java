@@ -18,7 +18,7 @@ public class WikiGraphBudgeter {
     private static final int PAGE_LOAD_BATCH = 20;
 
     public Result apply(List<WikiPageContext> contexts, RetrievalPlan.Budget budget) {
-        return apply(contexts, budget, null, null);
+        return apply(contexts, budget, null, null, Map.of());
     }
 
     public Result apply(
@@ -26,6 +26,20 @@ public class WikiGraphBudgeter {
             RetrievalPlan.Budget budget,
             WikiPersonalizedPageRank.AdjacencySource adjacency,
             PageSource pages
+    ) {
+        return apply(contexts, budget, adjacency, pages, Map.of());
+    }
+
+    /**
+     * F4-02：会话工作集里的知识页作为有界重启权重参与 PPR。权重来自工作集衰减分，
+     * 只放大同一规范知识页的种子，不改变检索资格，也不给未命中的页面凭空加权。
+     */
+    public Result apply(
+            List<WikiPageContext> contexts,
+            RetrievalPlan.Budget budget,
+            WikiPersonalizedPageRank.AdjacencySource adjacency,
+            PageSource pages,
+            Map<String, Double> restartWeights
     ) {
         List<WikiPageContext> roots = contexts == null ? List.of() : List.copyOf(contexts);
         int requestedHops = budget == null ? 0 : Math.max(0, budget.maxGraphHops());
@@ -41,7 +55,10 @@ public class WikiGraphBudgeter {
         List<WikiPersonalizedPageRank.Seed> seeds = new ArrayList<>();
         for (WikiPageContext context : roots) {
             KnowledgePageHit page = context.page();
-            seeds.add(new WikiPersonalizedPageRank.Seed(page.itemId(), page.title(), page.score()));
+            double restart = restartWeights == null ? 0.0d
+                    : Math.max(0.0d, Math.min(1.0d, restartWeights.getOrDefault(page.itemId(), 0.0d)));
+            seeds.add(new WikiPersonalizedPageRank.Seed(
+                    page.itemId(), page.title(), seedWeight(page.score(), restart)));
         }
         WikiPersonalizedPageRank.Exploration exploration = WikiPersonalizedPageRank.expand(
                 seeds, maxHops, adjacency);
@@ -99,6 +116,12 @@ public class WikiGraphBudgeter {
                 maxEdges,
                 maxCharacters
         );
+    }
+
+    /** 工作集重启权重只放大种子，上限 2 倍，避免会话信号压过当前问题。 */
+    static double seedWeight(double score, double restartWeight) {
+        double bounded = Math.max(0.0d, Math.min(1.0d, restartWeight));
+        return score * (1.0d + bounded);
     }
 
     private Map<String, WikiPageContext> loadPages(
