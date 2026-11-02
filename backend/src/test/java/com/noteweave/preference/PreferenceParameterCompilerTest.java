@@ -15,7 +15,7 @@ class PreferenceParameterCompilerTest {
                 java.util.List.of("用表格列出", "先给结论"),
                 java.util.List.of("术语甲"),
                 java.util.List.of("不要标注来源"),
-                java.util.List.of("标注来源"),
+                java.util.List.of("标注来源", "只用工作台资料"),
                 java.util.List.of());
 
         PreferenceParameterCompiler.Compiled compiled = PreferenceParameterCompiler.compile(pack);
@@ -27,7 +27,8 @@ class PreferenceParameterCompilerTest {
                 .contains("table")
                 .contains("conclusion_first")
                 .contains("citations=false")
-                .contains("terminology=术语甲");
+                .contains("terminology=术语甲")
+                .contains("source_policy=workspace_only");
         assertThat(compiled.consumed())
                 .contains("用中文回答", "不要标注来源", "术语甲");
         assertThat(compiled.unsupported()).isEmpty();
