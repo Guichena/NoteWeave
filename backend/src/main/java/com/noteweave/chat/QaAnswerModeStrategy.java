@@ -102,6 +102,15 @@ public class QaAnswerModeStrategy implements AnswerModeStrategy {
                     filters
             ));
         }
+        String cellMatches = context.attributes().getOrDefault("context_research_cell_matches", "");
+        if (!cellMatches.isBlank()) {
+            steps.add(new RetrievalPlan.Step(
+                    ResearchCellEvidenceRetriever.CHANNEL,
+                    8,
+                    1.0d,
+                    filters
+            ));
+        }
         steps.add(new RetrievalPlan.Step(
                 QaPassageEvidenceRetriever.CHANNEL,
                 profile.stepCandidateLimit(),
