@@ -1619,8 +1619,8 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
                         "最近对话上下文（含主题摘要与用户约束，不要向用户复述）：")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续原文窗口：")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
+                // F2-02：上下文按层渲染，不再使用旧的“连续原文窗口”拼接文本
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 原文")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("AnchorAlpha")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")));
 
@@ -1666,8 +1666,7 @@ class Phase3NoteWikiContractTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
                         "最近对话上下文（含主题摘要与用户约束，不要向用户复述）：")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("连续原文窗口：")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("主题锚点：")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("## 原文")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Alpha策略")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("Alpha执行")));
     }

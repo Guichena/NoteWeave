@@ -4,12 +4,17 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.context.ContextBudget;
 import com.noteweave.context.ContextBudgetPlanner;
 import com.noteweave.context.ContextCallSite;
+import com.noteweave.context.ContextCompressor;
 import com.noteweave.context.ContextContract;
 import com.noteweave.context.ContextItemForm;
 import com.noteweave.context.ContextLayer;
 import com.noteweave.context.ContextRefType;
 import com.noteweave.context.ContextRenderer;
 import com.noteweave.context.ContextView;
+import com.noteweave.context.ConversationLedgerEntry;
+import com.noteweave.context.ConversationLedgerProjection;
+import com.noteweave.context.ConversationLedgerProjector;
+import com.noteweave.context.ConversationPremise;
 import com.noteweave.context.RenderedContext;
 import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.conversation.ContextProjectionV2;
@@ -31,9 +36,16 @@ class ConversationRetrievalContextAssembler {
 
     private static final int DEFAULT_MODEL_WINDOW_TOKENS = 8_192;
     private static final int DEFAULT_MAX_OUTPUT_TOKENS = 2_400;
+    /** 分层压缩预算：最近原文优先，较早回合退到摘要或句柄。 */
+    private static final int CONTEXT_RAW_TARGET_TOKENS = 6_000;
+    private static final int CONTEXT_SUMMARY_TARGET_TOKENS = 2_000;
+    private static final int CONTEXT_HANDLE_TARGET_TOKENS = 400;
+    private static final int CONTEXT_RECENT_RAW_MESSAGES = 8;
+    private static final String CONVERSATION_SUMMARY_VERSION = "conversation-summary-v1";
 
     private final ContextRenderer renderer = new ContextRenderer();
-    private final ContextBudgetPlanner budgetPlanner = new ContextBudgetPlanner();
+    private final ContextCompressor compressor = new ContextCompressor();
+    private final ConversationLedgerProjector ledgerProjector = new ConversationLedgerProjector();
 
     boolean requiresHistory(String question) {
         if (question == null || question.isBlank()) {
@@ -70,11 +82,40 @@ class ConversationRetrievalContextAssembler {
             String currentUserMessageId,
             String currentQuestion,
             ConversationContextProjectionService.CompilationProjection projection,
-            ConversationContextProjectionService.Projection inputProjection
+            ConversationContextProjectionService.Projection inputProjection,
+            List<ConversationLedgerEntry> frozenLedger
+    ) {
+        return assemble(workspaceId, actorId, conversationId, currentUserMessageId,
+                currentQuestion, projection, inputProjection, frozenLedger, List.of());
+    }
+
+    Context assemble(
+            String workspaceId,
+            String actorId,
+            String conversationId,
+            String currentUserMessageId,
+            String currentQuestion,
+            ConversationContextProjectionService.CompilationProjection projection,
+            ConversationContextProjectionService.Projection inputProjection,
+            List<ConversationLedgerEntry> frozenLedger,
+            List<ConversationPremise> premises
     ) {
         return assembleInternal(workspaceId, actorId, conversationId, currentUserMessageId,
-                currentQuestion, projection, inputProjection,
+                currentQuestion, projection, inputProjection, frozenLedger, premises,
                 DEFAULT_MODEL_WINDOW_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS);
+    }
+
+    Context assemble(
+            String workspaceId,
+            String actorId,
+            String conversationId,
+            String currentUserMessageId,
+            String currentQuestion,
+            ConversationContextProjectionService.CompilationProjection projection,
+            ConversationContextProjectionService.Projection inputProjection
+    ) {
+        return assemble(workspaceId, actorId, conversationId, currentUserMessageId,
+                currentQuestion, projection, inputProjection, null);
     }
 
     /** 测试与嵌入调用可显式给出窗口，生产入口使用默认预算。 */
@@ -90,7 +131,8 @@ class ConversationRetrievalContextAssembler {
             int maximumOutputTokens
     ) {
         return assembleInternal(workspaceId, actorId, conversationId, currentUserMessageId,
-                currentQuestion, projection, inputProjection, modelWindowTokens, maximumOutputTokens);
+                currentQuestion, projection, inputProjection, null, List.of(),
+                modelWindowTokens, maximumOutputTokens);
     }
 
     private Context assembleInternal(
@@ -101,6 +143,8 @@ class ConversationRetrievalContextAssembler {
             String currentQuestion,
             ConversationContextProjectionService.CompilationProjection projection,
             ConversationContextProjectionService.Projection inputProjection,
+            List<ConversationLedgerEntry> frozenLedger,
+            List<ConversationPremise> premises,
             int modelWindowTokens,
             int maximumOutputTokens
     ) {
@@ -115,30 +159,58 @@ class ConversationRetrievalContextAssembler {
                                 ? stripMarkdownForContext(message.content())
                                 : message.content()))
                 .toList();
-        if (history.isEmpty()) {
-            return empty(trimmedQuestion);
-        }
         List<ConversationTurn> turns = buildConversationTurns(history);
-        if (turns.isEmpty()) {
-            return empty(trimmedQuestion);
-        }
         List<ConversationTurn> workingTurns = buildWorkingTurns(trimmedQuestion, turns);
-        String topicAnchor = buildTopicAnchor(trimmedQuestion, workingTurns);
+        String topicAnchor = turns.isEmpty() ? "" : buildTopicAnchor(trimmedQuestion, workingTurns);
         String topicSummary = projection.summaryText().isBlank()
                 ? buildTopicSummary(topicAnchor, workingTurns, turns)
                 : projection.summaryText();
-        List<SummaryCandidate> summaries = topicSummary.isBlank()
-                ? List.of()
-                : List.of(new SummaryCandidate("context-summary", 0, 0, topicSummary));
         int currentSeq = projection.rawMessages().stream()
                 .filter(message -> message.messageId().equals(currentUserMessageId))
                 .mapToInt(message -> message.messageSeq())
                 .findFirst().orElse(0);
+        List<ConversationLedgerEntry> ledger = frozenLedger == null
+                ? currentLedger(projection, currentUserMessageId)
+                : frozenLedger;
+        int cutoffSeq = Math.max(
+                projection.rawMessages().stream()
+                        .mapToInt(ConversationContextProjectionService.RawMessage::messageSeq)
+                        .max().orElse(currentSeq),
+                ledger.stream().mapToInt(ConversationLedgerEntry::seq).max().orElse(currentSeq));
+        ledger = ledger.stream()
+                .filter(entry -> !entry.messageId().equals(currentUserMessageId))
+                .toList();
+        List<ContextCompressor.SummaryBlock> summaryBlocks = new ArrayList<>();
+        if (!projection.summaryText().isBlank()) {
+            summaryBlocks.add(new ContextCompressor.SummaryBlock(
+                    ContextItemForm.TOPIC_SUMMARY,
+                    projection.summary() != null ? projection.summary().summaryRevisionId()
+                            : "frozen-prefix-summary",
+                    projection.summary() != null ? projection.summary().coveredStartSeq() : 1,
+                    projection.summary() != null ? projection.summary().coveredEndSeq()
+                            : Math.max(1, cutoffSeq),
+                    projection.summaryText(),
+                    "READY"));
+        } else if (!topicSummary.isBlank()) {
+            summaryBlocks.add(new ContextCompressor.SummaryBlock(
+                    ContextItemForm.TOPIC_SUMMARY, "generated-topic-summary",
+                    1, Math.max(1, cutoffSeq), topicSummary, "READY"));
+        }
+        Compressed conversation = compressConversation(
+                conversationId, cutoffSeq, ledger, summaryBlocks);
+        List<PremiseCandidate> premiseCandidates = new ArrayList<>();
+        for (ConversationPremise premise : premises) {
+            if (!premise.effectiveAt(cutoffSeq)) {
+                continue;
+            }
+            premiseCandidates.add(new PremiseCandidate(
+                    premise.premiseId(), premise.sourceSeq(), premise.renderAsCondition()));
+        }
         Budgeted budget = budget(
                 workspaceId, actorId, conversationId, currentSeq,
                 modelWindowTokens, maximumOutputTokens,
                 trimmedQuestion, currentSeq, currentUserMessageId,
-                history, summaries, List.of(), List.of());
+                conversation, List.of(), premiseCandidates);
         return new Context(
                 trimmedQuestion,
                 budget.retrievalText(),
@@ -155,6 +227,26 @@ class ConversationRetrievalContextAssembler {
                 budget.generationRendered().sectionTokens(),
                 budget.degradations()
         );
+    }
+
+    /** 兼容路径没有账本行时，把冻结投影里的 CURRENT 消息按账本形态重建。 */
+    private List<ConversationLedgerEntry> currentLedger(
+            ConversationContextProjectionService.CompilationProjection projection,
+            String currentUserMessageId
+    ) {
+        List<ConversationLedgerEntry> entries = new ArrayList<>();
+        for (ConversationContextProjectionService.RawMessage message : projection.rawMessages()) {
+            boolean current = message.messageId().equals(currentUserMessageId);
+            String text = current ? ""
+                    : "ASSISTANT".equals(message.role())
+                    ? stripMarkdownForContext(message.content())
+                    : message.content();
+            entries.add(new ConversationLedgerEntry(
+                    message.messageId(), message.messageSeq(), message.role(),
+                    "", ConversationLedgerEntry.STATUS_CURRENT,
+                    text, "", "", ""));
+        }
+        return entries;
     }
 
     Context assembleV2(
@@ -174,9 +266,6 @@ class ConversationRetrievalContextAssembler {
                 .toList();
         boolean hasContext = !rawHistory.isEmpty() || !projection.topicSummaries().isEmpty()
                 || !projection.constraints().isEmpty();
-        if (!hasContext) {
-            return empty(trimmedQuestion);
-        }
         List<HistoryMessage> history = rawHistory.stream()
                 .map(message -> new HistoryMessage(
                         message.messageId(), message.seq(), message.role(), message.text()))
@@ -187,11 +276,19 @@ class ConversationRetrievalContextAssembler {
         int windowTurnCount = (int) history.stream()
                 .filter(message -> "USER".equals(message.role()))
                 .count();
-        List<SummaryCandidate> summaries = projection.topicSummaries().stream()
+        List<ContextCompressor.SummaryBlock> summaryBlocks = projection.topicSummaries().stream()
                 .filter(summary -> summary.text() != null && !summary.text().isBlank())
-                .map(summary -> new SummaryCandidate(
-                        summary.revisionId(), summary.startSeq(), summary.endSeq(), summary.text()))
+                .map(summary -> new ContextCompressor.SummaryBlock(
+                        ContextItemForm.TOPIC_SUMMARY, summary.revisionId(),
+                        summary.startSeq(), summary.endSeq(), summary.text(), "READY"))
                 .toList();
+        List<ConversationLedgerEntry> ledger = rawHistory.stream()
+                .map(message -> new ConversationLedgerEntry(
+                        message.messageId(), message.seq(), message.role(), "", 
+                        ConversationLedgerEntry.STATUS_CURRENT, message.text(), "", "", ""))
+                .toList();
+        Compressed conversation = compressConversation(
+                projection.conversationId(), projection.cutoffSeq(), ledger, summaryBlocks);
         List<ConstraintCandidate> constraints = projection.constraints().stream()
                 .filter(rule -> rule.text() != null && !rule.text().isBlank())
                 .map(rule -> new ConstraintCandidate(
@@ -202,15 +299,15 @@ class ConversationRetrievalContextAssembler {
                 workspaceId, actorId, projection.conversationId(), projection.cutoffSeq(),
                 DEFAULT_MODEL_WINDOW_TOKENS, DEFAULT_MAX_OUTPUT_TOKENS,
                 trimmedQuestion, currentSeq, currentUserMessageId,
-                history, summaries, constraints, List.of());
-        String topicSummary = summaries.stream()
-                .map(SummaryCandidate::text)
+                conversation, constraints, List.of());
+        String topicSummary = summaryBlocks.stream()
+                .map(ContextCompressor.SummaryBlock::text)
                 .reduce((first, second) -> first + "\n" + second).orElse("");
         return new Context(
                 trimmedQuestion,
                 budget.retrievalText(),
                 budget.generationText(),
-                true,
+                hasContext,
                 windowTurnCount,
                 topicAnchor,
                 topicSummary,
@@ -228,6 +325,59 @@ class ConversationRetrievalContextAssembler {
      * 统一预算：检索改写与生成提示共用同一份冻结材料，分两次按各自调用点的层顺序和预算选择。
      * 最近原文优先保留；放不下的条目记录剔除原因，不在渲染阶段偷偷截字。
      */
+    /**
+     * 分层压缩：最近原文优先，较早回合按摘要、话题摘要、句柄逐级退让；
+     * 删除、失败、取消与研究进行中的回合保留账本位置与占位形态。
+     */
+    private Compressed compressConversation(
+            String conversationId,
+            int cutoffSeq,
+            List<ConversationLedgerEntry> ledgerEntries,
+            List<ContextCompressor.SummaryBlock> summaries
+    ) {
+        ConversationLedgerProjection projected = ledgerProjector.project(
+                conversationId, cutoffSeq, ledgerEntries);
+        ContextCompressor.Selection selection = compressor.compress(new ContextCompressor.Input(
+                conversationId,
+                cutoffSeq,
+                projected.entries(),
+                summaries,
+                CONTEXT_RAW_TARGET_TOKENS,
+                CONTEXT_SUMMARY_TARGET_TOKENS,
+                CONTEXT_HANDLE_TARGET_TOKENS,
+                CONTEXT_RECENT_RAW_MESSAGES,
+                CONVERSATION_SUMMARY_VERSION));
+        LinkedHashSet<String> degradations = new LinkedHashSet<>(projected.reasons());
+        degradations.addAll(selection.degradationReasons());
+        List<ContextView.Item> items = new ArrayList<>(selection.items());
+        // 冻结摘要覆盖的消息可能不在原文窗口里（投影只带窗口内消息）：摘要要单独进入视图
+        int firstEntrySeq = projected.entries().stream()
+                .mapToInt(ConversationLedgerProjection.Projected::seq)
+                .min().orElse(Integer.MAX_VALUE);
+        for (ContextCompressor.SummaryBlock summary : summaries) {
+            if (summary.endSeq() >= firstEntrySeq) {
+                continue;
+            }
+            ContextLayer layer = summary.kind() == ContextItemForm.TOPIC_SUMMARY
+                    ? ContextLayer.TOPIC_SUMMARY : ContextLayer.MESSAGE_SUMMARY;
+            items.add(ContextView.Item.of(layer, summary.kind(), ContextRefType.TOPIC_SUMMARY,
+                    summary.refId(), summary.startSeq(), summary.endSeq(), summary.text()));
+            degradations.add(ContextCompressor.REASON_EARLIER_TURNS_USE_TOPIC_SUMMARY);
+        }
+        Set<String> includedRefs = new LinkedHashSet<>();
+        for (ContextView.Item item : items) {
+            includedRefs.add(item.refType().wire() + ":" + item.refId() + ":" + item.layer().wire());
+        }
+        List<ContextView.Exclusion> exclusions = new ArrayList<>();
+        for (ContextView.Exclusion exclusion : selection.exclusions()) {
+            String key = exclusion.refType().wire() + ":" + exclusion.refId() + ":" + exclusion.layer().wire();
+            if (!includedRefs.contains(key)) {
+                exclusions.add(exclusion);
+            }
+        }
+        return new Compressed(items, exclusions, List.copyOf(degradations));
+    }
+
     private Budgeted budget(
             String workspaceId,
             String actorId,
@@ -238,8 +388,7 @@ class ConversationRetrievalContextAssembler {
             String currentQuestion,
             int currentSeq,
             String currentMessageId,
-            List<HistoryMessage> history,
-            List<SummaryCandidate> summaries,
+            Compressed conversation,
             List<ConstraintCandidate> constraints,
             List<PremiseCandidate> premises
     ) {
@@ -250,9 +399,9 @@ class ConversationRetrievalContextAssembler {
                 workspaceId, actorId, conversationId, cutoffSeq,
                 modelWindowTokens, maximumOutputTokens);
         Selection retrieval = select(retrievalContract, currentQuestion, currentSeq,
-                currentMessageId, history, summaries, constraints, premises, true);
+                currentMessageId, conversation, constraints, premises, true);
         Selection generation = select(generationContract, currentQuestion, currentSeq,
-                currentMessageId, history, summaries, constraints, premises, false);
+                currentMessageId, conversation, constraints, premises, false);
         return new Budgeted(
                 operationText(retrieval),
                 operationText(generation),
@@ -300,24 +449,26 @@ class ConversationRetrievalContextAssembler {
             String currentQuestion,
             int currentSeq,
             String currentMessageId,
-            List<HistoryMessage> history,
-            List<SummaryCandidate> summaries,
+            Compressed conversation,
             List<ConstraintCandidate> constraints,
             List<PremiseCandidate> premises,
             boolean includeCurrentInput
     ) {
-        ContextBudgetPlanner.Allocation allocation = budgetPlanner.allocate(
-                contract, Map.of(ContextLayer.EVIDENCE, 0));
+        Map<ContextLayer, Integer> targets = contract.callSite().layerTargets();
         List<ContextView.Item> items = new ArrayList<>();
-        List<ContextView.Exclusion> exclusions = new ArrayList<>();
-        LinkedHashSet<String> degradations = new LinkedHashSet<>();
+        List<ContextView.Exclusion> exclusions = new ArrayList<>(conversation.exclusions());
+        LinkedHashSet<String> degradations = new LinkedHashSet<>(conversation.degradations());
         int totalTokens = 0;
+        int remaining = contract.hardLimitTokens();
         for (ContextLayer layer : contract.ordering()) {
-            int layerCap = allocation.targetOf(layer);
+            int target = targets.getOrDefault(layer, 0);
+            // 层目标是上限，不是必花预算：每层只按实际条目计费，剩余预算留给后续层
+            int layerCap = layer == ContextLayer.CURRENT_INPUT
+                    ? remaining : Math.min(target, remaining);
             int layerUsed = 0;
-            List<ContextView.Item> layerCandidates = candidatesFor(
+            List<ContextView.Item> layerCandidates = layerCandidates(
                     layer, currentQuestion, currentSeq, currentMessageId,
-                    history, summaries, constraints, premises, includeCurrentInput);
+                    conversation, constraints, premises, includeCurrentInput);
             if (layerCandidates.isEmpty()) {
                 continue;
             }
@@ -339,6 +490,7 @@ class ConversationRetrievalContextAssembler {
                 kept.sort(java.util.Comparator.comparingInt(ContextView.Item::startSeq));
                 items.addAll(kept);
                 totalTokens += keptTokens;
+                remaining -= keptTokens;
                 if (kept.size() < layerCandidates.size()) {
                     degradations.add("CONTEXT_RAW_MESSAGE_DROPPED");
                 }
@@ -356,6 +508,7 @@ class ConversationRetrievalContextAssembler {
                     items.add(item);
                     layerUsed += item.tokens();
                     totalTokens += item.tokens();
+                    remaining -= item.tokens();
                     continue;
                 }
                 exclusions.add(new ContextView.Exclusion(item.refType(), item.refId(), layer,
@@ -367,13 +520,12 @@ class ConversationRetrievalContextAssembler {
         return new Selection(contract, view, renderer.render(view), List.copyOf(degradations));
     }
 
-    private List<ContextView.Item> candidatesFor(
+    private List<ContextView.Item> layerCandidates(
             ContextLayer layer,
             String currentQuestion,
             int currentSeq,
             String currentMessageId,
-            List<HistoryMessage> history,
-            List<SummaryCandidate> summaries,
+            Compressed conversation,
             List<ConstraintCandidate> constraints,
             List<PremiseCandidate> premises,
             boolean includeCurrentInput
@@ -386,23 +538,6 @@ class ConversationRetrievalContextAssembler {
                             currentMessageId == null || currentMessageId.isBlank()
                                     ? "current-input" : currentMessageId,
                             Math.max(0, currentSeq), Math.max(0, currentSeq), currentQuestion));
-                }
-            }
-            case TOPIC_SUMMARY -> {
-                for (SummaryCandidate summary : summaries) {
-                    candidates.add(ContextView.Item.of(layer, ContextItemForm.TOPIC_SUMMARY,
-                            ContextRefType.TOPIC_SUMMARY, summary.refId(),
-                            summary.startSeq(), summary.endSeq(), summary.text()));
-                }
-            }
-            case MESSAGE_SUMMARY -> {
-                // 消息摘要由后续分层压缩任务填充；当前不把原文伪装成摘要
-            }
-            case RAW_MESSAGE -> {
-                for (HistoryMessage message : history) {
-                    candidates.add(ContextView.Item.of(layer, ContextItemForm.RAW,
-                            ContextRefType.MESSAGE, message.id(), message.seq(), message.seq(),
-                            message.content()));
                 }
             }
             case USER_CONSTRAINT -> {
@@ -419,8 +554,9 @@ class ConversationRetrievalContextAssembler {
                             premise.sourceSeq(), premise.sourceSeq(), premise.text()));
                 }
             }
-            default -> {
-            }
+            default -> conversation.items().stream()
+                    .filter(item -> item.layer() == layer)
+                    .forEach(candidates::add);
         }
         return candidates;
     }
@@ -723,13 +859,22 @@ class ConversationRetrievalContextAssembler {
     private record HistoryMessage(String id, int seq, String role, String content) {
     }
 
-    private record SummaryCandidate(String refId, int startSeq, int endSeq, String text) {
-    }
-
     private record ConstraintCandidate(String refId, int sourceSeq, String text) {
     }
 
     private record PremiseCandidate(String refId, int sourceSeq, String text) {
+    }
+
+    private record Compressed(
+            List<ContextView.Item> items,
+            List<ContextView.Exclusion> exclusions,
+            List<String> degradations
+    ) {
+        private Compressed {
+            items = items == null ? List.of() : List.copyOf(items);
+            exclusions = exclusions == null ? List.of() : List.copyOf(exclusions);
+            degradations = degradations == null ? List.of() : List.copyOf(degradations);
+        }
     }
 
     private record Selection(

@@ -73,6 +73,10 @@ class ContextV2ActiveAnswerContractTest {
         }
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void resetCompilerSpy() {
+        org.mockito.Mockito.reset(compiler);
+    }
     @Test
     void compilationFailureRecordsReasonAndUsesV1ForTheAnswer() throws Exception {
         String workspace = workspace();
