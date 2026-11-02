@@ -86,6 +86,12 @@ public final class PreferenceParameterCompiler {
                 entries.add(entry("format.citation", PreferenceSlotFamily.FORMAT, "", sequence++));
                 handled.add(normalized);
             }
+            String sourcePolicy = sourcePolicy(normalized);
+            if (sourcePolicy != null) {
+                entries.add(entry("source.policy", PreferenceSlotFamily.SOURCE_POLICY,
+                        sourcePolicy, sequence++));
+                handled.add(normalized);
+            }
         }
         for (String value : safe(pack.forbiddenPatterns())) {
             String normalized = value == null ? "" : value.strip();
@@ -102,6 +108,11 @@ public final class PreferenceParameterCompiler {
             }
             if (containsAny(normalized, "引用", "来源", "出处", "source")) {
                 entries.add(forbid("format.citation", PreferenceSlotFamily.FORMAT, sequence++));
+                handled.add(normalized);
+            }
+            if (containsAny(normalized, "联网", "外部搜索", "web")) {
+                entries.add(entry("source.policy", PreferenceSlotFamily.SOURCE_POLICY,
+                        "workspace_only", sequence++));
                 handled.add(normalized);
             }
         }
@@ -167,6 +178,16 @@ public final class PreferenceParameterCompiler {
         if (normalized.contains("英文") || normalized.contains("英语")
                 || normalized.contains("english") || normalized.contains("chinese")) {
             return "English";
+        }
+        return null;
+    }
+
+    private static String sourcePolicy(String value) {
+        if (containsAny(value, "只用工作台", "仅用已有资料", "不要联网", "不要外部搜索")) {
+            return "workspace_only";
+        }
+        if (containsAny(value, "允许联网", "允许网页", "可以搜索网页", "允许外部搜索")) {
+            return "web_allowed";
         }
         return null;
     }
