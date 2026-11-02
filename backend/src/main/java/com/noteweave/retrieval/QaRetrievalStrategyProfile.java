@@ -154,8 +154,9 @@ public enum QaRetrievalStrategyProfile {
     ) {
         if (plan == null || step == null
                 || plan.mode() != AnswerMode.QA
-                || plan.steps().size() != 1
-                || !step.equals(plan.steps().get(0))
+                // F4-02：允许在工作台检索步骤之前多一条会话证据步骤。
+                || (plan.steps().size() != 1 && plan.steps().size() != 2)
+                || !plan.steps().contains(step)
                 || !CHANNEL.equals(step.channel())
                 || Double.compare(step.weight(), STEP_WEIGHT) != 0
                 || plan.budget() == null
