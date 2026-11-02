@@ -71,6 +71,10 @@ public class RunInputSnapshotService {
         snapshot.put("expected_history_head_message_id", nullableText(frozen, "expected_history_head_message_id"));
         snapshot.put("retrieval_plan_version", material.retrievalPlan().version());
         snapshot.put("retrieval_plan", material.retrievalPlan());
+        // F5-02：实际采用的结构化任务参数与不支持项进入运行审计，便于复盘“为什么这样回答”。
+        snapshot.put("task_parameters", material.taskParameters() == null ? "" : material.taskParameters());
+        snapshot.put("task_parameters_unsupported", material.taskParametersUnsupported() == null
+                ? "" : material.taskParametersUnsupported());
         List<MemoryReferenceResponse> memoryRefs = material.chatControlPack() == null
                 ? List.of() : material.chatControlPack().memoryReferences();
         String compilerVersion = COMPILER_VERSION;
