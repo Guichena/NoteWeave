@@ -30,31 +30,36 @@ public class ResearchBriefCompiler {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final ChatLlmClient llmClient;
+    private final com.noteweave.memory.MemoryCompilerService memoryCompilerService;
 
     public ResearchBriefCompiler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper
     ) {
-        this(jdbcTemplate, objectMapper, (ChatLlmClient) null);
+        this(jdbcTemplate, objectMapper, (ChatLlmClient) null, null);
     }
 
     @Autowired
     public ResearchBriefCompiler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ObjectProvider<ChatLlmClient> llmClientProvider
+            ObjectProvider<ChatLlmClient> llmClientProvider,
+            ObjectProvider<com.noteweave.memory.MemoryCompilerService> memoryCompilerProvider
     ) {
-        this(jdbcTemplate, objectMapper, llmClientProvider.getIfAvailable());
+        this(jdbcTemplate, objectMapper, llmClientProvider.getIfAvailable(),
+                memoryCompilerProvider.getIfAvailable());
     }
 
     private ResearchBriefCompiler(
             JdbcTemplate jdbcTemplate,
             ObjectMapper objectMapper,
-            ChatLlmClient llmClient
+            ChatLlmClient llmClient,
+            com.noteweave.memory.MemoryCompilerService memoryCompilerService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.llmClient = llmClient;
+        this.memoryCompilerService = memoryCompilerService;
     }
 
     public CompiledBrief compile(String runId, String currentQuestion) {
@@ -149,26 +154,47 @@ public class ResearchBriefCompiler {
         brief.put("key_points", compiledQuestion.keyPoints());
         brief.put("degradation_reasons", compiledQuestion.degradationReasons());
         brief.put("source_policy", safeMap(run.sourceScopeJson()));
+        String taskLine = "";
+        if (memoryCompilerService != null) {
+            try {
+                var controlPack = memoryCompilerService.compileChatControlPack(
+                        run.workspaceId(), "DEEP_RESEARCH", text(currentQuestion));
+                var preferenceParameters = com.noteweave.preference.PreferenceParameterCompiler
+                        .compile(controlPack);
+                if (!preferenceParameters.promptLine().isBlank()) {
+                    taskLine = preferenceParameters.promptLine();
+                    brief.put("task_parameters", taskLine);
+                    brief.put("task_parameters_unsupported", preferenceParameters.unsupported().stream()
+                            .map(item -> item.targetKey() + ":" + item.reason())
+                            .reduce((left, right) -> left + "," + right).orElse(""));
+                }
+            } catch (RuntimeException ignored) {
+                // 偏好编译失败不阻断研究；原控制包仍由记忆系统负责
+            }
+        }
+        String planningQuery = taskLine.isBlank()
+                ? compiled.planningQuery()
+                : compiled.planningQuery() + "\n\n" + taskLine;
         Map<String, Object> control = safeMap(run.controlPackJson());
         brief.putIfAbsent("output_requirements", control.getOrDefault("output_requirements", List.of()));
         brief.putIfAbsent("coverage", List.of());
         brief.putIfAbsent("seeds", List.of());
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("schema_version", BRIEF_SCHEMA_VERSION);
-        payload.put("planning_query", compiled.planningQuery());
+        payload.put("planning_query", planningQuery);
         payload.put("brief", brief);
         String json;
         try {
             json = objectMapper.writeValueAsString(payload);
         } catch (Exception ex) {
-            return new CompiledBrief(compiled.planningQuery(), Map.copyOf(brief));
+            return new CompiledBrief(planningQuery, Map.copyOf(brief));
         }
         jdbcTemplate.update("""
                 update research_run set compiled_brief_json = ?
                 where id = ? and compiled_brief_json is null
                 """, json, runId);
         CompiledBrief stored = loadStoredBrief(runId);
-        return stored == null ? new CompiledBrief(compiled.planningQuery(), Map.copyOf(brief)) : stored;
+        return stored == null ? new CompiledBrief(planningQuery, Map.copyOf(brief)) : stored;
     }
 
     private CompiledBrief loadStoredBrief(String runId) {
