@@ -7,8 +7,9 @@ type SessionPreferenceApi = {
   addSessionPreference: (workspaceId: string, conversationId: string, text: string) => Promise<SessionPreference>;
   removeSessionPreference: (workspaceId: string, conversationId: string, requirementId: string) => Promise<void>;
   listPendingProposals: (workspaceId: string, conversationId: string) => Promise<PendingMemoryProposal[]>;
+  listActiveMemories: (workspaceId: string, conversationId: string) => Promise<PendingMemoryProposal[]>;
   sessionOnlyRevision: (workspaceId: string, conversationId: string, revisionId: string) => Promise<SessionPreference>;
-  reviewMemoryProposal: (workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT") => Promise<void>;
+  reviewMemoryProposal: (workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT" | "REVOKE") => Promise<void>;
 };
 
 type Props = {
@@ -24,6 +25,7 @@ type Props = {
 export function SessionPreferencePanel({ workspaceId, conversationId, api = conversationsApi }: Props) {
   const [items, setItems] = useState<SessionPreference[]>([]);
   const [proposals, setProposals] = useState<PendingMemoryProposal[]>([]);
+  const [activeMemories, setActiveMemories] = useState<PendingMemoryProposal[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -34,18 +36,21 @@ export function SessionPreferencePanel({ workspaceId, conversationId, api = conv
     if (!workspaceId || !conversationId) {
       setItems([]);
       setProposals([]);
+      setActiveMemories([]);
       return () => {
         cancelled = true;
       };
     }
     Promise.all([
       api.listSessionPreferences(workspaceId, conversationId),
-      api.listPendingProposals(workspaceId, conversationId)
+      api.listPendingProposals(workspaceId, conversationId),
+      api.listActiveMemories(workspaceId, conversationId)
     ])
-      .then(([loadedItems, loadedProposals]) => {
+      .then(([loadedItems, loadedProposals, loadedActive]) => {
         if (!cancelled) {
           setItems((current) => (current.length > 0 ? current : loadedItems));
           setProposals((current) => (current.length > 0 ? current : loadedProposals));
+          setActiveMemories((current) => (current.length > 0 ? current : loadedActive));
         }
       })
       .catch(() => {
@@ -105,6 +110,20 @@ export function SessionPreferencePanel({ workspaceId, conversationId, api = conv
     }
   }
 
+  async function revoke(revisionId: string) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.reviewMemoryProposal(workspaceId, revisionId, "REVOKE");
+      setActiveMemories((current) => current.filter((item) => item.revision_id !== revisionId));
+    } catch {
+      setError("撤销失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <details className="session-preference-panel">
       <summary>会话偏好（只用于本对话）{items.length > 0 ? ` · ${items.length}` : ""}</summary>
@@ -127,6 +146,22 @@ export function SessionPreferencePanel({ workspaceId, conversationId, api = conv
                   <button type="button" className="link-button" disabled={busy}
                           onClick={() => void resolveProposal(proposal, "SESSION")}>
                     只用于本对话
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {activeMemories.length > 0 ? (
+          <div className="session-preference-active">
+            <strong>已记住</strong>
+            <ul aria-label="已记住的记忆">
+              {activeMemories.map((memory) => (
+                <li key={memory.revision_id}>
+                  <span>{memory.display_text}</span>
+                  <button type="button" className="link-button" disabled={busy}
+                          onClick={() => void revoke(memory.revision_id)}>
+                    撤销
                   </button>
                 </li>
               ))}

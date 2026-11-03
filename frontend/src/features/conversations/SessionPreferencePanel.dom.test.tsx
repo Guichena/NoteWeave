@@ -8,7 +8,8 @@ afterEach(cleanup);
 
 function api(
   initial: Array<{ id: string; conversation_id: string; requirement_text: string; status: string }> = [],
-  proposals: Array<{ revision_id: string; display_text: string; source_message_ids: string[] }> = []
+  proposals: Array<{ revision_id: string; display_text: string; source_message_ids: string[] }> = [],
+  active: Array<{ revision_id: string; display_text: string; source_message_ids: string[] }> = []
 ) {
   return {
     listSessionPreferences: vi.fn().mockResolvedValue(initial),
@@ -22,6 +23,7 @@ function api(
     ),
     removeSessionPreference: vi.fn().mockResolvedValue(undefined),
     listPendingProposals: vi.fn().mockResolvedValue(proposals),
+    listActiveMemories: vi.fn().mockResolvedValue(active),
     sessionOnlyRevision: vi.fn().mockResolvedValue({
       id: "session-id",
       conversation_id: "c",
@@ -83,5 +85,18 @@ describe("SessionPreferencePanel", () => {
     await waitFor(() => expect(fake.sessionOnlyRevision).toHaveBeenCalledWith("w", "c", "rev-1"));
     const items = await screen.findByRole("list", { name: "会话要求列表" });
     expect(within(items).getByText("候选要求")).toBeTruthy();
+  });
+
+  it("已记住的记忆可以撤销", async () => {
+    const fake = api([], [], [
+      { revision_id: "rev-9", display_text: "记住用中文", source_message_ids: ["m9"] }
+    ]);
+    render(<SessionPreferencePanel workspaceId="w" conversationId="c" api={fake} />);
+
+    const list = await screen.findByRole("list", { name: "已记住的记忆" });
+    fireEvent.click(within(list).getByRole("button", { name: "撤销" }));
+
+    await waitFor(() => expect(fake.reviewMemoryProposal).toHaveBeenCalledWith("w", "rev-9", "REVOKE"));
+    await waitFor(() => expect(screen.queryByText("记住用中文")).toBeNull());
   });
 });
