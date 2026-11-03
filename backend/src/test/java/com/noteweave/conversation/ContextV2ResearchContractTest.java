@@ -101,6 +101,9 @@ class ContextV2ResearchContractTest {
         var brief = briefs.compile(runId, (String) run.get("execution_question"));
         assertThat(brief.planningQuery()).contains(earlier).doesNotContain("tampered after freeze");
         assertThat(brief.researchBrief().get("context_snapshot_id")).isEqualTo(snapshotId);
+        String compiledBriefJson = jdbc.queryForObject(
+                "select compiled_brief_json from research_run where id = ?", String.class, runId);
+        assertThat(compiledBriefJson).contains("\"memory_compiled_after_question\":true");
         coordinator.planAndEnqueue(runId);
         String taskId = jdbc.queryForObject("""
                 select id from research_agent_task where research_run_id = ? order by task_key limit 1
