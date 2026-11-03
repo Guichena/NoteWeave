@@ -55,6 +55,7 @@ describe("ResearchIncrementalPanel", () => {
       add_rows: [{ row_key: "GCP", title: "GCP" }],
       add_columns: [],
       input_changed: false,
+      changed_source_ids: [],
       reason: ""
     }));
     const status = await screen.findByRole("status");
@@ -67,6 +68,7 @@ describe("ResearchIncrementalPanel", () => {
     await screen.findByRole("checkbox", { name: /AWS · 部署方式/ });
 
     fireEvent.click(screen.getByRole("checkbox", { name: /输入资料已变更/ }));
+    fireEvent.change(screen.getByLabelText("变更的资料"), { target: { value: "src-1, src-2" } });
     fireEvent.click(screen.getByRole("button", { name: "开始局部补查" }));
 
     await waitFor(() => expect(fake.reopenIncremental).toHaveBeenCalledWith("w", "run-1", {
@@ -74,6 +76,7 @@ describe("ResearchIncrementalPanel", () => {
       add_rows: [],
       add_columns: [],
       input_changed: true,
+      changed_source_ids: ["src-1", "src-2"],
       reason: ""
     }));
   });

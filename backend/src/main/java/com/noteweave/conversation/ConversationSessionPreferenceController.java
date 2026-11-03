@@ -33,6 +33,14 @@ public class ConversationSessionPreferenceController {
         return ApiResponse.success(service.list(workspaceId, conversationId));
     }
 
+    @GetMapping("/active")
+    ApiResponse<List<ConversationSessionPreferenceService.PendingProposal>> activeMemories(
+            @PathVariable String workspaceId,
+            @PathVariable String conversationId
+    ) {
+        return ApiResponse.success(service.activeMemories(workspaceId, conversationId));
+    }
+
     @GetMapping("/proposals")
     ApiResponse<List<ConversationSessionPreferenceService.PendingProposal>> pendingProposals(
             @PathVariable String workspaceId,

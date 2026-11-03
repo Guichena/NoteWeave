@@ -59,6 +59,12 @@ export class ConversationsApi {
     );
   }
 
+  listActiveMemories(workspaceId: string, conversationId: string) {
+    return this.client.get<PendingMemoryProposal[]>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/active`
+    );
+  }
+
   sessionOnlyRevision(workspaceId: string, conversationId: string, revisionId: string) {
     return this.client.post<SessionPreference>(
       `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session`,
@@ -66,7 +72,7 @@ export class ConversationsApi {
     );
   }
 
-  reviewMemoryProposal(workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT") {
+  reviewMemoryProposal(workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT" | "REVOKE") {
     return this.client.post<void>(
       `/api/v2/workspaces/${workspaceId}/memory/revisions/${revisionId}/review`,
       { decision }

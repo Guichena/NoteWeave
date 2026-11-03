@@ -8,6 +8,7 @@ import { ResearchCheckpointReplayPanel } from "./ResearchCheckpointReplayPanel";
 import { ResearchCheckpointSnapshotPanel } from "./ResearchCheckpointSnapshotPanel";
 import { ResearchCellsPanel } from "./ResearchCellsPanel";
 import { ResearchIncrementalPanel } from "./ResearchIncrementalPanel";
+import { ResearchStandalonePanel } from "./ResearchStandalonePanel";
 import { ResearchClosedLoopStatePanel } from "./ResearchClosedLoopStatePanel";
 import { ResearchDiscoveryPanel } from "./ResearchDiscoveryPanel";
 import { ResearchPlanPanel } from "./ResearchPlanPanel";
@@ -141,6 +142,7 @@ export function ResearchDetailWorkbench({
             <ResearchPlanPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} onStarted={onRefresh} />
             <ResearchCellsPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} refreshKey={run.updated_at} />
             <ResearchIncrementalPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} onStarted={onRefresh} />
+            <ResearchStandalonePanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} />
             <ResearchDiscoveryPanel workspaceId={run.workspace_id} researchRunId={run.research_run_id} refreshKey={run.updated_at} />
             <ResearchProcessOverview
               processSummary={process}
