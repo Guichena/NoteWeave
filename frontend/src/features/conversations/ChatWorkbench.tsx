@@ -13,6 +13,7 @@ import { type SourceAsset } from "../sources/model";
 import { type Workspace } from "../workspace/model";
 import { AnswerModeSelector } from "./AnswerModeSelector";
 import { ChatSourcesPane } from "./ChatSourcesPane";
+import { SessionPreferencePanel } from "./SessionPreferencePanel";
 
 const LazyArtifactRail = lazy(() => import("../artifacts/ArtifactRail").then((module) => ({
   default: module.ArtifactRail
@@ -252,6 +253,13 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
             </button>
           </div>
         </header>
+
+        {workspace && conversation ? (
+          <SessionPreferencePanel
+            workspaceId={workspace.workspace_id}
+            conversationId={conversation.conversation_id}
+          />
+        ) : null}
 
         <div className="conversation" ref={conversationRef} aria-live="polite">
           {messages.length === 0 ? (
