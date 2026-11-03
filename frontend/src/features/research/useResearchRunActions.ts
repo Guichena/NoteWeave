@@ -140,6 +140,7 @@ export function useResearchRunActions({
         retrieval_mode: researchRetrievalMode,
         ...buildResearchSourceSelection(researchRetrievalMode, readySourceIds)
       });
+      await researchApi.attachConversation(workspace.workspace_id, created.research_run_id);
       prepareResearchRun(created.research_run_id);
       await refreshResearchTask(created.task_id, created.research_run_id);
       const questionLabel = nextQuestion.trim().replace(/\s+/g, " ").slice(0, 64);
