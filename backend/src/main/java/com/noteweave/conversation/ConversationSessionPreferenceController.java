@@ -33,6 +33,14 @@ public class ConversationSessionPreferenceController {
         return ApiResponse.success(service.list(workspaceId, conversationId));
     }
 
+    @GetMapping("/proposals")
+    ApiResponse<List<ConversationSessionPreferenceService.PendingProposal>> pendingProposals(
+            @PathVariable String workspaceId,
+            @PathVariable String conversationId
+    ) {
+        return ApiResponse.success(service.pendingProposals(workspaceId, conversationId));
+    }
+
     @PostMapping("/session")
     ApiResponse<ConversationSessionPreferenceService.SessionRequirement> sessionOnly(
             @PathVariable String workspaceId,
