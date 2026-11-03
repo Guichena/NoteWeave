@@ -1197,7 +1197,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
 
         var receipt = incrementalService.reopen(workspaceId, runId,
                 new ResearchIncrementalService.Request(
-                        List.of("entity-1:method"), List.of(), List.of(), false, "补查方法列"));
+                        List.of("entity-1:method"), List.of(), List.of(), false, List.of(), "补查方法列"));
 
         assertThat(receipt.reopenedCells()).isEqualTo(1);
         var tasks = coordinator.planAndEnqueue(runId);

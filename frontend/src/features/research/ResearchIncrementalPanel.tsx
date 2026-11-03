@@ -23,6 +23,7 @@ export function ResearchIncrementalPanel({ workspaceId, researchRunId, onStarted
   const [columnKey, setColumnKey] = useState("");
   const [columnLabel, setColumnLabel] = useState("");
   const [inputChanged, setInputChanged] = useState(false);
+  const [changedSources, setChangedSources] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -54,8 +55,13 @@ export function ResearchIncrementalPanel({ workspaceId, researchRunId, onStarted
       ? [{ row_key: rowKey.trim(), title: rowTitle.trim() }] : [];
     const addColumns = columnKey.trim() && columnLabel.trim()
       ? [{ column_key: columnKey.trim(), label: columnLabel.trim(), answer_format: "SHORT_TEXT" }] : [];
-    if (selected.length === 0 && addRows.length === 0 && addColumns.length === 0 && !inputChanged) {
-      setError("至少勾选一个格、追加行列或标记输入变更");
+    const changedSourceIds = changedSources.split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean);
+    if (selected.length === 0 && addRows.length === 0 && addColumns.length === 0 && changedSourceIds.length === 0) {
+      setError("至少勾选一个格、追加行列或填写变更的资料");
+      return;
+    }
+    if (inputChanged && changedSourceIds.length === 0) {
+      setError("输入变更必须填写变更的资料身份");
       return;
     }
     setBusy(true);
@@ -64,7 +70,8 @@ export function ResearchIncrementalPanel({ workspaceId, researchRunId, onStarted
       cell_keys: selected,
       add_rows: addRows,
       add_columns: addColumns,
-      input_changed: inputChanged,
+      input_changed: inputChanged || changedSourceIds.length > 0,
+      changed_source_ids: changedSourceIds,
       reason: reason.trim()
     };
     try {
@@ -76,6 +83,7 @@ export function ResearchIncrementalPanel({ workspaceId, researchRunId, onStarted
       setColumnKey("");
       setColumnLabel("");
       setInputChanged(false);
+      setChangedSources("");
       onStarted?.();
     } catch {
       setError("局部补查提交失败，请稍后重试");
@@ -113,8 +121,10 @@ export function ResearchIncrementalPanel({ workspaceId, researchRunId, onStarted
         <label>
           <input type="checkbox" checked={inputChanged}
                  onChange={(event) => setInputChanged(event.target.checked)} />
-          输入资料已变更，重新资格检查已核实格
+          输入资料已变更，只重查引用了这些资料的已核实格
         </label>
+        <input aria-label="变更的资料" placeholder="变更的资料 ID，多个用逗号分隔" value={changedSources}
+               onChange={(event) => setChangedSources(event.target.value)} />
         <input aria-label="补查原因" placeholder="补查原因（可选）" value={reason}
                onChange={(event) => setReason(event.target.value)} />
         {error ? <p role="alert">{error}</p> : null}

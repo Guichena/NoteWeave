@@ -18,15 +18,18 @@ public class ResearchRunController {
     private final ResearchRunService researchRunService;
     private final ResearchCollectionService researchCollectionService;
     private final ResearchIncrementalService incrementalService;
+    private final ResearchStandaloneMigrationService standaloneMigrationService;
 
     public ResearchRunController(
             ResearchRunService researchRunService,
             ResearchCollectionService researchCollectionService,
-            ResearchIncrementalService incrementalService
+            ResearchIncrementalService incrementalService,
+            ResearchStandaloneMigrationService standaloneMigrationService
     ) {
         this.researchRunService = researchRunService;
         this.researchCollectionService = researchCollectionService;
         this.incrementalService = incrementalService;
+        this.standaloneMigrationService = standaloneMigrationService;
     }
 
     @GetMapping
@@ -85,6 +88,21 @@ public class ResearchRunController {
             @PathVariable int checkpointNo
     ) {
         return ApiResponse.success(researchRunService.getCheckpoint(workspaceId, researchRunId, checkpointNo));
+    }
+
+    @PostMapping("/migrate-standalone")
+    ApiResponse<ResearchStandaloneMigrationService.Receipt> migrateStandaloneResearch(
+            @PathVariable String workspaceId
+    ) {
+        return ApiResponse.success(standaloneMigrationService.migrateWorkspace(workspaceId));
+    }
+
+    @PostMapping("/{researchRunId}/attach-conversation")
+    ApiResponse<ResearchStandaloneMigrationService.Receipt> attachStandaloneResearch(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId
+    ) {
+        return ApiResponse.success(standaloneMigrationService.migrateOne(workspaceId, researchRunId));
     }
 
     @PostMapping("/{researchRunId}/incremental")

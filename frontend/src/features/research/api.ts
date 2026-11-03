@@ -8,6 +8,7 @@ import {
   type ResearchDiscoveryProposal,
   type ResearchIncrementalReceipt,
   type ResearchIncrementalRequest,
+  type ResearchStandaloneMigrationReceipt,
   type ResearchPlan,
   type ResearchPlanRevision,
   type ResearchReplan,
@@ -81,6 +82,20 @@ export class ResearchApi {
     return this.client.post<ResearchIncrementalReceipt>(
       `${this.runsPath(workspaceId)}/${researchRunId}/incremental`,
       request
+    );
+  }
+
+  attachConversation(workspaceId: string, researchRunId: string) {
+    return this.client.post<ResearchStandaloneMigrationReceipt>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/attach-conversation`,
+      {}
+    );
+  }
+
+  migrateStandalone(workspaceId: string) {
+    return this.client.post<ResearchStandaloneMigrationReceipt>(
+      `${this.runsPath(workspaceId)}/migrate-standalone`,
+      {}
     );
   }
 

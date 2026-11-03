@@ -66,7 +66,7 @@ class ResearchIncrementalServiceTest {
                 List.of("AWS:deployment"),
                 List.of(new ResearchIncrementalService.NewRow("GCP", "GCP")),
                 List.of(new ResearchIncrementalService.NewColumn("cost", "成本", "", "SHORT_TEXT")),
-                false, "补查 GCP 与成本"));
+                false, List.of(), "补查 GCP 与成本"));
 
         assertThat(receipt.reopenedCells()).isEqualTo(1);
         assertThat(receipt.addedRows()).isEqualTo(1);
@@ -96,34 +96,55 @@ class ResearchIncrementalServiceTest {
     }
 
     @Test
-    void inputChangeMarksVerifiedCellsStaleAndClearsEvidence() {
+    void inputChangeStalesOnlyCellsThatCiteTheChangedSource() {
+        jdbc.update("update source_evidence set source_id = 'src-changed' where id = 'evidence-1'");
+        jdbc.update("""
+                insert into research_cell(id,research_run_id,research_row_id,cell_key,column_key,
+                    candidate_value,cell_status,cell_version)
+                values ('cell-2','run-1','row-1','AWS:cost','cost','按量','VERIFIED',1)
+                """);
+        jdbc.update("""
+                insert into source_evidence(id,research_run_id,evidence_key,source_id,quote_text)
+                values ('evidence-2','run-1','evidence-2','src-keep','按量计费')
+                """);
+        jdbc.update("""
+                insert into research_cell_evidence(id,research_run_id,research_cell_id,source_evidence_id,evidence_key)
+                values ('ce-2','run-1','cell-2','evidence-2','evidence-2')
+                """);
+
         var receipt = service.reopen("w", "run-1", new ResearchIncrementalService.Request(
-                List.of(), List.of(), List.of(), true, "资料更新"));
+                List.of(), List.of(), List.of(), true, List.of("src-changed"), "资料更新"));
 
         assertThat(receipt.staleCells()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select cell_status from research_cell where id = 'cell-1'", String.class))
+                .isEqualTo("STALE");
+        assertThat(jdbc.queryForObject("select cell_status from research_cell where id = 'cell-2'", String.class))
+                .isEqualTo("VERIFIED");
         assertThat(jdbc.queryForObject("""
-                select cell_status from research_cell where id = 'cell-1'
-                """, String.class)).isEqualTo("STALE");
-        assertThat(jdbc.queryForObject("""
-                select evidence_refs_json from research_cell where id = 'cell-1'
-                """, String.class)).isNull();
-        assertThat(jdbc.queryForObject("""
-                select count(*) from research_cell_evidence where research_run_id = 'run-1'
+                select count(*) from research_cell_evidence where research_cell_id = 'cell-1'
                 """, Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("""
+                select count(*) from research_cell_evidence where research_cell_id = 'cell-2'
+                """, Integer.class)).isEqualTo(1);
     }
 
     @Test
     void rejectsUnfinishedRunAndUnknownCell() {
         jdbc.update("update research_run set status = 'RUNNING' where id = 'run-1'");
         assertThatThrownBy(() -> service.reopen("w", "run-1", new ResearchIncrementalService.Request(
-                List.of("AWS:deployment"), List.of(), List.of(), false, null)))
+                List.of("AWS:deployment"), List.of(), List.of(), false, List.of(), null)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_INCREMENTAL_NOT_COMPLETED"));
 
         jdbc.update("update research_run set status = 'COMPLETED_VERIFIED' where id = 'run-1'");
         assertThatThrownBy(() -> service.reopen("w", "run-1", new ResearchIncrementalService.Request(
-                List.of("missing:cell"), List.of(), List.of(), false, null)))
+                List.of("missing:cell"), List.of(), List.of(), false, List.of(), null)))
                 .isInstanceOfSatisfying(BusinessException.class,
                         failure -> assertThat(failure.code()).isEqualTo("RESEARCH_INCREMENTAL_CELL_NOT_FOUND"));
+        assertThatThrownBy(() -> service.reopen("w", "run-1", new ResearchIncrementalService.Request(
+                List.of(), List.of(), List.of(), true, List.of(), "没有资料")))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("RESEARCH_INCREMENTAL_SOURCE_SCOPE_REQUIRED"));
     }
 }
