@@ -101,7 +101,7 @@ public class ResearchAgentIncrementalFinalizationService {
             jdbcTemplate.update("""
                     update research_agent_report_artifact
                     set report_digest = ?, report_title = ?, report_markdown = ?,
-                        verified_cell_count = ?, updated_at = current_timestamp
+                        verified_cell_count = ?
                     where id = ?
                     """, reportDigest, title, markdown, cells.size(), artifactId);
         }
