@@ -65,10 +65,11 @@ public class ResearchBriefCompiler {
     public CompiledBrief compile(String runId, String currentQuestion) {
         RunContext run = jdbcTemplate.query("""
                 select workspace_id, question, execution_question, context_snapshot_id,
-                       source_scope_json, control_pack_json
+                       source_scope_json, control_pack_json, profile_key
                 from research_run where id = ?
                 """, rs -> rs.next() ? new RunContext(rs.getString(1), rs.getString(2),
-                rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6)) : null, runId);
+                rs.getString(3), rs.getString(4), rs.getString(5), rs.getString(6),
+                rs.getString(7)) : null, runId);
         if (run == null) throw snapshotMismatch("Research Run is unavailable", null);
         // 复用已编译简报之前仍要校验冻结快照：删除、脱敏或摘要变化必须继续阻断规划，
         // 不能因为简报已落库就跳过当前可用性检查。
@@ -149,11 +150,23 @@ public class ResearchBriefCompiler {
                 llmClient, objectMapper, run.workspaceId(), runId,
                 text(run.question()), recentMessages);
         brief.put("brief_purpose", ResearchBriefQuestionCompiler.PURPOSE);
-        brief.put("research_question", compiledQuestion.researchQuestion().isBlank()
-                ? text(currentQuestion).trim() : compiledQuestion.researchQuestion());
+        String researchQuestion = compiledQuestion.researchQuestion().isBlank()
+                ? text(currentQuestion).trim() : compiledQuestion.researchQuestion();
+        brief.put("research_question", researchQuestion);
         brief.put("key_points", compiledQuestion.keyPoints());
         brief.put("degradation_reasons", compiledQuestion.degradationReasons());
         brief.put("source_policy", safeMap(run.sourceScopeJson()));
+        if (memoryCompilerService != null) {
+            try {
+                var memoryPack = memoryCompilerService.compileResearchControlPack(
+                        run.workspaceId(), run.profileKey(), researchQuestion);
+                brief.put("memory_compiled_after_question", true);
+                brief.put("memory_object_ids", memoryPack.memoryObjectIds());
+                brief.put("memory_references", memoryPack.memoryReferences());
+            } catch (RuntimeException ignored) {
+                brief.put("memory_compiled_after_question", false);
+            }
+        }
         String taskLine = "";
         if (memoryCompilerService != null) {
             try {
@@ -433,7 +446,7 @@ public class ResearchBriefCompiler {
 
     private record RunContext(String workspaceId, String question, String executionQuestion,
                               String contextSnapshotId, String sourceScopeJson,
-                              String controlPackJson) { }
+                              String controlPackJson, String profileKey) { }
 
     private record FrozenProjection(String summaryText, List<FrozenMessage> messages) { }
 
