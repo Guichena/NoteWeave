@@ -112,7 +112,10 @@ class ContextV2ResearchContractTest {
                 new ResearchAgentTaskService.ClaimCommand(taskId, "frozen-worker", 30))
                 .taskSnapshotJson());
         assertThat(taskSnapshot.path("query_policy").path("query").asText())
-                .contains(earlier, current).doesNotContain("tampered after freeze");
+                .doesNotContain("tampered after freeze");
+        assertThat(taskSnapshot.path("query_policy").path("research_brief").toString())
+                .doesNotContain("recent_messages", "conversation_summary",
+                        "tampered after freeze");
     }
 
     @Test
