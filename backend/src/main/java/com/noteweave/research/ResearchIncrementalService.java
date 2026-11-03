@@ -67,7 +67,7 @@ public class ResearchIncrementalService {
         }
         Integer activeTasks = jdbcTemplate.queryForObject("""
                 select count(*) from research_agent_task
-                where research_run_id = ? and status in ('READY', 'SUBMITTED', 'CLAIMED', 'RUNNING')
+                where research_run_id = ? and status in ('READY', 'RETRY_WAIT', 'CLAIMED', 'RUNNING')
                 """, Integer.class, runId);
         if (activeTasks != null && activeTasks > 0) {
             throw new BusinessException("RESEARCH_INCREMENTAL_ACTIVE_TASKS",
