@@ -123,20 +123,36 @@ public final class ResearchBriefQuestionCompiler {
     private static Result fallback(List<Map<String, Object>> messages, String originalQuestion,
                                    String reason) {
         String question = originalQuestion == null ? "" : originalQuestion.strip();
+        List<Map<String, Object>> keyPoints = new ArrayList<>();
+        int userMessagesSeen = 0;
         for (int index = messages.size() - 1; index >= 0; index--) {
             Map<String, Object> message = messages.get(index);
-            if ("USER".equals(String.valueOf(message.get("role")))) {
-                String content = String.valueOf(message.get("content"));
-                if (!content.isBlank()) {
-                    question = content.strip();
-                    break;
-                }
+            if (!"USER".equals(String.valueOf(message.get("role")))) {
+                continue;
+            }
+            String content = String.valueOf(message.get("content"));
+            if (content.isBlank()) {
+                continue;
+            }
+            if (userMessagesSeen++ == 0) {
+                question = content.strip();
+                continue;
+            }
+            String text = content.strip();
+            if (text.length() > MAX_POINT_CHARS) {
+                text = text.substring(0, MAX_POINT_CHARS);
+            }
+            keyPoints.add(Map.of(
+                    "text", text,
+                    "source_message_id", String.valueOf(message.get("message_id"))));
+            if (keyPoints.size() >= 3) {
+                break;
             }
         }
         if (question.length() > MAX_QUESTION_CHARS) {
             question = question.substring(0, MAX_QUESTION_CHARS);
         }
-        return new Result(question, List.of(), List.of(reason), true);
+        return new Result(question, List.copyOf(keyPoints), List.of(reason), true);
     }
 
     private static String userPrompt(String originalQuestion, List<Map<String, Object>> messages) {

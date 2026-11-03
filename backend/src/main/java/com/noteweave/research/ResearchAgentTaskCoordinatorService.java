@@ -488,7 +488,70 @@ public class ResearchAgentTaskCoordinatorService {
                 java.util.stream.Stream.concat(java.util.stream.Stream.of(runId), cellKeys.stream()).toArray());
         if (Boolean.TRUE.equals(counterRequired)) policy.put("counter_required", true);
         policy.putAll(planGuidance(runId));
+        // F3-02：单元格任务只带独立问题、对象、维度与必要前提，不复制整段对话/长期记忆。
+        policy.put("query", cellQuery(policy, label, columnSpecs));
+        policy.put("research_brief", scopedBrief(policy.get("research_brief")));
         return policy;
+    }
+
+    private static String cellQuery(Map<String, Object> policy, String entityLabel,
+                                    List<Map<String, Object>> columnSpecs) {
+        String question = "";
+        Object rawBrief = policy.get("research_brief");
+        if (rawBrief instanceof Map<?, ?> brief && brief.get("research_question") instanceof String value) {
+            question = value.strip();
+        }
+        if (question.isBlank()) {
+            question = String.valueOf(policy.getOrDefault("query", "")).strip();
+        }
+        if (question.length() > 500) {
+            question = question.substring(0, 500);
+        }
+        StringBuilder builder = new StringBuilder(question);
+        if (entityLabel != null && !entityLabel.isBlank() && !"Subject".equalsIgnoreCase(entityLabel.strip())) {
+            builder.append(" | 对象:").append(entityLabel.strip());
+        }
+        List<String> dimensions = columnSpecs.stream()
+                .map(spec -> String.valueOf(spec.getOrDefault("label", spec.getOrDefault("key", ""))).strip())
+                .filter(label -> !label.isBlank())
+                .toList();
+        if (!dimensions.isEmpty()) {
+            builder.append(" | 维度:").append(String.join(",", dimensions));
+        }
+        if (rawBrief instanceof Map<?, ?> brief && brief.get("key_points") instanceof List<?> points) {
+            List<String> pointTexts = points.stream()
+                    .filter(Map.class::isInstance)
+                    .map(point -> {
+                        Object text = ((Map<?, ?>) point).get("text");
+                        return text == null ? "" : String.valueOf(text).strip();
+                    })
+                    .filter(text -> !text.isBlank())
+                    .limit(3)
+                    .toList();
+            if (!pointTexts.isEmpty()) {
+                builder.append(" | 要点:").append(String.join("；", pointTexts));
+            }
+        }
+        String query = builder.toString();
+        return query.length() <= 800 ? query : query.substring(0, 800);
+    }
+
+    private static Map<String, Object> scopedBrief(Object rawBrief) {
+        if (!(rawBrief instanceof Map<?, ?> brief)) {
+            return Map.of();
+        }
+        Set<String> allowed = Set.of(
+                "schema_version", "entry_point", "brief_purpose", "original_question", "research_question",
+                "key_points", "output_requirements", "source_policy", "coverage", "seeds",
+                "task_parameters", "task_parameters_unsupported", "memory_object_ids", "premises",
+                "context_snapshot_id", "context_compiler_version", "context_projection_sha256");
+        Map<String, Object> scoped = new LinkedHashMap<>();
+        brief.forEach((key, value) -> {
+            if (key instanceof String name && allowed.contains(name)) {
+                scoped.put(name, value);
+            }
+        });
+        return Map.copyOf(scoped);
     }
 
     /** 模型规划写入的列定义；没有经过模型规划的 Run 返回空表，退回使用列标签。 */
