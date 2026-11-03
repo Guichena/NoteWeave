@@ -1,4 +1,4 @@
-package com.noteweave.research;
+package com.noteweave.conversation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
