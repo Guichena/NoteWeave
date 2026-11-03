@@ -532,7 +532,14 @@ export type ResearchIncrementalRequest = {
   add_rows: Array<{ row_key: string; title: string }>;
   add_columns: Array<{ column_key: string; label: string; description?: string; answer_format?: string }>;
   input_changed: boolean;
+  changed_source_ids: string[];
   reason?: string;
+};
+
+export type ResearchStandaloneMigrationReceipt = {
+  migrated: number;
+  skipped: number;
+  conversation_ids: string[];
 };
 
 export type ResearchIncrementalReceipt = {

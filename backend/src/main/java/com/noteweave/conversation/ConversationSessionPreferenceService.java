@@ -162,6 +162,32 @@ public class ConversationSessionPreferenceService {
         return List.copyOf(proposals);
     }
 
+    /** 本对话里已经生效、可以撤销的记忆。撤销仍走 canonical review 的 REVOKE。 */
+    public List<PendingProposal> activeMemories(String workspaceId, String conversationId) {
+        requireConversation(workspaceId, conversationId);
+        List<ProposalRow> rows = jdbcTemplate.query("""
+                select r.id, r.display_text, c.created_from_signal_ids_json
+                from memory_runtime_revision r
+                join memory_candidate c on c.id = r.provenance_ref
+                where r.workspace_id = ? and r.status = 'ACTIVE'
+                  and r.provenance_type = 'MEMORY_CANDIDATE'
+                order by r.created_at, r.id
+                """, (rs, rowNum) -> new ProposalRow(
+                rs.getString("id"), rs.getString("display_text"),
+                rs.getString("created_from_signal_ids_json")), workspaceId);
+        List<PendingProposal> active = new ArrayList<>();
+        for (ProposalRow row : rows) {
+            List<String> inConversation = sourceMessageIds(workspaceId, row.signalIdsJson()).stream()
+                    .filter(messageId -> belongsToConversation(workspaceId, conversationId, messageId))
+                    .toList();
+            if (!inConversation.isEmpty()) {
+                active.add(new PendingProposal(row.revisionId(),
+                        row.displayText() == null ? "" : row.displayText(), inConversation));
+            }
+        }
+        return List.copyOf(active);
+    }
+
     private List<String> sourceMessageIds(String workspaceId, String signalIdsJson) {
         if (signalIdsJson == null || signalIdsJson.isBlank()) {
             return List.of();

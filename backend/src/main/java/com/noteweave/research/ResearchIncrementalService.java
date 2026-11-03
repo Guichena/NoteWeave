@@ -36,11 +36,18 @@ public class ResearchIncrementalService {
 
     @Transactional
     public Receipt reopen(String workspaceId, String runId, Request request) {
-        if (request == null || (request.cellKeys().isEmpty()
-                && request.addRows().isEmpty() && request.addColumns().isEmpty()
-                && !request.inputChanged())) {
+        if (request == null) {
             throw new BusinessException("RESEARCH_INCREMENTAL_EMPTY",
-                    "至少需要指定重开单元格、追加行列或输入变更", HttpStatus.BAD_REQUEST);
+                    "至少需要指定重开单元格、追加行列或变更的资料", HttpStatus.BAD_REQUEST);
+        }
+        if (request.inputChanged() && request.changedSourceIds().isEmpty()) {
+            throw new BusinessException("RESEARCH_INCREMENTAL_SOURCE_SCOPE_REQUIRED",
+                    "输入变更必须给出变更的资料身份，不能把全部已核实格标成过期", HttpStatus.BAD_REQUEST);
+        }
+        if (request.cellKeys().isEmpty() && request.addRows().isEmpty()
+                && request.addColumns().isEmpty() && request.changedSourceIds().isEmpty()) {
+            throw new BusinessException("RESEARCH_INCREMENTAL_EMPTY",
+                    "至少需要指定重开单元格、追加行列或变更的资料", HttpStatus.BAD_REQUEST);
         }
         RunRow run = jdbcTemplate.query("""
                 select status, agent_execution_mode from research_run
@@ -136,18 +143,7 @@ public class ResearchIncrementalService {
             reopened++;
         }
 
-        int stale = 0;
-        if (request.inputChanged()) {
-            stale = jdbcTemplate.update("""
-                    update research_cell
-                    set cell_status = 'STALE', evidence_refs_json = null, confidence_score = null,
-                        confidence_score_ppm = null, last_verifier_decision = null,
-                        cell_version = cell_version + 1, active_task_id = null,
-                        updated_at = current_timestamp
-                    where research_run_id = ? and cell_status = 'VERIFIED'
-                    """, runId);
-            jdbcTemplate.update("delete from research_cell_evidence where research_run_id = ?", runId);
-        }
+        int stale = markStaleBySources(runId, request.changedSourceIds());
 
         jdbcTemplate.update("""
                 update research_run set status = 'RUNNING', updated_at = current_timestamp
@@ -158,7 +154,8 @@ public class ResearchIncrementalService {
         payload.put("added_rows", addedRows);
         payload.put("added_columns", addedColumns);
         payload.put("stale_cells", stale);
-        payload.put("input_changed", request.inputChanged());
+        payload.put("input_changed", !request.changedSourceIds().isEmpty());
+        payload.put("changed_source_ids", request.changedSourceIds());
         payload.put("reason", request.reason() == null ? "" : request.reason());
         payload.put("report_version_relation", "NEW_REPORT_APPENDED_TO_SAME_RUN");
         jdbcTemplate.update("""
@@ -169,6 +166,45 @@ public class ResearchIncrementalService {
                 "select count(*) from research_cell where research_run_id = ?", Integer.class, runId);
         return new Receipt(runId, reopened, addedRows, addedColumns, stale, totalCells,
                 "NEW_REPORT_APPENDED_TO_SAME_RUN");
+    }
+
+    /**
+     * 只把引用了变更资料的已核实格标成 STALE。没有证据指向这些资料的格子保持原状。
+     */
+    private int markStaleBySources(String runId, List<String> sourceIds) {
+        if (sourceIds.isEmpty()) {
+            return 0;
+        }
+        String placeholders = String.join(",", java.util.Collections.nCopies(sourceIds.size(), "?"));
+        Object[] parameters = new Object[sourceIds.size() + 1];
+        parameters[0] = runId;
+        for (int index = 0; index < sourceIds.size(); index++) {
+            parameters[index + 1] = sourceIds.get(index);
+        }
+        List<String> cellIds = jdbcTemplate.queryForList("""
+                select distinct cell.id
+                from research_cell cell
+                join research_cell_evidence link on link.research_cell_id = cell.id
+                join source_evidence evidence on evidence.id = link.source_evidence_id
+                where cell.research_run_id = ? and cell.cell_status = 'VERIFIED'
+                  and evidence.source_id in (%s)
+                """.formatted(placeholders), String.class, parameters);
+        int stale = 0;
+        for (String cellId : cellIds) {
+            stale += jdbcTemplate.update("""
+                    update research_cell
+                    set cell_status = 'STALE', evidence_refs_json = null, confidence_score = null,
+                        confidence_score_ppm = null, last_verifier_decision = null,
+                        cell_version = cell_version + 1, active_task_id = null,
+                        updated_at = current_timestamp
+                    where id = ? and research_run_id = ? and cell_status = 'VERIFIED'
+                    """, cellId, runId);
+            jdbcTemplate.update("""
+                    delete from research_cell_evidence
+                    where research_run_id = ? and research_cell_id = ?
+                    """, runId, cellId);
+        }
+        return stale;
     }
 
     private void insertCell(String runId, String rowId, String cellKey, String columnKey,
@@ -211,11 +247,16 @@ public class ResearchIncrementalService {
     public record NewColumn(String columnKey, String label, String description, String answerFormat) { }
 
     public record Request(List<String> cellKeys, List<NewRow> addRows, List<NewColumn> addColumns,
-                          boolean inputChanged, String reason) {
+                          boolean inputChanged, List<String> changedSourceIds, String reason) {
         public Request {
             cellKeys = cellKeys == null ? List.of() : List.copyOf(cellKeys);
             addRows = addRows == null ? List.of() : List.copyOf(addRows);
             addColumns = addColumns == null ? List.of() : List.copyOf(addColumns);
+            changedSourceIds = changedSourceIds == null ? List.of() : changedSourceIds.stream()
+                    .filter(id -> id != null && !id.isBlank())
+                    .map(String::strip)
+                    .distinct()
+                    .toList();
         }
     }
 
