@@ -4,6 +4,7 @@ import {
   type ConversationMessage,
   type ConversationSummary,
   type CreateConversationInput,
+  type PendingMemoryProposal,
   type SessionPreference
 } from "./model";
 
@@ -49,6 +50,26 @@ export class ConversationsApi {
   removeSessionPreference(workspaceId: string, conversationId: string, requirementId: string) {
     return this.client.delete(
       `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session/${requirementId}`
+    );
+  }
+
+  listPendingProposals(workspaceId: string, conversationId: string) {
+    return this.client.get<PendingMemoryProposal[]>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/proposals`
+    );
+  }
+
+  sessionOnlyRevision(workspaceId: string, conversationId: string, revisionId: string) {
+    return this.client.post<SessionPreference>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session`,
+      { revision_id: revisionId }
+    );
+  }
+
+  reviewMemoryProposal(workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT") {
+    return this.client.post<void>(
+      `/api/v2/workspaces/${workspaceId}/memory/revisions/${revisionId}/review`,
+      { decision }
     );
   }
 }
