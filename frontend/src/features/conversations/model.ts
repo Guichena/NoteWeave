@@ -50,3 +50,10 @@ export type SessionPreference = {
   requirement_text: string;
   status: string;
 };
+
+/** F5-03：本对话里待确认的 Memory 候选。 */
+export type PendingMemoryProposal = {
+  revision_id: string;
+  display_text: string;
+  source_message_ids: string[];
+};

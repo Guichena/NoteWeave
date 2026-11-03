@@ -4,7 +4,11 @@ import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
 import com.noteweave.memory.CanonicalMemoryReviewService;
 import com.noteweave.memory.MemoryReviewDecisionRequest;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -125,6 +129,73 @@ public class ConversationSessionPreferenceService {
                 rs.getString("status")), workspaceId, conversationId);
     }
 
+    /**
+     * 本对话里待确认的 Memory 候选。
+     *
+     * <p>系统设计上不新增候选-会话外键：候选通过 {@code created_from_signal_ids_json}
+     * 指向 memory_signal，signal 的 {@code source_type=MESSAGE}/{@code source_id} 就是来源消息；
+     * 消息再归属会话。这样保持既有 Memory 生命周期，不需要回填或复制会话身份。</p>
+     */
+    public List<PendingProposal> pendingProposals(String workspaceId, String conversationId) {
+        requireConversation(workspaceId, conversationId);
+        List<ProposalRow> rows = jdbcTemplate.query("""
+                select r.id, r.display_text, c.created_from_signal_ids_json
+                from memory_runtime_revision r
+                join memory_candidate c on c.id = r.provenance_ref
+                where r.workspace_id = ? and r.status = 'PROPOSED'
+                  and r.provenance_type = 'MEMORY_CANDIDATE'
+                order by r.created_at, r.id
+                """, (rs, rowNum) -> new ProposalRow(
+                rs.getString("id"), rs.getString("display_text"),
+                rs.getString("created_from_signal_ids_json")), workspaceId);
+        List<PendingProposal> proposals = new ArrayList<>();
+        for (ProposalRow row : rows) {
+            List<String> messageIds = sourceMessageIds(workspaceId, row.signalIdsJson());
+            List<String> inConversation = messageIds.stream()
+                    .filter(messageId -> belongsToConversation(workspaceId, conversationId, messageId))
+                    .toList();
+            if (!inConversation.isEmpty()) {
+                proposals.add(new PendingProposal(row.revisionId(),
+                        row.displayText() == null ? "" : row.displayText(), inConversation));
+            }
+        }
+        return List.copyOf(proposals);
+    }
+
+    private List<String> sourceMessageIds(String workspaceId, String signalIdsJson) {
+        if (signalIdsJson == null || signalIdsJson.isBlank()) {
+            return List.of();
+        }
+        try {
+            List<String> signalIds = new ObjectMapper().readValue(
+                    signalIdsJson, new TypeReference<List<String>>() { });
+            if (signalIds.isEmpty()) {
+                return List.of();
+            }
+            String placeholders = String.join(",", java.util.Collections.nCopies(signalIds.size(), "?"));
+            Object[] parameters = new Object[signalIds.size() + 1];
+            parameters[0] = workspaceId;
+            for (int index = 0; index < signalIds.size(); index++) {
+                parameters[index + 1] = signalIds.get(index);
+            }
+            return jdbcTemplate.queryForList("""
+                    select source_id from memory_signal
+                    where workspace_id = ? and source_type = 'MESSAGE' and source_id is not null
+                      and id in (%s)
+                    """.formatted(placeholders), String.class, parameters);
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    private boolean belongsToConversation(String workspaceId, String conversationId, String messageId) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from conversation_message
+                where workspace_id = ? and conversation_id = ? and id = ?
+                """, Integer.class, workspaceId, conversationId, messageId);
+        return count != null && count > 0;
+    }
+
     @Transactional
     public void deactivate(String workspaceId, String conversationId, String requirementId) {
         int updated = jdbcTemplate.update("""
@@ -160,6 +231,15 @@ public class ConversationSessionPreferenceService {
     }
 
     private record RevisionRow(String id, String status, String displayText) {
+    }
+
+    private record ProposalRow(String revisionId, String displayText, String signalIdsJson) {
+    }
+
+    public record PendingProposal(String revisionId, String displayText, List<String> sourceMessageIds) {
+        public PendingProposal {
+            sourceMessageIds = sourceMessageIds == null ? List.of() : List.copyOf(sourceMessageIds);
+        }
     }
 
     public record SessionRequirement(String id, String conversationId, String sourceRevisionId,
