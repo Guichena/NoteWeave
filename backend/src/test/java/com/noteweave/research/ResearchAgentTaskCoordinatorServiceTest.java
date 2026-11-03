@@ -31,6 +31,7 @@ class ResearchAgentTaskCoordinatorServiceTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ResearchAgentTaskCoordinatorService coordinator;
     @Autowired private ResearchAgentTaskService taskService;
+    @Autowired private ResearchIncrementalService incrementalService;
     @Autowired private ResearchAgentAdvancementTaskizationService advancementTaskization;
     @Autowired private ResearchAgentGapProjectionService gapProjection;
     @Autowired private ResearchAgentRepairAdvancementService repairAdvancement;
@@ -1187,6 +1188,23 @@ class ResearchAgentTaskCoordinatorServiceTest {
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_task where research_run_id = ?", Integer.class, runId)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_budget_reservation where research_run_id = ?", Integer.class, runId)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from research_agent_outbox where research_run_id = ?", Integer.class, runId)).isZero();
+    }
+
+    @Test
+    void incrementalReopenOnlyTaskizesTheReopenedCell() {
+        jdbcTemplate.update("update research_cell set cell_status = 'VERIFIED' where research_run_id = ?", runId);
+        jdbcTemplate.update("update research_run set status = 'COMPLETED_VERIFIED' where id = ?", runId);
+
+        var receipt = incrementalService.reopen(workspaceId, runId,
+                new ResearchIncrementalService.Request(
+                        List.of("entity-1:method"), List.of(), List.of(), false, "补查方法列"));
+
+        assertThat(receipt.reopenedCells()).isEqualTo(1);
+        var tasks = coordinator.planAndEnqueue(runId);
+        assertThat(tasks.createdTaskCount()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                select cell_status from research_cell where research_run_id = ? and cell_key = 'entity-1:evidence'
+                """, String.class, runId)).isEqualTo("VERIFIED");
     }
 
     private ResearchAgentRunAdvancementService.AdvanceCommand advanceCommand() {
