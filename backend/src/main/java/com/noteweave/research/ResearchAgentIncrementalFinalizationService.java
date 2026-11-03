@@ -85,12 +85,26 @@ public class ResearchAgentIncrementalFinalizationService {
         String title = ResearchDisplayLabels.reportTitle(run.question());
         String artifactId = Ids.newId();
         String reportDigest = sha256(markdown);
-        jdbcTemplate.update("""
-                insert into research_agent_report_artifact(
-                    id, research_run_id, generation_key, report_digest,
-                    report_title, report_markdown, verified_cell_count
-                ) values (?, ?, 'canonical-ledger:v1', ?, ?, ?, ?)
-                """, artifactId, runId, reportDigest, title, markdown, cells.size());
+        String existingArtifactId = jdbcTemplate.query("""
+                select id from research_agent_report_artifact where research_run_id = ?
+                """, rs -> rs.next() ? rs.getString(1) : null, runId);
+        if (existingArtifactId == null) {
+            jdbcTemplate.update("""
+                    insert into research_agent_report_artifact(
+                        id, research_run_id, generation_key, report_digest,
+                        report_title, report_markdown, verified_cell_count
+                    ) values (?, ?, 'canonical-ledger:v1', ?, ?, ?, ?)
+                    """, artifactId, runId, reportDigest, title, markdown, cells.size());
+        } else {
+            // 增量重开后同一 Run 会再次 finalize；报告产物按 Run 幂等覆盖，不重复插入。
+            artifactId = existingArtifactId;
+            jdbcTemplate.update("""
+                    update research_agent_report_artifact
+                    set report_digest = ?, report_title = ?, report_markdown = ?,
+                        verified_cell_count = ?, updated_at = current_timestamp
+                    where id = ?
+                    """, reportDigest, title, markdown, cells.size(), artifactId);
+        }
         jdbcTemplate.update("update research_run set status = 'COMPLETED', final_report_title = ?, final_report_markdown = ?, updated_at = current_timestamp where id = ? and status = 'RUNNING'", title, markdown, runId);
         if (synthesis != null) {
             jdbcTemplate.update("""
