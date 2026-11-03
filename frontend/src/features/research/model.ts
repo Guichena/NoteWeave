@@ -526,6 +526,25 @@ export type ResearchCell = {
 
 export type ResearchEvidenceLevel = "VERIFIED" | "SOURCED" | "RELATED" | "NOT_FOUND";
 
+/** 第七期：局部补查与扩展研究。 */
+export type ResearchIncrementalRequest = {
+  cell_keys: string[];
+  add_rows: Array<{ row_key: string; title: string }>;
+  add_columns: Array<{ column_key: string; label: string; description?: string; answer_format?: string }>;
+  input_changed: boolean;
+  reason?: string;
+};
+
+export type ResearchIncrementalReceipt = {
+  research_run_id: string;
+  reopened_cells: number;
+  added_rows: number;
+  added_columns: number;
+  stale_cells: number;
+  total_cells: number;
+  report_version_relation: string;
+};
+
 export type ResearchLeadQuote = {
   evidence_key: string;
   quote_text: string;
