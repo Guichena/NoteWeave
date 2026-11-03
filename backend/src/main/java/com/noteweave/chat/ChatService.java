@@ -383,6 +383,10 @@ public class ChatService {
                 .reduce((left, right) -> left + "," + right).orElse(""));
         attributes.put("context_research_cell_ambiguous",
                 Boolean.toString(cellMatches.stream().anyMatch(match -> match.ambiguous())));
+        String cellBoundary = com.noteweave.research.ResearchCellFollowUpService.unverifiedBoundary(cellMatches);
+        if (!cellBoundary.isBlank()) {
+            attributes.put("context_research_cell_unverified_boundary", "true");
+        }
         // 已定位且已核实的单元格证据需要进入本轮研究报告范围，才能通过所有权守卫。
         Set<String> effectiveReportScope = new java.util.LinkedHashSet<>(reportScope);
         cellMatches.stream()
@@ -447,6 +451,9 @@ public class ChatService {
         strategyContractValidator.validatePromptAndPolicy(
                 plan, bundle, prompt, policy);
         String tagged = prefixWithTemplateMarker(prompt.userPrompt(), attributes.get("template_label"));
+        if (!cellBoundary.isBlank()) {
+            tagged = tagged + "\n\n" + cellBoundary;
+        }
         return new AnswerDraft(
                 tagged,
                 selectedWikiCitationIds(bundle),
