@@ -6,7 +6,10 @@ import { SessionPreferencePanel } from "./SessionPreferencePanel";
 
 afterEach(cleanup);
 
-function api(initial: Array<{ id: string; conversation_id: string; requirement_text: string; status: string }> = []) {
+function api(
+  initial: Array<{ id: string; conversation_id: string; requirement_text: string; status: string }> = [],
+  proposals: Array<{ revision_id: string; display_text: string; source_message_ids: string[] }> = []
+) {
   return {
     listSessionPreferences: vi.fn().mockResolvedValue(initial),
     addSessionPreference: vi.fn().mockImplementation((_w: string, _c: string, text: string) =>
@@ -17,7 +20,15 @@ function api(initial: Array<{ id: string; conversation_id: string; requirement_t
         status: "ACTIVE"
       })
     ),
-    removeSessionPreference: vi.fn().mockResolvedValue(undefined)
+    removeSessionPreference: vi.fn().mockResolvedValue(undefined),
+    listPendingProposals: vi.fn().mockResolvedValue(proposals),
+    sessionOnlyRevision: vi.fn().mockResolvedValue({
+      id: "session-id",
+      conversation_id: "c",
+      requirement_text: "候选要求",
+      status: "ACTIVE"
+    }),
+    reviewMemoryProposal: vi.fn().mockResolvedValue(undefined)
   };
 }
 
@@ -45,5 +56,32 @@ describe("SessionPreferencePanel", () => {
 
     await waitFor(() => expect(fake.removeSessionPreference).toHaveBeenCalledWith("w", "c", "r1"));
     await waitFor(() => expect(screen.queryByText("旧要求")).toBeNull());
+  });
+
+  it("待确认候选可以记住", async () => {
+    const fake = api([], [
+      { revision_id: "rev-1", display_text: "回答用中文", source_message_ids: ["m1"] }
+    ]);
+    render(<SessionPreferencePanel workspaceId="w" conversationId="c" api={fake} />);
+
+    const list = await screen.findByRole("list", { name: "待确认记忆" });
+    fireEvent.click(within(list).getByRole("button", { name: "记住" }));
+
+    await waitFor(() => expect(fake.reviewMemoryProposal).toHaveBeenCalledWith("w", "rev-1", "ACCEPT"));
+    await waitFor(() => expect(screen.queryByText("回答用中文")).toBeNull());
+  });
+
+  it("待确认候选可以只用于本对话", async () => {
+    const fake = api([], [
+      { revision_id: "rev-1", display_text: "回答用中文", source_message_ids: ["m1"] }
+    ]);
+    render(<SessionPreferencePanel workspaceId="w" conversationId="c" api={fake} />);
+
+    const list = await screen.findByRole("list", { name: "待确认记忆" });
+    fireEvent.click(within(list).getByRole("button", { name: "只用于本对话" }));
+
+    await waitFor(() => expect(fake.sessionOnlyRevision).toHaveBeenCalledWith("w", "c", "rev-1"));
+    const items = await screen.findByRole("list", { name: "会话要求列表" });
+    expect(within(items).getByText("候选要求")).toBeTruthy();
   });
 });

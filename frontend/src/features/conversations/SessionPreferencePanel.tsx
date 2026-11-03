@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
 import { conversationsApi } from "./api";
-import type { SessionPreference } from "./model";
+import type { PendingMemoryProposal, SessionPreference } from "./model";
 
 type SessionPreferenceApi = {
   listSessionPreferences: (workspaceId: string, conversationId: string) => Promise<SessionPreference[]>;
   addSessionPreference: (workspaceId: string, conversationId: string, text: string) => Promise<SessionPreference>;
   removeSessionPreference: (workspaceId: string, conversationId: string, requirementId: string) => Promise<void>;
+  listPendingProposals: (workspaceId: string, conversationId: string) => Promise<PendingMemoryProposal[]>;
+  sessionOnlyRevision: (workspaceId: string, conversationId: string, revisionId: string) => Promise<SessionPreference>;
+  reviewMemoryProposal: (workspaceId: string, revisionId: string, decision: "ACCEPT" | "REJECT") => Promise<void>;
 };
 
 type Props = {
@@ -15,11 +18,12 @@ type Props = {
 };
 
 /**
- * F5-03：只用于本对话的会话要求。用户直接写一条要求，后续回答只在当前对话使用；
- * 不写入长期记忆，删除即停用。
+ * F5-03：只用于本对话的会话要求，以及本对话里的待确认 Memory 候选。
+ * 候选通过来源消息归属会话；记住/忽略走既有 Memory 生命周期，只用于本对话会拒绝候选并生成会话要求。
  */
 export function SessionPreferencePanel({ workspaceId, conversationId, api = conversationsApi }: Props) {
   const [items, setItems] = useState<SessionPreference[]>([]);
+  const [proposals, setProposals] = useState<PendingMemoryProposal[]>([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -29,13 +33,20 @@ export function SessionPreferencePanel({ workspaceId, conversationId, api = conv
     setError("");
     if (!workspaceId || !conversationId) {
       setItems([]);
+      setProposals([]);
       return () => {
         cancelled = true;
       };
     }
-    api.listSessionPreferences(workspaceId, conversationId)
-      .then((loaded) => {
-        if (!cancelled) setItems(loaded);
+    Promise.all([
+      api.listSessionPreferences(workspaceId, conversationId),
+      api.listPendingProposals(workspaceId, conversationId)
+    ])
+      .then(([loadedItems, loadedProposals]) => {
+        if (!cancelled) {
+          setItems((current) => (current.length > 0 ? current : loadedItems));
+          setProposals((current) => (current.length > 0 ? current : loadedProposals));
+        }
       })
       .catch(() => {
         if (!cancelled) setError("暂时读不到会话偏好");
@@ -75,10 +86,53 @@ export function SessionPreferencePanel({ workspaceId, conversationId, api = conv
     }
   }
 
+  async function resolveProposal(proposal: PendingMemoryProposal, decision: "ACCEPT" | "REJECT" | "SESSION") {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (decision === "SESSION") {
+        const created = await api.sessionOnlyRevision(workspaceId, conversationId, proposal.revision_id);
+        setItems((current) => [...current, created]);
+      } else {
+        await api.reviewMemoryProposal(workspaceId, proposal.revision_id, decision);
+      }
+      setProposals((current) => current.filter((item) => item.revision_id !== proposal.revision_id));
+    } catch {
+      setError("处理失败，请稍后重试");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <details className="session-preference-panel">
       <summary>会话偏好（只用于本对话）{items.length > 0 ? ` · ${items.length}` : ""}</summary>
       <div className="session-preference-body">
+        {proposals.length > 0 ? (
+          <div className="session-preference-proposals">
+            <strong>待确认记忆</strong>
+            <ul aria-label="待确认记忆">
+              {proposals.map((proposal) => (
+                <li key={proposal.revision_id}>
+                  <span>{proposal.display_text}</span>
+                  <button type="button" className="link-button" disabled={busy}
+                          onClick={() => void resolveProposal(proposal, "ACCEPT")}>
+                    记住
+                  </button>
+                  <button type="button" className="link-button" disabled={busy}
+                          onClick={() => void resolveProposal(proposal, "REJECT")}>
+                    忽略
+                  </button>
+                  <button type="button" className="link-button" disabled={busy}
+                          onClick={() => void resolveProposal(proposal, "SESSION")}>
+                    只用于本对话
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <div className="session-preference-input">
           <input
             aria-label="会话要求"

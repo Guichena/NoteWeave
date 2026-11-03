@@ -100,6 +100,47 @@ class ConversationSessionPreferenceServiceTest {
     }
 
     @Test
+    void pendingProposalIsFoundThroughSignalSourceMessage() {
+        jdbc.update("""
+                insert into conversation_message(id,conversation_id,workspace_id,message_seq,role,
+                    content,context_status)
+                values ('msg-1','c','w',1,'USER','回答用中文','CURRENT')
+                """);
+        jdbc.update("""
+                insert into memory_item(id,workspace_id,memory_scope,scope_ref_key,slot_key,
+                    slot_schema_version,status)
+                values ('item-2','w','WORKSPACE','w','style.language','v1','PENDING')
+                """);
+        jdbc.update("""
+                insert into memory_signal(id,workspace_id,user_id,source_type,source_id,signal_type,
+                    signal_text,task_neighborhood)
+                values ('sig-1','w','local-user','MESSAGE','msg-1','EXPLICIT',
+                    '回答用中文','NOTE')
+                """);
+        jdbc.update("""
+                insert into memory_candidate(id,workspace_id,user_id,candidate_type,
+                    normalized_statement,task_neighborhood_json,evidence_gate_status,novelty_score,
+                    marginal_utility_score,conflict_status,staleness_status,
+                    created_from_signal_ids_json,review_status)
+                values ('cand-1','w','local-user','PREFERENCE','回答用中文','{}','PASS',0.8,
+                    0.8,'NO_CONFLICT','FRESH','["sig-1"]','PROPOSED')
+                """);
+        jdbc.update("""
+                insert into memory_runtime_revision(id,memory_item_id,workspace_id,version_no,status,
+                    display_text,provenance_type,provenance_ref,content_hash)
+                values ('rev-2','item-2','w',1,'PROPOSED','回答用中文','MEMORY_CANDIDATE','cand-1','hash-2')
+                """);
+
+        var proposals = service.pendingProposals("w", "c");
+
+        assertThat(proposals).singleElement().satisfies(proposal -> {
+            assertThat(proposal.revisionId()).isEqualTo("rev-2");
+            assertThat(proposal.displayText()).isEqualTo("回答用中文");
+            assertThat(proposal.sourceMessageIds()).containsExactly("msg-1");
+        });
+    }
+
+    @Test
     void emptyTextRequirementIsRejected() {
         assertThatThrownBy(() -> service.addText("w", "c", "  "))
                 .isInstanceOfSatisfying(BusinessException.class,
