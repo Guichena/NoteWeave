@@ -56,6 +56,52 @@ class ContextOfflineContractStatisticsTest {
         assertThat(first.generationContext()).doesNotContain("另一个会话");
     }
 
+    @Test
+    void twentySyntheticLongConversationsStayBoundedAndDeterministic() {
+        var projection = new ConversationContextProjectionService.Projection(List.of(), List.of());
+        int conversations = 20;
+        int turns = 30;
+        int maxTokens = 0;
+        int summaryBacked = 0;
+        for (int index = 0; index < conversations; index++) {
+            var compilation = syntheticConversation(turns);
+            var first = assembler.assemble("workspace", "actor", "conversation-" + index, "m59",
+                    "第 12 点再展开一下", compilation, projection);
+            var second = assembler.assemble("workspace", "actor", "conversation-" + index, "m59",
+                    "第 12 点再展开一下", compilation, projection);
+            assertThat(first.contextContractSha256()).isEqualTo(second.contextContractSha256());
+            assertThat(first.contextViewSha256()).isEqualTo(second.contextViewSha256());
+            assertThat(first.contextEstimatedTokens()).isLessThanOrEqualTo(5_592);
+            maxTokens = Math.max(maxTokens, first.contextEstimatedTokens());
+            if (first.contextDegradations().stream()
+                    .anyMatch(reason -> reason.contains("EARLIER_TURNS_USE_TOPIC_SUMMARY"))) {
+                summaryBacked++;
+            }
+        }
+        assertThat(conversations).isEqualTo(20);
+        assertThat(maxTokens).isLessThanOrEqualTo(5_592);
+        assertThat(summaryBacked).isGreaterThan(0);
+    }
+
+    @Test
+    void thirtyPronounFollowUpsKeepTheSameFrozenContextContract() {
+        var projection = new ConversationContextProjectionService.Projection(List.of(), List.of());
+        var compilation = syntheticConversation(6);
+        int followUps = 30;
+        int applied = 0;
+        for (int index = 0; index < followUps; index++) {
+            var context = assembler.assemble("workspace", "actor", "conversation-pronoun", "m11",
+                    "它的第 2 点再展开一下", compilation, projection);
+            assertThat(context.contextEstimatedTokens()).isLessThanOrEqualTo(5_592);
+            assertThat(context.contextContractSha256()).hasSize(64);
+            if (context.contextApplied()) {
+                applied++;
+            }
+        }
+        assertThat(followUps).isEqualTo(30);
+        assertThat(applied).isEqualTo(30);
+    }
+
     private ConversationContextProjectionService.CompilationProjection syntheticConversation(int turns) {
         List<ConversationContextProjectionService.RawMessage> messages = new ArrayList<>();
         int seq = 1;
