@@ -17,13 +17,16 @@ public class ResearchRunController {
 
     private final ResearchRunService researchRunService;
     private final ResearchCollectionService researchCollectionService;
+    private final ResearchIncrementalService incrementalService;
 
     public ResearchRunController(
             ResearchRunService researchRunService,
-            ResearchCollectionService researchCollectionService
+            ResearchCollectionService researchCollectionService,
+            ResearchIncrementalService incrementalService
     ) {
         this.researchRunService = researchRunService;
         this.researchCollectionService = researchCollectionService;
+        this.incrementalService = incrementalService;
     }
 
     @GetMapping
@@ -82,6 +85,15 @@ public class ResearchRunController {
             @PathVariable int checkpointNo
     ) {
         return ApiResponse.success(researchRunService.getCheckpoint(workspaceId, researchRunId, checkpointNo));
+    }
+
+    @PostMapping("/{researchRunId}/incremental")
+    ApiResponse<ResearchIncrementalService.Receipt> reopenIncrementalResearch(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId,
+            @Valid @RequestBody ResearchIncrementalService.Request request
+    ) {
+        return ApiResponse.success(incrementalService.reopen(workspaceId, researchRunId, request));
     }
 
     @PostMapping("/{researchRunId}/resume-from-checkpoint/{checkpointNo}")
