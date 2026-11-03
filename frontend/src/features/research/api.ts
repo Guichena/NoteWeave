@@ -6,6 +6,8 @@ import {
   type ResearchCollection,
   type ResearchCounterCheck,
   type ResearchDiscoveryProposal,
+  type ResearchIncrementalReceipt,
+  type ResearchIncrementalRequest,
   type ResearchPlan,
   type ResearchPlanRevision,
   type ResearchReplan,
@@ -73,6 +75,13 @@ export class ResearchApi {
 
   listCells(workspaceId: string, researchRunId: string, init?: RequestInit) {
     return this.client.get<ResearchCell[]>(`${this.runsPath(workspaceId)}/${researchRunId}/cells`, init);
+  }
+
+  reopenIncremental(workspaceId: string, researchRunId: string, request: ResearchIncrementalRequest) {
+    return this.client.post<ResearchIncrementalReceipt>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/incremental`,
+      request
+    );
   }
 
   listDiscoveryProposals(workspaceId: string, researchRunId: string, init?: RequestInit) {
