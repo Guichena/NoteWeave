@@ -3,7 +3,8 @@ import {
   type Conversation,
   type ConversationMessage,
   type ConversationSummary,
-  type CreateConversationInput
+  type CreateConversationInput,
+  type SessionPreference
 } from "./model";
 
 export class ConversationsApi {
@@ -29,6 +30,25 @@ export class ConversationsApi {
     });
     return this.client.get<ConversationMessage[]>(
       `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/messages?${query}`
+    );
+  }
+
+  listSessionPreferences(workspaceId: string, conversationId: string) {
+    return this.client.get<SessionPreference[]>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session`
+    );
+  }
+
+  addSessionPreference(workspaceId: string, conversationId: string, text: string) {
+    return this.client.post<SessionPreference>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session`,
+      { text }
+    );
+  }
+
+  removeSessionPreference(workspaceId: string, conversationId: string, requirementId: string) {
+    return this.client.delete(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}/preferences/session/${requirementId}`
     );
   }
 }

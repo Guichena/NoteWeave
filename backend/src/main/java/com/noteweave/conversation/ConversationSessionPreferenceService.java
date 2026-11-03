@@ -91,6 +91,53 @@ public class ConversationSessionPreferenceService {
                 """, String.class, workspaceId, conversationId);
     }
 
+    /** 用户在对话里直接写下的“只用于本对话”要求，不依赖 Memory 候选。 */
+    @Transactional
+    public SessionRequirement addText(String workspaceId, String conversationId, String text) {
+        requireConversation(workspaceId, conversationId);
+        String requirement = text == null ? "" : text.strip();
+        if (requirement.isBlank()) {
+            throw new BusinessException("SESSION_REQUIREMENT_TEXT_EMPTY",
+                    "会话要求不能为空", HttpStatus.BAD_REQUEST);
+        }
+        if (requirement.length() > MAX_REQUIREMENT_CHARS) {
+            requirement = requirement.substring(0, MAX_REQUIREMENT_CHARS);
+        }
+        String id = Ids.newId();
+        jdbcTemplate.update("""
+                insert into conversation_session_requirement(
+                    id, workspace_id, conversation_id, source_revision_id, requirement_text, status)
+                values (?, ?, ?, null, ?, 'ACTIVE')
+                """, id, workspaceId, conversationId, requirement);
+        return new SessionRequirement(id, conversationId, null, requirement, "ACTIVE");
+    }
+
+    public List<SessionRequirement> list(String workspaceId, String conversationId) {
+        requireConversation(workspaceId, conversationId);
+        return jdbcTemplate.query("""
+                select id, conversation_id, source_revision_id, requirement_text, status
+                from conversation_session_requirement
+                where workspace_id = ? and conversation_id = ? and status = 'ACTIVE'
+                order by created_at, id
+                """, (rs, rowNum) -> new SessionRequirement(
+                rs.getString("id"), rs.getString("conversation_id"),
+                rs.getString("source_revision_id"), rs.getString("requirement_text"),
+                rs.getString("status")), workspaceId, conversationId);
+    }
+
+    @Transactional
+    public void deactivate(String workspaceId, String conversationId, String requirementId) {
+        int updated = jdbcTemplate.update("""
+                update conversation_session_requirement
+                set status = 'INACTIVE', updated_at = current_timestamp
+                where id = ? and workspace_id = ? and conversation_id = ? and status = 'ACTIVE'
+                """, requirementId, workspaceId, conversationId);
+        if (updated == 0) {
+            throw new BusinessException("SESSION_REQUIREMENT_NOT_FOUND",
+                    "会话要求不存在或已停用", HttpStatus.NOT_FOUND);
+        }
+    }
+
     private SessionRequirement findBySourceRevision(String workspaceId, String revisionId) {
         return jdbcTemplate.query("""
                 select id, conversation_id, source_revision_id, requirement_text, status
