@@ -82,4 +82,28 @@ class ConversationSessionPreferenceServiceTest {
                         failure -> assertThat(failure.code()).isEqualTo("MEMORY_REVISION_NOT_FOUND"));
         verify(reviewService, never()).review(any(), any(), any());
     }
+
+    @Test
+    void textRequirementCanBeAddedListedAndDeactivated() {
+        var created = service.addText("w", "c", "回答只使用工作台资料");
+
+        assertThat(service.list("w", "c")).extracting(
+                        ConversationSessionPreferenceService.SessionRequirement::requirementText)
+                .containsExactly("回答只使用工作台资料");
+        assertThat(service.activeRequirementTexts("w", "c"))
+                .containsExactly("回答只使用工作台资料");
+
+        service.deactivate("w", "c", created.id());
+
+        assertThat(service.list("w", "c")).isEmpty();
+        assertThat(service.activeRequirementTexts("w", "c")).isEmpty();
+    }
+
+    @Test
+    void emptyTextRequirementIsRejected() {
+        assertThatThrownBy(() -> service.addText("w", "c", "  "))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("SESSION_REQUIREMENT_TEXT_EMPTY"));
+    }
 }

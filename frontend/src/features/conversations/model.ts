@@ -41,3 +41,12 @@ export type CreateConversationInput = {
   title: string;
   conversation_type: string;
 };
+
+/** F5-03：只用于本对话的会话要求。 */
+export type SessionPreference = {
+  id: string;
+  conversation_id: string;
+  source_revision_id?: string | null;
+  requirement_text: string;
+  status: string;
+};
