@@ -75,6 +75,8 @@ public class ChatService {
     private final ConversationWorkingSetService workingSetService;
     private final com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService;
     private final com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService;
+    private final com.noteweave.context.LlmConversationPremiseExtractor premiseExtractor;
+    private final com.noteweave.context.ConversationPremiseService premiseService;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -98,7 +100,9 @@ public class ChatService {
             ResearchReportGrounding reportGrounding,
             ConversationWorkingSetService workingSetService,
             com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService,
-            com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService
+            com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService,
+            com.noteweave.context.LlmConversationPremiseExtractor premiseExtractor,
+            com.noteweave.context.ConversationPremiseService premiseService
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -122,6 +126,8 @@ public class ChatService {
         this.workingSetService = workingSetService;
         this.researchCellFollowUpService = researchCellFollowUpService;
         this.sessionPreferenceService = sessionPreferenceService;
+        this.premiseExtractor = premiseExtractor;
+        this.premiseService = premiseService;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -136,6 +142,7 @@ public class ChatService {
         EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
                 request.retrievalStrategy(), request.retrievalChannels(),
                 request.sourceScopeSourceIds(), request.groundingRefs());
+        extractPremises(workspaceId, conversationId, userMessageId, request.content());
         AnswerDraft draft = buildAnswerDraft(conversationId, userMessageId, workspaceId, request, retrievalConfig);
         return new PreparedAnswerMaterial(
                 draft.answer(),
@@ -455,6 +462,29 @@ public class ChatService {
                 unsupportedParameters,
                 preferenceMemoryRefs
         );
+    }
+
+    /**
+     * F2-04：在组装本轮上下文前抽取并折叠当前消息的会话前提。失败不阻断回答；
+     * 重复执行由来源消息 + 抽取版本幂等。
+     */
+    private void extractPremises(String workspaceId, String conversationId,
+                                 String userMessageId, String content) {
+        try {
+            Integer seq = jdbcTemplate.queryForObject("""
+                    select message_seq from conversation_message where id = ? and workspace_id = ?
+                    """, Integer.class, userMessageId, workspaceId);
+            if (seq == null) {
+                return;
+            }
+            var operations = premiseExtractor.extract(
+                    workspaceId, conversationId, userMessageId, seq, content);
+            if (!operations.isEmpty()) {
+                premiseService.apply(workspaceId, conversationId, operations);
+            }
+        } catch (RuntimeException ignored) {
+            // 前提抽取失败不应阻断本轮回答
+        }
     }
 
     private String templateLabel(AnswerMode mode) {
