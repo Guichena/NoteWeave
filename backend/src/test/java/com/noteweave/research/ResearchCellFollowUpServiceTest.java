@@ -110,4 +110,22 @@ class ResearchCellFollowUpServiceTest {
     void pronounOnlyQuestionDoesNotGuessACell() {
         assertThat(service.match("w", "c", "第二点为什么重要", 10)).isEmpty();
     }
+
+    @Test
+    void unverifiedBoundaryNamesOnlyUnambiguousUnverifiedCells() {
+        var verified = new ResearchCellFollowUpService.Match(
+                "run", "cell-v", "aws:deploy", "AWS", "部署", "VERIFIED", "容器",
+                List.of("e1"), true, true, false, ResearchCellFollowUpService.DERIVATION_VERSION);
+        var unverified = new ResearchCellFollowUpService.Match(
+                "run", "cell-u", "azure:deploy", "Azure", "部署", "UNVERIFIED", "线索",
+                List.of(), true, true, false, ResearchCellFollowUpService.DERIVATION_VERSION);
+        var ambiguous = new ResearchCellFollowUpService.Match(
+                "run", "cell-a", "gcp:deploy", "GCP", "部署", "UNVERIFIED", "",
+                List.of(), true, true, true, ResearchCellFollowUpService.DERIVATION_VERSION);
+
+        String boundary = ResearchCellFollowUpService.unverifiedBoundary(List.of(verified, unverified, ambiguous));
+
+        assertThat(boundary).contains("不能当作已核实事实").contains("Azure / 部署").contains("UNVERIFIED");
+        assertThat(boundary).doesNotContain("AWS").doesNotContain("GCP");
+    }
 }

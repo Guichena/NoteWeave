@@ -157,6 +157,31 @@ public class ResearchCellFollowUpService {
                 .replaceAll("[\\s\\p{Punct}，。！？、；：“”‘’（）【】《》…]+", "");
     }
 
+    /**
+     * 回答层边界：未核实且没有歧义的单元格必须明确说不能当已核实事实。
+     * 已核实单元格和无法定位的歧义不写进这段，避免把已核实结论再说成不足。
+     */
+    public static String unverifiedBoundary(List<Match> matches) {
+        if (matches == null || matches.isEmpty()) {
+            return "";
+        }
+        List<Match> unverified = matches.stream()
+                .filter(match -> !match.ambiguous() && !"VERIFIED".equals(match.status()))
+                .toList();
+        if (unverified.isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder("这些研究单元格尚未核实，不能当作已核实事实：");
+        for (Match match : unverified) {
+            builder.append("\n- ")
+                    .append(match.objectName() == null || match.objectName().isBlank() ? "未命名对象" : match.objectName())
+                    .append(" / ")
+                    .append(match.dimensionName() == null || match.dimensionName().isBlank() ? "未命名维度" : match.dimensionName())
+                    .append("（").append(match.status()).append("）");
+        }
+        return builder.toString();
+    }
+
     private record CellRow(String researchRunId, String cellId, String cellKey, String candidateValue,
                            String cellStatus, String evidenceRefsJson, String rowKey,
                            String sourceTitle, String columnKey, String label) {
