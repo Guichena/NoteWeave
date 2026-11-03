@@ -1,4 +1,4 @@
-package com.noteweave.research;
+package com.noteweave.conversation;
 
 import com.noteweave.common.BusinessException;
 import com.noteweave.common.Ids;
