@@ -185,9 +185,8 @@ public class ResearchBriefCompiler {
                 // 偏好编译失败不阻断研究；原控制包仍由记忆系统负责
             }
         }
-        String planningQuery = taskLine.isBlank()
-                ? compiled.planningQuery()
-                : compiled.planningQuery() + "\n\n" + taskLine;
+        // 任务参数只以结构化字段进入简报，不再拼进 planning_query，避免同一要求被注入两次。
+        String planningQuery = compiled.planningQuery();
         Map<String, Object> control = safeMap(run.controlPackJson());
         brief.putIfAbsent("output_requirements", control.getOrDefault("output_requirements", List.of()));
         brief.putIfAbsent("coverage", List.of());
