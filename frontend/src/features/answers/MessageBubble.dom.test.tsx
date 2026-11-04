@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnswerEvidence, AnswerEvidenceManifest, CitationProtocol } from "./evidence";
 import type { Message } from "./messageTypes";
 import { MessageBubble, splitCitedViews } from "./MessageBubble";
+import { ApiError } from "../../shared/api/error";
 
 afterEach(cleanup);
 
@@ -272,6 +273,26 @@ describe("MessageBubble 检索改写、证据充分性与反馈", () => {
     fireEvent.click(screen.getByRole("button", { name: "回答有帮助" }));
     expect((await screen.findByRole("alert")).textContent).toContain("没有提交成功");
     expect(screen.getByRole("button", { name: "回答有帮助" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("后端说明不能评价的原因时直接展示该原因", async () => {
+    const onFeedback = vi.fn(async () => {
+      throw new ApiError("这条回答已停止生成，没有可评价的内容；可以重新生成后再评价",
+        409, "ANSWER_FEEDBACK_ANSWER_CANCELLED", "", "");
+    });
+    render(<MessageBubble onFeedback={onFeedback} message={completedAnswer()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "回答有帮助" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("已停止生成");
+  });
+
+  it("已删除的消息只显示删除说明，没有反馈和重新生成按钮", () => {
+    render(<MessageBubble onFeedback={vi.fn()} onRegenerate={vi.fn()}
+      message={{ role: "assistant", answerMode: "qa", content: "此消息已删除", deleted: true }} />);
+
+    expect(screen.getByText("此消息已删除")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "回答有帮助" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "重新生成回答" })).toBeNull();
   });
 
   it("重新生成把原回答 ID 交给调用方", () => {
