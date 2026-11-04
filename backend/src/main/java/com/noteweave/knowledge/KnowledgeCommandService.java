@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -105,6 +106,33 @@ public class KnowledgeCommandService {
                 request.content(),
                 request.sourceMessageId(),
                 citationIds);
+    }
+
+    /**
+     * 产物写入 Note 的幂等入口：同一工作台已有同标题、最新正文完全相同的 Note 时直接返回它。
+     * 先锁工作台行，让同一工作台的并发写回按顺序判断，重复点击不会生成两条同名 Note。
+     */
+    @Transactional
+    public KnowledgeItemResponse createNoteOnce(String workspaceId, String title, String content) {
+        requireWorkspace(workspaceId);
+        jdbcTemplate.query("select id from workspace where id = ? for update",
+                rs -> rs.next() ? rs.getString(1) : null, workspaceId);
+        // 正文是大字段，不在 SQL 里比较，按标题取候选后在内存里比对
+        List<Map.Entry<String, String>> candidates = jdbcTemplate.query("""
+                select item.id, version.content
+                from knowledge_item item
+                join knowledge_version version on version.id = item.latest_version_id
+                where item.workspace_id = ? and item.item_type = 'NOTE' and item.status = 'ACTIVE'
+                  and item.title = ?
+                order by item.created_at, item.id
+                """, (rs, rowNum) -> Map.entry(rs.getString(1), String.valueOf(rs.getString(2))),
+                workspaceId, title);
+        for (Map.Entry<String, String> candidate : candidates) {
+            if (candidate.getValue().equals(content)) {
+                return itemResponse(candidate.getKey());
+            }
+        }
+        return createItem(workspaceId, new KnowledgeItemRequest("NOTE", title, content, null));
     }
 
     @Transactional
