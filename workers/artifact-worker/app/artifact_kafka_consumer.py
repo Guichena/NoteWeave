@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from hashlib import sha256
@@ -162,16 +163,40 @@ class ArtifactKafkaConsumerRuntime:
 
         def consume() -> None:
             retry_delay_seconds = 1.0
+            idle_since: float | None = None
             while not self._stop.is_set():
                 try:
                     consumer, dead_letter_sink = self._open_session()
                     self.failure = None
-                    consume_artifact_commands(
-                        consumer,
-                        dead_letter_sink=dead_letter_sink,
-                        max_messages=1,
-                    )
+                    if not callable(getattr(consumer, "poll", None)):
+                        consume_artifact_commands(
+                            consumer,
+                            dead_letter_sink=dead_letter_sink,
+                            max_messages=1,
+                        )
+                        retry_delay_seconds = 1.0
+                        continue
+                    records = _poll_records(consumer)
+                    if not records:
+                        # 消费者偶发在空闲后不再拉取消息（进程仍在、健康检查仍通过），
+                        # 空闲超过阈值就重建会话重新加入消费组，避免任务一直停在排队中。
+                        idle_since = idle_since if idle_since is not None else time.monotonic()
+                        if time.monotonic() - idle_since >= self.settings.kafka_artifact_idle_reset_seconds:
+                            logger.info(
+                                "Artifact Kafka consumer has been idle for %ss; reopening session",
+                                self.settings.kafka_artifact_idle_reset_seconds,
+                            )
+                            self._close_session()
+                            idle_since = None
+                        continue
+                    idle_since = None
                     retry_delay_seconds = 1.0
+                    consume_artifact_commands(
+                        records,
+                        dead_letter_sink=dead_letter_sink,
+                        max_messages=len(records),
+                    )
+                    _commit_consumer(consumer)
                 except Exception as exc:
                     if self._stop.is_set():
                         break
@@ -228,6 +253,21 @@ class ArtifactKafkaConsumerRuntime:
         if not self.settings.artifact_consumer_enabled:
             return True
         return self.failure is None and self.thread is not None and self.thread.is_alive()
+
+
+def _poll_records(consumer: object, timeout_ms: int = 1000) -> list[object]:
+    """有界拉取：阻塞式迭代在空闲后可能再也不返回，轮询超时保证线程始终能自检。"""
+    batches = consumer.poll(timeout_ms=timeout_ms) or {}
+    records: list[object] = []
+    for batch in batches.values():
+        records.extend(batch)
+    return records
+
+
+def _commit_consumer(consumer: object) -> None:
+    commit = getattr(consumer, "commit", None)
+    if callable(commit):
+        commit()
 
 
 def _parse_command(message: object) -> ArtifactCommand:
