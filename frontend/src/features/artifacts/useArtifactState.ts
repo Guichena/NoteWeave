@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveLatestArtifactVersionRequest } from "./artifactHistorySelection";
 import { artifactsApi, type ArtifactsApi } from "./api";
-import { type ArtifactVersionDetail } from "./model";
+import { type ArtifactJobSummary, type ArtifactVersionDetail } from "./model";
 import {
   createArtifactServerState,
   LatestArtifactRequestGate,
   reduceArtifactServerState
 } from "./state";
+
+/** 每次加载更多多取的条数，与后端默认页大小一致。 */
+export const ARTIFACT_JOB_PAGE_SIZE = 50;
+/** 后端单次请求的上限。 */
+const ARTIFACT_JOB_MAX_LIMIT = 200;
 
 export type ArtifactHistorySelection = {
   key: string;
@@ -21,9 +26,12 @@ export function useArtifactState(
   const [state, dispatch] = useReducer(reduceArtifactServerState, workspaceId, createArtifactServerState);
   const gateRef = useRef(new LatestArtifactRequestGate());
   const gate = gateRef.current;
+  // 已展开的页数：轮询刷新时按同样的条数重新拉取，已加载的更早产物不会被收起
+  const pagesRef = useRef(1);
 
   useEffect(() => {
     gate.setWorkspace(workspaceId);
+    pagesRef.current = 1;
     dispatch({ type: "workspace", workspaceId });
   }, [gate, workspaceId]);
 
@@ -43,7 +51,7 @@ export function useArtifactState(
     const lease = gate.begin("jobs", workspaceId);
     dispatch({ type: "jobs-loading" });
     try {
-      const jobs = await api.listJobs(workspaceId, { signal: lease.signal });
+      const { jobs, hasMore } = await fetchJobPages(api, workspaceId, pagesRef.current, lease.signal);
       const latestRequest = resolveLatestArtifactVersionRequest(jobs);
       const latestVersion = latestRequest
         ? await api.getVersion(workspaceId, latestRequest.artifactJobId, latestRequest.versionNo, {
@@ -51,7 +59,7 @@ export function useArtifactState(
         })
         : null;
       if (lease.isCurrent()) {
-        dispatch({ type: "jobs-snapshot", jobs, latestVersion });
+        dispatch({ type: "jobs-snapshot", jobs, latestVersion, hasMore });
       }
       return jobs;
     } catch (error) {
@@ -63,6 +71,17 @@ export function useArtifactState(
       lease.complete();
     }
   }, [api, gate, workspaceId]);
+
+  /** 多加载一页更早的产物。 */
+  const loadMoreJobs = useCallback(async () => {
+    pagesRef.current += 1;
+    try {
+      return await refreshJobs();
+    } catch (error) {
+      pagesRef.current = Math.max(1, pagesRef.current - 1);
+      throw error;
+    }
+  }, [refreshJobs]);
 
   const selectHistoryVersion = useCallback(async (
     selection: ArtifactHistorySelection,
@@ -118,11 +137,44 @@ export function useArtifactState(
     ...visibleState,
     clear,
     refreshJobs,
+    loadMoreJobs,
     selectHistoryVersion,
     recordSavedSource,
     recordWriteback,
     applyRollback
   };
+}
+
+/**
+ * 按已展开的页数拉取产物列表。第一页沿用后端默认条数；
+ * 更多页时按 200 条一批分段请求，最后一批不满说明已经到底。
+ */
+async function fetchJobPages(api: ArtifactsApi, workspaceId: string, pages: number, signal: AbortSignal) {
+  const total = Math.max(1, pages) * ARTIFACT_JOB_PAGE_SIZE;
+  if (pages <= 1) {
+    const jobs = await api.listJobs(workspaceId, { signal });
+    return { jobs, hasMore: jobs.length >= ARTIFACT_JOB_PAGE_SIZE };
+  }
+  const collected: ArtifactJobSummary[] = [];
+  for (let offset = 0; offset < total; offset += ARTIFACT_JOB_MAX_LIMIT) {
+    const limit = Math.min(ARTIFACT_JOB_MAX_LIMIT, total - offset);
+    const page = await api.listJobs(workspaceId, { signal }, { limit, offset });
+    collected.push(...page);
+    if (page.length < limit) {
+      return { jobs: dedupeJobs(collected), hasMore: false };
+    }
+  }
+  return { jobs: dedupeJobs(collected), hasMore: true };
+}
+
+/** 分段请求之间列表可能有变动，同一产物只保留第一次出现的那条。 */
+function dedupeJobs(jobs: ArtifactJobSummary[]) {
+  const seen = new Set<string>();
+  return jobs.filter((job) => {
+    if (seen.has(job.artifact_job_id)) return false;
+    seen.add(job.artifact_job_id);
+    return true;
+  });
 }
 
 function isAbortError(error: unknown) {

@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { BookOpen, Check, CircleAlert, LoaderCircle, MessageSquareQuote, Plus, RefreshCw } from "lucide-react";
+import { BookOpen, Check, CircleAlert, LoaderCircle, MessageSquareQuote, Plus, RefreshCw, RotateCcw } from "lucide-react";
 import { formatRelativeTime } from "../../shared/util/datetime";
 import { memoryApi as defaultMemoryApi, type MemoryApi } from "./api";
 import { MemoryInjectionPreview } from "./MemoryInjectionPreview";
-import type { MemoryItem, MemoryReviewDecision } from "./model";
+import type { MemoryItem, MemoryReviewDecision, RevokedMemoryItem } from "./model";
 import {
   MEMORY_NEIGHBORHOOD_OPTIONS,
   buildGateChecks,
@@ -27,19 +27,41 @@ type AddResult = { tone: "ready" | "review"; text: string; item: MemoryItem | nu
 
 /** 记忆页：说明记忆与资料的分工，添加偏好，确认候选记忆，管理生效中的记忆。 */
 export function MemoryReviewWorkbench({ workspaceId, api }: MemoryReviewWorkbenchProps) {
-  const { items, loading, error, pendingRevisionId, refresh, addPreference, decide } = useMemoryItems(workspaceId, api);
+  const {
+    items, revokedItems, loading, error, pendingRevisionId, refresh, addPreference, decide, restore
+  } = useMemoryItems(workspaceId, api);
   const [actionError, setActionError] = useState("");
+  // 刚停用的记忆：在页面上给出提示，并允许立即撤销
+  const [justRevoked, setJustRevoked] = useState<{ memoryItemId: string; text: string } | null>(null);
+  const [restoreNotice, setRestoreNotice] = useState("");
   const groups = groupMemories(items);
   const pending = [...groups.proposal, ...groups.recheck];
 
   async function submitDecision(item: MemoryItem, decision: MemoryReviewDecision) {
     setActionError("");
+    setRestoreNotice("");
     try {
       await decide(item, decision);
+      setJustRevoked(decision === "REVOKE" ? { memoryItemId: item.memory_item_id, text: item.display_text } : null);
     } catch (failure) {
       setActionError(errorMessage(failure));
     }
   }
+
+  async function submitRestore(item: RevokedMemoryItem) {
+    setActionError("");
+    try {
+      await restore(item);
+      setJustRevoked(null);
+      setRestoreNotice(`已重新启用：${item.display_text}`);
+    } catch (failure) {
+      setActionError(errorMessage(failure));
+    }
+  }
+
+  const justRevokedEntry = justRevoked
+    ? revokedItems.find((entry) => entry.memory_item_id === justRevoked.memoryItemId) ?? null
+    : null;
 
   return (
     <section className="memory-page memory-workbench workbench-page" aria-labelledby="memory-title">
@@ -75,6 +97,18 @@ export function MemoryReviewWorkbench({ workspaceId, api }: MemoryReviewWorkbenc
 
       {error ? <p className="memory-error" role="alert">{error}</p> : null}
       {actionError ? <p className="memory-error" role="alert">{actionError}</p> : null}
+      {justRevoked ? (
+        <p className="memory-notice" role="status">
+          <span>已停用：{justRevoked.text}。之后的回答不会再参照它，可以在下方已停用列表里重新启用。</span>
+          {justRevokedEntry ? (
+            <button type="button" className="secondary-button" disabled={pendingRevisionId === justRevokedEntry.revision_id}
+              onClick={() => void submitRestore(justRevokedEntry)}>
+              撤销停用
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+      {restoreNotice ? <p className="memory-notice is-ready" role="status"><span>{restoreNotice}</span></p> : null}
 
       {pending.length > 0 ? (
         <section className="memory-section" aria-labelledby="memory-pending-heading">
@@ -112,6 +146,23 @@ export function MemoryReviewWorkbench({ workspaceId, api }: MemoryReviewWorkbenc
           <p className="memory-quiet">还没有生效的记忆。在对话里提出长期要求（例如以后先给结论），或在上方添加一条偏好。</p>
         )}
       </section>
+
+      {revokedItems.length > 0 ? (
+        <details className="memory-section memory-revoked" aria-label="已停用" open={justRevoked !== null || undefined}>
+          <summary className="memory-section-heading">
+            <h3>已停用</h3>
+            <span>{revokedItems.length}</span>
+            <small>停用的记忆不会用于回答，需要时可以重新启用</small>
+          </summary>
+          <ul className="memory-active-list">
+            {revokedItems.map((item) => (
+              <li key={item.memory_item_id}>
+                <MemoryRevokedRow item={item} busy={pendingRevisionId === item.revision_id} onRestore={submitRestore} />
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
 
       {groups.active.length > 0 ? (
         <MemoryInjectionPreview workspaceId={workspaceId} items={items} api={api ?? defaultMemoryApi} />
@@ -270,6 +321,30 @@ function MemoryActiveRow({ item, busy, onDecide }: {
           停用
         </button>
       )}
+    </div>
+  );
+}
+
+function MemoryRevokedRow({ item, busy, onRestore }: {
+  item: RevokedMemoryItem;
+  busy: boolean;
+  onRestore: (item: RevokedMemoryItem) => void;
+}) {
+  return (
+    <div className="memory-active-row is-revoked">
+      <span className={`memory-kind-tag is-${item.candidate_type === "NEGATIVE" ? "negative" : "preference"}`}>{describeKind(item)}</span>
+      <div className="memory-active-copy">
+        <strong>{item.display_text}</strong>
+        <small>
+          适用于{describeNeighborhoods(item.task_neighborhoods)}
+          {item.revoked_at ? ` · ${formatRelativeTime(item.revoked_at)}停用` : ""}
+        </small>
+      </div>
+      <button type="button" className="secondary-button memory-restore-button" disabled={busy}
+        aria-label={`重新启用记忆：${item.display_text}`} onClick={() => onRestore(item)}>
+        <RotateCcw size={13} aria-hidden="true" />
+        重新启用
+      </button>
     </div>
   );
 }

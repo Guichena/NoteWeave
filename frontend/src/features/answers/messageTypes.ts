@@ -22,6 +22,8 @@ export type Message = {
   /** 正文出现前的准备阶段与检索到的资料条数，用于进度提示。 */
   answerStage?: string;
   answerEvidenceCount?: number;
+  /** 消息已被删除：只显示删除说明，不再提供证据、反馈和重新生成。 */
+  deleted?: boolean;
 };
 export function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
   let targetIndex = -1;

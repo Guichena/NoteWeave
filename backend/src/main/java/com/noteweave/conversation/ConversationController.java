@@ -1,6 +1,7 @@
 package com.noteweave.conversation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.noteweave.answer.AnswerCancellationRegistry;
 import com.noteweave.answer.AnswerRunService;
 import com.noteweave.answer.ConversationEventMux;
 import com.noteweave.answer.ConversationLiveEvent;
@@ -12,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -41,6 +44,7 @@ public class ConversationController {
     private final ConversationTurnModule conversationTurnModule;
     private final ConversationSegmentBuildService conversationSegmentBuildService;
     private final ConversationMessageDeletionService conversationMessageDeletionService;
+    private final AnswerCancellationRegistry answerCancellationRegistry;
 
     public ConversationController(
             ConversationService conversationService,
@@ -50,7 +54,8 @@ public class ConversationController {
             ObjectMapper objectMapper,
             ConversationTurnModule conversationTurnModule,
             ConversationSegmentBuildService conversationSegmentBuildService,
-            ConversationMessageDeletionService conversationMessageDeletionService
+            ConversationMessageDeletionService conversationMessageDeletionService,
+            AnswerCancellationRegistry answerCancellationRegistry
     ) {
         this.conversationService = conversationService;
         this.answerRunService = answerRunService;
@@ -60,6 +65,7 @@ public class ConversationController {
         this.conversationTurnModule = conversationTurnModule;
         this.conversationSegmentBuildService = conversationSegmentBuildService;
         this.conversationMessageDeletionService = conversationMessageDeletionService;
+        this.answerCancellationRegistry = answerCancellationRegistry;
     }
 
     @PostMapping
@@ -73,6 +79,34 @@ public class ConversationController {
     @GetMapping
     ApiResponse<List<ConversationSummaryResponse>> listConversations(@PathVariable String workspaceId) {
         return ApiResponse.success(conversationService.listConversations(workspaceId));
+    }
+
+    @PatchMapping("/{conversationId}")
+    ApiResponse<ConversationSummaryResponse> renameConversation(
+            @PathVariable String workspaceId,
+            @PathVariable String conversationId,
+            @Valid @RequestBody UpdateConversationRequest request
+    ) {
+        return ApiResponse.success(conversationService.renameConversation(workspaceId, conversationId, request));
+    }
+
+    /** 删除会话：先停止进行中的回答，再软删除会话本身。 */
+    @DeleteMapping("/{conversationId}")
+    ApiResponse<DeletedConversationResponse> deleteConversation(
+            @PathVariable String workspaceId,
+            @PathVariable String conversationId
+    ) {
+        List<String> cancelled = new ArrayList<>();
+        for (String runId : conversationService.activeAnswerRunIds(workspaceId, conversationId)) {
+            try {
+                answerRunService.cancel(workspaceId, runId);
+                cancelled.add(runId);
+            } catch (BusinessException ignored) {
+                // 回答恰好在这期间结束，已是终态，无需再停止
+            }
+            answerCancellationRegistry.cancel(runId);
+        }
+        return ApiResponse.success(conversationService.deleteConversation(workspaceId, conversationId, cancelled));
     }
 
     @GetMapping("/{conversationId}/messages")

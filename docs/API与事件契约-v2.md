@@ -211,7 +211,9 @@ MySQL Source Version / ACL Version / Tombstone commit
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| POST/GET | `/api/v2/workspaces/{workspaceId}/conversations` | 创建和查询会话 |
+| POST/GET | `/api/v2/workspaces/{workspaceId}/conversations` | 创建和查询会话（不含已删除会话） |
+| PATCH | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}` | 重命名会话，请求体 `{"title": "..."}` |
+| DELETE | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}` | 软删除会话，先停止进行中的回答；返回 `deleted: true`，重复删除结果相同 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages` | 消息列表 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/turn-submissions/{clientRequestId}` | Turn 幂等查询 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/events` | 会话 SSE |
@@ -240,10 +242,12 @@ MySQL Source Version / ACL Version / Tombstone commit
 | POST | `/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/resume-from-checkpoint/{checkpointNo}` | 从 Checkpoint 恢复 |
 | POST | `/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source` | 报告写回资料 |
 | POST/GET | `/api/v2/workspaces/{workspaceId}/memory/...` | Signal、Promotion、Review、Revision、Revoke、Outcome、Control Pack |
+| GET | `/api/v2/workspaces/{workspaceId}/memory/items/revoked` | 用户停用、可以重新启用的记忆（最近 50 条） |
+| POST | `/api/v2/workspaces/{workspaceId}/memory/items/{memoryItemId}/restore` | 重新启用已停用的记忆；同一设置项或相同内容已有生效记忆时返回 409 |
 | GET | `/api/v2/workspaces/{workspaceId}/memory/inspector` | Memory Inspector |
 | GET | `/api/v2/skills` | Skill Catalog |
-| POST/GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs` | 创建与列表 |
-| GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}` | 详情 |
+| POST/GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs` | 创建与列表；列表支持 `limit`（默认 50，上限 200）与 `offset` |
+| GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}` | 详情；失败时 `progress_message` 为面向用户的原因，原始报错在 `failure_detail`；排队中返回 `queue_position` |
 | GET/POST | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions...` | 版本、比较、再生成、回滚、写回、导出 |
 | GET | `/api/v2/tasks/{taskId}` | 通用任务 |
 | GET | `/api/v2/tasks/{taskId}/events` | 任务 SSE |

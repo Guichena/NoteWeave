@@ -17,6 +17,7 @@ import {
 import { type AnswerFeedbackInput, type AnswerFeedbackRating, isAnswerInProgress } from "./model";
 import { answerProgressLabel } from "./progress";
 import { MemoryReferenceList } from "../memory/MemoryInjectionPreview";
+import { ApiError } from "../../shared/api/error";
 
 /** 按回答运行读取证据清单；未提供时引用只展示标题和摘录。 */
 export type EvidenceLoader = (answerRunId: string) => Promise<AnswerEvidenceManifest>;
@@ -72,6 +73,9 @@ function hostOf(url: string) {
 }
 
 export function MessageBubble(props: MessageBubbleProps) {
+  if (props.message.deleted) {
+    return <div className="bubble-body is-deleted">{props.message.content || "此消息已删除"}</div>;
+  }
   if (props.message.role !== "assistant" || !props.message.answerMode) {
     return <div className="bubble-body">{props.message.content}</div>;
   }
@@ -229,10 +233,10 @@ function AssistantMessage({
     setFeedbackError("");
     try {
       await onFeedback(answerRunId, reason ? { rating: next, reason } : { rating: next });
-    } catch {
+    } catch (error) {
       setRating(previous);
       setReasonOpen(false);
-      setFeedbackError("反馈没有提交成功，请稍后再试");
+      setFeedbackError(feedbackFailureMessage(error));
     }
   }
 
@@ -732,3 +736,10 @@ export function splitCitedViews<T extends { index: number }>(views: T[], body: s
   };
 }
 
+/** 后端对已删除、已停止的回答会说明不能评价的原因，直接展示；其余失败给出通用提示。 */
+function feedbackFailureMessage(error: unknown) {
+  if (error instanceof ApiError && error.code.startsWith("ANSWER_FEEDBACK_") && error.message) {
+    return error.message;
+  }
+  return "反馈没有提交成功，请稍后再试";
+}

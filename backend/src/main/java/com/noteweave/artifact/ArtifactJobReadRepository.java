@@ -54,6 +54,19 @@ class ArtifactJobReadRepository {
         ), workspaceId, limit, offset);
     }
 
+    /**
+     * 排队位置：所有工作台共用一条产物队列，按入队时间排在它前面的排队任务数加一。
+     * 只返回一个数字，不暴露其他工作台的任务内容。
+     */
+    int queuePosition(String artifactJobId, Instant queuedAt) {
+        Integer ahead = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_job
+                where status = 'QUEUED' and id <> ?
+                  and (updated_at < ? or (updated_at = ? and id < ?))
+                """, Integer.class, artifactJobId, Timestamp.from(queuedAt), Timestamp.from(queuedAt), artifactJobId);
+        return (ahead == null ? 0 : ahead) + 1;
+    }
+
     ArtifactJobDetailRow getJob(String workspaceId, String artifactJobId) {
         return jdbcTemplate.query("""
                 select aj.id,
