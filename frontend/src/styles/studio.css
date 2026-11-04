@@ -1384,3 +1384,15 @@ button.artifact-output-row:hover {
   color: var(--warning);
   font-size: var(--text-sm);
 }
+
+/* 产物列表底部的加载更多 */
+.artifact-load-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 32px;
+  margin-top: 6px;
+  font-size: var(--text-xs);
+}

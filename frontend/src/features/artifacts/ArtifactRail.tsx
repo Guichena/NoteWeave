@@ -195,6 +195,8 @@ export function ArtifactRail(props: ArtifactRailProps) {
         <ArtifactOutputList
           items={outputItems}
           loading={props.artifactJobsLoading}
+          hasMore={props.hasMoreArtifactJobs ?? false}
+          onLoadMore={props.loadMoreArtifactJobs}
           formatRelativeTime={props.formatRelativeTime}
           onOpen={(item) => setReaderTarget({ artifactJobId: item.artifactJobId, versionNo: null })}
         />
