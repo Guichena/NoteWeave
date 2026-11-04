@@ -14,7 +14,8 @@ import urllib.parse
 KNOWN_BLOCKED_HOSTS = frozenset({"dl.acm.org", "sciencedirect.com", "researchgate.net"})
 # 同一站点被拒绝几次且没有成功读取过，就认为它拒绝自动读取
 BLOCKED_AFTER_DENIALS = 2
-_DENIED_CODE = re.compile(r"HTTP_40[13]\b")
+# 超过单页抓取上限也算一次拒绝：同一站点连续两次超时且从没读到正文，后续抓取排到最后
+_DENIED_CODE = re.compile(r"HTTP_40[13]\b|FETCH_PAGE_DEADLINE")
 
 _lock = threading.Lock()
 _outcomes: dict[str, list[int]] = {}

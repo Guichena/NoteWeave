@@ -11,11 +11,12 @@ import os
 import re
 import socket
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from typing import Protocol
 
 from app.fetch_access import fetch_blocked, record_fetch_outcome
@@ -741,14 +742,21 @@ class DeepSeekUrlSnapshotTransport(TavilyMcpUrlSnapshotTransport):
 
 
 class CompositeUrlSnapshotTransport:
-    def __init__(self, transports: list[UrlSnapshotTransport]) -> None:
+    def __init__(self, transports: list[UrlSnapshotTransport], deadline_seconds: float = 0.0) -> None:
         self.transports = transports
+        # 一页已经用掉这么久就不再换下一个读取渠道；0 表示不限
+        self.deadline_seconds = max(0.0, float(deadline_seconds or 0.0))
 
     def read(self, url: str, query: str, token_budget: int) -> dict[str, object]:
         failure_methods: list[str] = []
         failure_reasons: list[str] = []
         failure_codes: list[str] = []
-        for transport in self.transports:
+        started = _page_clock()
+        for position, transport in enumerate(self.transports):
+            if position > 0 and self.deadline_seconds > 0 and _page_clock() - started >= self.deadline_seconds:
+                failure_reasons.append("page fetch deadline reached before trying remaining transports")
+                failure_codes.append(PAGE_DEADLINE_FAILURE_CODE)
+                break
             snapshot = transport.read(url, query, token_budget)
             failure_methods.extend(
                 str(item).strip()
@@ -799,6 +807,10 @@ class CompositeUrlSnapshotTransport:
         }
 
 
+# 抓取计时用的时钟，导入时绑定，测试替换全局 time.monotonic 不影响这里
+_page_clock = time.monotonic
+# 单页超过抓取上限被放弃时记录的失败码
+PAGE_DEADLINE_FAILURE_CODE = "FETCH_PAGE_DEADLINE"
 # 抓取失败时最多补抓到预算的几倍，避免整页命中都打不开时把时间耗在逐个重试上
 FETCH_BACKFILL_FACTOR = 2
 # 长页面按列各截一段时最多照顾的列数，每段至少还有几千字符
@@ -824,9 +836,12 @@ def _readable_document(document: ResearchFetchedDocument) -> bool:
 
 
 class CompositeFetchAdapter:
-    def __init__(self, adapters: list[FetchAdapter], max_concurrency: int = 1) -> None:
+    def __init__(self, adapters: list[FetchAdapter], max_concurrency: int = 1,
+                 page_deadline_seconds: float = 0.0) -> None:
         self.adapters = adapters
         self.max_concurrency = max(1, max_concurrency)
+        # 单个网页从开始抓取算起的硬上限，超时就放弃这一页、由后面的命中补位；0 表示不限
+        self.page_deadline_seconds = max(0.0, float(page_deadline_seconds or 0.0))
 
     def fetch(
         self,
@@ -861,6 +876,8 @@ class CompositeFetchAdapter:
         *,
         start_index: int,
     ) -> list[ResearchFetchedDocument]:
+        if self.page_deadline_seconds > 0 and hits:
+            return self._fetch_batch_with_deadline(task_input, plan, hits, start_index=start_index)
         if self.max_concurrency <= 1 or len(hits) <= 1:
             return [
                 document
@@ -873,6 +890,63 @@ class CompositeFetchAdapter:
                 for index, hit in enumerate(hits, start=start_index)
             ]
             return [document for future in futures if (document := future.result()) is not None]
+
+    def _fetch_batch_with_deadline(
+        self,
+        task_input: ResearchTaskInput,
+        plan: ResearchPlan,
+        hits: list[ResearchSearchHit],
+        *,
+        start_index: int,
+    ) -> list[ResearchFetchedDocument]:
+        """每个网页单独计时，超过上限的页面直接放弃，结果仍按命中顺序返回。
+
+        一页的读取链路依次尝试 DeepSeek、Tavily、Jina、直接抓取，每家都有重试，最坏要好几分钟；
+        实测有深挖任务在抓取与抽取之间停了 200 秒。放弃的页面在后台线程里自然结束，不再等待它。
+        """
+        deadline = self.page_deadline_seconds
+        workers = min(self.max_concurrency, len(hits))
+        # 排队的页面要等前面的页面让出线程，整批的上限按轮数放宽，避免线程全被慢页面占住时无限等待
+        rounds = -(-len(hits) // workers)
+        batch_deadline = deadline * rounds + 1.0
+        started: dict[int, float] = {}
+        started_lock = threading.Lock()
+
+        def run(position: int, hit: ResearchSearchHit, fetch_index: int) -> ResearchFetchedDocument | None:
+            with started_lock:
+                started[position] = _page_clock()
+            return self._fetch_first_supported_hit(task_input, plan, hit, fetch_index)
+
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="research-fetch")
+        results: list[ResearchFetchedDocument | None] = [None] * len(hits)
+        try:
+            futures = [executor.submit(run, position, hit, index)
+                       for position, (index, hit) in enumerate(enumerate(hits, start=start_index))]
+            pending = set(range(len(hits)))
+            batch_started = _page_clock()
+            while pending:
+                wait([futures[position] for position in pending], timeout=0.25, return_when=FIRST_COMPLETED)
+                now = _page_clock()
+                for position in sorted(pending):
+                    future = futures[position]
+                    if future.done():
+                        pending.discard(position)
+                        results[position] = future.result()
+                        continue
+                    with started_lock:
+                        began = started.get(position)
+                    overdue = (now - began > deadline) if began is not None else (now - batch_started > batch_deadline)
+                    if overdue:
+                        pending.discard(position)
+                        future.cancel()
+                        url = hits[position].url or ""
+                        # 记作一次读取失败，同一站点多次超时后排到后面
+                        record_fetch_outcome(url, False, PAGE_DEADLINE_FAILURE_CODE)
+                        logger.warning("Research fetch abandoned slow page hit_id=%s source_id=%s after %.1fs",
+                                       hits[position].hit_id, hits[position].source_id, deadline)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+        return [document for document in results if document is not None]
 
     def _fetch_first_supported_hit(
         self,
@@ -904,6 +978,7 @@ def build_default_fetch_adapter() -> CompositeFetchAdapter:
             UrlFetchAdapter(transport=transport),
         ],
         max_concurrency=settings.fetch_max_concurrency,
+        page_deadline_seconds=settings.fetch_page_deadline_seconds,
     )
 
 
@@ -1485,4 +1560,4 @@ def _build_default_url_snapshot_transport() -> UrlSnapshotTransport | None:
         return None
     if len(transports) == 1:
         return transports[0]
-    return CompositeUrlSnapshotTransport(transports)
+    return CompositeUrlSnapshotTransport(transports, deadline_seconds=settings.fetch_page_deadline_seconds)
