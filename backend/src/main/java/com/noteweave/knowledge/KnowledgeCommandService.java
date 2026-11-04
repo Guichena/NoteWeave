@@ -99,13 +99,21 @@ public class KnowledgeCommandService {
                                 request.content(), request.sourceMessageId(), citationIds));
             }
         }
-        return createItemWithVersion(
+        KnowledgeItemResponse created = createItemWithVersion(
                 workspaceId,
                 request.itemType(),
                 request.title(),
                 request.content(),
                 request.sourceMessageId(),
                 citationIds);
+        // 调用方显式指定 Wiki 页面类型时以指定值为准，覆盖按正文推断的结果
+        if ("WIKI".equals(request.itemType()) && request.pageKind() != null && !request.pageKind().isBlank()
+                && !request.pageKind().equals(created.pageKind())) {
+            jdbcTemplate.update("update knowledge_item set page_kind = ? where id = ?",
+                    request.pageKind(), created.itemId());
+            return itemResponse(created.itemId());
+        }
+        return created;
     }
 
     /**

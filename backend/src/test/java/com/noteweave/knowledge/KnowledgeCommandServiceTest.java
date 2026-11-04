@@ -70,6 +70,20 @@ class KnowledgeCommandServiceTest {
         verifyNoInteractions(workspaceQueryPort);
     }
 
+    /** 接口原来没有 page_kind，传了也被忽略，只能建 TOPIC 页。 */
+    @Test
+    void explicitPageKindOverridesInferredKind() {
+        KnowledgeItemResponse concept = commandService.createItem(
+                "workspace",
+                new KnowledgeItemRequest("WIKI", "Plain Title", "plain body", null, "CONCEPT"));
+        KnowledgeItemResponse inferred = commandService.createItem(
+                "workspace",
+                new KnowledgeItemRequest("WIKI", "Another Title", "another body", null));
+
+        assertThat(concept.pageKind()).isEqualTo("CONCEPT");
+        assertThat(inferred.pageKind()).isEqualTo("TOPIC");
+    }
+
     @Test
     void shouldCreateWikiFromMessageWithNormalizedLinkAndCitationOrder() {
         commandService.createItem(
