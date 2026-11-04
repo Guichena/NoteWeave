@@ -253,6 +253,16 @@ class WorkspaceAccessContractTest {
                         .content("{\"wiki_enabled\":false}"))
                 .andExpect(status().isOk());
 
+        // 缺少 wiki_enabled 时拒绝，不能把知识库静默关掉
+        jdbcTemplate.update("update workspace set wiki_enabled = 1 where id = ?", workspaceId);
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"auto_ingest\":true}"))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject(
+                "select wiki_enabled from workspace where id = ?", Boolean.class, workspaceId)).isTrue();
+
         Long versionBefore = jdbcTemplate.queryForObject(
                 "select acl_version from workspace where id = ?", Long.class, workspaceId);
         mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/members/{userId}", workspaceId, viewer.userId())

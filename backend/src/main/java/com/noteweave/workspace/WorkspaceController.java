@@ -48,7 +48,7 @@ public class WorkspaceController {
     @PutMapping("/{workspaceId}/wiki-settings")
     ApiResponse<WorkspaceWikiSettingsResponse> updateWikiSettings(
             @PathVariable String workspaceId,
-            @RequestBody UpdateWorkspaceWikiSettingsRequest request
+            @jakarta.validation.Valid @RequestBody UpdateWorkspaceWikiSettingsRequest request
     ) {
         return ApiResponse.success(updateWikiSettingsUseCase.execute(workspaceId, request));
     }
