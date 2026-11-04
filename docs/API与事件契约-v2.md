@@ -211,7 +211,9 @@ MySQL Source Version / ACL Version / Tombstone commit
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| POST/GET | `/api/v2/workspaces/{workspaceId}/conversations` | 创建和查询会话 |
+| POST/GET | `/api/v2/workspaces/{workspaceId}/conversations` | 创建和查询会话（不含已删除会话） |
+| PATCH | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}` | 重命名会话，请求体 `{"title": "..."}` |
+| DELETE | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}` | 软删除会话，先停止进行中的回答；返回 `deleted: true`，重复删除结果相同 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/messages` | 消息列表 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/turn-submissions/{clientRequestId}` | Turn 幂等查询 |
 | GET | `/api/v2/workspaces/{workspaceId}/conversations/{conversationId}/events` | 会话 SSE |
