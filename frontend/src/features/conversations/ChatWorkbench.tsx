@@ -67,6 +67,8 @@ export type ChatWorkbenchProps = {
   deepResearch?: boolean;
   setDeepResearch?: (value: boolean) => void;
   loadResearchRun?: (researchRunId: string) => Promise<ResearchRunDetail>;
+  /** 取消进行中的研究；研究长时间没有进展时用户可以自己停下来 */
+  cancelResearchRun?: (researchRunId: string) => Promise<void>;
   onOpenResearchRun?: (researchRunId: string) => void;
   /** 这段对话里的研究编号；问答打开依据研究报告时，用报告引用过的网页原文作答 */
   reportRefs?: string[];
@@ -104,6 +106,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
     deepResearch = false,
     setDeepResearch,
     loadResearchRun,
+    cancelResearchRun,
     onOpenResearchRun,
     reportRefs = [],
     reportGrounding = false,
@@ -306,6 +309,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
                           researchRunId={message.researchRunId}
                           researchProjectionJson={message.researchProjectionJson}
                           loadRun={loadResearchRun}
+                          cancelRun={cancelResearchRun}
                           onOpenReport={(researchRunId) => onOpenResearchRun?.(researchRunId)}
                         />
                       </Suspense>

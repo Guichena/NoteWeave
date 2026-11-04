@@ -275,6 +275,21 @@
   font-size: var(--text-sm);
 }
 
+/* 进行中研究的已用时间与取消按钮 */
+.research-turn-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.research-turn-cancel-error {
+  color: var(--danger, #c0392b);
+}
+
 /* 对话里的报告消息 */
 .research-report-message {
   display: grid;
