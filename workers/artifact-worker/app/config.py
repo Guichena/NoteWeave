@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     kafka_artifact_dlq_topic: str = "noteweave.artifact.job.dlq"
     kafka_artifact_group_id: str = "noteweave-artifact-worker"
     kafka_artifact_max_poll_interval_seconds: int = Field(default=4200, ge=60, le=21_600)
+    # 空闲超过这个时长就重建消费会话：实测消费者偶发空闲后不再拉取消息，只有重启进程才恢复
+    kafka_artifact_idle_reset_seconds: int = Field(default=180, ge=30, le=3600)
     kafka_consume_max_attempts: int = Field(default=3, ge=1, le=20)
     artifact_consumer_enabled: bool = True
     mcp_sandbox_root: str = "runtime"
