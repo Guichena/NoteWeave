@@ -55,7 +55,7 @@ describe("WorkspaceSessionLoader", () => {
     const port = createPort({
       conversations: [conversation("deleted")],
       messages: [{
-        ...message(1, "ASSISTANT", "此消息已删除"),
+        ...message(1, "ASSISTANT", ""),
         requested_turn_mode: "QA",
         context_status: "DELETED",
         answer_status: "CANCELLED",
@@ -67,7 +67,7 @@ describe("WorkspaceSessionLoader", () => {
     const restored = await loader.restoreWorkspace(workspace("workspace"));
     expect(restored?.messages[0]).toEqual({
       role: "assistant",
-      content: "此消息已删除",
+      content: "",
       answerMode: "qa",
       deleted: true
     });

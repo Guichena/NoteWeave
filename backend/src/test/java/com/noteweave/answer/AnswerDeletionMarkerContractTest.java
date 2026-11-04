@@ -24,7 +24,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * 验收 11-04 中危 22、23、24：
- * 删除的消息显示此消息已删除，而不是引用的资料已撤销；
+ * 删除的消息标记为 DELETED（前端显示此消息已删除），不再误报为引用的资料已撤销；
  * 回答运行带显式的 deleted / cancelled 标记；
  * 对已删除或已停止的回答提交反馈时返回明确原因，不再是反馈目标已变化。
  */
@@ -55,7 +55,8 @@ class AnswerDeletionMarkerContractTest {
                 .andExpect(status().isOk());
 
         JsonNode answer = findMessage(workspaceId, conversationId, answerMessageId);
-        assertThat(answer.path("content").asText()).isEqualTo("此消息已删除");
+        // 正文按脱敏约定置空，前端根据 DELETED 状态显示此消息已删除
+        assertThat(answer.path("content").asText()).isEmpty();
         assertThat(answer.path("context_status").asText()).isEqualTo("DELETED");
         assertThat(answer.path("citations").size()).isZero();
 
@@ -92,8 +93,9 @@ class AnswerDeletionMarkerContractTest {
                         workspaceId, conversationId, queryMessageId))
                 .andExpect(status().isOk());
 
-        assertThat(findMessage(workspaceId, conversationId, queryMessageId).path("content").asText())
-                .isEqualTo("此消息已删除");
+        JsonNode question = findMessage(workspaceId, conversationId, queryMessageId);
+        assertThat(question.path("content").asText()).isEmpty();
+        assertThat(question.path("context_status").asText()).isEqualTo("DELETED");
         assertThat(findMessage(workspaceId, conversationId, answerMessageId).path("content").asText())
                 .as("提问被删除时不能把回答误报成资料撤销")
                 .doesNotContain("资料已撤销");
