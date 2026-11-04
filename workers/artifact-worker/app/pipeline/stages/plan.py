@@ -53,6 +53,8 @@ def plan(task, skill, options, evidence, client):
     inputs = {"requirement": task.input_payload.user_requirement,
               "contract": skill.contract, "options": options, "evidence": evidence,
               "control_pack": task.control_pack.model_dump(mode="json")}
+    if task.input_payload.task_parameters:
+        inputs["task_parameters"] = task.input_payload.task_parameters
     failure = ""
     for _ in range(MAX_ATTEMPTS):
         current = dict(inputs)
