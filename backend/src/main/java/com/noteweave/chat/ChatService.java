@@ -77,6 +77,12 @@ public class ChatService {
     private final com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService;
     private final com.noteweave.context.LlmConversationPremiseExtractor premiseExtractor;
     private final com.noteweave.context.ConversationPremiseService premiseService;
+    private final java.util.concurrent.Executor premiseExecutor;
+    /** 每个会话尚未完成的前提抽取链：同一会话按发送顺序折叠前提。 */
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<Void>>
+            premiseChains = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 下一轮准备上下文前最多等待上一轮前提抽取的时间，超时就按已落库的前提继续。 */
+    static final long PREVIOUS_PREMISE_WAIT_MILLIS = 3_000L;
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -102,7 +108,9 @@ public class ChatService {
             com.noteweave.research.ResearchCellFollowUpService researchCellFollowUpService,
             com.noteweave.conversation.ConversationSessionPreferenceService sessionPreferenceService,
             com.noteweave.context.LlmConversationPremiseExtractor premiseExtractor,
-            com.noteweave.context.ConversationPremiseService premiseService
+            com.noteweave.context.ConversationPremiseService premiseService,
+            @org.springframework.beans.factory.annotation.Qualifier("conversationPremiseExecutor")
+            java.util.concurrent.Executor premiseExecutor
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.memoryCompilerService = memoryCompilerService;
@@ -128,6 +136,7 @@ public class ChatService {
         this.sessionPreferenceService = sessionPreferenceService;
         this.premiseExtractor = premiseExtractor;
         this.premiseService = premiseService;
+        this.premiseExecutor = premiseExecutor;
     }
 
     public PreparedAnswerMaterial compilePreparedAnswer(
@@ -136,17 +145,52 @@ public class ChatService {
             String workspaceId,
             SendMessageRequest request
     ) {
+        requireAnswerAdmission(conversationId, workspaceId, request);
+        return compileAdmittedAnswer(conversationId, userMessageId, workspaceId, request,
+                AnswerPreparationListener.NONE);
+    }
+
+    /**
+     * 发消息时同步执行的准入检查：权限、回答模式、限流和检索参数组合。
+     * 这些检查只读库、不调用模型，失败时请求直接返回对应的错误码；
+     * 通过后耗时的改写、检索和判定可以放到后台执行。
+     */
+    public void requireAnswerAdmission(String conversationId, String workspaceId, SendMessageRequest request) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
-        AnswerMode.parse(request.answerMode());
+        AnswerMode mode = AnswerMode.parse(request.answerMode());
         workloadQuotaService.requireRate(workspaceId, "chat");
         EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
                 request.retrievalStrategy(), request.retrievalChannels(),
                 request.sourceScopeSourceIds(), request.groundingRefs());
+        validateRetrievalRequest(workspaceId, conversationId, mode, request, retrievalConfig);
+    }
+
+    /**
+     * 准入通过之后的回答准备：整理上下文、改写查询、检索、判定证据充分性并组装提示。
+     * 不再做限流计数，调用方必须先通过 {@link #requireAnswerAdmission}。
+     */
+    public PreparedAnswerMaterial compileAdmittedAnswer(
+            String conversationId,
+            String userMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            AnswerPreparationListener listener
+    ) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        AnswerMode.parse(request.answerMode());
+        EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
+                request.retrievalStrategy(), request.retrievalChannels(),
+                request.sourceScopeSourceIds(), request.groundingRefs());
+        AnswerPreparationListener stages = safe(listener);
         PreparationTimer timer = new PreparationTimer();
-        extractPremises(workspaceId, conversationId, userMessageId, request.content());
-        timer.mark("premise");
+        stages.stage(AnswerPreparationListener.STAGE_UNDERSTANDING, Map.of());
+        // 上一轮的前提抽取在后台执行，这里最多等一小会儿，让本轮上下文尽量看到上一轮的前提
+        awaitPendingPremises(conversationId);
+        timer.mark("premise_wait");
+        // 本轮消息的前提抽取不进入关键路径：本轮问题原文已经在提示里，抽取结果服务于后续追问
+        schedulePremiseExtraction(workspaceId, conversationId, userMessageId, request.content());
         AnswerDraft draft = buildAnswerDraft(
-                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer);
+                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages);
         // 分阶段耗时：发消息后到开始生成之间的等待都在这里，后续提速以这些数字为准
         PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={}",
                 workspaceId, request.answerMode(), timer.render(), timer.totalMillis());
@@ -316,40 +360,23 @@ public class ChatService {
             String workspaceId,
             SendMessageRequest request,
             EffectiveRetrievalConfig retrievalConfig,
-            PreparationTimer timer
+            PreparationTimer timer,
+            AnswerPreparationListener stages
     ) {
         ConversationRetrievalContextAssembler.Context conversationContext = buildConversationContext(
                 workspaceId, conversationId, currentUserMessageId, request.content());
         timer.mark("context");
         QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
         timer.mark("rewrite");
+        stages.stage(AnswerPreparationListener.STAGE_RETRIEVING, Map.of());
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
                 workspaceId, request.answerMode(), rewrite.standaloneQuery());
         var preferenceParameters = com.noteweave.preference.PreferenceParameterCompiler
                 .compile(chatControlPack);
         AnswerMode mode = AnswerMode.parse(request.answerMode());
         Set<String> sourceScope = new LinkedHashSet<>(request.sourceScopeSourceIds());
-        if (!sourceScope.isEmpty() && mode != AnswerMode.QA) {
-            throw new BusinessException(
-                    "ANSWER_SOURCE_SCOPE_UNSUPPORTED",
-                    "显式资料范围当前仅支持 QA 回答模式"
-            );
-        }
-        // NR21：WEB 渠道仍没有检索实现，明确拒绝而不是静默回退为工作台检索
-        if (retrievalConfig.channels().contains("WEB")) {
-            throw new BusinessException(
-                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
-                    "WEB 检索通道尚未开放：请使用工作台检索（WORKSPACE）、研究报告（REPORT）或显式 NONE 关闭检索",
-                    org.springframework.http.HttpStatus.CONFLICT);
-        }
         boolean reportChannel = retrievalConfig.channels().contains("REPORT");
-        if (reportChannel && mode != AnswerMode.QA) {
-            throw new BusinessException(
-                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
-                    "研究报告取证（REPORT）目前只支持问答模式",
-                    org.springframework.http.HttpStatus.CONFLICT);
-        }
-        Set<String> reportScope = reportGrounding.resolve(workspaceId, conversationId, retrievalConfig);
+        Set<String> reportScope = validateRetrievalRequest(workspaceId, conversationId, mode, request, retrievalConfig);
         Map<String, String> attributes = new LinkedHashMap<>();
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_CURRENT_QUESTION, conversationContext.currentQuestion());
         attributes.put(NoteAnswerModeStrategy.ATTRIBUTE_REQUEST_CONTENT, request.content());
@@ -485,6 +512,8 @@ public class ChatService {
             bundle = unifiedRetrievalOrchestrator.execute(context, plan);
         }
         timer.mark("retrieval");
+        stages.stage(AnswerPreparationListener.STAGE_RETRIEVED,
+                Map.of("evidence_count", bundle.evidence().size()));
         EvidenceSufficiencyJudge.Judgement sufficiency = evidenceSufficiencyJudge.judge(
                 context.query(), bundle);
         timer.mark("sufficiency");
@@ -514,8 +543,97 @@ public class ChatService {
         );
     }
 
+    /** 资料范围与检索通道的组合检查，返回本轮允许取证的研究报告范围。 */
+    private Set<String> validateRetrievalRequest(
+            String workspaceId,
+            String conversationId,
+            AnswerMode mode,
+            SendMessageRequest request,
+            EffectiveRetrievalConfig retrievalConfig
+    ) {
+        if (!request.sourceScopeSourceIds().isEmpty() && mode != AnswerMode.QA) {
+            throw new BusinessException(
+                    "ANSWER_SOURCE_SCOPE_UNSUPPORTED",
+                    "显式资料范围当前仅支持 QA 回答模式"
+            );
+        }
+        // NR21：WEB 渠道仍没有检索实现，明确拒绝而不是静默回退为工作台检索
+        if (retrievalConfig.channels().contains("WEB")) {
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "WEB 检索通道尚未开放：请使用工作台检索（WORKSPACE）、研究报告（REPORT）或显式 NONE 关闭检索",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        if (retrievalConfig.channels().contains("REPORT") && mode != AnswerMode.QA) {
+            throw new BusinessException(
+                    "RETRIEVAL_CHANNEL_UNSUPPORTED",
+                    "研究报告取证（REPORT）目前只支持问答模式",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        return reportGrounding.resolve(workspaceId, conversationId, retrievalConfig);
+    }
+
+    private static AnswerPreparationListener safe(AnswerPreparationListener listener) {
+        if (listener == null) {
+            return AnswerPreparationListener.NONE;
+        }
+        return (stage, data) -> {
+            try {
+                listener.stage(stage, data);
+            } catch (RuntimeException ex) {
+                PREPARATION_LOG.debug("answer preparation stage callback failed stage={}: {}", stage, ex.getMessage());
+            }
+        };
+    }
+
+    /** 等待同一会话里尚未完成的前提抽取，最多 {@link #PREVIOUS_PREMISE_WAIT_MILLIS} 毫秒。 */
+    void awaitPendingPremises(String conversationId) {
+        java.util.concurrent.CompletableFuture<Void> pending = premiseChains.get(conversationId);
+        if (pending == null || pending.isDone()) {
+            return;
+        }
+        try {
+            pending.get(PREVIOUS_PREMISE_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException ex) {
+            PREPARATION_LOG.info("previous premise extraction not finished conversation={} reason={}",
+                    conversationId, ex.getClass().getSimpleName());
+        }
+    }
+
     /**
-     * F2-04：在组装本轮上下文前抽取并折叠当前消息的会话前提。失败不阻断回答；
+     * 把本轮消息的前提抽取排到后台。同一会话的抽取按提交顺序串行执行，保证更正与撤回按消息顺序折叠；
+     * 线程池已满时放弃本轮抽取，前提抽取本来就允许失败。
+     */
+    void schedulePremiseExtraction(String workspaceId, String conversationId,
+                                   String userMessageId, String content) {
+        java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>> created =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        premiseChains.compute(conversationId, (key, previous) -> {
+            java.util.concurrent.CompletableFuture<Void> base = previous == null
+                    ? java.util.concurrent.CompletableFuture.completedFuture(null)
+                    : previous.exceptionally(ignored -> null);
+            java.util.concurrent.CompletableFuture<Void> next;
+            try {
+                next = base.thenRunAsync(
+                        () -> extractPremises(workspaceId, conversationId, userMessageId, content),
+                        premiseExecutor);
+            } catch (java.util.concurrent.RejectedExecutionException rejected) {
+                PREPARATION_LOG.warn("premise extraction skipped, executor saturated conversation={}", conversationId);
+                return previous;
+            }
+            created.set(next);
+            return next;
+        });
+        java.util.concurrent.CompletableFuture<Void> mine = created.get();
+        if (mine != null) {
+            mine.whenComplete((ignored, failure) -> premiseChains.remove(conversationId, mine));
+        }
+    }
+
+    /**
+     * F2-04：抽取并折叠当前消息的会话前提。失败不阻断回答；
      * 重复执行由来源消息 + 抽取版本幂等。
      */
     private void extractPremises(String workspaceId, String conversationId,

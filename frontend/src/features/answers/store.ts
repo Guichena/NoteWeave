@@ -53,6 +53,14 @@ export class AnswerRunStore {
     if (!envelope.runId) {
       return [];
     }
+    if (event.event === "answer.stage") {
+      // 阶段事件不占回答运行的事件序号（run_sequence 为 0），不能走下面的序号去重
+      const current = this.states.get(envelope.runId) ?? createAnswerRunState(envelope.runId);
+      const next = applyStageEvent(current, envelope.data);
+      if (next === current) return [];
+      this.states.set(envelope.runId, next);
+      return [next];
+    }
     const current = this.states.get(envelope.runId) ?? createAnswerRunState(envelope.runId);
     if (envelope.runSequence <= current.lastRunSequence) {
       return [];
@@ -196,6 +204,25 @@ export function createAnswerRunState(runId = ""): AnswerRunState {
     error: "",
     lastRunSequence: 0,
     citationProtocol: unknownCitationProtocol()
+  };
+}
+
+/** 合并一条 answer.stage 事件；终态或已有正文后忽略，避免进度提示覆盖正文状态。 */
+export function applyStageEvent(current: AnswerRunState, data: string): AnswerRunState {
+  if (isTerminal(current.status) || current.content) return current;
+  let payload: Record<string, unknown>;
+  try {
+    payload = asRecord(JSON.parse(data));
+  } catch {
+    return current;
+  }
+  const stage = text(payload.stage);
+  if (!stage) return current;
+  const count = Number(payload.evidence_count);
+  return {
+    ...current,
+    stage,
+    evidenceCount: Number.isFinite(count) ? count : current.evidenceCount
   };
 }
 

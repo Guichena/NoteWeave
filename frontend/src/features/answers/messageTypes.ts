@@ -19,6 +19,9 @@ export type Message = {
   researchProjectionJson?: string;
   /** 流式先到的引用协议；缺失时由 MessageBubble 补拉证据清单解析。 */
   citationProtocol?: CitationProtocol | null;
+  /** 正文出现前的准备阶段与检索到的资料条数，用于进度提示。 */
+  answerStage?: string;
+  answerEvidenceCount?: number;
 };
 export function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
   let targetIndex = -1;
@@ -38,7 +41,9 @@ export function updateLastAssistantMessage(current: Message[], answer: AnswerRun
       citations: [...answer.citations],
       answerStatus: answer.status,
       answerError: answer.error,
-      citationProtocol: answer.citationProtocol
+      citationProtocol: answer.citationProtocol,
+      answerStage: answer.stage,
+      answerEvidenceCount: answer.evidenceCount
     }
     : message);
 }
@@ -55,7 +60,9 @@ export function updateAssistantMessageByRun(
       citations: [...answer.citations],
       answerStatus: answer.status,
       answerError: answer.error,
-      citationProtocol: answer.citationProtocol
+      citationProtocol: answer.citationProtocol,
+      answerStage: answer.stage,
+      answerEvidenceCount: answer.evidenceCount
     }
     : message);
 }
