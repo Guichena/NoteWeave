@@ -122,7 +122,7 @@ function toRestoredMessage(message: ConversationMessage): RestoredMessage {
     restored.answerMode = mode;
   }
   if (message.context_status === "DELETED") {
-    // 已删除的消息只保留位置，正文是后端给的删除说明，不带回答运行等可操作信息
+    // 已删除的消息只保留位置，后端已把正文置空，由消息气泡显示此消息已删除，不带回答运行等可操作信息
     restored.deleted = true;
     return restored;
   }

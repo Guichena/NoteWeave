@@ -288,7 +288,7 @@ describe("MessageBubble 检索改写、证据充分性与反馈", () => {
 
   it("已删除的消息只显示删除说明，没有反馈和重新生成按钮", () => {
     render(<MessageBubble onFeedback={vi.fn()} onRegenerate={vi.fn()}
-      message={{ role: "assistant", answerMode: "qa", content: "此消息已删除", deleted: true }} />);
+      message={{ role: "assistant", answerMode: "qa", content: "", deleted: true }} />);
 
     expect(screen.getByText("此消息已删除")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "回答有帮助" })).toBeNull();

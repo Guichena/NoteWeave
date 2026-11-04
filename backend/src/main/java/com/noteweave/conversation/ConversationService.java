@@ -23,7 +23,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConversationService {
 
     static final String DELETED_STATUS = "DELETED";
-    static final String DELETED_MESSAGE_TEXT = "此消息已删除";
     static final String LINKED_MESSAGE_DELETED_TEXT = "这条回答关联的消息已删除，内容不再展示。";
     static final String SOURCE_REVOKED_TEXT = "此回答引用的资料已撤销，内容不可查看。";
 
@@ -289,7 +288,7 @@ public class ConversationService {
     /** 已删除消息只保留位置和角色，正文统一给出删除说明，引用和研究投影都不再返回。 */
     private static ConversationMessageResponse deletedPlaceholder(ConversationMessageResponse message) {
         return new ConversationMessageResponse(message.messageId(), message.messageSeq(), message.role(),
-                message.requestedTurnMode(), DELETED_MESSAGE_TEXT, message.replyToMessageId(),
+                message.requestedTurnMode(), "", message.replyToMessageId(),
                 DELETED_STATUS, null, message.answerStatus(), null, message.createdAt(), null, List.of(),
                 null, null);
     }
