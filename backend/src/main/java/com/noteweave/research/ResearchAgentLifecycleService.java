@@ -153,8 +153,35 @@ public class ResearchAgentLifecycleService {
                 update research_agent_outbox set status = 'CANCELLED', updated_at = current_timestamp
                 where research_run_id = ? and status = 'READY'
                 """, runId);
-        taskService.cancelTask(run.taskId(), "RESEARCH_CANCELLED", terminalReason, runId);
+        // 增量重开只把研究运行改回 RUNNING，父任务仍停在 COMPLETED。父任务已是终态时不再迁移，
+        // 否则 COMPLETED -> CANCELLED 被拒绝，整个取消事务回滚，卡住的运行永远无法取消。
+        if (!parentTaskTerminal(run.taskId())) {
+            taskService.cancelTask(run.taskId(), "RESEARCH_CANCELLED", terminalReason, runId);
+        }
         return new CancelReceipt(cancelled, false);
+    }
+
+    /** 用户侧取消：先确认运行属于该工作台，再走与内部取消相同的流程。 */
+    @Transactional
+    public CancelReceipt cancelRunInWorkspace(String workspaceId, String runId, String reason) {
+        Integer owned = jdbcTemplate.queryForObject(
+                "select count(*) from research_run where id = ? and workspace_id = ?",
+                Integer.class, runId, workspaceId);
+        if (owned == null || owned == 0) {
+            throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究运行不存在",
+                    org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+        return cancelRun(runId, reason == null || reason.isBlank() ? "USER_CANCELLED" : reason);
+    }
+
+    private boolean parentTaskTerminal(String taskId) {
+        if (taskId == null) {
+            return true;
+        }
+        String status = jdbcTemplate.query("select task_status from task where id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, taskId);
+        return status == null || "COMPLETED".equals(status) || "FAILED".equals(status)
+                || "CANCELLED".equals(status);
     }
 
     @Transactional
