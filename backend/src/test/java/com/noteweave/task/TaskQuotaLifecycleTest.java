@@ -76,6 +76,41 @@ class TaskQuotaLifecycleTest {
     }
 
     @Test
+    void expiredLeaseOfActiveTaskShouldBeReacquiredOnProgress() {
+        // 验收回归：产物任务排队超过租约时长后，首次进度回调被 409 拒绝，任务一直停在 QUEUED
+        String taskId = taskService.createTask(
+                "workspace", "ARTIFACT_JOB", "ARTIFACT_JOB", "job-1", "QUEUED", "queued");
+        taskService.startTask(taskId);
+        org.mockito.Mockito.doThrow(new com.noteweave.common.BusinessException(
+                        "WORKLOAD_LEASE_LOST", "任务并发租约已失效", org.springframework.http.HttpStatus.CONFLICT))
+                .when(quotaService).renewLease("workspace", "artifact", taskId);
+
+        taskService.recordProgress(taskId, "RESOLVING", "取材完成", 20, Map.of(), Map.of());
+
+        org.mockito.Mockito.verify(quotaService, org.mockito.Mockito.times(2))
+                .acquireLease("workspace", "artifact", taskId);
+    }
+
+    @Test
+    void expiredLeaseShouldStayLostWhenConcurrencyIsFull() {
+        String taskId = taskService.createTask(
+                "workspace", "ARTIFACT_JOB", "ARTIFACT_JOB", "job-2", "QUEUED", "queued");
+        taskService.startTask(taskId);
+        org.mockito.Mockito.doThrow(new com.noteweave.common.BusinessException(
+                        "WORKLOAD_LEASE_LOST", "任务并发租约已失效", org.springframework.http.HttpStatus.CONFLICT))
+                .when(quotaService).renewLease("workspace", "artifact", taskId);
+        org.mockito.Mockito.doThrow(new com.noteweave.common.BusinessException(
+                        "WORKLOAD_CONCURRENCY_LIMITED", "当前并发任务已达上限，请稍后重试",
+                        org.springframework.http.HttpStatus.TOO_MANY_REQUESTS))
+                .when(quotaService).acquireLease("workspace", "artifact", taskId);
+        // 建任务时已占用过一次，回调时重新占用遇到并发已满
+        assertThatThrownBy(() -> taskService.recordProgress(taskId, "RESOLVING", "取材完成", 20, Map.of(), Map.of()))
+                .isInstanceOfSatisfying(com.noteweave.common.BusinessException.class,
+                        exception -> org.assertj.core.api.Assertions.assertThat(exception.code())
+                                .isEqualTo("WORKLOAD_LEASE_LOST"));
+    }
+
+    @Test
     void failedTaskShouldReleaseAndRedriveShouldReacquire() {
         String taskId = taskService.createTask(
                 "workspace", "ARTIFACT_JOB", "ARTIFACT_JOB", "job-1", "QUEUED", "queued");
