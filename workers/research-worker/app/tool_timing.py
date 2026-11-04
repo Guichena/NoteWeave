@@ -113,8 +113,20 @@ class TimedPermitClient:
         return timed
 
 
+def _ensure_visible() -> None:
+    """Worker 没有统一配置日志，根记录器默认只输出 WARNING；没有任何处理器时给计时日志单独加一个。"""
+    if _LOG.handlers or logging.getLogger().handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    _LOG.addHandler(handler)
+    _LOG.setLevel(logging.INFO)
+    _LOG.propagate = False
+
+
 def log_task_timing(timer: PhaseTimer, *, task_id: str, research_run_id: str, role: str, outcome: str) -> dict[str, object]:
     """任务结束时写一条结构化日志，按环节列出次数与耗时；返回写出的内容便于测试。"""
+    _ensure_visible()
     phases = timer.snapshot()
     payload: dict[str, object] = {
         "task_id": task_id,
