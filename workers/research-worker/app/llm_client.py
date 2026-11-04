@@ -169,6 +169,8 @@ class OpenAICompatibleLlmClient:
         # 并行调用时保护调用预算：已预留但尚未记录的尝试次数
         self._budget_lock = threading.Lock()
         self._reserved_attempts = 0
+        # 每个线程最近一次调用的记录；同一任务内并行调用时，调用方据此拿到自己那次调用的结果
+        self._thread_calls = threading.local()
         self.cancellation_checker: Callable[[], None] | None = None
         self.session_id = session_id
         self.client = OpenAI(
@@ -242,9 +244,7 @@ class OpenAICompatibleLlmClient:
             request_payload["max_tokens"] = max(1, int(purpose_config["max_tokens"]))
         purpose_timeout_seconds = max(1, int(purpose_config.get("timeout_seconds") or self.timeout_seconds))
         attempt_timeout_seconds = purpose_timeout_seconds
-        # 规划由调用方保留一次修复机会，首个请求不应耗尽整个角色的两次预算。
-        default_attempts = 1 if purpose == "research.plan.matrix" else self.max_attempts
-        purpose_max_attempts = max(1, int(purpose_config.get("max_attempts") or default_attempts))
+        purpose_max_attempts = self._purpose_max_attempts(purpose)
         started = time.perf_counter()
         # 同一任务内的答案核对会并行调用；预算检查与尝试次数预留在锁内同时完成，并行时也不会超出调用上限
         with self._budget_lock:
@@ -383,7 +383,7 @@ class OpenAICompatibleLlmClient:
             input_tokens * input_rate
             + output_tokens * output_rate
         ) / 1_000_000
-        self.call_records.append(
+        record = (
             {
                 "purpose": purpose,
                 "model": str(request_payload.get("model") or self.model),
@@ -403,6 +403,30 @@ class OpenAICompatibleLlmClient:
                 "http_statuses": list(http_statuses or []),
             }
         )
+        self.call_records.append(record)
+        self._thread_calls.last_record = record
+
+    def last_call_record_in_thread(self) -> dict[str, object] | None:
+        """当前线程最近一次调用的记录，没有调用过时返回 None。"""
+        return getattr(self._thread_calls, "last_record", None)
+
+    def _purpose_max_attempts(self, purpose: str) -> int:
+        purpose_config = self.purpose_options.get(purpose, {})
+        # 规划由调用方保留一次修复机会，首个请求不应耗尽整个角色的两次预算。
+        default_attempts = 1 if purpose == "research.plan.matrix" else self.max_attempts
+        return max(1, int(purpose_config.get("max_attempts") or default_attempts))
+
+    def has_headroom_for(self, purpose: str, calls: int) -> bool:
+        """剩余调用预算能否让这么多次同一用途的调用都拿到完整的重试次数。
+
+        并行调用前用它判断：预算足够时，并行与串行每次调用拿到的尝试次数相同，结果一致；
+        预算紧张时串行会让排在后面的调用先用完预算，并行则不确定，这时调用方应退回串行。
+        """
+        if not self.max_total_calls:
+            return True
+        with self._budget_lock:
+            remaining = self.max_total_calls - self._provider_call_count() - self._reserved_attempts
+        return remaining >= self._purpose_max_attempts(purpose) * max(0, calls)
 
     def _provider_call_count(self) -> int:
         return sum(int(item.get("attempt_count") or 0) for item in self.call_records)
