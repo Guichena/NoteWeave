@@ -113,10 +113,12 @@ public class KafkaConfig {
             @Value("${noteweave.kafka.topics.source-chunk:noteweave.source.chunk}") String sourceChunkTopic,
             @Value("${noteweave.kafka.topics.source-embed:noteweave.source.embed}") String sourceEmbedTopic,
             @Value("${noteweave.kafka.topics.source-index:noteweave.source.index}") String sourceIndexTopic,
-            @Value("${noteweave.kafka.artifact-dlq-topic:noteweave.artifact.job.dlq}") String artifactDlqTopic
+            @Value("${noteweave.kafka.artifact-dlq-topic:noteweave.artifact.job.dlq}") String artifactDlqTopic,
+            // 产物任务按任务号分区，分区数是产物 Worker 并行消费的上限；已有 topic 只增不减
+            @Value("${noteweave.kafka.artifact-job-partitions:3}") int artifactJobPartitions
     ) {
         return new KafkaAdmin.NewTopics(
-                TopicBuilder.name("noteweave.artifact.job").partitions(1).replicas(1).build(),
+                TopicBuilder.name("noteweave.artifact.job").partitions(Math.max(1, artifactJobPartitions)).replicas(1).build(),
                 TopicBuilder.name(artifactDlqTopic).partitions(1).replicas(1).build(),
                 deadLetterTopic(sourceParseTopic),
                 deadLetterTopic(retrievalProjectionTopic),

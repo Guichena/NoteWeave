@@ -292,3 +292,31 @@ def test_runtime_reopens_polling_session_after_long_idle(monkeypatch) -> None:
     runtime.stop()
 
     assert created_consumers[0].close_count >= 1
+
+
+def test_consumer_pool_starts_one_lane_per_configured_job_slot() -> None:
+    """产物任务按配置的并发数开多条消费通道，停止时每条都要释放。"""
+    from app.artifact_kafka_consumer import ArtifactKafkaConsumerPool
+
+    started: list[int] = []
+    stopped: list[int] = []
+
+    class Lane:
+        def __init__(self, _settings) -> None:
+            self.index = len(started)
+            self.healthy = True
+
+        def start(self) -> None:
+            started.append(self.index)
+
+        def stop(self) -> None:
+            stopped.append(self.index)
+
+    pool = ArtifactKafkaConsumerPool(Settings(**{"NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY": 3}), Lane)
+    pool.start()
+    assert started == [0, 1, 2]
+    assert pool.healthy
+    pool.lanes[1].healthy = False
+    assert not pool.healthy
+    pool.stop()
+    assert stopped == [0, 1, 2]

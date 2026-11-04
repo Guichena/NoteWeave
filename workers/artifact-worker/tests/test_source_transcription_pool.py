@@ -387,4 +387,7 @@ def test_lifecycle_always_stops_pool_when_consumer_shutdown_raises(monkeypatch):
             pass
     with pytest.raises(ValueError, match="unit stop"):
         asyncio.run(run())
-    assert calls == ["pool-start", "consumer-stop", "pool-stop"]
+    # 每条消费通道都要尝试停止，即使前一条停止失败；转写池始终最后释放
+    assert calls[0] == "pool-start"
+    assert calls[-1] == "pool-stop"
+    assert calls.count("consumer-stop") == main.settings.job_concurrency

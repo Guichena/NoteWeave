@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 from app.config import load_settings, resolve_mcp_sandbox_root
-from app.artifact_kafka_consumer import ArtifactKafkaConsumerRuntime
+from app.artifact_kafka_consumer import ArtifactKafkaConsumerPool, ArtifactKafkaConsumerRuntime
 from app.source_transcription import (accept_source_transcription, accept_video_link, recover_source_transcriptions,
     start_source_transcription_pool, shutdown_source_transcriptions, TranscriptionCapacityExceeded)
 
@@ -24,7 +24,8 @@ async def artifact_worker_lifespan(_: FastAPI):
     try:
         start_source_transcription_pool(settings)
         recover_source_transcriptions()
-        consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
+        # 多条消费通道并行处理产物任务，数量由 NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY 控制
+        consumer_runtime = ArtifactKafkaConsumerPool(settings, ArtifactKafkaConsumerRuntime)
         consumer_runtime.start()
         app.state.artifact_consumer_runtime = consumer_runtime
         yield

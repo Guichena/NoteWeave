@@ -56,6 +56,21 @@ class Settings(BaseSettings):
         le=8,
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES"),
     )
+    # 思考模式：auto 对 deepseek-v4、glm-5 这类默认开思考的模型关闭，其他模型不发参数；
+    # 也可以填 enabled、disabled 或 model-default（不发参数）。产物调用都是按 output_schema 输出 JSON，
+    # 与研究成文一致，关闭思考可以明显缩短单次调用耗时。
+    llm_thinking: str = Field(
+        default="auto",
+        pattern="^(auto|enabled|disabled|model-default)$",
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_THINKING"),
+    )
+    # 同时处理的产物任务数。原来是单消费者串行，多个产物同时提交时只能排队
+    job_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=8,
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY"),
+    )
     transcription_pool_size: int = Field(default=1, ge=1, le=8)
     transcription_queue_capacity: int = Field(default=8, ge=1, le=64)
 
