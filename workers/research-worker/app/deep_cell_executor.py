@@ -81,6 +81,7 @@ from app.search_adapters import (
     run_research_search,
 )
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
+from app.tool_timing import PhaseTimer, TimedPermitClient, TimedToolchain, log_task_timing
 
 
 # Keep completion usage inside the coordinator's frozen per-cell reservation.
@@ -167,7 +168,26 @@ class DeepCellExecutor:
         self.enable_llm = enable_llm
 
     def __call__(self, command: ResearchAgentCommand, claim: AgentTaskClaim) -> ResearchAgentCompletionEnvelope:
+        # 每次执行用一份带计时包装的浅拷贝，不改动共享的执行器对象
+        timer = PhaseTimer()
+        runner = copy(self)
+        runner.toolchain = TimedToolchain(self.toolchain, timer)
+        runner.permit_client = TimedPermitClient(self.permit_client, timer)
+        outcome = "ERROR"
+        try:
+            envelope = runner._execute(command, claim, timer)
+            outcome = str(envelope.termination_reason)
+            return envelope
+        finally:
+            log_task_timing(timer, task_id=str(getattr(claim, "agent_task_id", "")),
+                            research_run_id=str(getattr(command, "research_run_id", "")),
+                            role=str(getattr(runner, "_timing_role", "") or ""),
+                            outcome=outcome)
+
+    def _execute(self, command: ResearchAgentCommand, claim: AgentTaskClaim,
+                 timer: PhaseTimer) -> ResearchAgentCompletionEnvelope:
         snapshot = require_trusted_claim_snapshot(claim)
+        self._timing_role = snapshot.role
         if command.research_run_id != snapshot.research_run_id:
             raise ValueError("command research run does not match claimed snapshot")
         counterfactual_slot = (
@@ -231,7 +251,8 @@ class DeepCellExecutor:
         query_planning: dict[str, object] = {"method": "SKIPPED_ARCHIVE_REPLAY"}
         workspace_queries = []
         if not reused:
-            plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
+            with timer.phase("query_planning"):
+                plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
             plan = _scope_search_plan_to_domains(snapshot, plan)
             query_planning = dict(plan.stop_contract.get("query_planning", {}))
             require_active()
@@ -299,17 +320,19 @@ class DeepCellExecutor:
         uncovered: dict[str, list[str]] = {}
         column_cache: dict[str, tuple] = {}
         results, raw_by_column = _extract_raw_cards(self.toolchain, task_input, plan, windows, llm_client, require_active)
-        extraction, cards, trusted_evidence = _select_column_cards(
-            snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
-            uncovered_out=uncovered, column_cache=column_cache)
+        with timer.phase("answer_check"):
+            extraction, cards, trusted_evidence = _select_column_cards(
+                snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+                uncovered_out=uncovered, column_cache=column_cache)
         context.usage.add("extract_calls")
         executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
                             if not reused and plan.query_specs else [])
         supplement: dict[str, object] = {}
         if (uncovered and snapshot.role == "DEEP_CELL" and not reused and allow_external and llm_client is not None
                 and load_settings().research_supplement_round):
-            extra = self._supplement_uncovered(snapshot, task_input, plan, context, llm_client, require_active,
-                                               uncovered, documents, executed_queries)
+            with timer.phase("supplement_round"):
+                extra = self._supplement_uncovered(snapshot, task_input, plan, context, llm_client, require_active,
+                                                   uncovered, documents, executed_queries)
             supplement = {"columns": len(uncovered), "queries": len(extra["queries"]),
                           "windows": len(extra["windows"])}
             if extra["windows"]:
@@ -320,14 +343,16 @@ class DeepCellExecutor:
                 for key, extra_cards in extra["raw_by_column"].items():
                     raw_by_column[key] = list(raw_by_column.get(key, [])) + list(extra_cards)
                 retained_cards = []
-                extraction, cards, trusted_evidence = _select_column_cards(
-                    snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
-                    column_cache=column_cache)
+                with timer.phase("answer_check"):
+                    extraction, cards, trusted_evidence = _select_column_cards(
+                        snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+                        column_cache=column_cache)
             executed_queries = executed_queries + list(extra["queries"])
         require_active()
         claim_clusters = []
-        candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
-                                        llm=llm_client, clusters_out=claim_clusters)
+        with timer.phase("claim_clustering"):
+            candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
+                                            llm=llm_client, clusters_out=claim_clusters)
         report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
                   "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
         repair_target = snapshot.query_policy.get("repair_target", {})
@@ -338,8 +363,9 @@ class DeepCellExecutor:
             originals += [(str(repair_target.get("cell_key", "")), c["claim_text"])
                           for c in repair_target.get("claims", []) if isinstance(c, dict) and c.get("claim_text")]
             originals = list(dict.fromkeys(originals))
-            self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
-                                 llm_client, context, trusted_evidence, report, require_active)
+            with timer.phase("counter_checks"):
+                self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
+                                     llm_client, context, trusted_evidence, report, require_active)
         # 反证检索之后再补低级别材料，反证证据优先占用证据条数
         retained_evidence, retained_candidates = _retained_payload(
             snapshot, retained_cards, windows, trusted_evidence, candidates)

@@ -105,6 +105,11 @@ noteweave:
       rollout-max-terminal-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_TERMINAL_FAILURE_RATE:0.20}
       rollout-max-delivery-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_DELIVERY_FAILURE_RATE:0.20}
       rollout-max-rejected-merge-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_REJECTED_MERGE_RATE:0.30}
+      repair:
+        # 每个单元格最多补查几次，取值 1 或 2；每多一次通常多一整波等待
+        max-per-cell: ${NOTEWEAVE_RESEARCH_AGENT_REPAIR_MAX_PER_CELL:2}
+        # 已核验、带证据且置信度不低于这个值（百万分比，如 900000 表示 0.9）的单元格不再补查，0 表示关闭
+        skip-verified-min-confidence-ppm: ${NOTEWEAVE_RESEARCH_AGENT_REPAIR_SKIP_VERIFIED_MIN_CONFIDENCE_PPM:0}
       rate-limit:
         enabled: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED:true}
         allow-local-fallback: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK:false}

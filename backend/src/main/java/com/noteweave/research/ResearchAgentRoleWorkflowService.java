@@ -28,6 +28,8 @@ class ResearchAgentRoleWorkflowService {
     private final ResearchAgentCompletionCanonicalizer canonicalizer;
     private final boolean auditEnabled;
     private final boolean synthesisEnabled;
+    /** 与补查决策同一个上限：补查次数用完的审计决策按已用尽结算。 */
+    private final int repairLimit;
     private final ResearchAgentFeatureFlagService featureFlags;
     private final ResearchContextV2Gate contextGate;
 
@@ -41,7 +43,8 @@ class ResearchAgentRoleWorkflowService {
             ResearchAgentFeatureFlagService featureFlags,
             ResearchContextV2Gate contextGate,
             @Value("${noteweave.research.evidence-audit-v1:true}") boolean auditEnabled,
-            @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled
+            @Value("${noteweave.research.worker-synthesis-v1:false}") boolean synthesisEnabled,
+            @Value("${noteweave.research.agent.repair.max-per-cell:2}") int repairLimit
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
@@ -53,11 +56,12 @@ class ResearchAgentRoleWorkflowService {
         this.contextGate = contextGate;
         this.auditEnabled = auditEnabled;
         this.synthesisEnabled = synthesisEnabled;
+        this.repairLimit = repairLimit;
     }
 
     WorkflowReceipt advancePendingAudit(String runId, int waveNo) {
         if (!auditEnabled || !featureFlags.enabledForRun(runId, ResearchAgentFeatureFlagService.EVIDENCE_AUDIT)) return new WorkflowReceipt("NO_AUDIT_PENDING", null);
-        ResearchAuditRepairDecisions.settle(jdbcTemplate, runId, ResearchAgentGapProjectionService.REPAIR_LIMIT);
+        ResearchAuditRepairDecisions.settle(jdbcTemplate, runId, repairLimit);
         List<CellScope> pending = jdbcTemplate.query("""
                 select id, cell_key, cell_version, plan_revision, entity_set_version, candidate_value, evidence_refs_json
                 from research_cell where research_run_id = ? and semantic_audit_status = 'PENDING' and cell_status <> 'FROZEN'

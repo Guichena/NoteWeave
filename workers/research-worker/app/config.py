@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     fetch_timeout_seconds: int = 20
     fetch_max_retries: int = 3
     fetch_requests_per_second: float = 4.0
+    # 单个网页抓取的硬上限（秒），包含各读取渠道的重试与回退；超时就放弃这一页，由后面的命中补位。
+    # 0 表示不限（NOTEWEAVE_FETCH_PAGE_DEADLINE_SECONDS）
+    fetch_page_deadline_seconds: float = Field(default=45.0, ge=0, le=600)
     research_enable_url_reader: bool = False
     research_jina_api_key: str = ""
     research_jina_base_url: str = "https://r.jina.ai/"
