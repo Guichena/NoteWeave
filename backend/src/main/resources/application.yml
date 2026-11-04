@@ -338,6 +338,11 @@ noteweave:
     model: ${NOTEWEAVE_LLM_MODEL:noteweave-chat}
     api-key: ${NOTEWEAVE_LLM_API_KEY:}
     timeout-seconds: ${NOTEWEAVE_LLM_TIMEOUT_SECONDS:60}
+    # 思考模式：auto 对已知的思考模型（deepseek-v4、glm-5）关闭，其他模型不发该参数；
+    # model-default 不发参数，沿用模型默认；也可以填 enabled / disabled 强制指定。
+    # 改写、抽取、判定这类短输出调用用 auxiliary-thinking，回答正文用 answer-thinking。
+    auxiliary-thinking: ${NOTEWEAVE_LLM_AUXILIARY_THINKING:auto}
+    answer-thinking: ${NOTEWEAVE_LLM_ANSWER_THINKING:model-default}
   executors:
     scheduling:
       pool-size: ${NOTEWEAVE_SCHEDULING_POOL_SIZE:4}

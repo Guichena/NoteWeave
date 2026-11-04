@@ -221,8 +221,11 @@ class OpenAICompatibleLlmClient:
         extra_body: dict[str, object] = {}
         thinking = purpose_config.get("thinking")
         if thinking not in ("enabled", "disabled"):
-            # 规划、原文抽取和成文均有输出上限；思考模式可能先耗尽预算，正文仍为空。
-            direct_json = purpose in {"research.plan.matrix", "research.extract", "research.synthesis"} and (
+            # 研究 worker 的调用全部是有输出上限的 JSON 契约：规划、抽取、成文开思考可能先耗尽预算，
+            # 正文仍为空；查询生成、等价判定、核验这类短输出开思考只会拉长等待，实测单次多 4 到 5 秒，
+            # 一个深挖任务 8 到 15 次串行调用累计可达一分钟以上，且 60 秒超时集中出在这些调用上。
+            # 需要思考的用途可以在 NOTEWEAVE_RESEARCH_LLM_PURPOSE_OPTIONS 里单独设 thinking=enabled。
+            direct_json = purpose.startswith("research.") and (
                 model.lower().startswith("deepseek-v4") or model.lower() == "deepseek-flash")
             thinking = "disabled" if model.lower().startswith("glm-5") or direct_json else None
         if thinking:

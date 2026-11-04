@@ -50,6 +50,17 @@ public interface ChatLlmClient {
         return streamChatInSession(sessionId, systemPrompt, userPrompt, maximumOutputTokens, onToken);
     }
 
+    /**
+     * 回答正文生成。与 {@link #streamChatInSession} 的区别只在思考模式：
+     * 其余调用（改写、抽取、判定）按辅助调用处理，默认关闭思考以缩短等待；正文按回答配置处理。
+     */
+    default String streamAnswerInSession(
+            String sessionId, String workspaceId, String systemPrompt, String userPrompt,
+            int maximumOutputTokens, Consumer<String> onToken
+    ) {
+        return streamChatInSession(sessionId, workspaceId, systemPrompt, userPrompt, maximumOutputTokens, onToken);
+    }
+
     static String routingSessionId(String kind, String workspaceId, String stableId) {
         if (workspaceId == null || workspaceId.isBlank() || stableId == null || stableId.isBlank()) {
             return null;
