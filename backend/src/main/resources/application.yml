@@ -124,7 +124,11 @@ noteweave:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
     evidence-sufficiency:
       enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
+      # 最高提供方重排分达到这个值时不调用模型，直接判 SUFFICIENT；设成 2 即关闭
+      rule-sufficient-at: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_RULE_SUFFICIENT_AT:0.80}
   answer:
+    # 发消息只创建回合和 PREPARING 运行就返回，改写、检索与判定在后台执行并推送阶段事件
+    async-preparation: ${NOTEWEAVE_ANSWER_ASYNC_PREPARATION:true}
     events:
       channel-retention-seconds: ${NOTEWEAVE_ANSWER_EVENTS_CHANNEL_RETENTION_SECONDS:900}
       max-retained-channels: ${NOTEWEAVE_ANSWER_EVENTS_MAX_RETAINED_CHANNELS:10000}

@@ -263,3 +263,27 @@ it("同一事件ID和序号的冲突协议仍可诊断，不能被去重提前�
   expect(store.get("run")?.citationProtocol).toMatchObject({ state: "INVALID", diagnostic: "CONFLICTING_FROZEN_PROTOCOL" });
   expect(store.get("run")?.lastRunSequence).toBe(1);
 });
+
+describe("回答准备阶段事件", () => {
+  it("阶段事件不占运行序号，按到达顺序更新进度，正文开始后不再覆盖", () => {
+    const store = new AnswerRunStore();
+
+    store.applyConversationEvent(event("s1", "answer.stage", 0, JSON.stringify({ stage: "understanding" })));
+    store.applyConversationEvent(event("s2", "answer.stage", 0, JSON.stringify({ stage: "retrieved", evidence_count: 4 })));
+    expect(store.get("run")).toMatchObject({ stage: "retrieved", evidenceCount: 4, lastRunSequence: 0 });
+
+    store.applyConversationEvent(event("s3", "answer.stage", 0, JSON.stringify({ stage: "writing" })));
+    expect(store.get("run")).toMatchObject({ stage: "writing", evidenceCount: 4 });
+
+    store.applyConversationEvent(event("d1", "answer.delta", 1, "正文"));
+    expect(store.applyConversationEvent(event("s4", "answer.stage", 0, JSON.stringify({ stage: "retrieving" })))).toEqual([]);
+    expect(store.get("run")).toMatchObject({ content: "正文", stage: "writing", lastRunSequence: 1 });
+  });
+
+  it("格式不对的阶段事件被忽略", () => {
+    const store = new AnswerRunStore();
+
+    expect(store.applyConversationEvent(event("bad", "answer.stage", 0, "不是 JSON"))).toEqual([]);
+    expect(store.applyConversationEvent(event("empty", "answer.stage", 0, JSON.stringify({})))).toEqual([]);
+  });
+});

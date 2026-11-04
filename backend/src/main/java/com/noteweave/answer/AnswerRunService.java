@@ -453,6 +453,10 @@ public class AnswerRunService {
         meterRegistry.counter("noteweave.answer.run.failed", "error_code", errorCode).increment();
     }
 
+    /**
+     * 取消回答。后台准备期间（PREPARING）也允许取消：准备完成后写入生成材料时会因运行已终止而放弃，
+     * 不会再启动生成。
+     */
     @Transactional
     public AnswerRunResponse cancel(String workspaceId, String runId) {
         AnswerRunRef current = requireRef(workspaceId, runId);
@@ -472,7 +476,7 @@ public class AnswerRunService {
                     stream_owner = null, stream_lease_until = null,
                     version = version + 1, updated_by = ?, updated_at = current_timestamp
                 where workspace_id = ? and id = ?
-                  and status in ('CREATED', 'RETRIEVING', 'GENERATING', 'FINALIZING')
+                  and status in ('CREATED', 'PREPARING', 'RETRIEVING', 'GENERATING', 'FINALIZING')
                 """, actor(), workspaceId, runId);
         if (updated == 0) {
             AnswerRunRef latest = requireRef(workspaceId, runId);

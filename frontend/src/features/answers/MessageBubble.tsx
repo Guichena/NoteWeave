@@ -14,7 +14,8 @@ import {
   type CitationView,
   type WikiEvidenceVersionTarget
 } from "./evidence";
-import type { AnswerFeedbackInput, AnswerFeedbackRating } from "./model";
+import { type AnswerFeedbackInput, type AnswerFeedbackRating, isAnswerInProgress } from "./model";
+import { answerProgressLabel } from "./progress";
 import { MemoryReferenceList } from "../memory/MemoryInjectionPreview";
 
 /** 按回答运行读取证据清单；未提供时引用只展示标题和摘录。 */
@@ -96,14 +97,14 @@ function AssistantMessage({
   const [reasonOpen, setReasonOpen] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const sawGenerating = useRef(false);
-  const isGenerating = message.answerStatus === "GENERATING";
+  const isGenerating = isAnswerInProgress(message.answerStatus);
   const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
   const presentation = buildAssistantPresentation(message);
   const body = isFailed
     ? "本次回答未能完成。"
     : presentation.body
       || (isGenerating
-      ? "正在检索当前工作台资料并生成回答…"
+      ? ""
       : "此回答暂未返回正文。");
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
@@ -265,7 +266,7 @@ function AssistantMessage({
       {isGenerating ? (
         <div className="answer-run-status">
           <span className="answer-run-spinner" aria-hidden="true" />
-          正在生成回答
+          {answerProgressLabel(message)}
         </div>
       ) : null}
       {isFailed ? (
@@ -293,11 +294,13 @@ function AssistantMessage({
       {!isFailed ? <SufficiencyNotice value={manifest?.evidence_sufficiency} /> : null}
       {!isFailed && protocol.state === "INVALID" ? <div className="answer-sufficiency-notice" role="status">引用协议无效，已停用证据角标（{protocol.diagnostic}）。</div> : null}
       {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
-      <MarkdownSurface
-        content={body}
-        className="bubble-body"
-        {...citationProps}
-      />
+      {body ? (
+        <MarkdownSurface
+          content={body}
+          className="bubble-body"
+          {...citationProps}
+        />
+      ) : null}
       {!isFailed && presentation.cards.length > 0 ? (
         <div className="bubble-cards">
           {presentation.cards.map((card, index) => (
@@ -728,3 +731,4 @@ export function splitCitedViews<T extends { index: number }>(views: T[], body: s
     uncited: views.filter((view) => !cited.has(view.index))
   };
 }
+
