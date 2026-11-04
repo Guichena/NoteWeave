@@ -19,7 +19,7 @@ class ArtifactJobReadRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    List<ArtifactJobSummaryRow> listJobs(String workspaceId) {
+    List<ArtifactJobSummaryRow> listJobs(String workspaceId, int limit, int offset) {
         return jdbcTemplate.query("""
                 select aj.id,
                        aj.workspace_id,
@@ -37,7 +37,7 @@ class ArtifactJobReadRepository {
                 join task t on t.id = aj.task_id
                 where aj.workspace_id = ?
                 order by aj.updated_at desc, aj.id desc
-                limit 20
+                limit ? offset ?
                 """, (rs, rowNum) -> new ArtifactJobSummaryRow(
                 rs.getString("id"),
                 rs.getString("workspace_id"),
@@ -51,7 +51,7 @@ class ArtifactJobReadRepository {
                 rs.getInt("latest_version_no"),
                 instant(rs.getTimestamp("created_at")),
                 instant(rs.getTimestamp("updated_at"))
-        ), workspaceId);
+        ), workspaceId, limit, offset);
     }
 
     ArtifactJobDetailRow getJob(String workspaceId, String artifactJobId) {

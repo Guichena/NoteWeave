@@ -1458,6 +1458,19 @@ void completedArtifactVersionShouldWriteBackToNoteAndRejectWikiThroughJavaHost()
                 .andExpect(jsonPath("$.data.item_type").value("NOTE"))
                 .andExpect(jsonPath("$.data.title").value("Artifact Note"));
 
+        // 同一版本重复写入不再生成第二条同名 Note
+        mockMvc.perform(post(
+                        "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/writeback",
+                        workspaceId,
+                        artifactJobId
+                ).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "item_type", "NOTE",
+                                "title", "Artifact Note"
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.title").value("Artifact Note"));
+
         mockMvc.perform(post(
                         "/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions/1/writeback",
                         workspaceId,

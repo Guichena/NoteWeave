@@ -326,8 +326,14 @@ public class ArtifactJobService {
     }
 
     public List<ArtifactJobSummaryResponse> listJobs(String workspaceId) {
+        return listJobs(workspaceId, 50, 0);
+    }
+
+    /** 产物列表分页：原来固定只返回最新 20 条，更早的产物在界面上找不到。 */
+    public List<ArtifactJobSummaryResponse> listJobs(String workspaceId, int limit, int offset) {
         requireWorkspace(workspaceId);
-        return artifactJobReadRepository.listJobs(workspaceId).stream()
+        return artifactJobReadRepository.listJobs(
+                        workspaceId, Math.max(1, Math.min(limit, 200)), Math.max(0, offset)).stream()
                 .map(row -> new ArtifactJobSummaryResponse(
                 row.artifactJobId(),
                 row.workspaceId(),
@@ -458,10 +464,8 @@ public class ArtifactJobService {
         }
         String requestedTitle = request.title() == null ? "" : request.title().trim();
         String title = requestedTitle.isBlank() ? row.title() : requestedTitle;
-        return knowledgeCommandService.createItem(
-                workspaceId,
-                new KnowledgeItemRequest(request.itemType(), title, row.contentMarkdown(), null)
-        );
+        // 同一版本重复写入返回已有 Note，不再生成同名重复条目（与保存为资料一致）
+        return knowledgeCommandService.createNoteOnce(workspaceId, title, row.contentMarkdown());
     }
 
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {

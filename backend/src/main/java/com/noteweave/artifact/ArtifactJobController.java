@@ -42,8 +42,12 @@ public class ArtifactJobController {
     }
 
     @GetMapping
-    ApiResponse<List<ArtifactJobSummaryResponse>> listArtifactJobs(@PathVariable String workspaceId) {
-        return ApiResponse.success(artifactJobService.listJobs(workspaceId));
+    ApiResponse<List<ArtifactJobSummaryResponse>> listArtifactJobs(
+            @PathVariable String workspaceId,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "50") int limit,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int offset
+    ) {
+        return ApiResponse.success(artifactJobService.listJobs(workspaceId, limit, offset));
     }
 
     @GetMapping("/{artifactJobId}")
