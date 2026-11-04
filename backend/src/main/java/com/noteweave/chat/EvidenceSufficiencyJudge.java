@@ -15,6 +15,10 @@ import org.springframework.stereotype.Service;
 /**
  * 生成前判断已选证据是否足以回答。模型不可用时记 NOT_RUN，不允许改判为通过。
  * 模型给出的三态再与 rerankScore 组合，低分不能被抬成 SUFFICIENT。
+ *
+ * <p>提速：最高提供方重排分低于 0.15 时，无论模型怎么判，组合结果都是 INSUFFICIENT，
+ * 这时直接按规则给结论；最高分达到 {@code rule-sufficient-at}（默认 0.80）时证据明显相关，
+ * 也直接判 SUFFICIENT。只有中间分数段和没有提供方分数时才调用模型。</p>
  */
 @Service
 public class EvidenceSufficiencyJudge {
@@ -28,6 +32,10 @@ public class EvidenceSufficiencyJudge {
     static final String REASON_NO_PROVIDER_SCORE = "NO_PROVIDER_MODEL_SCORE";
     static final String REASON_BELOW_015 = "RERANK_SCORE_BELOW_0_15";
     static final String REASON_BELOW_035 = "RERANK_SCORE_BELOW_0_35";
+    /** 最高提供方重排分很低，不调用模型直接判 INSUFFICIENT。 */
+    static final String REASON_RULE_LOW = "RULE_RERANK_SCORE_BELOW_0_15";
+    /** 最高提供方重排分很高，不调用模型直接判 SUFFICIENT。 */
+    static final String REASON_RULE_HIGH = "RULE_RERANK_SCORE_HIGH";
 
     static final double PARTIAL_BELOW = 0.35d;
     static final double INSUFFICIENT_BELOW = 0.15d;
@@ -50,15 +58,29 @@ public class EvidenceSufficiencyJudge {
     private final ChatLlmClient llmClient;
     private final ObjectMapper objectMapper;
     private final boolean enabled;
+    /** 最高提供方重排分达到这个值时按规则判 SUFFICIENT；设成大于 1 的值即关闭这条规则。 */
+    private final double ruleSufficientAt;
 
     public EvidenceSufficiencyJudge(
             ChatLlmClient llmClient,
             ObjectMapper objectMapper,
-            @Value("${noteweave.retrieval.evidence-sufficiency.enabled:true}") boolean enabled
+            boolean enabled
+    ) {
+        // 只用于单元测试：关闭高分规则，保留与模型结论等价的低分规则
+        this(llmClient, objectMapper, enabled, 2.0d);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EvidenceSufficiencyJudge(
+            ChatLlmClient llmClient,
+            ObjectMapper objectMapper,
+            @Value("${noteweave.retrieval.evidence-sufficiency.enabled:true}") boolean enabled,
+            @Value("${noteweave.retrieval.evidence-sufficiency.rule-sufficient-at:0.80}") double ruleSufficientAt
     ) {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
         this.enabled = enabled;
+        this.ruleSufficientAt = ruleSufficientAt;
     }
 
     public Judgement judge(String question, EvidenceBundle bundle) {
@@ -70,6 +92,11 @@ public class EvidenceSufficiencyJudge {
         }
         if (llmClient == null || !llmClient.isEnabled()) {
             return new Judgement(EvidenceSufficiency.NOT_RUN, List.of(REASON_UNAVAILABLE));
+        }
+        // 规则只替代模型调用本身：模型不可用时仍按原口径记 NOT_RUN，不靠规则给出通过结论
+        Judgement byRule = ruleJudgement(bundle.evidence(), ruleSufficientAt);
+        if (byRule != null) {
+            return byRule;
         }
         String prompt = userPrompt(question, bundle);
         try {
@@ -90,6 +117,27 @@ public class EvidenceSufficiencyJudge {
             log.warn("证据充分性判定调用失败：{}", ex.getMessage());
             return new Judgement(EvidenceSufficiency.NOT_RUN, List.of(REASON_FAILED));
         }
+    }
+
+    /**
+     * 分数明显偏高或偏低时直接给结论，返回 null 表示需要模型判断。
+     *
+     * <p>低分规则与 {@link #combine} 的结果一致：分数低于 0.15 时模型的任何结论都会被合成为
+     * INSUFFICIENT，调用模型只是多等几秒。高分规则是取舍：重排分达到阈值说明资料与问题高度相关，
+     * 省掉一次模型调用；代价是本该判 PARTIAL 的少数情况会少一句只答覆盖部分的提示。</p>
+     */
+    static Judgement ruleJudgement(List<EvidenceBundle.Evidence> evidence, double sufficientAt) {
+        Double score = modelScore(evidence);
+        if (score == null) {
+            return null;
+        }
+        if (score < INSUFFICIENT_BELOW) {
+            return new Judgement(EvidenceSufficiency.INSUFFICIENT, List.of(REASON_RULE_LOW));
+        }
+        if (sufficientAt <= 1.0d && score >= sufficientAt) {
+            return new Judgement(EvidenceSufficiency.SUFFICIENT, List.of(REASON_RULE_HIGH));
+        }
+        return null;
     }
 
     /**

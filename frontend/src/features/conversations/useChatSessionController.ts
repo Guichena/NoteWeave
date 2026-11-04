@@ -7,7 +7,7 @@ import { AnswerRunWaitTimeoutError,
   reduceAnswerRunState
 } from "../answers/store";
 import { answersApi } from "../answers/api";
-import type { AnswerFeedbackInput, AnswerRunState, SendAnswerInput } from "../answers/model";
+import { type AnswerFeedbackInput, type AnswerRunState, type SendAnswerInput, isAnswerInProgress } from "../answers/model";
 import {
   type Message,
   updateAssistantMessageByRun,
@@ -235,7 +235,7 @@ export function useChatSessionController({
       }
       const authoritative = await reconcileAnswerRun(answerRunId);
       const status = authoritative?.status ?? "GENERATING";
-      if (status !== "GENERATING" && status !== "FINALIZING") {
+      if (!isAnswerInProgress(status)) {
         // 权威状态已是终态：把结果写回 store，让 waitFor 后续逻辑正常走完
         answerRunStoreRef.current.reconcileRun({
           id: answerRunId,
@@ -341,8 +341,11 @@ export function useChatSessionController({
         citations: buffered?.citations ?? [],
         citationProtocol: buffered?.citationProtocol,
         answerRunId: sent.answer_run_id,
-        answerStatus: buffered?.status ?? "GENERATING",
+        // 发消息接口在后台准备开始前就返回，运行此时是 PREPARING，阶段事件可能已经先到
+        answerStatus: buffered?.status ?? "PREPARING",
         answerError: buffered?.error ?? "",
+        answerStage: buffered?.stage,
+        answerEvidenceCount: buffered?.evidenceCount,
         retrievalDegraded: sent.retrieval_degraded === true,
         retrievalDegradationReasons: sent.retrieval_degradation_reasons ?? []
       }]);

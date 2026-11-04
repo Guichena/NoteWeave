@@ -8,6 +8,7 @@ import { MessageBubble, type AnswerFeedbackSender, type EvidenceLoader } from ".
 import type { WikiEvidenceVersionTarget } from "../answers/evidence";
 import { routes } from "../../routes";
 import { type Message } from "../answers/messageTypes";
+import { isAnswerInProgress } from "../answers/model";
 import type { ResearchRunDetail } from "../research/model";
 import { type SourceAsset } from "../sources/model";
 import { type Workspace } from "../workspace/model";
@@ -117,7 +118,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
   const activeAnswerRunId = [...messages]
     .reverse()
     .find((message) => message.role === "assistant"
-      && message.answerStatus === "GENERATING" && message.answerRunId)?.answerRunId;
+      && isAnswerInProgress(message.answerStatus) && message.answerRunId)?.answerRunId;
   const activeRoute = routes.find((route) => route.key === mode) ?? routes[0];
   // 工作台没有资料时侧边面板没有内容可展示（欢迎区已提供上传入口），
   // 因此等资料首次加载出来后再自动展开。
@@ -164,7 +165,7 @@ export const ChatWorkbench = memo(function ChatWorkbench(props: ChatWorkbenchPro
       : "添加来源并完成索引后即可开始提问。";
   const lastMessage = messages[messages.length - 1];
   const showTyping = composerBusy
-    && !(lastMessage?.role === "assistant" && lastMessage.answerStatus === "GENERATING");
+    && !(lastMessage?.role === "assistant" && isAnswerInProgress(lastMessage.answerStatus));
   const canSend = !composerBusy && !qaUnavailable && Boolean(conversation) && Boolean(question.trim());
 
   useEffect(() => {

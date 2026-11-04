@@ -43,7 +43,23 @@ public class ChatController {
     private final AnswerRunService answerRunService;
     private final AnswerCancellationRegistry answerCancellationRegistry;
     private final MemoryApplicationFeedbackService applicationFeedbackService;
+    private final AnswerTurnDispatcher turnDispatcher;
 
+    public ChatController(
+            ChatService chatService,
+            ConversationTurnModule conversationTurnModule,
+            NoteAnswerSourceService noteAnswerSourceService,
+            Executor answerIoExecutor,
+            Executor sseConnectionExecutor,
+            AnswerRunService answerRunService,
+            AnswerCancellationRegistry answerCancellationRegistry,
+            MemoryApplicationFeedbackService applicationFeedbackService
+    ) {
+        this(chatService, conversationTurnModule, noteAnswerSourceService, answerIoExecutor, sseConnectionExecutor,
+                answerRunService, answerCancellationRegistry, applicationFeedbackService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public ChatController(
             ChatService chatService,
             ConversationTurnModule conversationTurnModule,
@@ -52,8 +68,10 @@ public class ChatController {
             @Qualifier("sseConnectionExecutor") Executor sseConnectionExecutor,
             AnswerRunService answerRunService,
             AnswerCancellationRegistry answerCancellationRegistry,
-            MemoryApplicationFeedbackService applicationFeedbackService
+            MemoryApplicationFeedbackService applicationFeedbackService,
+            AnswerTurnDispatcher turnDispatcher
     ) {
+        this.turnDispatcher = turnDispatcher;
         this.chatService = chatService;
         this.conversationTurnModule = conversationTurnModule;
         this.noteAnswerSourceService = noteAnswerSourceService;
@@ -88,6 +106,9 @@ public class ChatController {
             @PathVariable String conversationId,
             @Valid @RequestBody SendMessageRequest request
     ) {
+        if (turnDispatcher != null) {
+            return ApiResponse.success(turnDispatcher.submit(SubmitTurnCommand.from(conversationId, request)));
+        }
         TurnReceipt result = conversationTurnModule.submitNewTurn(
                 SubmitTurnCommand.from(conversationId, request));
         com.noteweave.answer.AnswerRunRef run = "ANSWER".equals(result.executionKind())
@@ -235,7 +256,9 @@ public class ChatController {
                                     Long.toString(terminalSequence), "answer.failed", snapshot.errorMessage()));
                         }
                     } else {
-                        if (!answerRunService.hasActiveStream(workspaceId, runId)) {
+                        // PREPARING 的运行由后台准备完成后自己启动生成，这里只跟随事件
+                        if (!"PREPARING".equals(snapshot.status())
+                                && !answerRunService.hasActiveStream(workspaceId, runId)) {
                             try {
                                 answerIoExecutor.execute(() -> {
                                     try {

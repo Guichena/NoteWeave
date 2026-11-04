@@ -51,6 +51,71 @@ public class RealtimeExecutorConfig {
         return executor;
     }
 
+    /**
+     * 回答准备线程池：发消息接口返回后，查询改写、检索和证据判定在这里执行。
+     * 队列满时由调用方退回到请求线程同步准备，不丢弃用户的消息。
+     */
+    @Bean(name = "answerPreparationExecutor")
+    public Executor answerPreparationExecutor(
+            @Value("${noteweave.executors.answer-preparation.core-size:4}") int coreSize,
+            @Value("${noteweave.executors.answer-preparation.max-size:16}") int maxSize,
+            @Value("${noteweave.executors.answer-preparation.queue-capacity:64}") int queueCapacity
+    ) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("answer-prep-");
+        executor.setCorePoolSize(coreSize);
+        executor.setMaxPoolSize(maxSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setTaskDecorator(RealtimeExecutorConfig::withCallerMdc);
+        executor.initialize();
+        return executor;
+    }
+
+    /** 会话前提抽取线程池：抽取不在回答关键路径上，队列满时直接放弃本轮抽取。 */
+    @Bean(name = "conversationPremiseExecutor")
+    public Executor conversationPremiseExecutor(
+            @Value("${noteweave.executors.conversation-premise.core-size:2}") int coreSize,
+            @Value("${noteweave.executors.conversation-premise.max-size:4}") int maxSize,
+            @Value("${noteweave.executors.conversation-premise.queue-capacity:256}") int queueCapacity
+    ) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("conversation-premise-");
+        executor.setCorePoolSize(coreSize);
+        executor.setMaxPoolSize(maxSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.setTaskDecorator(RealtimeExecutorConfig::withCallerMdc);
+        executor.initialize();
+        return executor;
+    }
+
+    /** 把提交线程的 MDC 带到工作线程，执行完恢复工作线程原来的 MDC。 */
+    static Runnable withCallerMdc(Runnable runnable) {
+        java.util.Map<String, String> captured = MDC.getCopyOfContextMap();
+        return () -> {
+            java.util.Map<String, String> previous = MDC.getCopyOfContextMap();
+            try {
+                if (captured == null) {
+                    MDC.clear();
+                } else {
+                    MDC.setContextMap(captured);
+                }
+                runnable.run();
+            } finally {
+                if (previous == null) {
+                    MDC.clear();
+                } else {
+                    MDC.setContextMap(previous);
+                }
+            }
+        };
+    }
+
     @Bean(name = "sseDispatchExecutor")
     public Executor sseDispatchExecutor(
             @Value("${noteweave.executors.sse-dispatch.core-size:2}") int coreSize,

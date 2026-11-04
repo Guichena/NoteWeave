@@ -51,4 +51,14 @@ export type AnswerRunState = {
   lastRunSequence: number;
   /** 冻结的引用协议：新协议带允许集合与编号绑定，历史回答为 null。 */
   citationProtocol: CitationProtocol | null;
+  /** 后台准备阶段：understanding / retrieving / retrieved / writing，正文开始后不再使用。 */
+  stage?: string;
+  /** 检索到的资料条数，来自 retrieved 阶段事件。 */
+  evidenceCount?: number;
 };
+
+/** 回答仍在进行中的状态：后台准备、检索、生成与收尾。 */
+export function isAnswerInProgress(status: string | undefined) {
+  return status === "PREPARING" || status === "RETRIEVING"
+    || status === "GENERATING" || status === "FINALIZING";
+}
