@@ -74,7 +74,8 @@ public class WikiConceptWriter {
     }
 
     /** 完整句子以句末标点、右引号/右括号收尾，或以 [[资料名]] 标注收尾。 */
-    private static boolean endsAsSentence(String text) {
+    static boolean endsAsSentence(String text) {
+        if (text == null || text.isBlank()) return false;
         if (text.endsWith("]]")) return true;
         char last = text.charAt(text.length() - 1);
         return SENTENCE_ENDINGS.indexOf(last) >= 0;

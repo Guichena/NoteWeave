@@ -881,7 +881,9 @@ public class WikiIngestService {
         if (contents.isEmpty() || !contents.get(0).contains(SUMMARY_FINGERPRINT_LABEL + fingerprint + "`")) {
             return null;
         }
-        return conceptSummary(contents.get(0));
+        String summary = conceptSummary(contents.get(0));
+        // 已有页面可能是历史上被截断的半句摘要，指纹相同也要重写，不能继续沿用
+        return WikiConceptWriter.endsAsSentence(summary) ? summary : null;
     }
 
     /** 读取概念页概念摘要一节的正文。 */
