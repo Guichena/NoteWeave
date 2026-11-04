@@ -270,6 +270,20 @@ public class KnowledgeCommandService {
         return updated;
     }
 
+    /**
+     * 断链自动补缺建的占位页由系统写入，落 AUTO 状态。
+     * 此前沿用当前用户身份，占位页被标成 MANUAL，后续 ingest 一律跳过，残页永远不会补上正文。
+     */
+    @Transactional
+    KnowledgeItemResponse createWikiPlaceholderForInternalExecution(
+            String workspaceId,
+            String title,
+            String content
+    ) {
+        return createItemWithVersion(workspaceId, "WIKI", title, content, null, List.of(),
+                null, null, internalActor());
+    }
+
     private WikiPageState wikiPageState(String itemId) {
         return jdbcTemplate.query("""
                 select wiki_page_state, updated_by
