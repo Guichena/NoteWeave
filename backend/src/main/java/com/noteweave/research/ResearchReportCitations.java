@@ -19,6 +19,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 final class ResearchReportCitations {
     private static final Pattern INLINE = Pattern.compile("\\[(evidence:[0-9a-f]{16,64})]");
     private static final List<String> AUDIT_HEADINGS = List.of("## 引用核对", "## Citation audit", "## 补充引用");
+    /** 导出时去掉内部证据键行：读者只需要编号、标题、原文与网址。 */
+    private static final Pattern INTERNAL_EVIDENCE_LINE = Pattern.compile("(?m)^- Evidence: `evidence:[^`]*`\\n");
     // 与 Worker 扩展引用的上限一致：扩展出的部分（冒号后的列表、下一句里的名称）正是结论的依据，截短后读者核对不到
     private static final int MAX_QUOTE_CHARS = 700;
 
@@ -57,8 +59,38 @@ final class ResearchReportCitations {
         return withoutSnapshotLines(withoutSections(markdown)).stripTrailing() + audit.toString().stripTrailing() + "\n";
     }
 
-    /** 去掉引用核对类小节：从这些标题开始，到下一个二级标题为止。 */
-    private static String withoutSections(String markdown) {
+    /**
+     * 导出用正文：与页面显示一致，把正文里的 {@code [evidence:...]} 换成按首次出现顺序的编号角标。
+     *
+     * <p>页面由前端把证据标记渲染成可点击编号，导出的 Markdown 没有前端，标记会原样落在文档里。
+     * 导出前先在末尾补齐编号一致的引用核对，再把内联标记替换成同样的编号，并去掉内部证据键行。</p>
+     */
+    static String forExport(JdbcTemplate jdbcTemplate, String runId, String markdown) {
+        if (markdown == null || markdown.isBlank()) return markdown;
+        return withoutInternalEvidenceLines(numberInlineCitations(consolidate(jdbcTemplate, runId, markdown)));
+    }
+
+    /** 内联证据标记按首次出现顺序编号；同一证据复用同一编号。 */
+    static String numberInlineCitations(String markdown) {
+        if (markdown == null || markdown.isBlank()) return markdown;
+        Map<String, Integer> numbers = new LinkedHashMap<>();
+        Matcher matcher = INLINE.matcher(markdown);
+        StringBuilder numbered = new StringBuilder();
+        int lastEnd = 0;
+        while (matcher.find()) {
+            Integer number = numbers.computeIfAbsent(matcher.group(1), key -> numbers.size() + 1);
+            numbered.append(markdown, lastEnd, matcher.start()).append('[').append(number).append(']');
+            lastEnd = matcher.end();
+        }
+        numbered.append(markdown.substring(lastEnd));
+        return numbered.toString();
+    }
+
+    private static String withoutInternalEvidenceLines(String markdown) {
+        return markdown == null ? null : INTERNAL_EVIDENCE_LINE.matcher(markdown).replaceAll("");
+    }
+
+    /** 去掉引用核对类小节：从这些标题开始，到下一个二级标题为止。 */    private static String withoutSections(String markdown) {
         List<String> kept = new ArrayList<>();
         boolean skipping = false;
         for (String line : markdown.split("\n", -1)) {
