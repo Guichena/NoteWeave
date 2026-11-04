@@ -33,6 +33,16 @@ class WikiConceptWriterTest {
     }
 
     @Test
+    void summaryCutOffMidSentenceIsRejected() {
+        // 流式输出被中断时曾把「Budget 是 Star」这样的半句写进概念页
+        assertThat(WikiConceptWriter.accepted("Budget 是 Star", List.of("sample.md"))).isEmpty();
+        assertThat(WikiConceptWriter.accepted("Budget 是 Star River 项目的预算 [[sample.md]]", List.of("sample.md")))
+                .isEqualTo("Budget 是 Star River 项目的预算 [[sample.md]]");
+        assertThat(WikiConceptWriter.accepted("Budget 是 480000 TWD [[sample.md]]。", List.of("sample.md")))
+                .isEqualTo("Budget 是 480000 TWD [[sample.md]]。");
+    }
+
+    @Test
     void conceptSummaryIsReadBackButTheFixedMarkerIsNotTreatedAsASummary() {
         String written = "# Control Pack\n\n## 概念摘要\n\nControl Pack 是记忆约束集合。\n\n## 相关资料\n\n- [[memory.md]]\n";
         String legacy = "# Control Pack\n\n## 概念摘要\n\n" + WikiIngestService.CONCEPT_PAGE_MARKER

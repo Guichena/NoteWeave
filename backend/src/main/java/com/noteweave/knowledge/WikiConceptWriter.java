@@ -20,6 +20,7 @@ public class WikiConceptWriter {
 
     static final int MAX_SUMMARY_CHARS = 600;
     private static final int MAX_EXCERPT_CHARS = 600;
+    private static final String SENTENCE_ENDINGS = "。！？…；.!?…\"”』」）)";
     private static final Pattern WIKI_LINK = Pattern.compile("\\[\\[([^\\]]+)]]");
     private static final String SYSTEM_PROMPT = """
             你为个人知识库的概念页写概念摘要。根据给出的原文，用 2 到 4 句话说明这个概念是什么、起什么作用、和哪些内容相关。
@@ -63,10 +64,19 @@ public class WikiConceptWriter {
     static String accepted(String output, List<String> sourceTitles) {
         String text = output == null ? "" : output.strip();
         if (text.isEmpty() || text.length() > MAX_SUMMARY_CHARS || text.startsWith("#")) return "";
+        // 流式输出被中断时末尾会停在半句（例如「Budget 是 Star」），这种摘要不能发布到概念页
+        if (!endsAsSentence(text)) return "";
         var matcher = WIKI_LINK.matcher(text);
         while (matcher.find()) {
             if (!sourceTitles.contains(matcher.group(1).strip())) return "";
         }
         return text.replace("\n", " ");
+    }
+
+    /** 完整句子以句末标点、右引号/右括号收尾，或以 [[资料名]] 标注收尾。 */
+    private static boolean endsAsSentence(String text) {
+        if (text.endsWith("]]")) return true;
+        char last = text.charAt(text.length() - 1);
+        return SENTENCE_ENDINGS.indexOf(last) >= 0;
     }
 }

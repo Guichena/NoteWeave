@@ -108,6 +108,24 @@ def preview_source_video(body: VideoInfoRequest) -> dict:
         return call_media_tool("get_video_info", {"source_url": body.source_url})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # MCP 客户端把工具错误包在 anyio 异常组里
+        raise HTTPException(status_code=502, detail=_upstream_failure_message(exc)) from exc
+
+
+def _upstream_failure_message(exc: BaseException) -> str:
+    """从异常组里取出最内层的工具失败说明，便于 Host 把真实原因交给用户。"""
+    message = ""
+    pending: list[BaseException] = [exc]
+    while pending:
+        current = pending.pop()
+        nested = getattr(current, "exceptions", None)
+        if nested:
+            pending.extend(nested)
+            continue
+        text = str(current).strip()
+        if text:
+            message = text
+    return (message or "媒体解析服务调用失败")[:1000]
 
 
 @app.post("/internal/source-video-parses", status_code=202)
