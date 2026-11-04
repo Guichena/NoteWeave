@@ -26,6 +26,20 @@ class GlobalExceptionHandlerTest {
                 .andExpect(content().string(""));
     }
 
+    @Test
+    void unsupportedMethodShouldReturn405InsteadOfInternalError() throws Exception {
+        // 验收中用错请求方法拿到的是 500 服务内部错误
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DisconnectedStreamController())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/disconnected-stream"))
+                .andExpect(status().isMethodNotAllowed())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Allow", "GET"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("METHOD_NOT_ALLOWED"));
+    }
+
     @RestController
     static class DisconnectedStreamController {
 

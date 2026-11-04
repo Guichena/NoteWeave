@@ -95,7 +95,8 @@ def test_plan_requires_frames_from_the_units_own_anchors():
     with pytest.raises(ValueError, match="关键帧"):
         plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, EVIDENCE, DeckModel("DECK", False))
     with pytest.raises(ValueError, match="不属于"):
-        plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, {"sentences": [{**EVIDENCE["sentences"][0], "frame_ids": []}]}, DeckModel("DECK", True))
+        plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, {"sentences": [{**EVIDENCE["sentences"][0], "frame_ids": []},
+            {**EVIDENCE["sentences"][0], "id": "s0002", "frame_ids": ["frame"]}]}, DeckModel("DECK", True))
 
 
 def test_frame_decode_scope_and_caption_are_checked():

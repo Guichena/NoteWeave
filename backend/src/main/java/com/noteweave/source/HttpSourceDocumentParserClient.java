@@ -74,14 +74,24 @@ public class HttpSourceDocumentParserClient implements SourceDocumentParserPort 
         // JSON 字符可以使用 Unicode 转义，另为结构和诊断预留空间，响应仍有绝对上限。
         long limit = Math.min(128L * 1024 * 1024, request.maxChars() * 12L + 4L * 1024 * 1024);
         try {
+            // 查询参数走 URI 变量，按值完整编码：直接写入时 application/epub+zip 里的 + 不会被编码，
+            // 解析服务按表单规则把 + 解码成空格，MIME 对不上就返回 415
             return worker.post().uri(builder -> builder.path("/internal/parse")
-                            .queryParam("workspace_id", request.workspaceId())
-                            .queryParam("source_id", request.sourceId())
-                            .queryParam("snapshot_id", request.snapshotId())
-                            .queryParam("file_name", request.fileName())
-                            .queryParam("mime_type", request.mimeType())
-                            .queryParam("sha256", request.sha256())
-                            .queryParam("max_chars", request.maxChars()).build())
+                            .queryParam("workspace_id", "{workspace_id}")
+                            .queryParam("source_id", "{source_id}")
+                            .queryParam("snapshot_id", "{snapshot_id}")
+                            .queryParam("file_name", "{file_name}")
+                            .queryParam("mime_type", "{mime_type}")
+                            .queryParam("sha256", "{sha256}")
+                            .queryParam("max_chars", "{max_chars}")
+                            .build(java.util.Map.of(
+                                    "workspace_id", request.workspaceId(),
+                                    "source_id", request.sourceId(),
+                                    "snapshot_id", request.snapshotId(),
+                                    "file_name", request.fileName(),
+                                    "mime_type", request.mimeType(),
+                                    "sha256", request.sha256(),
+                                    "max_chars", request.maxChars())))
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .accept(MediaType.APPLICATION_JSON)
                     .body(new FileSystemResource(original))

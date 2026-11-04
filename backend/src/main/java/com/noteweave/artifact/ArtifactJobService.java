@@ -117,14 +117,13 @@ public class ArtifactJobService {
                 ? memoryCompilerService.compileArtifactControlPack(workspaceId, skillKey, userRequirement)
                 : memoryCompilerService.compileArtifactControlPackForActor(
                         workspaceId, skillKey, actorUserId, userRequirement);
-        Map<String, Object> inputsWithTaskParameters = withTaskParameters(inputs, controlPack);
         artifactJobWriteRepository.persistInitialJob(
                 artifactJobId,
                 workspaceId,
                 taskId,
                 skillKey,
                 userRequirement,
-                Json.write(objectMapper, inputsWithTaskParameters),
+                Json.write(objectMapper, inputs),
                 Json.write(objectMapper, sourceScopeIds),
                 Json.write(objectMapper, controlPack),
                 Json.write(objectMapper, sourceScopeSnapshot),
@@ -185,8 +184,6 @@ public class ArtifactJobService {
                 "QUEUED",
                 "产物版本再生成任务已创建"
         );
-        inputs = withTaskParameters(inputs,
-                artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()));
         artifactJobWriteRepository.persistRegeneration(
                 taskId,
                 artifactJobId,
@@ -472,6 +469,8 @@ public class ArtifactJobService {
         requireFrozenSourcesVisible(row);
         memoryRevisionGuard.requireActive(taskId);
         Map<String, Object> inputs = artifactPayloadReadModelAssembler.readInputs(row.inputsJson());
+        MemoryControlPackResponse controlPack = artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson());
+        var taskParameters = com.noteweave.preference.PreferenceParameterCompiler.compile(controlPack);
         return new ArtifactWorkerInputResponse(
                 row.taskId(),
                 row.workspaceId(),
@@ -482,14 +481,16 @@ public class ArtifactJobService {
                 readCapturedSourceScope(row.workspaceId(), row.sourceScopeJson()),
                 readUpstreamRefs(row.upstreamRefsJson()),
                 new WorkerContextSnapshotResponse(row.contextSnapshotId() == null ? "" : row.contextSnapshotId()),
-                artifactPayloadReadModelAssembler.readControlPack(row.controlPackJson()),
+                controlPack,
                 ArtifactWorkerInputPayload.skillFirst(
                         row.skillKey(),
                         blankIfNull(row.styleProfileKey()),
                         blankIfNull(row.contextSnapshotId()),
                         row.userRequirement(),
                         row.userRequirement(),
-                        inputs
+                        inputs,
+                        taskParameters.promptLine(),
+                        unsupportedLine(taskParameters)
                 )
         );
     }
@@ -878,19 +879,14 @@ public class ArtifactJobService {
                 ? compilerVersion.substring(prefix.length()) : "";
     }
 
-    /** F5-02：把控制包里的结构化任务参数附到 Skill 输入，worker 可直接消费；缺省不改变原输入。 */
-    private static Map<String, Object> withTaskParameters(
-            Map<String, Object> inputs, MemoryControlPackResponse controlPack) {
-        var parameters = com.noteweave.preference.PreferenceParameterCompiler.compile(controlPack);
-        if (parameters.promptLine().isBlank()) {
-            return inputs;
-        }
-        Map<String, Object> enriched = new java.util.LinkedHashMap<>(inputs);
-        enriched.put("task_parameters", parameters.promptLine());
-        enriched.put("task_parameters_unsupported", parameters.unsupported().stream()
+    /**
+     * F5-02：偏好编译出的任务参数与 Skill 用户选项分开传给 worker。
+     * Skill 选项只允许 SKILL.md 声明的字段，混在一起会被 worker 当作未声明字段拒绝。
+     */
+    private static String unsupportedLine(com.noteweave.preference.PreferenceParameterCompiler.Compiled parameters) {
+        return parameters.unsupported().stream()
                 .map(item -> item.targetKey() + ":" + item.reason())
-                .reduce((left, right) -> left + "," + right).orElse(""));
-        return Map.copyOf(enriched);
+                .reduce((left, right) -> left + "," + right).orElse("");
     }
 
 }

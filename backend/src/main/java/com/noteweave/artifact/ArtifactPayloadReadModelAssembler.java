@@ -33,8 +33,16 @@ public class ArtifactPayloadReadModelAssembler {
             return Map.of();
         }
         try {
-            return objectMapper.readValue(json, new TypeReference<>() {
+            Map<String, Object> inputs = objectMapper.readValue(json, new TypeReference<>() {
             });
+            // 早期版本把偏好任务参数混写进 Skill 选项，读取时剔除，避免再生成和 worker 校验失败
+            if (inputs.containsKey("task_parameters") || inputs.containsKey("task_parameters_unsupported")) {
+                Map<String, Object> cleaned = new java.util.LinkedHashMap<>(inputs);
+                cleaned.remove("task_parameters");
+                cleaned.remove("task_parameters_unsupported");
+                return cleaned;
+            }
+            return inputs;
         } catch (JsonProcessingException ex) {
             throw new BusinessException("ARTIFACT_INPUTS_PARSE_FAILED", "产物 Skill 输入解析失败");
         }

@@ -1643,6 +1643,45 @@ class ConversationTurnModuleContractTest {
     }
 
     @Test
+    void longPreparationFailureIsRecordedWithoutMaskingTheOriginalError() throws Exception {
+        // 验收回归：原始异常信息超过 error_message 列长度时，失败记录不能抛错顶替原始错误
+        String workspaceId = createWorkspace();
+        String conversationId = createConversation(workspaceId);
+        String clientRequestId = "long-preparation-failure-1";
+        String longMessage = "上游返回异常：" + "细节".repeat(800);
+        org.mockito.Mockito.doThrow(new IllegalStateException(longMessage))
+                .when(chatService)
+                .compilePreparedAnswer(
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any());
+        try {
+            mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(Map.of(
+                                    "content", "close reading with long failure",
+                                    "answer_mode", "QA",
+                                    "client_request_id", clientRequestId
+                            ))))
+                    .andExpect(status().isInternalServerError());
+        } finally {
+            org.mockito.Mockito.reset(chatService);
+        }
+
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select status, error_code, error_message from turn_submission
+                where conversation_id = ? and client_request_id = ?
+                """, conversationId, clientRequestId);
+        assertThat(row.get("STATUS")).isEqualTo("FAILED");
+        assertThat(row.get("ERROR_CODE")).isEqualTo("TURN_PREPARATION_FAILED");
+        String stored = (String) row.get("ERROR_MESSAGE");
+        assertThat(stored.codePointCount(0, stored.length()))
+                .isEqualTo(ConversationTurnModule.ERROR_MESSAGE_MAX_CHARS);
+        assertThat(stored).startsWith("上游返回异常：").endsWith("…");
+    }
+
+    @Test
     void recoveryAfterProcessExitBetweenPrepareAndReadyKeepsTheOriginalLedger() throws Exception {
         String workspaceId = createWorkspace();
         String conversationId = createConversation(workspaceId);

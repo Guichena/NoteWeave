@@ -64,7 +64,14 @@ class _CredentialSafeTransport(httpx.BaseTransport):
             except Exception:
                 error_body = b""
             return httpx.Response(exc.code, content=error_body, request=request)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except TimeoutError as exc:
+            # 等待响应超时要报成超时，原先统一报 Connection error，看不出是超时还是连接失败
+            raise httpx.ReadTimeout(str(exc) or "read timed out", request=request) from exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError):
+                raise httpx.ReadTimeout(str(exc.reason) or "read timed out", request=request) from exc
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        except (OSError, ValueError) as exc:
             raise httpx.ConnectError(str(exc), request=request) from exc
         if len(body) > MAX_LLM_RESPONSE_BYTES:
             raise httpx.ReadError(
@@ -105,6 +112,7 @@ class OpenAICompatibleLlmClient:
         timeout_seconds: int = 60,
         max_total_calls: int = 64,
         session_id: str = "",
+        max_retries: int = 2,
     ) -> None:
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
@@ -116,10 +124,12 @@ class OpenAICompatibleLlmClient:
         self.base_url = (base_url.strip() or "https://api.openai.com/v1").rstrip("/")
         self.timeout_seconds = timeout_seconds
         self.session_id = session_id
+        # SDK 内部重试只处理连接错误、超时、429 与 5xx，逻辑调用次数仍单独计数。
+        self.max_retries = max(0, max_retries)
         self.client = OpenAI(
             api_key=api_key,
             base_url=self.base_url,
-            max_retries=0,
+            max_retries=self.max_retries,
             timeout=timeout_seconds,
             http_client=httpx.Client(
                 transport=_CredentialSafeTransport(timeout_seconds),
@@ -236,4 +246,5 @@ def build_default_llm_client() -> LlmClient | None:
         base_url=settings.llm_base_url,
         timeout_seconds=max(1, settings.llm_timeout_seconds),
         max_total_calls=settings.llm_max_total_calls,
+        max_retries=settings.llm_max_retries,
     )
