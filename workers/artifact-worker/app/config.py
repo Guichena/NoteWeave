@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MODEL"),
     )
     llm_timeout_seconds: int = Field(
-        default=60,
+        default=180,
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_TIMEOUT_SECONDS"),
     )
     llm_max_total_calls: int = Field(default=64, ge=1, le=256, validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_TOTAL_CALLS"))
