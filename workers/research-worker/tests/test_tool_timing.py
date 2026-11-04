@@ -69,3 +69,18 @@ def test_timed_wrappers_time_each_tool_and_forward_other_attributes(caplog) -> N
     assert payload["phases"] == phases
     assert any("research_task_timing" in record.getMessage() and '"task_id": "t1"' in record.getMessage()
                for record in caplog.records)
+
+
+def test_timing_log_is_visible_without_any_logging_configuration(monkeypatch, capsys) -> None:
+    import app.tool_timing as tool_timing
+
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [])
+    logger = logging.getLogger("app.research_timing.visibility-test")
+    monkeypatch.setattr(tool_timing, "_LOG", logger)
+    try:
+        log_task_timing(PhaseTimer(), task_id="t2", research_run_id="r2", role="DEEP_CELL", outcome="OK")
+        assert "research_task_timing" in capsys.readouterr().err
+    finally:
+        logger.handlers.clear()
+        logger.propagate = True
