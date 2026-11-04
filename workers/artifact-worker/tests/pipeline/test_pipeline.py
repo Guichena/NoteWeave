@@ -259,3 +259,36 @@ def test_schema_loader_imports_under_the_shallow_container_path(monkeypatch):
     source = ROOT / "workers/artifact-worker/app/pipeline/schemas.py"
     exec(compile(source.read_text(encoding="utf-8"), namespace["__file__"], "exec"), namespace)
     assert namespace["load_schema"]("DOC")["properties"]["kind"] == {"const": "DOC"}
+
+
+def test_task_parameters_travel_apart_from_skill_options():
+    """验收回归：偏好任务参数单独传递，旧后端混写进 Skill 选项时也不被当作未声明字段拒绝。"""
+    catalog = SkillCatalog()
+    current = task("course-notes", catalog)
+    current.input_payload.task_parameters = "输出语言：中文；分点列出"
+    model = Model("DOC")
+    run(current, client=model, catalog=catalog)
+    stages = {purpose.rsplit(".", 1)[-1]: payload["inputs"] for purpose, payload in model.calls}
+    assert stages["plan"]["task_parameters"] == "输出语言：中文；分点列出"
+    assert stages["draft"]["task_parameters"] == "输出语言：中文；分点列出"
+    assert "task_parameters" not in stages["plan"]["options"]
+
+    legacy = task("flashcards", catalog)
+    legacy.input_payload.inputs = {"task_parameters": "输出语言：中文", "task_parameters_unsupported": ""}
+    run(legacy, client=Model("CARDS"), catalog=catalog)
+
+    bad = task("flashcards", catalog)
+    bad.input_payload.inputs = {"unknown": "x"}
+    with pytest.raises(ValueError, match="未声明"):
+        run(bad, client=Model("CARDS"), catalog=catalog)
+
+
+@pytest.mark.parametrize("name", ["lecture-notes-pdf", "video-deck"])
+def test_video_only_skills_fail_fast_without_keyframes(name):
+    """验收复测：没有视频资料时视频讲义、视频演示文稿要直接说明原因，不调用规划模型。"""
+    catalog = SkillCatalog()
+    skill = catalog.resolve(name)
+    model = Model(skill.kind)
+    with pytest.raises(ValueError, match="需要带关键帧的视频资料"):
+        run(task(name, catalog), client=model, catalog=catalog)
+    assert all(not purpose.endswith(".plan") for purpose, _ in model.calls)

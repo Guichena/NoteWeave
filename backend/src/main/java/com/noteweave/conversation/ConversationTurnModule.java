@@ -171,7 +171,7 @@ public class ConversationTurnModule {
             transactionTemplate.executeWithoutResult(status -> finalizeAnswerTurn(command, prepared, material, null));
             return prepared.receipt();
         } catch (RuntimeException failure) {
-            transactionTemplate.executeWithoutResult(status -> failAnswerPreparation(prepared, failure, null));
+            recordPreparationFailure(prepared, failure, null);
             throw failure;
         }
     }
@@ -407,14 +407,49 @@ public class ConversationTurnModule {
         }
     }
 
+    /**
+     * 记录准备失败并保留原始异常：先完整打日志，写库失败时只作为附加异常挂到原始异常上，
+     * 不能让失败记录本身的错误顶替用户真正遇到的问题。
+     */
+    private void recordPreparationFailure(
+            PreparedAnswerTurn prepared,
+            RuntimeException failure,
+            String recoveryLeaseOwner
+    ) {
+        log.warn("回答准备失败: submissionId={}, answerRunId={}",
+                prepared.receipt().submissionId(), prepared.receipt().answerRunId(), failure);
+        try {
+            transactionTemplate.executeWithoutResult(
+                    status -> failAnswerPreparation(prepared, failure, recoveryLeaseOwner));
+        } catch (RuntimeException recordFailure) {
+            log.error("回答准备失败状态写入失败: submissionId={}",
+                    prepared.receipt().submissionId(), recordFailure);
+            failure.addSuppressed(recordFailure);
+        }
+    }
+
+    /** 与 turn_submission、answer_run 的列长度一致：error_code varchar(80)、error_message varchar(1000)。 */
+    static final int ERROR_CODE_MAX_CHARS = 80;
+    static final int ERROR_MESSAGE_MAX_CHARS = 1000;
+
+    static String limitChars(String value, int maxChars) {
+        if (value == null || value.codePointCount(0, value.length()) <= maxChars) {
+            return value;
+        }
+        String suffix = "…";
+        int end = value.offsetByCodePoints(0, maxChars - 1);
+        return value.substring(0, end) + suffix;
+    }
+
     private void failAnswerPreparation(
             PreparedAnswerTurn prepared,
             RuntimeException failure,
             String recoveryLeaseOwner
     ) {
-        String errorCode = failure instanceof BusinessException business
-                ? business.code() : "TURN_PREPARATION_FAILED";
-        String errorMessage = failure.getMessage() == null ? "Turn preparation failed" : failure.getMessage();
+        String errorCode = limitChars(failure instanceof BusinessException business
+                ? business.code() : "TURN_PREPARATION_FAILED", ERROR_CODE_MAX_CHARS);
+        String errorMessage = limitChars(failure.getMessage() == null || failure.getMessage().isBlank()
+                ? "Turn preparation failed" : failure.getMessage(), ERROR_MESSAGE_MAX_CHARS);
         int failed;
         if (recoveryLeaseOwner == null) {
             failed = jdbcTemplate.update("""
@@ -606,8 +641,8 @@ public class ConversationTurnModule {
                     status -> finalizeAnswerTurn(recovery.command(), prepared, material, recovery.leaseOwner()));
             return recovery.receipt();
         } catch (RuntimeException failure) {
-            transactionTemplate.executeWithoutResult(status -> failAnswerPreparation(
-                    new PreparedAnswerTurn(recovery.workspaceId(), recovery.receipt()), failure, recovery.leaseOwner()));
+            recordPreparationFailure(new PreparedAnswerTurn(recovery.workspaceId(), recovery.receipt()),
+                    failure, recovery.leaseOwner());
             throw failure;
         }
     }

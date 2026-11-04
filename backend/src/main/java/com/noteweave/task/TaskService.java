@@ -201,7 +201,24 @@ public class TaskService implements TaskCommandPort {
 
     private void renewLease(TaskQuotaRef quota) {
         if (workloadQuotaService != null && quota.workload() != null) {
-            workloadQuotaService.renewLease(quota.workspaceId(), quota.workload(), quota.taskId());
+            try {
+                workloadQuotaService.renewLease(quota.workspaceId(), quota.workload(), quota.taskId());
+            } catch (BusinessException lost) {
+                if (!"WORKLOAD_LEASE_LOST".equals(lost.code())) {
+                    throw lost;
+                }
+                // 租约从建任务时开始计时，任务在队列里排队或单次执行较久时会先过期；
+                // 任务仍在进行就按并发上限重新占用，占不到才按租约失效拒绝
+                try {
+                    workloadQuotaService.acquireLease(quota.workspaceId(), quota.workload(), quota.taskId());
+                } catch (BusinessException limited) {
+                    if ("WORKLOAD_CONCURRENCY_LIMITED".equals(limited.code())) {
+                        throw lost;
+                    }
+                    throw limited;
+                }
+                releaseLeaseOnRollback(quota.workspaceId(), quota.taskType(), quota.taskId());
+            }
         }
     }
 

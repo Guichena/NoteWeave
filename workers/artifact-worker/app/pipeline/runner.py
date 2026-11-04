@@ -9,6 +9,8 @@ from app.pipeline.schemas import load_schema
 from app.pipeline.skills import SkillCatalog
 from app.pipeline.stages import gather, plan, draft, check, render
 
+LEGACY_TASK_PARAMETER_KEYS = frozenset({"task_parameters", "task_parameters_unsupported"})
+
 
 def run(task, *, passage_search=None, frame_reader=None, client=None, catalog=None):
     catalog = catalog or SkillCatalog()
@@ -17,7 +19,9 @@ def run(task, *, passage_search=None, frame_reader=None, client=None, catalog=No
         raise ValueError("Skill 目录与任务冻结的目录摘要不一致")
     if task.replay_availability != "FULL":
         raise ValueError("任务输入不可完整重放")
-    options = skill.normalize_options(task.input_payload.inputs)
+    # 兼容旧后端：偏好任务参数曾混写在 Skill 选项里，这里剔除后再按 Skill 声明校验
+    options = skill.normalize_options({key: value for key, value in task.input_payload.inputs.items()
+                                       if key not in LEGACY_TASK_PARAMETER_KEYS})
     client = bind_llm_session(client or build_default_llm_client(), "artifact", task.workspace_id, task.task_id)
     if client is None:
         raise ValueError("产物流水线尚未配置模型服务")

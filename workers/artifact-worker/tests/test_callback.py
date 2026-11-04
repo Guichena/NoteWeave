@@ -258,12 +258,20 @@ def test_run_artifact_task_with_callbacks_should_not_turn_callback_delivery_fail
 
 @pytest.mark.parametrize(
     ("host_code", "reported"),
-    [("ARTIFACT_CONTENT_IR_INVALID", True), ("WORKER_CALLBACK_DELIVERY_STALE", False)],
+    [("ARTIFACT_CONTENT_IR_INVALID", True), ("WORKLOAD_LEASE_LOST", True),
+     ("WORKER_CALLBACK_DELIVERY_STALE", False)],
 )
 def test_run_artifact_task_with_callbacks_should_report_host_rejected_content_as_task_failure(
     host_code: str, reported: bool,
 ) -> None:
     class RejectingClient(FakeCallbackClient):
+        def send_progress(self, task_id, event) -> None:
+            # 验收回归：任务排队超过租约时长，首个进度回调就被以租约失效拒绝
+            if host_code == "WORKLOAD_LEASE_LOST":
+                raise callback_module.ArtifactCallbackHttpError(
+                    409, '{"success":false,"code":"' + host_code + '","message":"rejected"}')
+            super().send_progress(task_id, event)
+
         def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
             raise callback_module.ArtifactCallbackHttpError(
                 409, '{"success":false,"code":"' + host_code + '","message":"rejected"}')

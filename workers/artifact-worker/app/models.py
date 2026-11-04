@@ -70,6 +70,9 @@ class ArtifactTaskInputPayload(BaseModel):
     user_requirement: str = ""
     generation_brief: str = ""
     inputs: dict[str, object] = Field(default_factory=dict)
+    # 偏好编译出的任务参数，与 Skill 用户选项分开传递
+    task_parameters: str = ""
+    task_parameters_unsupported: str = ""
 
 
 class ArtifactTaskInput(BaseModel):

@@ -55,7 +55,9 @@ export function inlineTokens(value: string): InlineToken[] {
       push({ text, literal: !/^\[[^\]]+\]\(https?:\/\/[^\s)]+\)$/.test(text) });
       i = targetEnd; continue;
     }
-    if (value[end] === "[" && !/[0-9]/.test(value[end + 1] ?? "")) {
+    // 相邻的证据标记 [evidence:a][evidence:b] 是两个引用，不能当作 [文字][引用名] 形式的链接
+    const evidenceMarker = /^\[evidence[:-][^\]]+\]$/.test(label) || /^\[evidence[:-]/.test(value.slice(end));
+    if (value[end] === "[" && !evidenceMarker && !/[0-9]/.test(value[end + 1] ?? "")) {
       const close = value.indexOf("]", end + 1);
       const targetEnd = close < 0 ? value.length : close + 1;
       push({ text: value.slice(i, targetEnd), literal: true }); i = targetEnd; continue;

@@ -8,6 +8,13 @@ describe("共享引用语法", () => {
     expect(inlineTokens("（待核实）[evidence:x]").filter((token) => !token.literal).map((token) => token.text)).toEqual(["（待核实）", "[evidence:x]"]);
     expect(inlineTokens("`（待核实）`")[0].code).toBe("（待核实）");
   });
+  it("相邻的证据标记各自是引用，不被当作引用式链接", () => {
+    // 验收回归：研究报告里连续两个证据标记曾原样显示为 [evidence:...] 文字
+    const tokens = inlineTokens("同样适用[evidence:567d84ba][evidence:f0bcbe09]。");
+    expect(tokens.filter((token) => !token.literal).map((token) => token.text))
+      .toEqual(["[evidence:567d84ba]", "[evidence:f0bcbe09]"]);
+    expect(inlineTokens("[文字][ref]").every((token) => token.literal)).toBe(true);
+  });
 });
 
 it("链接定义和伪代码围栏不产生引用", () => {
