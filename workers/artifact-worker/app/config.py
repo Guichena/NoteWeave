@@ -47,6 +47,13 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_TIMEOUT_SECONDS"),
     )
     llm_max_total_calls: int = Field(default=64, ge=1, le=256, validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_TOTAL_CALLS"))
+    # 切换到 SKILL.md 流水线时丢了这项配置，SDK 重试被写死为 0，偶发连接错误会直接让单元失败
+    llm_max_retries: int = Field(
+        default=2,
+        ge=0,
+        le=8,
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES"),
+    )
     transcription_pool_size: int = Field(default=1, ge=1, le=8)
     transcription_queue_capacity: int = Field(default=8, ge=1, le=64)
 
