@@ -8,7 +8,9 @@ public record ArtifactWorkerInputPayload(
         String contextSnapshotId,
         String userRequirement,
         String generationBrief,
-        Map<String, Object> inputs
+        Map<String, Object> inputs,
+        String taskParameters,
+        String taskParametersUnsupported
 ) {
     public static ArtifactWorkerInputPayload skillFirst(
             String skillKey,
@@ -16,7 +18,9 @@ public record ArtifactWorkerInputPayload(
             String contextSnapshotId,
             String userRequirement,
             String generationBrief,
-            Map<String, Object> inputs
+            Map<String, Object> inputs,
+            String taskParameters,
+            String taskParametersUnsupported
     ) {
         return new ArtifactWorkerInputPayload(
                 skillKey,
@@ -24,7 +28,9 @@ public record ArtifactWorkerInputPayload(
                 contextSnapshotId,
                 userRequirement,
                 generationBrief,
-                inputs
+                inputs,
+                taskParameters == null ? "" : taskParameters,
+                taskParametersUnsupported == null ? "" : taskParametersUnsupported
         );
     }
 }

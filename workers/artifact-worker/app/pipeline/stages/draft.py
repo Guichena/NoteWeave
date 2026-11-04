@@ -11,9 +11,12 @@ def draft(task, skill, options, evidence, outline, schema, client):
                        "required": ["item"], "additionalProperties": False, "$defs": schema.get("$defs", {})}
     def write(unit):
         try:
-            response = call_model(client, skill, "draft", {"requirement": task.input_payload.user_requirement,
+            inputs = {"requirement": task.input_payload.user_requirement,
                 "options": options, "unit": unit, "columns": outline.get("columns", []),
-                "evidence": evidence, "control_pack": task.control_pack.model_dump(mode="json")}, fragment_schema)
+                "evidence": evidence, "control_pack": task.control_pack.model_dump(mode="json")}
+            if task.input_payload.task_parameters:
+                inputs["task_parameters"] = task.input_payload.task_parameters
+            response = call_model(client, skill, "draft", inputs, fragment_schema)
             return response.get("item", {})
         except ValueError:
             # 不合规响应与其他失败项合并，在校验阶段统一修复一次。
