@@ -13,6 +13,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -21,10 +23,38 @@ import org.springframework.stereotype.Service;
 public class ResearchAgentGapProjectionService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final int repairLimit;
+    private final int skipVerifiedMinConfidencePpm;
 
     public ResearchAgentGapProjectionService(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+        this(jdbcTemplate, objectMapper, REPAIR_LIMIT, 0);
+    }
+
+    /**
+     * @param repairLimit 每个单元格最多补查几次（NOTEWEAVE_RESEARCH_AGENT_REPAIR_MAX_PER_CELL），取值 1 或 2
+     * @param skipVerifiedMinConfidencePpm 已核验且置信度不低于这个值（百万分比）的单元格不再补查，0 表示关闭
+     *        （NOTEWEAVE_RESEARCH_AGENT_REPAIR_SKIP_VERIFIED_MIN_CONFIDENCE_PPM）
+     */
+    @Autowired
+    public ResearchAgentGapProjectionService(
+            JdbcTemplate jdbcTemplate, ObjectMapper objectMapper,
+            @Value("${noteweave.research.agent.repair.max-per-cell:2}") int repairLimit,
+            @Value("${noteweave.research.agent.repair.skip-verified-min-confidence-ppm:0}") int skipVerifiedMinConfidencePpm) {
+        if (repairLimit < 1 || repairLimit > REPAIR_LIMIT) {
+            throw new IllegalArgumentException("noteweave.research.agent.repair.max-per-cell must be 1 or 2");
+        }
+        if (skipVerifiedMinConfidencePpm < 0 || skipVerifiedMinConfidencePpm > 1_000_000) {
+            throw new IllegalArgumentException("noteweave.research.agent.repair.skip-verified-min-confidence-ppm must be within 0..1000000");
+        }
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
+        this.repairLimit = repairLimit;
+        this.skipVerifiedMinConfidencePpm = skipVerifiedMinConfidencePpm;
+    }
+
+    /** 当前生效的单元格补查次数上限；补查决策和审计决策结算共用这一个值。 */
+    public int repairLimit() {
+        return repairLimit;
     }
 
     public List<RepairGap> projectRepairableGaps(String runId, int waveNo) {
@@ -82,6 +112,8 @@ public class ResearchAgentGapProjectionService {
             CellState cell = loadCell(runId, item.getKey());
             if (cell == null) continue;
             if ("VERIFIED".equals(cell.status()) && Set.of("PASS","NOT_REQUIRED").contains(cell.auditStatus())) continue;
+            // 已核验、带证据且置信度足够高的单元格，再补查一轮通常拿不到新结论，只会多出一整波等待
+            if (highConfidenceVerified(cell)) continue;
             Aggregate aggregate = item.getValue();
             result.add(new RepairGap(cell.cellKey(), cell.repairCount(), "FROZEN".equals(cell.status()), cell.activeTaskId() == null,
                     digest(item.getKey(), aggregate), List.copyOf(aggregate.taskIds),
@@ -128,8 +160,16 @@ public class ResearchAgentGapProjectionService {
                 """, (rs, rowNum) -> rs.getString(1), runId, GAP_REPAIR_MAX_CELLS);
     }
 
-    /** 每个缺口单元格最多补查两次。 */
+    /** 每个缺口单元格默认最多补查两次，也是可配置上限的最大值。 */
     static final int REPAIR_LIMIT = 2;
+
+    private boolean highConfidenceVerified(CellState cell) {
+        return skipVerifiedMinConfidencePpm > 0
+                && "VERIFIED".equals(cell.status())
+                && cell.hasEvidence()
+                && cell.confidencePpm() != null
+                && cell.confidencePpm() >= skipVerifiedMinConfidencePpm;
+    }
 
     private List<FailedTask> evidenceTasksFor(String runId, String cellKey) {
         return jdbcTemplate.query("""
@@ -145,9 +185,18 @@ public class ResearchAgentGapProjectionService {
 
     private CellState loadCell(String runId, String cellKey) {
         return jdbcTemplate.query("""
-                select cell_key, cell_status, repair_count, active_task_id, semantic_audit_status
+                select cell_key, cell_status, repair_count, active_task_id, semantic_audit_status,
+                       confidence_score_ppm, evidence_refs_json
                 from research_cell where research_run_id = ? and cell_key = ?
-                """, rs -> rs.next() ? new CellState(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getString(4), rs.getString(5)) : null, runId, cellKey);
+                """, rs -> {
+            if (!rs.next()) return null;
+            int confidence = rs.getInt(6);
+            Integer confidencePpm = rs.wasNull() ? null : confidence;
+            String evidence = rs.getString(7);
+            boolean hasEvidence = evidence != null && !evidence.isBlank() && !"[]".equals(evidence.trim());
+            return new CellState(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getString(4), rs.getString(5),
+                    confidencePpm, hasEvidence);
+        }, runId, cellKey);
     }
 
     private List<String> cells(String json) {
@@ -208,7 +257,8 @@ public class ResearchAgentGapProjectionService {
                             List<String> excludedSourceIds, List<String> reasonCodes) { }
     private record FailedTask(String id, String status, String terminalReason, String targetCellsJson, String executionContextJson) { }
     private record VerifierRepair(String id, String cellKey, String reasonCode, String evidenceIdsJson) { }
-    private record CellState(String cellKey, String status, int repairCount, String activeTaskId, String auditStatus) { }
+    private record CellState(String cellKey, String status, int repairCount, String activeTaskId, String auditStatus,
+                             Integer confidencePpm, boolean hasEvidence) { }
     private static final class Aggregate {
         private final Set<String> taskIds = new LinkedHashSet<>();
         private final Set<String> decisionIds = new LinkedHashSet<>();

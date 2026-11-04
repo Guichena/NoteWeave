@@ -31,7 +31,7 @@ public class ResearchAgentRepairAdvancementService {
         List<ResearchAgentGapProjectionService.RepairGap> projected = gaps.projectRepairableGaps(
                 command.researchRunId(), command.failedWaveNo());
         ResearchAgentRepairStopPolicy.Decision decision = ResearchAgentRepairStopPolicy.evaluate(
-                new ResearchAgentRepairStopPolicy.Snapshot(false, false, true, ResearchAgentGapProjectionService.REPAIR_LIMIT,
+                new ResearchAgentRepairStopPolicy.Snapshot(false, false, true, gaps.repairLimit(),
                         projected.stream().map(gap -> new ResearchAgentRepairStopPolicy.Gap(
                                 gap.cellKey(), gap.noActiveTask(), true, gap.frozen(), gap.repairCount(),
                                 gap.reasonDigest(), java.util.Set.copyOf(gap.excludedSourceIds()))).toList()));

@@ -978,6 +978,45 @@ class ResearchAgentTaskCoordinatorServiceTest {
     }
 
     @Test
+    void highConfidenceVerifiedCellsAreSkippedOnlyWhenTheThresholdIsConfigured() {
+        coordinator.planAndEnqueueForWave(runId,1);
+        jdbcTemplate.update("update research_agent_task set status='SUBMITTED' where research_run_id=?",runId);
+        jdbcTemplate.update("update research_cell set semantic_audit_status='BLOCKED',active_task_id=null where research_run_id=?",runId);
+        for (String cell : List.of("entity-1:method","entity-1:evidence")) jdbcTemplate.update("""
+                insert into research_verifier_decision(id,research_run_id,decision_scope,decision_type,reason_code,target_id,evidence_ids_json,action_text,decision_status)
+                values (?,?,'CELL','EVIDENCE_AUDIT_REPAIR_REQUIRED','AUDIT_EVIDENCE_MISSING',?,'[]','COUNTERFACTUAL_REPAIR','OPEN')
+                """,Ids.newId(),runId,cell);
+        // 一格已核验、带证据且置信度 0.95，另一格已核验但置信度只有 0.6
+        jdbcTemplate.update("update research_cell set cell_status='VERIFIED',evidence_refs_json='[\"e1\"]',confidence_score_ppm=950000 where research_run_id=? and cell_key='entity-1:method'",runId);
+        jdbcTemplate.update("update research_cell set cell_status='VERIFIED',evidence_refs_json='[\"e2\"]',confidence_score_ppm=600000 where research_run_id=? and cell_key='entity-1:evidence'",runId);
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        assertThat(new ResearchAgentGapProjectionService(jdbcTemplate, mapper).projectRepairableGaps(runId,1)).hasSize(2);
+        assertThat(new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 2, 900000).projectRepairableGaps(runId,1))
+                .extracting(ResearchAgentGapProjectionService.RepairGap::cellKey).containsExactly("entity-1:evidence");
+        // 没有证据的已核验单元格照常补查
+        jdbcTemplate.update("update research_cell set evidence_refs_json='[]' where research_run_id=? and cell_key='entity-1:method'",runId);
+        assertThat(new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 2, 900000).projectRepairableGaps(runId,1)).hasSize(2);
+    }
+
+    @Test
+    void repairLimitIsConfigurableBetweenOneAndTwo() {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(new ResearchAgentGapProjectionService(jdbcTemplate, mapper).repairLimit()).isEqualTo(2);
+        assertThat(new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 1, 0).repairLimit()).isEqualTo(1);
+        assertThatThrownBy(() -> new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 0, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 3, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ResearchAgentGapProjectionService(jdbcTemplate, mapper, 2, 1_000_001))
+                .isInstanceOf(IllegalArgumentException.class);
+        // 上限为 1 时补查过一次的单元格不再进入补查目标
+        var decision = ResearchAgentRepairStopPolicy.evaluate(new ResearchAgentRepairStopPolicy.Snapshot(false, false, true, 1,
+                List.of(new ResearchAgentRepairStopPolicy.Gap("a:b", true, true, false, 1, "sha256:x", java.util.Set.of()))));
+        assertThat(decision.kind()).isEqualTo(ResearchAgentRepairStopPolicy.DecisionKind.STOPPED_PARTIAL);
+    }
+
+    @Test
     void auditRepairSettlementWaitsForReauditAndRecordsBoundedExhaustion() {
         String cell="entity-1:method";
         String originalStatus=jdbcTemplate.queryForObject("select cell_status from research_cell where research_run_id=? and cell_key=?",String.class,runId,cell);
