@@ -281,3 +281,14 @@ def test_task_parameters_travel_apart_from_skill_options():
     bad.input_payload.inputs = {"unknown": "x"}
     with pytest.raises(ValueError, match="未声明"):
         run(bad, client=Model("CARDS"), catalog=catalog)
+
+
+@pytest.mark.parametrize("name", ["lecture-notes-pdf", "video-deck"])
+def test_video_only_skills_fail_fast_without_keyframes(name):
+    """验收复测：没有视频资料时视频讲义、视频演示文稿要直接说明原因，不调用规划模型。"""
+    catalog = SkillCatalog()
+    skill = catalog.resolve(name)
+    model = Model(skill.kind)
+    with pytest.raises(ValueError, match="需要带关键帧的视频资料"):
+        run(task(name, catalog), client=model, catalog=catalog)
+    assert all(not purpose.endswith(".plan") for purpose, _ in model.calls)

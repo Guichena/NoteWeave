@@ -49,6 +49,10 @@ def _verify(value, skill, options, evidence):
 
 
 def plan(task, skill, options, evidence, client):
+    # 每单元都要配关键帧的产物，资料里没有视频关键帧时规划必然失败；提前给出明确原因，不白跑模型
+    if skill.contract.get("figure_required") is True and not any(
+            s.get("frame_ids") for s in evidence["sentences"]):
+        raise ValueError("该产物需要带关键帧的视频资料，所选资料中没有可用的视频关键帧")
     schema = _schema(skill)
     inputs = {"requirement": task.input_payload.user_requirement,
               "contract": skill.contract, "options": options, "evidence": evidence,
