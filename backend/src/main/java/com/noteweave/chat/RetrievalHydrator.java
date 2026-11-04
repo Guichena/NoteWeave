@@ -628,8 +628,10 @@ public class RetrievalHydrator {
                 if (i > 0) {
                     lexicalFilter.append(" or ");
                 }
-                lexicalFilter.append("(c0.heading like ? escape '\\' or w0.content like ? escape '\\' "
-                        + "or coalesce(w0.location_info, '') like ? escape '\\')");
+                // 不写 escape 子句：MySQL 字符串里的反斜杠会转义收尾引号，escape '\' 会吞掉后面的占位符，
+                // 精读检索因此报参数个数不符。MySQL 与 H2 的 LIKE 默认转义符都是反斜杠，escapeLike 按此转义。
+                lexicalFilter.append("(c0.heading like ? or w0.content like ? "
+                        + "or coalesce(w0.location_info, '') like ?)");
             }
             lexicalFilter.append(")");
             for (String term : lexicalTerms) {
