@@ -51,8 +51,9 @@ public class ConversationService {
     }
 
     public void requireConversation(String workspaceId, String conversationId) {
+        // 已删除的会话对外一律按不存在处理
         Integer count = jdbcTemplate.queryForObject("""
-                select count(*) from conversation where workspace_id = ? and id = ?
+                select count(*) from conversation where workspace_id = ? and id = ? and status <> 'DELETED'
                 """, Integer.class, workspaceId, conversationId);
         if (count == null || count == 0) {
             throw new BusinessException(
@@ -69,7 +70,7 @@ public class ConversationService {
                 select id, title, conversation_type, status, active_head_message_id,
                        created_at, last_active_at
                 from conversation
-                where workspace_id = ?
+                where workspace_id = ? and status <> 'DELETED'
                 order by last_active_at desc, created_at desc
                 """, (rs, rowNum) -> new ConversationSummaryResponse(
                 rs.getString("id"),
@@ -80,6 +81,92 @@ public class ConversationService {
                 rs.getTimestamp("created_at").toInstant(),
                 rs.getTimestamp("last_active_at").toInstant()
         ), workspaceId);
+    }
+
+    /** 重命名会话：只改标题，不影响消息与上下文。 */
+    @Transactional
+    public ConversationSummaryResponse renameConversation(
+            String workspaceId, String conversationId, UpdateConversationRequest request) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        String title = request.title().trim();
+        if (title.isEmpty()) {
+            throw new BusinessException("CONVERSATION_TITLE_REQUIRED", "会话标题不能为空");
+        }
+        String actor = auditActorProvider.currentOrSystem("CONVERSATION");
+        int updated = jdbcTemplate.update("""
+                update conversation set title = ?, updated_by = ?, updated_at = current_timestamp
+                where workspace_id = ? and id = ? and status <> 'DELETED'
+                """, title, actor, workspaceId, conversationId);
+        if (updated == 0) {
+            throw conversationNotFound();
+        }
+        return findSummary(workspaceId, conversationId);
+    }
+
+    /** 进行中的回答：删除会话前需要先停止，避免生成结果写回已删除的会话。 */
+    public List<String> activeAnswerRunIds(String workspaceId, String conversationId) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        return jdbcTemplate.queryForList("""
+                select id from answer_run
+                where workspace_id = ? and conversation_id = ?
+                  and status in ('CREATED', 'RETRIEVING', 'GENERATING', 'FINALIZING')
+                order by id
+                """, String.class, workspaceId, conversationId);
+    }
+
+    /**
+     * 软删除会话：只把状态改为 DELETED，消息与运行记录保留用于审计。
+     * 删除后会话不再出现在列表中，读消息、订阅事件和发送消息都按不存在处理。
+     * 重复删除返回同样的删除结果，便于前端重试。
+     */
+    @Transactional
+    public DeletedConversationResponse deleteConversation(
+            String workspaceId, String conversationId, List<String> cancelledAnswerRunIds) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
+        List<String> status = jdbcTemplate.queryForList("""
+                select status from conversation where workspace_id = ? and id = ? for update
+                """, String.class, workspaceId, conversationId);
+        if (status.isEmpty()) {
+            throw conversationNotFound();
+        }
+        if (!"DELETED".equals(status.get(0))) {
+            String actor = auditActorProvider.currentOrSystem("CONVERSATION");
+            jdbcTemplate.update("""
+                    update conversation set status = 'DELETED', updated_by = ?, updated_at = current_timestamp
+                    where workspace_id = ? and id = ?
+                    """, actor, workspaceId, conversationId);
+        }
+        return new DeletedConversationResponse(conversationId, "DELETED", true,
+                cancelledAnswerRunIds == null ? List.of() : List.copyOf(cancelledAnswerRunIds));
+    }
+
+    private ConversationSummaryResponse findSummary(String workspaceId, String conversationId) {
+        List<ConversationSummaryResponse> rows = jdbcTemplate.query("""
+                select id, title, conversation_type, status, active_head_message_id,
+                       created_at, last_active_at
+                from conversation
+                where workspace_id = ? and id = ? and status <> 'DELETED'
+                """, (rs, rowNum) -> new ConversationSummaryResponse(
+                rs.getString("id"),
+                rs.getString("title"),
+                rs.getString("conversation_type"),
+                rs.getString("status"),
+                rs.getString("active_head_message_id"),
+                rs.getTimestamp("created_at").toInstant(),
+                rs.getTimestamp("last_active_at").toInstant()
+        ), workspaceId, conversationId);
+        if (rows.isEmpty()) {
+            throw conversationNotFound();
+        }
+        return rows.get(0);
+    }
+
+    private static BusinessException conversationNotFound() {
+        return new BusinessException(
+                "CONVERSATION_NOT_FOUND",
+                "会话不存在或已删除",
+                org.springframework.http.HttpStatus.NOT_FOUND
+        );
     }
 
     public List<ConversationMessageResponse> listMessages(

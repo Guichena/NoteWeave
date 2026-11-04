@@ -109,7 +109,9 @@ export function App() {
     switchWorkspace,
     switchConversation,
     createWorkspace,
-    createConversation
+    createConversation,
+    renameConversation,
+    deleteConversation
   } = useWorkspaceSession({
     run,
     setStatus,
@@ -424,6 +426,8 @@ export function App() {
       onSwitchConversation={(conversationId) => void switchConversation(conversationId)}
       onCreateWorkspace={createWorkspace}
       onCreateConversation={createConversation}
+      onRenameConversation={renameConversation}
+      onDeleteConversation={deleteConversation}
       onToggleSettings={() => setWorkspaceSettingsOpen((current) => !current)}
       settingsOpen={workspaceSettingsOpen}
       settingsPanel={workspace && workspaceSettingsOpen ? (

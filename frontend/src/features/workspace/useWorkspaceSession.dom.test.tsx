@@ -217,4 +217,93 @@ describe("useWorkspaceSession", () => {
     expect(result.current.conversations[0]?.conversation_id).toBe("conversation-new");
     expect(replaceMessages).toHaveBeenLastCalledWith([]);
   });
+
+  it("renames a conversation and switches away when the current one is deleted", async () => {
+    const conversationTwo = { ...conversationOne, conversation_id: "conversation-2", title: "Conversation Two" };
+    const conversationClient = {
+      rename: vi.fn(async () => ({ ...conversationOne, title: "改过的名字" })),
+      remove: vi.fn(async () => ({ conversation_id: "conversation-1", status: "DELETED", deleted: true }))
+    };
+    const loader = {
+      listAvailableWorkspaces: vi.fn(async () => [workspaceOne]),
+      restoreWorkspace: vi.fn(async () => ({
+        workspace: workspaceOne,
+        conversations: [conversationOne, conversationTwo],
+        conversation: conversationOne,
+        messages: [],
+        sources: []
+      })),
+      switchConversation: vi.fn(async () => ({
+        workspace: workspaceOne,
+        conversations: [conversationTwo],
+        conversation: conversationTwo,
+        messages: [{ role: "user", content: "second" }],
+        sources: []
+      }))
+    };
+    const replaceMessages = vi.fn();
+    const { result } = renderHook(() => useWorkspaceSession({
+      run: createRun(),
+      setStatus: vi.fn(),
+      replaceMessages,
+      replaceSources: vi.fn(),
+      resetWorkspaceScope: vi.fn(),
+      loader: loader as never,
+      workspaceClient: {} as never,
+      conversationClient: conversationClient as never
+    }));
+    await waitFor(() => expect(result.current.sessionLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.renameConversation("conversation-1", "  改过的名字 ");
+    });
+    expect(conversationClient.rename).toHaveBeenCalledWith("workspace-1", "conversation-1", "改过的名字");
+    expect(result.current.conversation?.title).toBe("改过的名字");
+    expect(result.current.conversations[0]?.title).toBe("改过的名字");
+
+    let deleted = false;
+    await act(async () => {
+      deleted = await result.current.deleteConversation("conversation-1");
+    });
+    expect(deleted).toBe(true);
+    expect(conversationClient.remove).toHaveBeenCalledWith("workspace-1", "conversation-1");
+    expect(result.current.conversations.map((item) => item.conversation_id)).toEqual(["conversation-2"]);
+    expect(result.current.conversation?.conversation_id).toBe("conversation-2");
+    expect(replaceMessages).toHaveBeenLastCalledWith([{ role: "user", content: "second" }]);
+  });
+
+  it("clears the chat when the last conversation is deleted", async () => {
+    const conversationClient = {
+      remove: vi.fn(async () => ({ conversation_id: "conversation-1", status: "DELETED", deleted: true }))
+    };
+    const replaceMessages = vi.fn();
+    const { result } = renderHook(() => useWorkspaceSession({
+      run: createRun(),
+      setStatus: vi.fn(),
+      replaceMessages,
+      replaceSources: vi.fn(),
+      resetWorkspaceScope: vi.fn(),
+      loader: {
+        listAvailableWorkspaces: vi.fn(async () => [workspaceOne]),
+        restoreWorkspace: vi.fn(async () => ({
+          workspace: workspaceOne,
+          conversations: [conversationOne],
+          conversation: conversationOne,
+          messages: [{ role: "assistant", content: "existing" }],
+          sources: []
+        })),
+        switchConversation: vi.fn()
+      } as never,
+      workspaceClient: {} as never,
+      conversationClient: conversationClient as never
+    }));
+    await waitFor(() => expect(result.current.sessionLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.deleteConversation("conversation-1");
+    });
+    expect(result.current.conversations).toEqual([]);
+    expect(result.current.conversation).toBeNull();
+    expect(replaceMessages).toHaveBeenLastCalledWith([]);
+  });
 });

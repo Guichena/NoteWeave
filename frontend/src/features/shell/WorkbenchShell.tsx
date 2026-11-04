@@ -26,6 +26,7 @@ import { BrandMark } from "./BrandMark";
 import { WorkspaceCreateDialog } from "../workspace/WorkspaceCreateDialog";
 import { type CreateWorkspaceInput } from "../workspace/api";
 import { ConversationCreateDialog } from "../conversations/ConversationCreateDialog";
+import { SidebarConversationItem } from "./SidebarConversationItem";
 
 export type WorkbenchNavItem = {
   view: AppView;
@@ -60,6 +61,8 @@ export type WorkbenchShellProps = {
   onSwitchConversation: (conversationId: string) => void;
   onCreateWorkspace: (input: CreateWorkspaceInput) => Promise<boolean>;
   onCreateConversation: (title: string) => Promise<boolean>;
+  onRenameConversation?: (conversationId: string, title: string) => Promise<boolean>;
+  onDeleteConversation?: (conversationId: string) => Promise<boolean>;
   onToggleSettings: () => void;
   settingsOpen: boolean;
   settingsPanel?: ReactNode;
@@ -94,6 +97,8 @@ export function WorkbenchShell({
   onSwitchConversation,
   onCreateWorkspace,
   onCreateConversation,
+  onRenameConversation,
+  onDeleteConversation,
   onToggleSettings,
   settingsOpen,
   settingsPanel,
@@ -312,22 +317,21 @@ export function WorkbenchShell({
             ) : conversations.map((item) => {
               const active = item.conversation_id === conversationId && view === "chat";
               return (
-                <button
+                <SidebarConversationItem
                   key={item.conversation_id}
-                  type="button"
-                  className={active ? "sidebar-conversation active" : "sidebar-conversation"}
-                  aria-current={active ? "page" : undefined}
+                  conversationId={item.conversation_id}
                   title={item.title}
+                  meta={item.last_active_at ? formatRelativeTime(item.last_active_at) : undefined}
+                  active={active}
                   disabled={shellBusy || sessionLoading}
-                  onClick={() => {
+                  onOpen={() => {
                     if (item.conversation_id !== conversationId) onSwitchConversation(item.conversation_id);
                     if (view !== "chat") onNavigate("chat");
                     setMobileNavOpen(false);
                   }}
-                >
-                  <span className="sidebar-conversation-title">{item.title}</span>
-                  {item.last_active_at ? <small>{formatRelativeTime(item.last_active_at)}</small> : null}
-                </button>
+                  onRename={onRenameConversation}
+                  onDelete={onDeleteConversation}
+                />
               );
             })}
           </div>
