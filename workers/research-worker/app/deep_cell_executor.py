@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -617,11 +618,13 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
     cards: list[object] = []
     evidence: list[dict[str, object]] = []
     per_cell_limit = max(1, min(MAX_EVIDENCE_CARDS_PER_CELL, MAX_EVIDENCE_PER_COMPLETION // len(columns)))
-    for column in columns:
-        require_active()
-        raw = list(raw_by_column.get(column.key, []))
-        column_cards = _column_selection(snapshot, column, raw, windows, llm_client, retained_out,
-                                         uncovered_out, column_cache)
+    for column, (column_cards, column_retained, column_uncovered) in zip(
+            columns, _parallel_column_selections(snapshot, columns, raw_by_column, windows, llm_client,
+                                                 require_active, column_cache)):
+        # 各列结果按列顺序合并，与串行执行的输出完全一致
+        retained_out.extend(column_retained)
+        if uncovered_out is not None:
+            uncovered_out.update(column_uncovered)
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -631,6 +634,40 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
                 seen.add(str(item["evidence_key"]))
                 evidence.append(item)
     return _merge_extractions(results, cards), cards, evidence
+
+
+def _column_check_concurrency() -> int:
+    try:
+        return max(1, int(load_settings().research_agent_column_check_concurrency))
+    except Exception:  # 配置读取失败时保持串行，不影响研究本身
+        return 1
+
+
+def _parallel_column_selections(snapshot: ResearchAgentTaskSnapshot, columns: list[object],
+                                raw_by_column: dict[str | None, list[object]], windows: list[object],
+                                llm_client: object | None, require_active,
+                                column_cache: dict[str, tuple] | None,
+                                ) -> list[tuple[list[object], list[object], dict[str, list[str]]]]:
+    """各列的答案核对互不依赖，用有界线程池并行；返回值按列顺序排列。
+
+    原来逐列串行调用模型，一个深挖任务最多 6 列，每次核对 8 到 25 秒。每列写自己的保留卡片和未答要求，
+    调用方按列顺序合并，输出与串行执行一致；column_cache 按列键写入，各线程互不覆盖。
+    """
+    def select(column: object) -> tuple[list[object], list[object], dict[str, list[str]]]:
+        retained: list[object] = []
+        uncovered: dict[str, list[str]] = {}
+        kept = _column_selection(snapshot, column, list(raw_by_column.get(column.key, [])), windows,
+                                 llm_client, retained, uncovered, column_cache)
+        return kept, retained, uncovered
+
+    for _ in columns:
+        require_active()
+    concurrency = min(_column_check_concurrency(), len(columns))
+    if concurrency <= 1 or llm_client is None:
+        return [select(column) for column in columns]
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="research-column-check") as executor:
+        futures = [executor.submit(select, column) for column in columns]
+        return [future.result() for future in futures]
 
 
 def _require_extraction_provider_available(extraction: ExtractionResult, llm_client: object | None) -> None:

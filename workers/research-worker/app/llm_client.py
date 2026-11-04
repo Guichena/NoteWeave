@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import logging
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -165,6 +166,9 @@ class OpenAICompatibleLlmClient:
         self.max_input_chars = max(1000, max_input_chars)
         self.context_safety_buffer_chars = max(0, context_safety_buffer_chars)
         self.call_records: list[dict[str, object]] = []
+        # 并行调用时保护调用预算：已预留但尚未记录的尝试次数
+        self._budget_lock = threading.Lock()
+        self._reserved_attempts = 0
         self.cancellation_checker: Callable[[], None] | None = None
         self.session_id = session_id
         self.client = OpenAI(
@@ -242,9 +246,15 @@ class OpenAICompatibleLlmClient:
         default_attempts = 1 if purpose == "research.plan.matrix" else self.max_attempts
         purpose_max_attempts = max(1, int(purpose_config.get("max_attempts") or default_attempts))
         started = time.perf_counter()
-        if self.max_total_calls:
-            purpose_max_attempts = min(purpose_max_attempts, max(0, self.max_total_calls - self._provider_call_count()))
-        if self.max_total_calls and self._provider_call_count() >= self.max_total_calls:
+        # 同一任务内的答案核对会并行调用；预算检查与尝试次数预留在锁内同时完成，并行时也不会超出调用上限
+        with self._budget_lock:
+            if self.max_total_calls:
+                remaining = self.max_total_calls - self._provider_call_count() - self._reserved_attempts
+                purpose_max_attempts = min(purpose_max_attempts, max(0, remaining))
+            exhausted = bool(self.max_total_calls) and purpose_max_attempts <= 0
+            if not exhausted:
+                self._reserved_attempts += purpose_max_attempts
+        if exhausted:
             self._record_call(
                 purpose,
                 request_payload,
@@ -254,6 +264,16 @@ class OpenAICompatibleLlmClient:
                 "CALL_BUDGET_EXHAUSTED",
             )
             return ""
+        try:
+            return self._complete_reserved(purpose, request_payload, extra_body, purpose_max_attempts,
+                                           purpose_timeout_seconds, started)
+        finally:
+            with self._budget_lock:
+                self._reserved_attempts -= purpose_max_attempts
+
+    def _complete_reserved(self, purpose, request_payload, extra_body, purpose_max_attempts,
+                           purpose_timeout_seconds, started) -> str:
+        attempt_timeout_seconds = purpose_timeout_seconds
         data: dict[str, object] | None = None
         termination_reason = "RETRY_EXHAUSTED"
         attempts = 0
