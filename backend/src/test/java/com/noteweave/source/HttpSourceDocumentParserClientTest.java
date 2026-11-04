@@ -25,6 +25,41 @@ class HttpSourceDocumentParserClientTest {
             "workspace-1", "source-1", "snapshot-1", "资料.pdf", "application/pdf", "a".repeat(64), 1000);
 
     @Test
+    void plusSignsInMimeTypeAndFileNameSurviveQueryDecoding() throws Exception {
+        // 验收回归：application/epub+zip 的 + 未编码，解析服务解码成空格后按不支持的类型返回 415
+        Path original = temporary.resolve("original.epub");
+        Files.write(original, new byte[] {80, 75, 3, 4});
+        var epubRequest = new SourceDocumentParserPort.Request("workspace-1", "source-1", "snapshot-1",
+                "C++ 入门 & 进阶.epub", "application/epub+zip", SourceDocumentTextExtractor.sha256(original), 1000);
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        Map<String, String> decoded = new java.util.concurrent.ConcurrentHashMap<>();
+        server.createContext("/internal/parse", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            for (String pair : exchange.getRequestURI().getRawQuery().split("&")) {
+                String[] parts = pair.split("=", 2);
+                // 与 FastAPI 一致按表单规则解码，+ 视为空格
+                decoded.put(java.net.URLDecoder.decode(parts[0], java.nio.charset.StandardCharsets.UTF_8),
+                        java.net.URLDecoder.decode(parts[1], java.nio.charset.StandardCharsets.UTF_8));
+            }
+            byte[] response = mapper.writeValueAsBytes(valid(epubRequest));
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (var output = exchange.getResponseBody()) { output.write(response); }
+        });
+        server.start();
+        try {
+            var properties = new SourceDocumentParserProperties(true,
+                    "http://127.0.0.1:" + server.getAddress().getPort(), 5, 1, 1000, "");
+            new HttpSourceDocumentParserClient(properties, mapper).parse(epubRequest, original);
+            assertThat(decoded).containsEntry("mime_type", "application/epub+zip")
+                    .containsEntry("file_name", "C++ 入门 & 进阶.epub")
+                    .containsEntry("max_chars", "1000");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void binarySubmissionIncludesIdentityBudgetAndTheInternalToken() throws Exception {
         Path original = temporary.resolve("original.pdf");
         byte[] bytes = new byte[] {37, 80, 68, 70, 10};
