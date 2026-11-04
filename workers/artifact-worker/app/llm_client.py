@@ -64,7 +64,14 @@ class _CredentialSafeTransport(httpx.BaseTransport):
             except Exception:
                 error_body = b""
             return httpx.Response(exc.code, content=error_body, request=request)
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except TimeoutError as exc:
+            # 等待响应超时要报成超时，原先统一报 Connection error，看不出是超时还是连接失败
+            raise httpx.ReadTimeout(str(exc) or "read timed out", request=request) from exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, TimeoutError):
+                raise httpx.ReadTimeout(str(exc.reason) or "read timed out", request=request) from exc
+            raise httpx.ConnectError(str(exc), request=request) from exc
+        except (OSError, ValueError) as exc:
             raise httpx.ConnectError(str(exc), request=request) from exc
         if len(body) > MAX_LLM_RESPONSE_BYTES:
             raise httpx.ReadError(
