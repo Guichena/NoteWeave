@@ -142,8 +142,14 @@ public class ChatService {
         EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
                 request.retrievalStrategy(), request.retrievalChannels(),
                 request.sourceScopeSourceIds(), request.groundingRefs());
+        PreparationTimer timer = new PreparationTimer();
         extractPremises(workspaceId, conversationId, userMessageId, request.content());
-        AnswerDraft draft = buildAnswerDraft(conversationId, userMessageId, workspaceId, request, retrievalConfig);
+        timer.mark("premise");
+        AnswerDraft draft = buildAnswerDraft(
+                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer);
+        // 分阶段耗时：发消息后到开始生成之间的等待都在这里，后续提速以这些数字为准
+        PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={}",
+                workspaceId, request.answerMode(), timer.render(), timer.totalMillis());
         return new PreparedAnswerMaterial(
                 draft.answer(),
                 draft.existingCitationIds(),
@@ -273,16 +279,50 @@ public class ChatService {
         workspaceAccessGuard.requirePermission(message.workspaceId(), WorkspacePermission.WORKSPACE_READ);
     }
 
+    /** 记录回答准备各阶段的耗时，只用于日志。 */
+    static final class PreparationTimer {
+        private final long startedAt = System.nanoTime();
+        private long lastMark = startedAt;
+        private final Map<String, Long> stages = new LinkedHashMap<>();
+
+        void mark(String stage) {
+            long now = System.nanoTime();
+            stages.merge(stage, (now - lastMark) / 1_000_000L, Long::sum);
+            lastMark = now;
+        }
+
+        long totalMillis() {
+            return (System.nanoTime() - startedAt) / 1_000_000L;
+        }
+
+        String render() {
+            StringBuilder text = new StringBuilder();
+            stages.forEach((stage, millis) -> {
+                if (!text.isEmpty()) {
+                    text.append(' ');
+                }
+                text.append(stage).append("_ms=").append(millis);
+            });
+            return text.toString();
+        }
+    }
+
+    private static final org.slf4j.Logger PREPARATION_LOG =
+            org.slf4j.LoggerFactory.getLogger("com.noteweave.chat.AnswerPreparationTiming");
+
     private AnswerDraft buildAnswerDraft(
             String conversationId,
             String currentUserMessageId,
             String workspaceId,
             SendMessageRequest request,
-            EffectiveRetrievalConfig retrievalConfig
+            EffectiveRetrievalConfig retrievalConfig,
+            PreparationTimer timer
     ) {
         ConversationRetrievalContextAssembler.Context conversationContext = buildConversationContext(
                 workspaceId, conversationId, currentUserMessageId, request.content());
+        timer.mark("context");
         QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
+        timer.mark("rewrite");
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
                 workspaceId, request.answerMode(), rewrite.standaloneQuery());
         var preferenceParameters = com.noteweave.preference.PreferenceParameterCompiler
@@ -441,10 +481,13 @@ public class ChatService {
             // NR21：显式声明的来源范围（sourceScope）已进入 AnswerContext.evidenceScope，
             // 检索计划必须遵守声明范围——旧 sourceScope 兼容路径不得绕过（见 buildAnswerDraft）
             strategyContractValidator.validatePlan(mode, context, plan);
+            timer.mark("plan");
             bundle = unifiedRetrievalOrchestrator.execute(context, plan);
         }
+        timer.mark("retrieval");
         EvidenceSufficiencyJudge.Judgement sufficiency = evidenceSufficiencyJudge.judge(
                 context.query(), bundle);
+        timer.mark("sufficiency");
         PromptSpec prompt = EvidenceSufficiencyPrompts.apply(
                 strategy.compose(context, bundle), sufficiency.verdict(), bundle, request.content());
         AnswerPolicy policy = strategy.policy();
