@@ -1250,3 +1250,9 @@ details[open] > summary .message-sources-peek {
   font-size: var(--text-xs);
   cursor: pointer;
 }
+
+/* 已删除的消息只保留位置，用弱化样式显示删除说明 */
+.bubble-body.is-deleted {
+  color: var(--faint);
+  font-style: italic;
+}

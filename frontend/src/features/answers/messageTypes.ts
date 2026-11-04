@@ -19,6 +19,8 @@ export type Message = {
   researchProjectionJson?: string;
   /** 流式先到的引用协议；缺失时由 MessageBubble 补拉证据清单解析。 */
   citationProtocol?: CitationProtocol | null;
+  /** 消息已被删除：只显示删除说明，不再提供证据、反馈和重新生成。 */
+  deleted?: boolean;
 };
 export function updateLastAssistantMessage(current: Message[], answer: AnswerRunState) {
   let targetIndex = -1;
