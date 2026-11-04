@@ -18,8 +18,12 @@ export class ArtifactsApi {
     return this.client.get<ArtifactSkillSummary[]>("/api/v2/skills", init);
   }
 
-  listJobs(workspaceId: string, init?: RequestInit) {
-    return this.client.get<ArtifactJobSummary[]>(`/api/v2/workspaces/${workspaceId}/artifact-jobs`, init);
+  /** 产物列表分页：不传 page 时用后端默认的前 50 条；limit 上限 200。 */
+  listJobs(workspaceId: string, init?: RequestInit, page?: { limit: number; offset: number }) {
+    const query = page
+      ? `?${new URLSearchParams({ limit: String(page.limit), offset: String(page.offset) })}`
+      : "";
+    return this.client.get<ArtifactJobSummary[]>(`/api/v2/workspaces/${workspaceId}/artifact-jobs${query}`, init);
   }
 
   createJob(workspaceId: string, input: CreateArtifactJobInput) {

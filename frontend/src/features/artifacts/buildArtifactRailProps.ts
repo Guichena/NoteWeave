@@ -36,6 +36,8 @@ type BuildArtifactRailPropsInput = {
   artifactWorkspace: {
     artifactJobs: ArtifactJobSummary[];
     jobsLoading: boolean;
+    hasMoreJobs?: boolean;
+    loadMoreJobs?: () => Promise<unknown>;
     latestArtifactVersion: ArtifactVersionDetail | null;
     selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
     artifactSavedSourceByVersionId: Record<string, string>;
@@ -96,6 +98,8 @@ export function buildArtifactRailProps(input: BuildArtifactRailPropsInput): Arti
     artifactJobs: artifactWorkspace.artifactJobs,
     artifactJobsLoading: artifactWorkspace.jobsLoading,
     refreshArtifactJobs: artifactWorkspace.loadJobs,
+    hasMoreArtifactJobs: artifactWorkspace.hasMoreJobs ?? false,
+    loadMoreArtifactJobs: artifactWorkspace.loadMoreJobs,
     sourceCount: sourcesCount,
     setSelectedArtifactSkillKey: catalog.setSelectedSkillKey,
     setArtifactFormValues: catalog.setFormValues,

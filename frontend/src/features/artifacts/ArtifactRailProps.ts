@@ -26,6 +26,9 @@ export type ArtifactRailProps = {
   artifactJobs: ArtifactJobSummary[];
   artifactJobsLoading: boolean;
   refreshArtifactJobs?: () => Promise<unknown>;
+  /** 后端还有更早的产物没有加载。 */
+  hasMoreArtifactJobs?: boolean;
+  loadMoreArtifactJobs?: () => Promise<unknown>;
   sourceCount: number;
   setSelectedArtifactSkillKey: (key: string) => void;
   setArtifactFormValues: (
