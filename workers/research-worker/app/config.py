@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     research_agent_execution_mode: str = "INCREMENTAL_V1"
     research_agent_max_concurrency: int = 1
     research_agent_bundle_max_cells: int = 3
+    # 同一深挖任务内各列的答案核对互不依赖，并行执行的上限；1 表示保持串行
+    research_agent_column_check_concurrency: int = Field(default=3, ge=1, le=6)
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
     research_agent_evidence_audit_enabled: bool = True
