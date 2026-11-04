@@ -242,6 +242,8 @@ MySQL Source Version / ACL Version / Tombstone commit
 | POST | `/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/resume-from-checkpoint/{checkpointNo}` | 从 Checkpoint 恢复 |
 | POST | `/api/v2/workspaces/{workspaceId}/research-runs/{researchRunId}/save-report-as-source` | 报告写回资料 |
 | POST/GET | `/api/v2/workspaces/{workspaceId}/memory/...` | Signal、Promotion、Review、Revision、Revoke、Outcome、Control Pack |
+| GET | `/api/v2/workspaces/{workspaceId}/memory/items/revoked` | 用户停用、可以重新启用的记忆（最近 50 条） |
+| POST | `/api/v2/workspaces/{workspaceId}/memory/items/{memoryItemId}/restore` | 重新启用已停用的记忆；同一设置项或相同内容已有生效记忆时返回 409 |
 | GET | `/api/v2/workspaces/{workspaceId}/memory/inspector` | Memory Inspector |
 | GET | `/api/v2/skills` | Skill Catalog |
 | POST/GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs` | 创建与列表；列表支持 `limit`（默认 50，上限 200）与 `offset` |

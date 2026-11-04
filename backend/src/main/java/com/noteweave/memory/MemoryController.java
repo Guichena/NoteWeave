@@ -110,6 +110,19 @@ public class MemoryController {
         return ApiResponse.success(memoryItemQueryService.listItems(workspaceId));
     }
 
+    /** 用户停用的记忆，记忆页据此提供重新启用入口。 */
+    @GetMapping("/items/revoked")
+    ApiResponse<java.util.List<RevokedMemoryItemResponse>> listRevokedItems(@PathVariable String workspaceId) {
+        return ApiResponse.success(canonicalMemoryReviewService.listRevoked(workspaceId));
+    }
+
+    /** 重新启用一条用户停用的记忆。 */
+    @PostMapping("/items/{memoryItemId}/restore")
+    ApiResponse<MemoryRuntimeRevisionResponse> restoreItem(
+            @PathVariable String workspaceId, @PathVariable String memoryItemId) {
+        return ApiResponse.success(canonicalMemoryReviewService.restoreRevoked(workspaceId, memoryItemId));
+    }
+
     /** MEM-05：管理端排查「记忆为什么召回不到」，返回被读路径排除的条目与原因。 */
     @GetMapping("/read-gate-exclusions")
     ApiResponse<java.util.List<MemoryReadGateExclusion>> listReadGateExclusions(@PathVariable String workspaceId) {
