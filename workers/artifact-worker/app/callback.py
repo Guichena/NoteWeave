@@ -300,10 +300,13 @@ def run_artifact_task_with_callbacks(task_id: str, client: ArtifactCallbackClien
 
 
 def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
-    """宿主以 409 拒收产物内容时返回其错误码；投递令牌过期等其他冲突返回空串。"""
+    """宿主以 409 拒收产物内容或并发租约已失效时返回其错误码；投递令牌过期等其他冲突返回空串。
+
+    租约失效时任务本身仍是当前投递，按旧投递跳过会让任务一直停在排队状态，必须上报失败。
+    """
     if exc.status_code != 409:
         return ""
-    match = re.search(r'"code"\s*:\s*"(ARTIFACT_[A-Z_]+)"', str(exc))
+    match = re.search(r'"code"\s*:\s*"(ARTIFACT_[A-Z_]+|WORKLOAD_LEASE_LOST)"', str(exc))
     return match.group(1) if match else ""
 
 
