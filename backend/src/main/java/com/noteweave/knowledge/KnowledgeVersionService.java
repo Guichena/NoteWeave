@@ -71,6 +71,12 @@ public class KnowledgeVersionService {
             pageKind = prepared.pageKind();
         }
         citationReadGate.requireCitationIdsCurrent(item.workspaceId(), citationIds);
+        KnowledgeItemResponse unchanged = unchangedLatestVersion(item, normalizedContent, citationIds);
+        if (unchanged != null) {
+            // 正文和引用都与最新版本相同：不追加版本，也不改页面状态。
+            // 此前每次 ingest 或保存都追加一版，Wiki Index 累积到 41 版，内容几乎相同。
+            return unchanged;
+        }
         Integer currentVersion = jdbcTemplate.queryForObject("""
                 select coalesce(max(version_no), 0)
                 from knowledge_version
@@ -114,6 +120,38 @@ public class KnowledgeVersionService {
                 itemId, item.itemType(), pageKind, item.title(), "ACTIVE",
                 versionId, nextVersionNo, summary, Instant.now(),
                 0, 0, citationIds.size(), 0, pageState);
+    }
+
+    /** 最新版本的正文与引用都和本次写入相同时，返回最新版本的条目信息；否则返回 null。 */
+    private KnowledgeItemResponse unchangedLatestVersion(
+            KnowledgeItemRef item, String normalizedContent, List<String> citationIds) {
+        List<KnowledgeItemResponse> latest = jdbcTemplate.query("""
+                select v.id, v.version_no, v.content, v.summary, v.created_at,
+                       i.page_kind, i.wiki_page_state, i.status
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                where i.id = ?
+                """, (rs, rowNum) -> {
+            String content = rs.getString("content");
+            if (content == null || !content.equals(normalizedContent)) {
+                return null;
+            }
+            java.sql.Timestamp createdAt = rs.getTimestamp("created_at");
+            return new KnowledgeItemResponse(
+                    item.itemId(), item.itemType(), rs.getString("page_kind"), item.title(), rs.getString("status"),
+                    rs.getString("id"), rs.getInt("version_no"), rs.getString("summary"),
+                    createdAt == null ? Instant.now() : createdAt.toInstant(),
+                    0, 0, citationIds.size(), 0, rs.getString("wiki_page_state"));
+        }, item.itemId());
+        if (latest.isEmpty() || latest.get(0) == null) {
+            return null;
+        }
+        List<String> boundCitations = jdbcTemplate.queryForList("""
+                select citation_id from knowledge_version_citation
+                where knowledge_version_id = ?
+                order by sort_order asc
+                """, String.class, latest.get(0).latestVersionId());
+        return boundCitations.equals(citationIds) ? latest.get(0) : null;
     }
 
     /**
