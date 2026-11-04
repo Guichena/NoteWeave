@@ -255,6 +255,43 @@ class ArtifactKafkaConsumerRuntime:
         return self.failure is None and self.thread is not None and self.thread.is_alive()
 
 
+class ArtifactKafkaConsumerPool:
+    """同一消费组里并行运行多条消费通道，每条通道独立的 Kafka 会话。
+
+    原来只有一个消费者且每次只拉 1 条，多个产物同时提交时严格串行，排队平均 8 分钟以上。
+    Kafka 按分区把任务分给各条通道，topic 分区数需要不少于通道数（后端默认建 3 个分区）。
+    """
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        lane_factory: Callable[[Settings], object] | None = None,
+    ) -> None:
+        self.settings = settings or load_settings()
+        self.lane_factory = lane_factory or ArtifactKafkaConsumerRuntime
+        self.lanes: list[object] = []
+
+    def start(self) -> None:
+        for _ in range(max(1, int(getattr(self.settings, "job_concurrency", 1)))):
+            lane = self.lane_factory(self.settings)
+            self.lanes.append(lane)
+            lane.start()
+
+    def stop(self) -> None:
+        first_error: Exception | None = None
+        for lane in self.lanes:
+            try:
+                lane.stop()
+            except Exception as exc:  # 一条通道停止失败不能影响其他通道释放资源
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
+
+    @property
+    def healthy(self) -> bool:
+        return all(getattr(lane, "healthy", True) for lane in self.lanes)
+
+
 def _poll_records(consumer: object, timeout_ms: int = 1000) -> list[object]:
     """有界拉取：阻塞式迭代在空闲后可能再也不返回，轮询超时保证线程始终能自检。"""
     batches = consumer.poll(timeout_ms=timeout_ms) or {}
