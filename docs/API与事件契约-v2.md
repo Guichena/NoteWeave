@@ -244,8 +244,8 @@ MySQL Source Version / ACL Version / Tombstone commit
 | POST/GET | `/api/v2/workspaces/{workspaceId}/memory/...` | Signal、Promotion、Review、Revision、Revoke、Outcome、Control Pack |
 | GET | `/api/v2/workspaces/{workspaceId}/memory/inspector` | Memory Inspector |
 | GET | `/api/v2/skills` | Skill Catalog |
-| POST/GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs` | 创建与列表 |
-| GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}` | 详情 |
+| POST/GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs` | 创建与列表；列表支持 `limit`（默认 50，上限 200）与 `offset` |
+| GET | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}` | 详情；失败时 `progress_message` 为面向用户的原因，原始报错在 `failure_detail`；排队中返回 `queue_position` |
 | GET/POST | `/api/v2/workspaces/{workspaceId}/artifact-jobs/{artifactJobId}/versions...` | 版本、比较、再生成、回滚、写回、导出 |
 | GET | `/api/v2/tasks/{taskId}` | 通用任务 |
 | GET | `/api/v2/tasks/{taskId}/events` | 任务 SSE |

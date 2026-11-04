@@ -455,6 +455,18 @@ button.artifact-output-row:hover {
   flex: 1 1 auto;
 }
 
+.artifact-reader-history {
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.artifact-reader-history .secondary-button {
+  min-height: 26px;
+  padding: 2px 10px;
+  font-size: var(--text-xs);
+}
+
 .artifact-reader-notice .icon-button {
   width: 22px;
   height: 22px;
