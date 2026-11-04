@@ -32,17 +32,62 @@ public class GlobalExceptionHandler {
             log.warn("Internal callback rejected: path={}, code={}, reason={}",
                     request.getRequestURI(), ex.code(), ex.getMessage());
         }
-        return ResponseEntity.status(ex.status()).body(ApiResponse.error(ex.code(), ex.getMessage()));
+        return ResponseEntity.status(statusOf(ex)).body(ApiResponse.error(ex.code(), ex.getMessage()));
+    }
+
+    /** 资源不存在的业务码没有显式给状态时按 404 返回，避免和参数错误混在 400 里。 */
+    static HttpStatus statusOf(BusinessException ex) {
+        if (ex.status() == HttpStatus.BAD_REQUEST && ex.code() != null && ex.code().endsWith("_NOT_FOUND")) {
+            return HttpStatus.NOT_FOUND;
+        }
+        return ex.status();
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException ex) {
+        // 请求体统一是 snake_case，报错也回显 snake_case 字段名，调用方按提示改字段才能改对
         String message = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
-                .map(error -> error.getField() + " " + error.getDefaultMessage())
+                .map(error -> snakeCase(error.getField()) + " " + error.getDefaultMessage())
                 .collect(Collectors.joining("; "));
         return ResponseEntity.badRequest().body(ApiResponse.error("VALIDATION_FAILED", message));
+    }
+
+    static String snakeCase(String field) {
+        if (field == null) {
+            return "";
+        }
+        return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** 缺少必填查询参数属于调用方错误，返回 400 并说明缺哪个参数。 */
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    ResponseEntity<ApiResponse<Void>> handleMissingParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error(
+                "MISSING_REQUEST_PARAMETER", "required request parameter is missing: " + ex.getParameterName()));
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiResponse<Void>> handleParameterTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        return ResponseEntity.badRequest().body(ApiResponse.error(
+                "INVALID_REQUEST_PARAMETER", "request parameter has an invalid value: " + ex.getName()));
+    }
+
+    /**
+     * 并发写同一行数据时数据库报死锁或锁等待超时，以及并发写同一版本号撞唯一键：
+     * 都是可重试的并发冲突，返回 409 让调用方重试，不再报服务内部错误。
+     */
+    @ExceptionHandler({
+            org.springframework.dao.PessimisticLockingFailureException.class,
+            org.springframework.dao.DuplicateKeyException.class
+    })
+    ResponseEntity<ApiResponse<Void>> handleConcurrentUpdate(org.springframework.dao.DataAccessException ex) {
+        log.warn("Concurrent update conflict: {}", ex.getMostSpecificCause().getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ApiResponse.error(
+                "CONCURRENT_UPDATE_CONFLICT", "数据正被其他操作同时修改，请稍后重试"));
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)

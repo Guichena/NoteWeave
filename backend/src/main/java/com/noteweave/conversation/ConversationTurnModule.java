@@ -719,11 +719,18 @@ public class ConversationTurnModule {
         return payloadCodec.readFrozenCommand(conversationId, preparationJson);
     }
 
+    /**
+     * 两个调用方都在回合事务里：先对会话行加排他锁，同一会话的并发提交按顺序执行。
+     * 此前先插入 turn_submission（外键检查对会话行加共享锁），再更新 next_message_seq 需要排他锁，
+     * 两个并发请求各持共享锁互等，MySQL 判死锁返回 500。现在后到的请求等前一个提交后再读会话头，
+     * 头已变化时按 CONVERSATION_HEAD_CONFLICT 返回 409。
+     */
     private ConversationState requireConversationState(String conversationId) {
         List<ConversationState> rows = jdbcTemplate.query("""
                 select workspace_id, active_head_message_id, lock_version
                 from conversation
                 where id = ?
+                for update
                 """, (rs, rowNum) -> new ConversationState(
                 rs.getString("workspace_id"),
                 rs.getString("active_head_message_id"),
