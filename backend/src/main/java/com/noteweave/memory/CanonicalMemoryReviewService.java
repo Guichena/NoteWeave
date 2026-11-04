@@ -225,6 +225,93 @@ public class CanonicalMemoryReviewService {
         return true;
     }
 
+    /** 用户主动停用、还可以重新启用的记忆，最近停用的在前。 */
+    public List<RevokedMemoryItemResponse> listRevoked(String workspaceId) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
+        return jdbcTemplate.query("""
+                select i.id, r.id as revision_id, r.display_text, r.normalized_value_json, i.updated_at
+                from memory_item i
+                join memory_runtime_revision r on r.id = i.current_revision_id
+                where i.workspace_id = ? and i.status = 'DELETED' and r.status = 'REJECTED'
+                  and exists (
+                    select 1 from memory_event e
+                    where e.memory_item_id = i.id
+                      and e.event_type in ('ACTIVE_USER_REVOKED', 'ACTIVE_REVIEW_REVOKED')
+                  )
+                order by i.updated_at desc, i.id
+                limit 50
+                """, (rs, rowNum) -> {
+            CandidatePayload payload = candidatePayload(rs.getString("normalized_value_json"), rs.getString("display_text"));
+            return new RevokedMemoryItemResponse(
+                    rs.getString("id"),
+                    rs.getString("revision_id"),
+                    rs.getString("display_text"),
+                    payload.candidateType(),
+                    payload.taskNeighborhoods(),
+                    rs.getTimestamp("updated_at") == null ? null : rs.getTimestamp("updated_at").toInstant());
+        }, workspaceId);
+    }
+
+    /**
+     * 重新启用一条用户停用的记忆：恢复停用前的版本，不重新走候选门控。
+     * 停用时已脱敏的历史回放保持脱敏；同一设置项或相同内容已有生效记忆时拒绝，避免两条互相冲突。
+     */
+    @Transactional
+    public MemoryRuntimeRevisionResponse restoreRevoked(String workspaceId, String memoryItemId) {
+        workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
+        List<ActiveRow> rows = jdbcTemplate.query("""
+                select i.id, r.id as revision_id, r.display_text, r.normalized_value_json
+                from memory_item i
+                join memory_runtime_revision r on r.id = i.current_revision_id
+                where i.workspace_id = ? and i.id = ? and i.status = 'DELETED' and r.status = 'REJECTED'
+                  and exists (
+                    select 1 from memory_event e
+                    where e.memory_item_id = i.id
+                      and e.event_type in ('ACTIVE_USER_REVOKED', 'ACTIVE_REVIEW_REVOKED')
+                  )
+                for update
+                """, (rs, rowNum) -> new ActiveRow(
+                rs.getString("id"),
+                rs.getString("revision_id"),
+                rs.getString("display_text"),
+                rs.getString("normalized_value_json")
+        ), workspaceId, memoryItemId);
+        if (rows.isEmpty()) {
+            throw new BusinessException("MEMORY_RESTORE_NOT_AVAILABLE",
+                    "这条记忆不是已停用状态，无法重新启用", org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+        ActiveRow row = rows.get(0);
+        String slot = MemorySlots.normalizeSlot(payloadText(row.normalizedValueJson(), "slot", ""));
+        List<String> conflicts = jdbcTemplate.query("""
+                select r.display_text
+                from memory_item i
+                join memory_runtime_revision r on r.id = i.current_revision_id
+                where i.workspace_id = ? and i.id <> ? and i.status = 'ACTIVE' and r.status = 'ACTIVE'
+                  and ((? <> '' and i.semantic_slot_key = ?) or r.display_text = ?)
+                """, (rs, rowNum) -> rs.getString(1),
+                workspaceId, memoryItemId, slot == null ? "" : slot, slot, row.displayText());
+        if (!conflicts.isEmpty()) {
+            throw new BusinessException("MEMORY_RESTORE_CONFLICT",
+                    "已有一条同类记忆在生效：" + conflicts.get(0) + "。请先停用那一条，再重新启用这条。",
+                    org.springframework.http.HttpStatus.CONFLICT);
+        }
+        jdbcTemplate.update("""
+                update memory_runtime_revision set status = 'ACTIVE', valid_until = null, valid_from = current_timestamp
+                where id = ? and status = 'REJECTED'
+                """, row.revisionId());
+        jdbcTemplate.update("""
+                update memory_item set status = 'ACTIVE', review_status = 'APPROVED', semantic_slot_key = ?,
+                    lock_version = lock_version + 1, last_confirmed_at = current_timestamp,
+                    updated_at = current_timestamp
+                where id = ?
+                """, slot == null || slot.isBlank() ? null : slot, row.itemId());
+        enqueueIndex(workspaceId, row.itemId(), "UPSERT", row.displayText(),
+                payloadText(row.normalizedValueJson(), "slot", ""),
+                firstNeighborhood(candidatePayload(row.normalizedValueJson(), row.displayText()).taskNeighborhoods()));
+        writeEvent(row.itemId(), "ACTIVE_USER_RESTORED", row.revisionId() + ":" + Ids.newId());
+        return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "ACTIVE", List.of());
+    }
+
     public List<MemoryRuntimeReviewItemResponse> list(String workspaceId) {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.MEMORY_REVIEW);
         return jdbcTemplate.query("""
