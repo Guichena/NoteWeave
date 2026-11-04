@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     research_agent_bundle_max_cells: int = 3
     # 同一深挖任务内各列的答案核对互不依赖，并行执行的上限；1 表示保持串行
     research_agent_column_check_concurrency: int = Field(default=3, ge=1, le=6)
+    # 同一深挖任务内各列的抽取互不依赖，并行执行的上限；1 表示保持串行。
+    # 剩余调用预算不够每列都拿到完整重试次数时自动退回串行，保证结果与串行一致
+    research_agent_column_extract_concurrency: int = Field(default=3, ge=1, le=6)
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
     research_agent_evidence_audit_enabled: bool = True
