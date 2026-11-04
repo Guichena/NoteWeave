@@ -466,7 +466,7 @@ public class AnswerRunService {
         if ("COMPLETED".equals(current.status()) || "FAILED".equals(current.status())) {
             throw new BusinessException(
                     "ANSWER_RUN_TERMINAL",
-                    "终态回答不能取消",
+                    "回答已经结束，不能再停止；如需删除这条回答，请删除对应的消息",
                     HttpStatus.CONFLICT
             );
         }
@@ -486,7 +486,7 @@ public class AnswerRunService {
             if ("COMPLETED".equals(latest.status()) || "FAILED".equals(latest.status())) {
                 throw new BusinessException(
                         "ANSWER_RUN_TERMINAL",
-                        "终态回答不能取消",
+                        "回答已经结束，不能再停止；如需删除这条回答，请删除对应的消息",
                         HttpStatus.CONFLICT
                 );
             }

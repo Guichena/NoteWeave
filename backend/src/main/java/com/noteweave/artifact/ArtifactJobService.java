@@ -342,12 +342,14 @@ public class ArtifactJobService {
                 row.status(),
                 row.taskStatus(),
                 row.progressPhase(),
-                row.progressMessage(),
+                userFacingProgress(row.status(), row.taskStatus(), row.progressMessage()),
                 row.resultTitle(),
                 taskService.loadWaitContext(
                         row.taskId(), row.taskStatus(), row.progressPhase()
                 ),
-                row.latestVersionNo(), row.createdAt(), row.updatedAt()
+                row.latestVersionNo(), row.createdAt(), row.updatedAt(),
+                failureDetail(row.status(), row.taskStatus(), row.progressMessage()),
+                queuePosition(row.artifactJobId(), row.status(), row.updatedAt())
         )).toList();
     }
 
@@ -364,13 +366,35 @@ public class ArtifactJobService {
                     row.status(),
                     row.taskStatus(),
                     row.progressPhase(),
-                    row.progressMessage(),
+                    userFacingProgress(row.status(), row.taskStatus(), row.progressMessage()),
                     row.resultTitle(),
                     taskService.loadWaitContext(
                             row.taskId(), row.taskStatus(), row.progressPhase()
                     ),
-                    row.latestVersionNo(), row.createdAt(), row.updatedAt()
+                    row.latestVersionNo(), row.createdAt(), row.updatedAt(),
+                    failureDetail(row.status(), row.taskStatus(), row.progressMessage()),
+                    queuePosition(row.artifactJobId(), row.status(), row.updatedAt())
         );
+    }
+
+    private static boolean failed(String status, String taskStatus) {
+        return "FAILED".equals(status) || "FAILED".equals(taskStatus);
+    }
+
+    /** 失败任务的进度说明改写成用户能看懂的原因，其余状态原样返回。 */
+    private static String userFacingProgress(String status, String taskStatus, String progressMessage) {
+        return failed(status, taskStatus) ? ArtifactFailureMessages.forUser(progressMessage) : progressMessage;
+    }
+
+    private static String failureDetail(String status, String taskStatus, String progressMessage) {
+        return failed(status, taskStatus) ? ArtifactFailureMessages.detail(progressMessage) : null;
+    }
+
+    private Integer queuePosition(String artifactJobId, String status, java.time.Instant updatedAt) {
+        if (!"QUEUED".equals(status) || updatedAt == null) {
+            return null;
+        }
+        return artifactJobReadRepository.queuePosition(artifactJobId, updatedAt);
     }
 
     public List<ArtifactVersionSummaryResponse> listVersions(String workspaceId, String artifactJobId) {

@@ -4,6 +4,7 @@ import {
   type ConversationMessage,
   type ConversationSummary,
   type CreateConversationInput,
+  type DeletedConversation,
   type PendingMemoryProposal,
   type SessionPreference
 } from "./model";
@@ -21,6 +22,21 @@ export class ConversationsApi {
   list(workspaceId: string) {
     return this.client.get<ConversationSummary[]>(
       `/api/v2/workspaces/${workspaceId}/conversations`
+    );
+  }
+
+  /** 重命名会话，返回更新后的会话摘要。 */
+  rename(workspaceId: string, conversationId: string, title: string) {
+    return this.client.patch<ConversationSummary>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}`,
+      { title }
+    );
+  }
+
+  /** 删除会话（后端软删除），进行中的回答会一并停止。 */
+  remove(workspaceId: string, conversationId: string) {
+    return this.client.deleteJson<DeletedConversation>(
+      `/api/v2/workspaces/${workspaceId}/conversations/${conversationId}`
     );
   }
 

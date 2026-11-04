@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ChevronRight, LoaderCircle } from "lucide-react";
 import { resolveArtifactSkillIcon } from "./ArtifactStudioGrid";
 import { ARTIFACT_PHASES, isArtifactOutputActive, type ArtifactOutputItem } from "./artifactOutputs";
@@ -5,12 +6,34 @@ import { ARTIFACT_PHASES, isArtifactOutputActive, type ArtifactOutputItem } from
 type ArtifactOutputListProps = {
   items: ArtifactOutputItem[];
   loading: boolean;
+  /** 后端还有更早的产物，列表底部显示加载更多。 */
+  hasMore?: boolean;
+  onLoadMore?: () => Promise<unknown>;
   formatRelativeTime: (value: string) => string;
   onOpen: (item: ArtifactOutputItem) => void;
 };
 
 /** 已生成和正在生成的产物。运行中的任务显示所处阶段，完成后可打开阅读。 */
-export function ArtifactOutputList({ items, loading, formatRelativeTime, onOpen }: ArtifactOutputListProps) {
+export function ArtifactOutputList({
+  items,
+  loading,
+  hasMore = false,
+  onLoadMore,
+  formatRelativeTime,
+  onOpen
+}: ArtifactOutputListProps) {
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  async function loadMore() {
+    if (!onLoadMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      await onLoadMore();
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   return (
     <section className="artifact-output-section" aria-labelledby="artifact-output-heading">
       <div className="artifact-section-heading">
@@ -35,6 +58,13 @@ export function ArtifactOutputList({ items, loading, formatRelativeTime, onOpen 
           ))}
         </ul>
       )}
+      {items.length > 0 && hasMore && onLoadMore ? (
+        <button type="button" className="secondary-button artifact-load-more" disabled={loadingMore}
+          onClick={() => void loadMore()}>
+          {loadingMore ? <LoaderCircle className="is-spinning" size={14} aria-hidden="true" /> : null}
+          {loadingMore ? "正在加载" : "加载更早的产物"}
+        </button>
+      ) : null}
     </section>
   );
 }

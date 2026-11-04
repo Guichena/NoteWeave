@@ -57,6 +57,46 @@ describe("useArtifactWorkspace", () => {
     }
   });
 
+  it("loads older artifacts page by page and keeps them on refresh", async () => {
+    const api = createArtifactApi();
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({ ...artifactJob("COMPLETED"), artifact_job_id: `job-${index}`, latest_version_no: 0 }));
+    const twoPages = [
+      ...firstPage,
+      ...Array.from({ length: 20 }, (_, index) => ({ ...artifactJob("COMPLETED"), artifact_job_id: `old-${index}`, latest_version_no: 0 }))
+    ];
+    api.listJobs.mockImplementation((async (_workspaceId: string, _init?: RequestInit, page?: { limit: number }) => (
+      page ? twoPages.slice(0, page.limit) : firstPage
+    )) as never);
+
+    const { result } = renderHook(() => useArtifactWorkspace({
+      workspaceId: "workspace-1",
+      latestTask: null,
+      run: vi.fn(async (_label: string, action: () => Promise<void>) => action()),
+      setStatus: vi.fn(),
+      replaceSources: vi.fn(),
+      artifactPollIntervalMs: 0,
+      api: api as never,
+      sourceApi: { list: vi.fn() } as never
+    }));
+
+    await waitFor(() => expect(result.current.artifactJobs).toHaveLength(50));
+    expect(result.current.hasMoreJobs).toBe(true);
+
+    await act(async () => {
+      await result.current.loadMoreJobs();
+    });
+    expect(api.listJobs).toHaveBeenLastCalledWith("workspace-1", expect.anything(), { limit: 100, offset: 0 });
+    expect(result.current.artifactJobs).toHaveLength(70);
+    expect(result.current.hasMoreJobs).toBe(false);
+
+    // 之后的刷新仍按已展开的条数拉取
+    await act(async () => {
+      await result.current.loadJobs();
+    });
+    expect(api.listJobs).toHaveBeenLastCalledWith("workspace-1", expect.anything(), { limit: 100, offset: 0 });
+    expect(result.current.artifactJobs).toHaveLength(70);
+  });
+
   it("owns save-as-source and refreshes the workspace source list", async () => {
     const api = createArtifactApi();
     const sourceApi = {

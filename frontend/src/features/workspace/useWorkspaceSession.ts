@@ -216,6 +216,55 @@ export function useWorkspaceSession({
     return createdConversation !== null;
   }
 
+  async function renameConversation(conversationId: string, title: string) {
+    const normalized = title.trim();
+    if (!workspace || !conversationId || !normalized) {
+      return false;
+    }
+    let renamed = false;
+    await run("重命名会话", async () => {
+      const updated = await conversationClient.rename(workspace.workspace_id, conversationId, normalized);
+      const nextTitle = updated?.title || normalized;
+      setConversations((current) => current.map((item) => (
+        item.conversation_id === conversationId ? { ...item, title: nextTitle } : item
+      )));
+      setConversation((current) => (
+        current?.conversation_id === conversationId ? { ...current, title: nextTitle } : current
+      ));
+      renamed = true;
+    });
+    return renamed;
+  }
+
+  async function deleteConversation(conversationId: string) {
+    if (!workspace || !conversationId) {
+      return false;
+    }
+    let deleted = false;
+    await run("删除会话", async () => {
+      await conversationClient.remove(workspace.workspace_id, conversationId);
+      const remaining = conversations.filter((item) => item.conversation_id !== conversationId);
+      setConversations(remaining);
+      deleted = true;
+      if (conversation?.conversation_id !== conversationId) {
+        return;
+      }
+      // 删除的是当前会话：切到下一个会话；没有其他会话时清空对话区
+      const next = remaining[0];
+      if (!next) {
+        setConversation(null);
+        replaceMessages([]);
+        writeSessionSelection(workspace.workspace_id);
+        return;
+      }
+      const restored = await loader.switchConversation(workspace, remaining, next);
+      setConversation(toConversation(next));
+      replaceMessages(restored ? restored.messages : []);
+      writeSessionSelection(workspace.workspace_id, next.conversation_id);
+    });
+    return deleted;
+  }
+
   return {
     workspace,
     workspaces,
@@ -225,7 +274,9 @@ export function useWorkspaceSession({
     switchWorkspace,
     switchConversation,
     createWorkspace,
-    createConversation
+    createConversation,
+    renameConversation,
+    deleteConversation
   };
 }
 

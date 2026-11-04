@@ -305,6 +305,97 @@
   font-size: var(--text-2xs);
 }
 
+.sidebar-conversation-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  border-radius: var(--radius-md);
+}
+
+.sidebar-conversation-row .sidebar-conversation {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sidebar-conversation-actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: none;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+/* 悬停或键盘聚焦时才露出操作按钮，避免列表显得杂乱 */
+.sidebar-conversation-row:hover .sidebar-conversation-actions,
+.sidebar-conversation-row:focus-within .sidebar-conversation-actions {
+  display: inline-flex;
+}
+
+.sidebar-conversation-row:hover .sidebar-conversation small,
+.sidebar-conversation-row:focus-within .sidebar-conversation small {
+  visibility: hidden;
+}
+
+@media (hover: none) {
+  .sidebar-conversation-row.active .sidebar-conversation-actions {
+    display: inline-flex;
+  }
+
+  .sidebar-conversation-row.active .sidebar-conversation small {
+    visibility: hidden;
+  }
+}
+
+.sidebar-conversation-action {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--muted);
+  background: var(--surface-3);
+}
+
+.sidebar-conversation-action:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.sidebar-conversation-action.is-danger {
+  color: var(--danger, #c0392b);
+}
+
+.sidebar-conversation-row.is-editing,
+.sidebar-conversation-row.is-confirming {
+  padding: 4px 6px 4px 12px;
+  background: var(--surface-3);
+}
+
+.sidebar-conversation-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--border, currentColor);
+  border-radius: var(--radius-sm, 6px);
+  color: var(--ink);
+  background: var(--surface, transparent);
+  font-size: var(--text-md);
+}
+
+.sidebar-conversation-confirm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--text-sm, 13px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-empty {
   padding: 6px 12px;
   color: var(--faint);

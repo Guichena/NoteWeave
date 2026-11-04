@@ -15,6 +15,14 @@ export type ConversationSummary = {
   last_active_at: string;
 };
 
+/** 删除会话的结果，deleted 为 true 表示会话已删除。 */
+export type DeletedConversation = {
+  conversation_id: string;
+  status: string;
+  deleted: boolean;
+  cancelled_answer_run_ids: string[];
+};
+
 export type ConversationMessage = {
   message_id: string;
   message_seq: number;
