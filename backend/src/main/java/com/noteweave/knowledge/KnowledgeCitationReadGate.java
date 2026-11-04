@@ -72,7 +72,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                             "provenance", rs.getString("provenance_schema_version"));
                 }, workspaceId, itemId, versionId);
         String pageState = WikiPageState.fromStored(page.get("state"), page.get("updated_by")).name();
-        if (!WikiPageState.MANUAL.name().equals(pageState)) {
+        if (!userAuthoredVersion(WikiPageState.valueOf(pageState), page.get("provenance"))) {
             String provenance = page.get("provenance");
             // 自动页必须由受支持的编译策略标记过；旧自动页没有标记时显式未认证，不按依赖为空放行
             if (provenance == null || !SUPPORTED_PROVENANCE_SCHEMA_VERSIONS.contains(provenance)) {
@@ -431,6 +431,16 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
      * 检索候选的当前证据认证：导航目录与未带受支持编译标记的旧自动页都不能进入事实证据。
      * MANUAL 人工页按既有行为保留（不要求自动编译标记）。
      */
+    /**
+     * 最新版本是否由用户写入：人工页，或者人工编辑后被 ingest 标成待确认的页面。
+     * 待确认只表示自动更新被跳过，最新版本仍是用户自己的内容，没有自动编译标记，按人工页处理。
+     * 此前只认 MANUAL，人工编辑过的页面一旦被标成待确认，任何命中它的 Wiki 回答都会整体失败。
+     */
+    static boolean userAuthoredVersion(WikiPageState state, String provenance) {
+        return state == WikiPageState.MANUAL
+                || (state == WikiPageState.NEEDS_REVIEW && (provenance == null || provenance.isBlank()));
+    }
+
     public Set<String> certifiedCurrentEvidenceVersionIds(String workspaceId, List<String> versionIds) {
         List<String> ids = versionIds == null ? List.of()
                 : versionIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
@@ -458,7 +468,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                 parameters.toArray());
         LinkedHashSet<String> certified = new LinkedHashSet<>();
         for (String[] row : rows) {
-            if (WikiPageState.MANUAL == WikiPageState.fromStored(row[1], row[2])) {
+            if (userAuthoredVersion(WikiPageState.fromStored(row[1], row[2]), row[3])) {
                 certified.add(row[0]);
                 continue;
             }
