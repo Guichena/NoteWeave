@@ -275,6 +275,7 @@ function buildPlaceholderItem(
     phaseIndex: -1,
     detail: "",
     technicalDetail: "",
+    queuePosition: null,
     updatedAt: ""
   };
 }

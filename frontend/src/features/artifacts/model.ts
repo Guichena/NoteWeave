@@ -22,6 +22,10 @@ export type ArtifactJobSummary = {
   latest_version_no: number;
   created_at: string;
   updated_at: string;
+  /** 失败时的原始报错；progress_message 已是面向用户的说法。 */
+  failure_detail?: string | null;
+  /** 排队中时的排队位置，从 1 开始。 */
+  queue_position?: number | null;
 };
 
 export type ArtifactFileMetadata = {

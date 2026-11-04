@@ -55,6 +55,35 @@ describe("buildArtifactOutputItems", () => {
   });
 });
 
+describe("buildArtifactOutputItems queue and failure presentation", () => {
+  it("shows the queue position while queued", () => {
+    const [queued] = buildArtifactOutputItems([
+      job({ artifact_job_id: "queued", status: "QUEUED", task_status: "PENDING", progress_phase: "QUEUED", queue_position: 3 })
+    ], resolveTitle);
+    expect(queued).toMatchObject({ state: "queued", statusLabel: "排队中 · 第 3 位", queuePosition: 3 });
+  });
+
+  it("drops the queue position once the job starts", () => {
+    const [running] = buildArtifactOutputItems([
+      job({ artifact_job_id: "running", status: "RUNNING", task_status: "RUNNING", progress_phase: "COMPOSING", queue_position: 2 })
+    ], resolveTitle);
+    expect(running.queuePosition).toBeNull();
+  });
+
+  it("keeps the friendly reason visible and the raw error only in the tooltip", () => {
+    const [failed] = buildArtifactOutputItems([
+      job({
+        artifact_job_id: "failed", status: "FAILED", task_status: "FAILED",
+        progress_message: "生成的内容没有通过格式检查，已停止。",
+        failure_detail: "产物骨架数量不符合契约或用户选项",
+        latest_version_no: 0
+      })
+    ], resolveTitle);
+    expect(failed.detail).toBe("生成的内容没有通过格式检查，已停止。");
+    expect(failed.technicalDetail).toContain("产物骨架数量不符合契约");
+  });
+});
+
 describe("buildArtifactProcessView", () => {
   it("summarizes lifecycle, output contract, evidence coverage and capabilities", () => {
     const view = buildArtifactProcessView({
