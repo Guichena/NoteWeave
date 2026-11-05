@@ -486,7 +486,10 @@ public class CanonicalMemoryReviewService {
         // 当前生效的版本随时可以由用户停用，其余审核动作仍只对待确认或需复核的版本开放
         boolean userRevoke = "ACTIVE".equals(row.revisionStatus()) && row.current() && "REVOKE".equals(decision);
         if (!proposed && !activeReview && !userRevoke) {
-            throw new BusinessException("MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE", "Memory revision 当前不需要审核");
+            // 已生效的记忆只能停用，已拒绝或已替换的版本不能再审核；这是状态冲突，返回 409 并说明能做什么
+            throw new BusinessException("MEMORY_RUNTIME_REVISION_NOT_REVIEWABLE",
+                    "这条记忆当前状态为 " + row.revisionStatus() + "，不需要审核；已生效的记忆只能停用",
+                    org.springframework.http.HttpStatus.CONFLICT);
         }
         jdbcTemplate.queryForObject("select id from memory_item where id = ? for update", String.class, row.itemId());
         return row;

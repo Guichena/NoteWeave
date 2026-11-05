@@ -102,6 +102,23 @@ class VideoInfoRequest(BaseModel):
     source_url: str
 
 
+class MarkdownPdfRequest(BaseModel):
+    title: str = ""
+    markdown: str
+
+
+@app.post("/internal/markdown-pdf")
+def render_markdown_pdf_endpoint(body: MarkdownPdfRequest):
+    """把产物 Markdown 正文排成 PDF，供后端在下载 PDF 时按需生成并归档。"""
+    from fastapi.responses import Response
+    from app.markdown_pdf import render_markdown_pdf
+    try:
+        content = render_markdown_pdf(body.title, body.markdown)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(content=content, media_type="application/pdf")
+
+
 @app.post("/internal/source-video-info")
 def preview_source_video(body: VideoInfoRequest) -> dict:
     from app.media_mcp_client import call_media_tool
