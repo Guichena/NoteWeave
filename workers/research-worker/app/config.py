@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     research_agent_execution_mode: str = "INCREMENTAL_V1"
     research_agent_max_concurrency: int = 1
     research_agent_bundle_max_cells: int = 3
+    # 同一深挖任务内各列的答案核对互不依赖，并行执行的上限；1 表示保持串行
+    research_agent_column_check_concurrency: int = Field(default=3, ge=1, le=6)
+    # 同一深挖任务内各列的抽取互不依赖，并行执行的上限；1 表示保持串行。
+    # 剩余调用预算不够每列都拿到完整重试次数时自动退回串行，保证结果与串行一致
+    research_agent_column_extract_concurrency: int = Field(default=3, ge=1, le=6)
     research_agent_consumer_enabled: bool = True
     research_agent_deep_cell_executor_enabled: bool = True
     research_agent_evidence_audit_enabled: bool = True
@@ -101,6 +106,9 @@ class Settings(BaseSettings):
     fetch_timeout_seconds: int = 20
     fetch_max_retries: int = 3
     fetch_requests_per_second: float = 4.0
+    # 单个网页抓取的硬上限（秒），包含各读取渠道的重试与回退；超时就放弃这一页，由后面的命中补位。
+    # 0 表示不限（NOTEWEAVE_FETCH_PAGE_DEADLINE_SECONDS）
+    fetch_page_deadline_seconds: float = Field(default=45.0, ge=0, le=600)
     research_enable_url_reader: bool = False
     research_jina_api_key: str = ""
     research_jina_base_url: str = "https://r.jina.ai/"

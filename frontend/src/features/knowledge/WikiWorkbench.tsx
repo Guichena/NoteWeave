@@ -52,13 +52,27 @@ export function WikiWorkbench({
   const wikiIssueSeverities = props.wikiIssueSeverities ?? [];
 
   const wikiHome = props.wikiHome;
+  // 工作台恢复与首次加载之间有空档：Wiki 数据还没开始拉取时 isBusy 为 false，原来会直接显示
+  // 「Wiki 工作台加载失败」，稍后才自己加载成功。没有数据时先自动加载一次，确实失败后才显示错误。
+  const workspaceId = workspace?.workspace_id ?? "";
+  const [autoLoadedFor, setAutoLoadedFor] = useState("");
+  const [autoLoadSettled, setAutoLoadSettled] = useState(false);
+  useEffect(() => {
+    if (wikiHome || !workspaceId || isBusy || autoLoadedFor === workspaceId) return;
+    setAutoLoadedFor(workspaceId);
+    setAutoLoadSettled(false);
+    Promise.resolve(actions.refreshWikiFromServer(selection.selectedWikiItemId))
+      .catch(() => undefined)
+      .finally(() => setAutoLoadSettled(true));
+  }, [wikiHome, workspaceId, isBusy, autoLoadedFor, actions, selection.selectedWikiItemId]);
+  const awaitingFirstLoad = !wikiHome && Boolean(workspaceId) && (autoLoadedFor !== workspaceId || !autoLoadSettled);
 
   if (!wikiHome) {
     const awaitingWorkspaceRestore = !props.workspace;
     return (
       <section className="wiki-workbench wiki-load-workbench">
         <article className="wiki-page wiki-load-state" role="region" aria-label="Wiki 加载状态">
-          {props.isBusy || awaitingWorkspaceRestore ? (
+          {props.isBusy || awaitingWorkspaceRestore || awaitingFirstLoad ? (
             <div className="view-loading">
               <div className="view-loading-body">
                 <RefreshCw className="view-loading-spinner-icon" size={18} aria-hidden="true" />

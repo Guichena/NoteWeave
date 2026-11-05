@@ -45,11 +45,16 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
         KafkaAdmin.NewTopics topics = new KafkaConfig().kafkaDeadLetterTopics(
                 "source.parse", "retrieval.projection", "wiki.ingest", "wiki.retract",
                 "conversation.summary", "memory.extraction", "source.chunk", "source.embed", "source.index",
-                "artifact.job.dlq");
+                "artifact.job.dlq", 3);
 
         @SuppressWarnings("unchecked")
         Collection<NewTopic> definitions = (Collection<NewTopic>) ReflectionTestUtils.invokeMethod(
                 topics, "getNewTopics");
+        // 产物任务 topic 的分区数决定产物 Worker 能并行处理几个任务
+        assertThat(definitions)
+                .filteredOn(topic -> topic.name().equals("noteweave.artifact.job"))
+                .extracting(NewTopic::numPartitions)
+                .containsExactly(3);
 
         assertThat(definitions)
                 .extracting(NewTopic::name)
@@ -66,7 +71,9 @@ class KafkaRetrievalProjectionFailureRecoveryTest {
                         "noteweave.artifact.job",
                         "artifact.job.dlq"
                 );
-        assertThat(definitions).allSatisfy(topic -> assertThat(topic.numPartitions()).isEqualTo(1));
+        assertThat(definitions)
+                .filteredOn(topic -> !topic.name().equals("noteweave.artifact.job"))
+                .allSatisfy(topic -> assertThat(topic.numPartitions()).isEqualTo(1));
     }
 
     @Test

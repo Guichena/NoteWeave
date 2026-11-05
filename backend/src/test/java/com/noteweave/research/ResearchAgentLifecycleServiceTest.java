@@ -98,6 +98,30 @@ class ResearchAgentLifecycleServiceTest {
                 Integer.class, parentTaskId)).isEqualTo(1);
     }
 
+    /** 增量重开后父任务仍是 COMPLETED，取消不能因为父任务迁移失败而整体回滚。 */
+    @Test
+    void shouldCancelReopenedRunWhoseParentTaskIsAlreadyCompleted() {
+        jdbcTemplate.update("update task set task_status = 'COMPLETED' where id = ?", parentTaskId);
+
+        ResearchAgentLifecycleService.CancelReceipt receipt =
+                lifecycleService.cancelRunInWorkspace(workspaceId, runId, null);
+
+        assertThat(receipt.idempotentReplay()).isFalse();
+        assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId))
+                .isEqualTo("CANCELLED");
+        assertThat(jdbcTemplate.queryForObject("select task_status from task where id = ?", String.class, parentTaskId))
+                .isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void shouldRejectCancelFromAnotherWorkspace() {
+        assertThatThrownBy(() -> lifecycleService.cancelRunInWorkspace(Ids.newId(), runId, "x"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        failure -> assertThat(failure.code()).isEqualTo("RESEARCH_RUN_NOT_FOUND"));
+        assertThat(jdbcTemplate.queryForObject("select status from research_run where id = ?", String.class, runId))
+                .isEqualTo("RUNNING");
+    }
+
     /** Atomic lifecycle is the only authority allowed to release this reservation. */
     @Test
     void shouldCancelAtomicTaskAndReleaseItsTenDimensionReservationThroughLifecycleAuthority() {

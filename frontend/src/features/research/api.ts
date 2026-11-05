@@ -33,6 +33,14 @@ export class ResearchApi {
     return this.client.get<ResearchRunDetail>(`${this.runsPath(workspaceId)}/${researchRunId}`, init);
   }
 
+  /** 取消进行中或卡住的研究；已结束的研究后端返回错误。 */
+  cancelRun(workspaceId: string, researchRunId: string) {
+    return this.client.post<{ cancelled_task_count: number; idempotent_replay: boolean }>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/cancel`,
+      { reason: "USER_CANCELLED" }
+    );
+  }
+
   getCollection(workspaceId: string, researchRunId: string, init?: RequestInit) {
     return this.client.get<ResearchCollection>(
       `${this.runsPath(workspaceId)}/${researchRunId}/collection`,

@@ -4,6 +4,7 @@ import {
   Check,
   CircleAlert,
   Download,
+  History,
   LoaderCircle,
   MoreHorizontal,
   X
@@ -206,6 +207,21 @@ export function ArtifactReader(props: ArtifactReaderProps) {
             {props.artifactWritebackByVersionId[saveKey]?.includes("NOTE") ? "已写入 Note" : "写入 Note"}
           </button>
         </div>
+
+        {!isLatest ? (
+          <p className="artifact-reader-notice artifact-reader-history" role="status">
+            <History size={14} aria-hidden="true" />
+            <span>正在查看 v{versionNo}，最新版本是 v{item.versionNo}。</span>
+            <button type="button" className="secondary-button" disabled={isBusy || regenerating}
+              title="以这个版本的内容追加一个新版本，原有版本都会保留"
+              onClick={() => void rollback()}>
+              恢复为此版本
+            </button>
+            <button type="button" className="secondary-button" onClick={() => onSelectVersion(item.versionNo)}>
+              回到最新版本
+            </button>
+          </p>
+        ) : null}
 
         {regenerating ? (
           <p className="artifact-reader-notice" role="status">

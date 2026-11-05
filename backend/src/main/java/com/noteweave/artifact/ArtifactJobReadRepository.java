@@ -19,7 +19,7 @@ class ArtifactJobReadRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    List<ArtifactJobSummaryRow> listJobs(String workspaceId) {
+    List<ArtifactJobSummaryRow> listJobs(String workspaceId, int limit, int offset) {
         return jdbcTemplate.query("""
                 select aj.id,
                        aj.workspace_id,
@@ -37,7 +37,7 @@ class ArtifactJobReadRepository {
                 join task t on t.id = aj.task_id
                 where aj.workspace_id = ?
                 order by aj.updated_at desc, aj.id desc
-                limit 20
+                limit ? offset ?
                 """, (rs, rowNum) -> new ArtifactJobSummaryRow(
                 rs.getString("id"),
                 rs.getString("workspace_id"),
@@ -51,7 +51,20 @@ class ArtifactJobReadRepository {
                 rs.getInt("latest_version_no"),
                 instant(rs.getTimestamp("created_at")),
                 instant(rs.getTimestamp("updated_at"))
-        ), workspaceId);
+        ), workspaceId, limit, offset);
+    }
+
+    /**
+     * 排队位置：所有工作台共用一条产物队列，按入队时间排在它前面的排队任务数加一。
+     * 只返回一个数字，不暴露其他工作台的任务内容。
+     */
+    int queuePosition(String artifactJobId, Instant queuedAt) {
+        Integer ahead = jdbcTemplate.queryForObject("""
+                select count(*) from artifact_job
+                where status = 'QUEUED' and id <> ?
+                  and (updated_at < ? or (updated_at = ? and id < ?))
+                """, Integer.class, artifactJobId, Timestamp.from(queuedAt), Timestamp.from(queuedAt), artifactJobId);
+        return (ahead == null ? 0 : ahead) + 1;
     }
 
     ArtifactJobDetailRow getJob(String workspaceId, String artifactJobId) {

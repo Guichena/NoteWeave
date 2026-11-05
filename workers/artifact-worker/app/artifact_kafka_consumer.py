@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from hashlib import sha256
@@ -15,6 +16,26 @@ from app.callback import ArtifactCallbackHttpError, run_artifact_task_with_callb
 from app.config import Settings, load_settings
 from app.error_sanitizer import sanitize_error_message
 
+
+
+try:  # kafka-python 新版要求序列化器继承 Serializer，传函数时每次创建生产者都会告警 DeprecationWarning
+    from kafka.serializer import Serializer as _KafkaSerializer
+except Exception:  # pragma: no cover - 没装 kafka-python 时只在单测里用到
+    _KafkaSerializer = object
+
+
+class JsonValueSerializer(_KafkaSerializer):
+    """把消息值序列化成 UTF-8 JSON，兼容新旧两版 kafka-python 的调用方式。"""
+
+    def serialize(self, topic, *args):
+        data = args[-1] if args else None
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def __call__(self, data):
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def close(self):
+        return None
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +161,7 @@ def create_artifact_dead_letter_sink(settings: Settings | None = None) -> KafkaA
         bootstrap_servers=active.kafka_bootstrap_servers,
         acks="all",
         retries=active.kafka_consume_max_attempts,
-        value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         **_kafka_security_options(active),
     )
     return KafkaArtifactDeadLetterSink(producer, active.kafka_artifact_dlq_topic)
@@ -162,16 +183,40 @@ class ArtifactKafkaConsumerRuntime:
 
         def consume() -> None:
             retry_delay_seconds = 1.0
+            idle_since: float | None = None
             while not self._stop.is_set():
                 try:
                     consumer, dead_letter_sink = self._open_session()
                     self.failure = None
-                    consume_artifact_commands(
-                        consumer,
-                        dead_letter_sink=dead_letter_sink,
-                        max_messages=1,
-                    )
+                    if not callable(getattr(consumer, "poll", None)):
+                        consume_artifact_commands(
+                            consumer,
+                            dead_letter_sink=dead_letter_sink,
+                            max_messages=1,
+                        )
+                        retry_delay_seconds = 1.0
+                        continue
+                    records = _poll_records(consumer)
+                    if not records:
+                        # 消费者偶发在空闲后不再拉取消息（进程仍在、健康检查仍通过），
+                        # 空闲超过阈值就重建会话重新加入消费组，避免任务一直停在排队中。
+                        idle_since = idle_since if idle_since is not None else time.monotonic()
+                        if time.monotonic() - idle_since >= self.settings.kafka_artifact_idle_reset_seconds:
+                            logger.info(
+                                "Artifact Kafka consumer has been idle for %ss; reopening session",
+                                self.settings.kafka_artifact_idle_reset_seconds,
+                            )
+                            self._close_session()
+                            idle_since = None
+                        continue
+                    idle_since = None
                     retry_delay_seconds = 1.0
+                    consume_artifact_commands(
+                        records,
+                        dead_letter_sink=dead_letter_sink,
+                        max_messages=len(records),
+                    )
+                    _commit_consumer(consumer)
                 except Exception as exc:
                     if self._stop.is_set():
                         break
@@ -228,6 +273,58 @@ class ArtifactKafkaConsumerRuntime:
         if not self.settings.artifact_consumer_enabled:
             return True
         return self.failure is None and self.thread is not None and self.thread.is_alive()
+
+
+class ArtifactKafkaConsumerPool:
+    """同一消费组里并行运行多条消费通道，每条通道独立的 Kafka 会话。
+
+    原来只有一个消费者且每次只拉 1 条，多个产物同时提交时严格串行，排队平均 8 分钟以上。
+    Kafka 按分区把任务分给各条通道，topic 分区数需要不少于通道数（后端默认建 3 个分区）。
+    """
+
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        lane_factory: Callable[[Settings], object] | None = None,
+    ) -> None:
+        self.settings = settings or load_settings()
+        self.lane_factory = lane_factory or ArtifactKafkaConsumerRuntime
+        self.lanes: list[object] = []
+
+    def start(self) -> None:
+        for _ in range(max(1, int(getattr(self.settings, "job_concurrency", 1)))):
+            lane = self.lane_factory(self.settings)
+            self.lanes.append(lane)
+            lane.start()
+
+    def stop(self) -> None:
+        first_error: Exception | None = None
+        for lane in self.lanes:
+            try:
+                lane.stop()
+            except Exception as exc:  # 一条通道停止失败不能影响其他通道释放资源
+                first_error = first_error or exc
+        if first_error is not None:
+            raise first_error
+
+    @property
+    def healthy(self) -> bool:
+        return all(getattr(lane, "healthy", True) for lane in self.lanes)
+
+
+def _poll_records(consumer: object, timeout_ms: int = 1000) -> list[object]:
+    """有界拉取：阻塞式迭代在空闲后可能再也不返回，轮询超时保证线程始终能自检。"""
+    batches = consumer.poll(timeout_ms=timeout_ms) or {}
+    records: list[object] = []
+    for batch in batches.values():
+        records.extend(batch)
+    return records
+
+
+def _commit_consumer(consumer: object) -> None:
+    commit = getattr(consumer, "commit", None)
+    if callable(commit):
+        commit()
 
 
 def _parse_command(message: object) -> ArtifactCommand:

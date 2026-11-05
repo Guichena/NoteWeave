@@ -68,6 +68,24 @@ class ResearchReportCitationsTest {
         assertThat(result).contains("Exact quote", "URL: https://e.x").doesNotContain("Snapshot:");
     }
 
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void exportNumbersInlineMarkersLikeTheUiAndDropsInternalEvidenceKeys() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("run-1"), eq(A))).thenReturn((List) rows("JEP 444", "https://openjdk.org/jeps/444", "Virtual threads are final in JDK 21."));
+        when(jdbc.query(anyString(), any(RowMapper.class), eq("run-1"), eq(B))).thenReturn((List) rows("JEP 491", "https://openjdk.org/jeps/491", "Release 24"));
+        String markdown = "# 标题\n\n虚拟线程在 JDK 21 正式发布 [" + A + "]，另见 [" + B + "]，再次引用 [" + A + "]。\n";
+
+        String result = ResearchReportCitations.forExport(jdbc, "run-1", markdown);
+
+        // 导出文档没有前端把标记渲染成角标，正文必须是编号
+        assertThat(result).contains("虚拟线程在 JDK 21 正式发布 [1]，另见 [2]，再次引用 [1]。");
+        assertThat(result).doesNotContain("[evidence:");
+        // 引用核对与角标同编号，且不再暴露内部证据键行
+        assertThat(result).contains("### [1] JEP 444", "### [2] JEP 491");
+        assertThat(result).doesNotContain("- Evidence:");
+    }
+
     private static List<String[]> rows(String title, String url, String quote) {
         List<String[]> rows = new ArrayList<>();
         rows.add(new String[] {title, url, quote});

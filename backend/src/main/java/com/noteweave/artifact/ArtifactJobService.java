@@ -326,8 +326,14 @@ public class ArtifactJobService {
     }
 
     public List<ArtifactJobSummaryResponse> listJobs(String workspaceId) {
+        return listJobs(workspaceId, 50, 0);
+    }
+
+    /** 产物列表分页：原来固定只返回最新 20 条，更早的产物在界面上找不到。 */
+    public List<ArtifactJobSummaryResponse> listJobs(String workspaceId, int limit, int offset) {
         requireWorkspace(workspaceId);
-        return artifactJobReadRepository.listJobs(workspaceId).stream()
+        return artifactJobReadRepository.listJobs(
+                        workspaceId, Math.max(1, Math.min(limit, 200)), Math.max(0, offset)).stream()
                 .map(row -> new ArtifactJobSummaryResponse(
                 row.artifactJobId(),
                 row.workspaceId(),
@@ -336,12 +342,14 @@ public class ArtifactJobService {
                 row.status(),
                 row.taskStatus(),
                 row.progressPhase(),
-                row.progressMessage(),
+                userFacingProgress(row.status(), row.taskStatus(), row.progressMessage()),
                 row.resultTitle(),
                 taskService.loadWaitContext(
                         row.taskId(), row.taskStatus(), row.progressPhase()
                 ),
-                row.latestVersionNo(), row.createdAt(), row.updatedAt()
+                row.latestVersionNo(), row.createdAt(), row.updatedAt(),
+                failureDetail(row.status(), row.taskStatus(), row.progressMessage()),
+                queuePosition(row.artifactJobId(), row.status(), row.updatedAt())
         )).toList();
     }
 
@@ -358,13 +366,35 @@ public class ArtifactJobService {
                     row.status(),
                     row.taskStatus(),
                     row.progressPhase(),
-                    row.progressMessage(),
+                    userFacingProgress(row.status(), row.taskStatus(), row.progressMessage()),
                     row.resultTitle(),
                     taskService.loadWaitContext(
                             row.taskId(), row.taskStatus(), row.progressPhase()
                     ),
-                    row.latestVersionNo(), row.createdAt(), row.updatedAt()
+                    row.latestVersionNo(), row.createdAt(), row.updatedAt(),
+                    failureDetail(row.status(), row.taskStatus(), row.progressMessage()),
+                    queuePosition(row.artifactJobId(), row.status(), row.updatedAt())
         );
+    }
+
+    private static boolean failed(String status, String taskStatus) {
+        return "FAILED".equals(status) || "FAILED".equals(taskStatus);
+    }
+
+    /** 失败任务的进度说明改写成用户能看懂的原因，其余状态原样返回。 */
+    private static String userFacingProgress(String status, String taskStatus, String progressMessage) {
+        return failed(status, taskStatus) ? ArtifactFailureMessages.forUser(progressMessage) : progressMessage;
+    }
+
+    private static String failureDetail(String status, String taskStatus, String progressMessage) {
+        return failed(status, taskStatus) ? ArtifactFailureMessages.detail(progressMessage) : null;
+    }
+
+    private Integer queuePosition(String artifactJobId, String status, java.time.Instant updatedAt) {
+        if (!"QUEUED".equals(status) || updatedAt == null) {
+            return null;
+        }
+        return artifactJobReadRepository.queuePosition(artifactJobId, updatedAt);
     }
 
     public List<ArtifactVersionSummaryResponse> listVersions(String workspaceId, String artifactJobId) {
@@ -458,10 +488,8 @@ public class ArtifactJobService {
         }
         String requestedTitle = request.title() == null ? "" : request.title().trim();
         String title = requestedTitle.isBlank() ? row.title() : requestedTitle;
-        return knowledgeCommandService.createItem(
-                workspaceId,
-                new KnowledgeItemRequest(request.itemType(), title, row.contentMarkdown(), null)
-        );
+        // 同一版本重复写入返回已有 Note，不再生成同名重复条目（与保存为资料一致）
+        return knowledgeCommandService.createNoteOnce(workspaceId, title, row.contentMarkdown());
     }
 
     public ArtifactWorkerInputResponse getWorkerInput(String taskId) {

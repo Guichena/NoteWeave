@@ -129,6 +129,21 @@ class ResearchIncrementalServiceTest {
     }
 
     @Test
+    void sourceChangeThatTouchesNoVerifiedCellKeepsRunCompleted() {
+        var receipt = service.reopen("w", "run-1", new ResearchIncrementalService.Request(
+                List.of(), List.of(), List.of(), true, List.of("src-unrelated"), "无关资料更新"));
+
+        assertThat(receipt.staleCells()).isZero();
+        assertThat(receipt.reopenedCells()).isZero();
+        assertThat(receipt.reportVersionRelation()).isEqualTo(ResearchIncrementalService.NO_CHANGE);
+        assertThat(jdbc.queryForObject("select status from research_run where id = 'run-1'", String.class))
+                .isEqualTo("COMPLETED_VERIFIED");
+        assertThat(jdbc.queryForObject("""
+                select count(*) from research_trace where research_run_id = 'run-1' and trace_type = 'INCREMENTAL_NOOP'
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    @Test
     void rejectsUnfinishedRunAndUnknownCell() {
         jdbc.update("update research_run set status = 'RUNNING' where id = 'run-1'");
         assertThatThrownBy(() -> service.reopen("w", "run-1", new ResearchIncrementalService.Request(

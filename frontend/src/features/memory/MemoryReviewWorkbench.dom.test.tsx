@@ -206,4 +206,62 @@ describe("MemoryReviewWorkbench", () => {
     expect(within(list).getByText("常驻")).toBeTruthy();
     expect(within(list).getByText("相关度 82% · 与问题相关")).toBeTruthy();
   });
+
+  it("tells the user a memory was revoked and lets them restore it", async () => {
+    const revokedEntry = {
+      memory_item_id: "active", revision_id: "rev-active", display_text: "回答先给结论，再展开证据",
+      candidate_type: "PREFERENCE", task_neighborhoods: ["COMMON"], revoked_at: "2026-11-04T10:00:00Z"
+    };
+    const api = {
+      ...fakeApi([[active], [], [active]]),
+      listRevokedItems: vi.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([revokedEntry])
+        .mockResolvedValue([]),
+      restoreItem: vi.fn(async () => ({ revision_id: "rev-active", memory_item_id: "active", status: "ACTIVE", revoked_memory_item_ids: [] }))
+    };
+    renderPage(api);
+
+    const activeSection = await screen.findByRole("region", { name: "生效中" });
+    fireEvent.click(within(activeSection).getByRole("button", { name: "停用记忆：回答先给结论，再展开证据" }));
+    fireEvent.click(within(activeSection).getByRole("button", { name: "确认停用" }));
+
+    expect(await screen.findByText(/已停用：回答先给结论，再展开证据/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新启用记忆：回答先给结论，再展开证据" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "撤销停用" }));
+    await waitFor(() => expect(api.restoreItem).toHaveBeenCalledWith("workspace", "active"));
+    expect(await screen.findByText("已重新启用：回答先给结论，再展开证据")).toBeTruthy();
+    expect(screen.queryByText(/已停用：回答先给结论/)).toBeNull();
+  });
+
+  it("lists revoked memories with a restore button on page load", async () => {
+    const api = {
+      ...fakeApi([[]]),
+      listRevokedItems: vi.fn(async () => [{
+        memory_item_id: "old", revision_id: "rev-old", display_text: "引用放在句末",
+        candidate_type: "PREFERENCE", task_neighborhoods: ["CHAT_QA"], revoked_at: null
+      }]),
+      restoreItem: vi.fn(async () => ({ revision_id: "rev-old", memory_item_id: "old", status: "ACTIVE", revoked_memory_item_ids: [] }))
+    };
+    renderPage(api);
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用记忆：引用放在句末" }));
+    await waitFor(() => expect(api.restoreItem).toHaveBeenCalledWith("workspace", "old"));
+  });
+
+  it("shows the server reason when a restore conflicts with an active memory", async () => {
+    const api = {
+      ...fakeApi([[]]),
+      listRevokedItems: vi.fn(async () => [{
+        memory_item_id: "old", revision_id: "rev-old", display_text: "引用放在句末",
+        candidate_type: "PREFERENCE", task_neighborhoods: ["COMMON"], revoked_at: null
+      }]),
+      restoreItem: vi.fn(async () => { throw new Error("已有一条同类记忆在生效：引用放在段首。请先停用那一条，再重新启用这条。"); })
+    };
+    renderPage(api);
+
+    fireEvent.click(await screen.findByRole("button", { name: "重新启用记忆：引用放在句末" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("已有一条同类记忆在生效");
+  });
 });

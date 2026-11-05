@@ -1,3 +1,13 @@
+/** 用户停用的记忆，可以重新启用。 */
+export type RevokedMemoryItem = {
+  memory_item_id: string;
+  revision_id: string;
+  display_text: string;
+  candidate_type: string;
+  task_neighborhoods: string[];
+  revoked_at: string | null;
+};
+
 export type MemoryReviewDecision = "ACCEPT" | "REJECT" | "REPLACE_EXISTING" | "REVOKE";
 
 export type MemoryReviewDecisionInput = {

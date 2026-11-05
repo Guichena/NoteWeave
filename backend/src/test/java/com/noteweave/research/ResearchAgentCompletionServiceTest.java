@@ -352,6 +352,31 @@ class ResearchAgentCompletionServiceTest {
     }
 
     @Test
+    void shouldRecordOneRuntimeMetricRowPerCompletionAndNotAgainOnReplay() {
+        Fixture fixture = fixture(1);
+        ResearchAgentCompletionEnvelope base = envelope(fixture, true);
+        Map<String, Object> check = Map.of("cell_key", fixture.cellKeys().get(0), "original_claim", "value-0",
+                "claim_text", "value-0", "verdict", "NOT_REFUTED", "queries", List.of("value exception"), "refuting_evidence_keys", List.of());
+        ResearchAgentCompletionEnvelope result = executionEnvelope(base, List.of(check));
+        var receipt = completionService.complete(fixture.taskId(), result);
+        assertThat(completionService.complete(fixture.taskId(), result).idempotentReplay()).isTrue();
+        assertThat(count("research_runtime_metric", "task_id", fixture.taskId())).isEqualTo(1);
+        Map<String, Object> row = jdbcTemplate.queryForMap("""
+                select completion_id, research_run_id, role, query_count, read_page_count, llm_calls,
+                       qualified_support_count
+                from research_runtime_metric where task_id = ?
+                """, fixture.taskId());
+        assertThat(row.get("completion_id")).isEqualTo(receipt.completionId());
+        assertThat(row.get("research_run_id")).isEqualTo(fixture.runId());
+        assertThat(((Number) row.get("query_count")).intValue()).isEqualTo(1);
+        assertThat(((Number) row.get("read_page_count")).longValue()).isEqualTo(result.telemetry().get("windows"));
+        assertThat(((Number) row.get("llm_calls")).longValue()).isEqualTo(result.budgetUsage().getOrDefault("llm_calls", 0L));
+        assertThat(((Number) row.get("qualified_support_count")).intValue()).isEqualTo(receipt.acceptedMerges().size());
+        assertThat(jdbcTemplate.queryForObject("select document_fingerprints_json from research_runtime_metric where task_id = ?",
+                String.class, fixture.taskId())).matches("(?s).*[0-9a-f]{64}.*");
+    }
+
+    @Test
     void shouldRollbackQueriesAndCompletionWhenCounterCheckEscapesTargetScope() {
         Fixture fixture = fixture(1);
         ResearchAgentCompletionEnvelope result = executionEnvelope(envelope(fixture, true), List.of(Map.of(

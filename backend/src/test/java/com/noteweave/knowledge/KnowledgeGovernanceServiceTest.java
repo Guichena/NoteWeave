@@ -189,6 +189,11 @@ class KnowledgeGovernanceServiceTest {
                 where workspace_id = 'workspace' and title = 'Missing Page'
                   and status = 'ACTIVE'
                 """, Integer.class)).isEqualTo(1);
+        // 占位页由系统写入，保持 AUTO，后续 ingest 才能补上正文
+        assertThat(jdbcTemplate.queryForObject("""
+                select wiki_page_state from knowledge_item
+                where workspace_id = 'workspace' and title = 'Missing Page'
+                """, String.class)).isEqualTo("AUTO");
         assertThat(jdbcTemplate.queryForMap("""
                 select target_item_id, relation_status
                 from knowledge_item_link

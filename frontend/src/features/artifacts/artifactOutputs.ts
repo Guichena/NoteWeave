@@ -47,6 +47,8 @@ export type ArtifactOutputItem = {
   detail: string;
   /** 等待上下文的技术细节，只放在悬停提示里。 */
   technicalDetail: string;
+  /** 排队中时的排队位置，从 1 开始；不在排队时为 null。 */
+  queuePosition: number | null;
   updatedAt: string;
 };
 
@@ -78,8 +80,11 @@ function buildArtifactOutputItem(
   const phaseIndex = state === "waiting"
     ? 1
     : ARTIFACT_PHASES.findIndex((item) => item.key === phase);
+  const queuePosition = state === "queued" && typeof job.queue_position === "number" && job.queue_position > 0
+    ? job.queue_position
+    : null;
   const statusLabel = {
-    queued: "排队中",
+    queued: queuePosition ? `排队中 · 第 ${queuePosition} 位` : "排队中",
     running: phaseIndex >= 0 ? ARTIFACT_PHASES[phaseIndex].label : "生成中",
     waiting: waitLabel,
     failed: "生成失败",
@@ -98,7 +103,10 @@ function buildArtifactOutputItem(
     statusLabel,
     phaseIndex,
     detail: state === "failed" ? job.progress_message.trim() : "",
-    technicalDetail: buildWaitContextNarrative(job.wait_context),
+    technicalDetail: state === "failed" && job.failure_detail
+      ? `原始报错：${job.failure_detail}`
+      : buildWaitContextNarrative(job.wait_context),
+    queuePosition,
     updatedAt: job.updated_at
   };
 }

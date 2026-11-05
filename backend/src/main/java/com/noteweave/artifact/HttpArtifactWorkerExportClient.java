@@ -37,4 +37,22 @@ class HttpArtifactWorkerExportClient implements ArtifactWorkerExportClient {
                     "无法从 Artifact Worker 获取产物文件", HttpStatus.BAD_GATEWAY);
         }
     }
+
+    @Override
+    public byte[] renderMarkdownPdf(String title, String markdown) {
+        try {
+            byte[] content = worker.post()
+                    .uri("/internal/markdown-pdf")
+                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                    .body(java.util.Map.of("title", title == null ? "" : title, "markdown", markdown))
+                    .retrieve().body(byte[].class);
+            if (content == null || content.length == 0) {
+                throw new BusinessException("ARTIFACT_EXPORT_EMPTY", "Artifact Worker 返回空 PDF");
+            }
+            return content;
+        } catch (RestClientException ex) {
+            throw new BusinessException("ARTIFACT_EXPORT_FETCH_FAILED",
+                    "产物 PDF 生成失败，请稍后重试", HttpStatus.BAD_GATEWAY);
+        }
+    }
 }

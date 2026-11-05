@@ -92,6 +92,11 @@ export class KnowledgeApi {
     return this.client.delete(`/api/v2/knowledge-items/${itemId}`);
   }
 
+  /** 手工编辑过的 Wiki 页面恢复自动同步，之后的 ingest 可以重新更新它。 */
+  resumeAutoSync(itemId: string) {
+    return this.client.post<WikiPage>(`/api/v2/knowledge-items/${itemId}/auto-sync`, {});
+  }
+
   getVersions(itemId: string, init?: RequestInit) {
     return this.get<KnowledgeVersionSummary[]>(`/api/v2/knowledge-items/${itemId}/versions`, init);
   }

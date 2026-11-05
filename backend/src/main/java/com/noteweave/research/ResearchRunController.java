@@ -20,17 +20,20 @@ public class ResearchRunController {
     private final ResearchCollectionService researchCollectionService;
     private final ResearchIncrementalService incrementalService;
     private final ResearchStandaloneMigrationService standaloneMigrationService;
+    private final ResearchAgentLifecycleService lifecycleService;
 
     public ResearchRunController(
             ResearchRunService researchRunService,
             ResearchCollectionService researchCollectionService,
             ResearchIncrementalService incrementalService,
-            ResearchStandaloneMigrationService standaloneMigrationService
+            ResearchStandaloneMigrationService standaloneMigrationService,
+            ResearchAgentLifecycleService lifecycleService
     ) {
         this.researchRunService = researchRunService;
         this.researchCollectionService = researchCollectionService;
         this.incrementalService = incrementalService;
         this.standaloneMigrationService = standaloneMigrationService;
+        this.lifecycleService = lifecycleService;
     }
 
     @GetMapping
@@ -114,6 +117,19 @@ public class ResearchRunController {
     ) {
         return ApiResponse.success(incrementalService.reopen(workspaceId, researchRunId, request));
     }
+
+    /** 用户取消研究：运行中或卡住的研究都可以取消，已结束的研究返回 409。 */
+    @PostMapping("/{researchRunId}/cancel")
+    ApiResponse<ResearchAgentLifecycleService.CancelReceipt> cancelResearchRun(
+            @PathVariable String workspaceId,
+            @PathVariable String researchRunId,
+            @RequestBody(required = false) CancelResearchRunRequest request
+    ) {
+        String reason = request == null ? null : request.reason();
+        return ApiResponse.success(lifecycleService.cancelRunInWorkspace(workspaceId, researchRunId, reason));
+    }
+
+    public record CancelResearchRunRequest(@jakarta.validation.constraints.Size(max = 128) String reason) { }
 
     @PostMapping("/{researchRunId}/resume-from-checkpoint/{checkpointNo}")
     ApiResponse<ResearchRunResponse> resumeResearchRunFromCheckpoint(

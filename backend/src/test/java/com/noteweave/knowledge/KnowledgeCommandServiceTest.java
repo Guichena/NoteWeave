@@ -71,6 +71,29 @@ class KnowledgeCommandServiceTest {
     }
 
     @Test
+    void deletedPageLinksBecomePlainTextInAutoPages() {
+        assertThat(KnowledgeCommandService.unlinkExplicitWikiLinkTitle(
+                "见 [[Budget]] 和 [[budget|预算表]]，以及 [[Pilot]]。", "Budget"))
+                .isEqualTo("见 Budget 和 预算表，以及 [[Pilot]]。");
+        assertThat(KnowledgeCommandService.unlinkExplicitWikiLinkTitle("没有链接", "Budget"))
+                .isEqualTo("没有链接");
+    }
+
+    /** 接口原来没有 page_kind，传了也被忽略，只能建 TOPIC 页。 */
+    @Test
+    void explicitPageKindOverridesInferredKind() {
+        KnowledgeItemResponse concept = commandService.createItem(
+                "workspace",
+                new KnowledgeItemRequest("WIKI", "Plain Title", "plain body", null, "CONCEPT"));
+        KnowledgeItemResponse inferred = commandService.createItem(
+                "workspace",
+                new KnowledgeItemRequest("WIKI", "Another Title", "another body", null));
+
+        assertThat(concept.pageKind()).isEqualTo("CONCEPT");
+        assertThat(inferred.pageKind()).isEqualTo("TOPIC");
+    }
+
+    @Test
     void shouldCreateWikiFromMessageWithNormalizedLinkAndCitationOrder() {
         commandService.createItem(
                 "workspace",

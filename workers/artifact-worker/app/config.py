@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     kafka_artifact_dlq_topic: str = "noteweave.artifact.job.dlq"
     kafka_artifact_group_id: str = "noteweave-artifact-worker"
     kafka_artifact_max_poll_interval_seconds: int = Field(default=4200, ge=60, le=21_600)
+    # 空闲超过这个时长就重建消费会话：实测消费者偶发空闲后不再拉取消息，只有重启进程才恢复
+    kafka_artifact_idle_reset_seconds: int = Field(default=180, ge=30, le=3600)
     kafka_consume_max_attempts: int = Field(default=3, ge=1, le=20)
     artifact_consumer_enabled: bool = True
     mcp_sandbox_root: str = "runtime"
@@ -53,6 +55,21 @@ class Settings(BaseSettings):
         ge=0,
         le=8,
         validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_MAX_RETRIES"),
+    )
+    # 思考模式：auto 对 deepseek-v4、glm-5 这类默认开思考的模型关闭，其他模型不发参数；
+    # 也可以填 enabled、disabled 或 model-default（不发参数）。产物调用都是按 output_schema 输出 JSON，
+    # 与研究成文一致，关闭思考可以明显缩短单次调用耗时。
+    llm_thinking: str = Field(
+        default="auto",
+        pattern="^(auto|enabled|disabled|model-default)$",
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_LLM_THINKING"),
+    )
+    # 同时处理的产物任务数。原来是单消费者串行，多个产物同时提交时只能排队
+    job_concurrency: int = Field(
+        default=3,
+        ge=1,
+        le=8,
+        validation_alias=AliasChoices("NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY"),
     )
     transcription_pool_size: int = Field(default=1, ge=1, le=8)
     transcription_queue_capacity: int = Field(default=8, ge=1, le=64)

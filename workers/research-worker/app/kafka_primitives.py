@@ -6,6 +6,26 @@ from typing import Iterable, Protocol
 from pydantic import BaseModel
 
 
+try:  # kafka-python 新版要求序列化器继承 Serializer，传函数时每次创建生产者都会告警 DeprecationWarning
+    from kafka.serializer import Serializer as _KafkaSerializer
+except Exception:  # pragma: no cover - 没装 kafka-python 时只在单测里用到
+    _KafkaSerializer = object
+
+
+class JsonValueSerializer(_KafkaSerializer):
+    """把消息值序列化成 UTF-8 JSON，兼容新旧两版 kafka-python 的调用方式。"""
+
+    def serialize(self, topic, *args):
+        data = args[-1] if args else None
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def __call__(self, data):
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def close(self):
+        return None
+
+
 class KafkaConsumeSummary(BaseModel):
     consumed_count: int
     completed_count: int
@@ -126,7 +146,7 @@ def create_kafka_dead_letter_sink(
         bootstrap_servers=bootstrap_servers,
         acks="all",
         retries=max(1, retries),
-        value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         **(security_options or {}),
     )
     return KafkaDeadLetterSink(producer, topic)

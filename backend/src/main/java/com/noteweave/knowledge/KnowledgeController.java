@@ -23,6 +23,8 @@ public class KnowledgeController {
     private final KnowledgeVersionService knowledgeVersionService;
     private final KnowledgeCommandService knowledgeCommandService;
     private final KnowledgeGovernanceService knowledgeGovernanceService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private WikiAutoSyncService wikiAutoSyncService;
 
     public KnowledgeController(
             WikiIngestService wikiIngestService,
@@ -168,6 +170,12 @@ public class KnowledgeController {
             @Valid @RequestBody RenameKnowledgeItemRequest request
     ) {
         return ApiResponse.success(knowledgeCommandService.renameItem(itemId, request));
+    }
+
+    /** 手工编辑过的 Wiki 页面恢复自动同步：之后的 ingest 可以重新更新它。 */
+    @PostMapping("/knowledge-items/{itemId}/auto-sync")
+    ApiResponse<KnowledgeItemResponse> resumeAutoSync(@PathVariable String itemId) {
+        return ApiResponse.success(wikiAutoSyncService.resumeAutoSync(itemId));
     }
 
     @DeleteMapping("/knowledge-items/{itemId}")

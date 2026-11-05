@@ -92,8 +92,13 @@ def test_deck_schema_and_figure_contract_reject_missing_or_unrelated_frames():
 def test_plan_requires_frames_from_the_units_own_anchors():
     catalog = SkillCatalog()
     source = task("video-deck", catalog)
+    # 模型漏配关键帧时，确定性地补上锚点素材自带的关键帧，不再整份失败
+    outline = plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, EVIDENCE, DeckModel("DECK", False))
+    assert all(unit["frame_ids"] == ["frame"] for unit in outline["units"])
+    # 资料里根本没有关键帧时仍然明确失败
     with pytest.raises(ValueError, match="关键帧"):
-        plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, EVIDENCE, DeckModel("DECK", False))
+        plan.plan(source, catalog.resolve("video-deck"), {"count": "5"},
+                  {"sentences": [{**EVIDENCE["sentences"][0], "frame_ids": []}]}, DeckModel("DECK", False))
     with pytest.raises(ValueError, match="不属于"):
         plan.plan(source, catalog.resolve("video-deck"), {"count": "5"}, {"sentences": [{**EVIDENCE["sentences"][0], "frame_ids": []},
             {**EVIDENCE["sentences"][0], "id": "s0002", "frame_ids": ["frame"]}]}, DeckModel("DECK", True))
@@ -187,3 +192,20 @@ def test_new_skills_share_all_five_stages_and_produce_downloadable_files(name, m
     root = tmp_path / "bilibili-render-pdf/exports/pipeline-task"
     for item in files[1:]:
         assert (root / item["file_name"]).stat().st_size == item["size_bytes"]
+
+
+def test_plan_borrows_the_nearest_frame_when_anchors_have_none():
+    """锚点句没有关键帧时，追加时间上最近的带帧素材句作为锚点，并选用它的关键帧。"""
+    sentences = [
+        {**EVIDENCE["sentences"][0], "id": "s0001", "frame_ids": [], "start_ms": 1000},
+        {**EVIDENCE["sentences"][0], "id": "s0002", "frame_ids": ["near"], "start_ms": 3000},
+        {**EVIDENCE["sentences"][0], "id": "s0003", "frame_ids": ["far"], "start_ms": 90000},
+    ]
+
+    class Skill:
+        contract = {"figure_required": True}
+
+    value = {"title": "t", "units": [{"id": "u0", "heading": "h", "anchors": ["s0001"]}]}
+    repaired = plan._attach_nearest_frames(value, Skill(), {"sentences": sentences})
+    assert repaired["units"][0]["frame_ids"] == ["near"]
+    assert repaired["units"][0]["anchors"] == ["s0001", "s0002"]

@@ -14,8 +14,10 @@ import {
   type CitationView,
   type WikiEvidenceVersionTarget
 } from "./evidence";
-import type { AnswerFeedbackInput, AnswerFeedbackRating } from "./model";
+import { type AnswerFeedbackInput, type AnswerFeedbackRating, isAnswerInProgress } from "./model";
+import { answerProgressLabel } from "./progress";
 import { MemoryReferenceList } from "../memory/MemoryInjectionPreview";
+import { ApiError } from "../../shared/api/error";
 
 /** 按回答运行读取证据清单；未提供时引用只展示标题和摘录。 */
 export type EvidenceLoader = (answerRunId: string) => Promise<AnswerEvidenceManifest>;
@@ -71,6 +73,9 @@ function hostOf(url: string) {
 }
 
 export function MessageBubble(props: MessageBubbleProps) {
+  if (props.message.deleted) {
+    return <div className="bubble-body is-deleted">{props.message.content || "此消息已删除"}</div>;
+  }
   if (props.message.role !== "assistant" || !props.message.answerMode) {
     return <div className="bubble-body">{props.message.content}</div>;
   }
@@ -96,14 +101,14 @@ function AssistantMessage({
   const [reasonOpen, setReasonOpen] = useState(false);
   const [feedbackError, setFeedbackError] = useState("");
   const sawGenerating = useRef(false);
-  const isGenerating = message.answerStatus === "GENERATING";
+  const isGenerating = isAnswerInProgress(message.answerStatus);
   const isFailed = message.answerStatus === "FAILED" || message.answerStatus === "CANCELLED";
   const presentation = buildAssistantPresentation(message);
   const body = isFailed
     ? "本次回答未能完成。"
     : presentation.body
       || (isGenerating
-      ? "正在检索当前工作台资料并生成回答…"
+      ? ""
       : "此回答暂未返回正文。");
   const sources = !isFailed ? presentation.sources : null;
   const sourceItems = sources?.items ?? [];
@@ -228,10 +233,10 @@ function AssistantMessage({
     setFeedbackError("");
     try {
       await onFeedback(answerRunId, reason ? { rating: next, reason } : { rating: next });
-    } catch {
+    } catch (error) {
       setRating(previous);
       setReasonOpen(false);
-      setFeedbackError("反馈没有提交成功，请稍后再试");
+      setFeedbackError(feedbackFailureMessage(error));
     }
   }
 
@@ -265,7 +270,7 @@ function AssistantMessage({
       {isGenerating ? (
         <div className="answer-run-status">
           <span className="answer-run-spinner" aria-hidden="true" />
-          正在生成回答
+          {answerProgressLabel(message)}
         </div>
       ) : null}
       {isFailed ? (
@@ -293,11 +298,13 @@ function AssistantMessage({
       {!isFailed ? <SufficiencyNotice value={manifest?.evidence_sufficiency} /> : null}
       {!isFailed && protocol.state === "INVALID" ? <div className="answer-sufficiency-notice" role="status">引用协议无效，已停用证据角标（{protocol.diagnostic}）。</div> : null}
       {!isFailed && presentation.leadTitle ? <div className="bubble-label">{presentation.leadTitle}</div> : null}
-      <MarkdownSurface
-        content={body}
-        className="bubble-body"
-        {...citationProps}
-      />
+      {body ? (
+        <MarkdownSurface
+          content={body}
+          className="bubble-body"
+          {...citationProps}
+        />
+      ) : null}
       {!isFailed && presentation.cards.length > 0 ? (
         <div className="bubble-cards">
           {presentation.cards.map((card, index) => (
@@ -727,4 +734,12 @@ export function splitCitedViews<T extends { index: number }>(views: T[], body: s
     cited: views.filter((view) => cited.has(view.index)),
     uncited: views.filter((view) => !cited.has(view.index))
   };
+}
+
+/** 后端对已删除、已停止的回答会说明不能评价的原因，直接展示；其余失败给出通用提示。 */
+function feedbackFailureMessage(error: unknown) {
+  if (error instanceof ApiError && error.code.startsWith("ANSWER_FEEDBACK_") && error.message) {
+    return error.message;
+  }
+  return "反馈没有提交成功，请稍后再试";
 }

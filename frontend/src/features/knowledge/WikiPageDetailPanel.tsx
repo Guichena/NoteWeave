@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { History, PencilLine } from "lucide-react";
 import { MarkdownSurface } from "../../shared/ui/MarkdownSurface";
 import { formatWikiKind } from "./wikiUtils";
+import { knowledgeApi } from "./api";
 
 type WikiPageDetailPanelProps = Pick<WikiWorkbenchProps, "isBusy" | "workspace"> & {
   selection: WikiWorkbenchProps["selection"];
@@ -53,8 +54,10 @@ export function WikiPageDetailPanel({
   const props = { isBusy, workspace, ...selection, ...draft, ...actions, ...helpers };
   const page = props.selectedWikiPage;
   const [editing, setEditing] = useState(false);
+  const [autoSyncState, setAutoSyncState] = useState<"idle" | "pending" | "done" | "failed">("idle");
   useEffect(() => {
     setEditing(false);
+    setAutoSyncState("idle");
   }, [page?.item_id]);
   if (!page) {
     return null;
@@ -94,6 +97,35 @@ export function WikiPageDetailPanel({
           <span>更新于 {props.formatDateTime(props.selectedWikiDetail?.updated_at ?? page.updated_at)}</span>
         </p>
         <h2>{page.title}</h2>
+        {(props.selectedWikiDetail?.wiki_page_state ?? page.wiki_page_state) === "MANUAL"
+          || (props.selectedWikiDetail?.wiki_page_state ?? page.wiki_page_state) === "NEEDS_REVIEW" ? (
+          <div className="wiki-page-sync">
+            <span>
+              {autoSyncState === "done"
+                ? "已恢复自动同步，资料更新后会自动刷新这个页面。"
+                : "这个页面被人工编辑过，自动更新会跳过它。"}
+            </span>
+            {autoSyncState !== "done" ? (
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={autoSyncState === "pending"}
+                onClick={async () => {
+                  setAutoSyncState("pending");
+                  try {
+                    await knowledgeApi.resumeAutoSync(page.item_id);
+                    setAutoSyncState("done");
+                  } catch {
+                    setAutoSyncState("failed");
+                  }
+                }}
+              >
+                {autoSyncState === "pending" ? "正在恢复" : "恢复自动同步"}
+              </button>
+            ) : null}
+            {autoSyncState === "failed" ? <span>恢复失败，请稍后重试</span> : null}
+          </div>
+        ) : null}
         {page.wiki_page_state === "NEEDS_REVIEW" ? (
           <p className="wiki-page-notice" role="status">
             <strong>来源已更新，待确认</strong>

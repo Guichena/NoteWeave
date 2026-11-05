@@ -9,12 +9,14 @@ import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPa
 vi.mock("./features/memory/useMemoryItems", () => ({
   useMemoryItems: () => ({
     items: [],
+    revokedItems: [],
     loading: false,
     error: "",
     pendingRevisionId: "",
     refresh: vi.fn(),
     addPreference: vi.fn(),
-    decide: vi.fn()
+    decide: vi.fn(),
+    restore: vi.fn()
   }),
   errorMessage: (error: unknown) => String(error)
 }));

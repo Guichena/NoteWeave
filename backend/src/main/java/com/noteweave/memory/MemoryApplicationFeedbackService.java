@@ -90,6 +90,7 @@ public class MemoryApplicationFeedbackService {
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
         String outcomeType = normalizeRating(rating);
         String answerMessageId = requireAnswerMessageId(workspaceId, runId);
+        requireRateableAnswer(workspaceId, runId);
         if (!enabled) {
             return new AnswerFeedbackResponse(runId, outcomeType, null, DISABLED, 0);
         }
@@ -688,6 +689,32 @@ public class MemoryApplicationFeedbackService {
             throw new BusinessException("ANSWER_RUN_NOT_FOUND", "回答运行不存在", HttpStatus.NOT_FOUND);
         }
         return queryAnswerMessageId(workspaceId, runId, false);
+    }
+
+    /**
+     * 已删除或已停止的回答没有可评价的内容。此前这类请求在写入阶段才发现目标消息不可用，
+     * 返回含糊的反馈目标已变化，用户重试多少次都不会成功；这里提前给出明确原因。
+     */
+    private void requireRateableAnswer(String workspaceId, String runId) {
+        String[] state = jdbcTemplate.query("""
+                select r.status, r.error_code, am.context_status
+                from answer_run r
+                left join conversation_message am on am.id = r.answer_message_id
+                where r.workspace_id = ? and r.id = ?
+                """, rs -> rs.next()
+                ? new String[] {rs.getString(1), rs.getString(2), rs.getString(3)}
+                : null, workspaceId, runId);
+        if (state == null) {
+            return;
+        }
+        if ("ANSWER_MESSAGE_DELETED".equals(state[1]) || "DELETED".equals(state[2])) {
+            throw new BusinessException("ANSWER_FEEDBACK_TARGET_DELETED",
+                    "这条回答或它的提问已删除，不能再评价", HttpStatus.CONFLICT);
+        }
+        if ("CANCELLED".equals(state[0])) {
+            throw new BusinessException("ANSWER_FEEDBACK_ANSWER_CANCELLED",
+                    "这条回答已停止生成，没有可评价的内容；可以重新生成后再评价", HttpStatus.CONFLICT);
+        }
     }
 
     private String optionalAnswerMessageId(String workspaceId, String runId) {

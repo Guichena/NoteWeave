@@ -113,7 +113,9 @@ class OpenAICompatibleLlmClient:
         max_total_calls: int = 64,
         session_id: str = "",
         max_retries: int = 2,
+        thinking: str = "auto",
     ) -> None:
+        self.thinking = resolve_thinking(thinking, model)
         self.max_total_calls = max(0, max_total_calls)
         self.call_records = []
         self.prior_call_count = 0
@@ -180,6 +182,7 @@ class OpenAICompatibleLlmClient:
                 ],
                 response_format={"type": "json_object"},
                 extra_headers={"X-Session-ID": self.session_id} if self.session_id else None,
+                extra_body={"thinking": {"type": self.thinking}} if self.thinking else None,
             )
         except (OpenAIError, ValueError) as exc:
             with self._usage_lock:
@@ -216,6 +219,18 @@ class OpenAICompatibleLlmClient:
             self.prior_call_count = max(0, int(count))
 
 
+def resolve_thinking(policy: str, model: str) -> str | None:
+    """把思考策略换成请求里的 thinking.type；返回 None 表示不发该参数。"""
+    normalized = (policy or "auto").strip().lower()
+    lower_model = (model or "").lower()
+    if normalized in {"enabled", "disabled"}:
+        return normalized
+    if normalized == "model-default":
+        return None
+    thinking_model = lower_model.startswith(("deepseek-v4", "glm-5")) or lower_model == "deepseek-flash"
+    return "disabled" if thinking_model else None
+
+
 def routing_session_id(kind: str, workspace_id: str, stable_id: str) -> str:
     if not workspace_id.strip() or not stable_id.strip():
         raise ValueError("routing session requires workspace and stable task identity")
@@ -247,4 +262,5 @@ def build_default_llm_client() -> LlmClient | None:
         timeout_seconds=max(1, settings.llm_timeout_seconds),
         max_total_calls=settings.llm_max_total_calls,
         max_retries=settings.llm_max_retries,
+        thinking=settings.llm_thinking,
     )
