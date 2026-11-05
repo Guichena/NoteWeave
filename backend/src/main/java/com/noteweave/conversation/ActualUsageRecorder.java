@@ -66,6 +66,10 @@ public class ActualUsageRecorder {
         }
         if (store != null) {
             if (workspaceId == null || workspaceId.isBlank()) {
+                // 改写、判定等辅助调用不显式带工作区；请求处理链路里工作区已写入日志上下文，按它归属
+                workspaceId = org.slf4j.MDC.get(com.noteweave.common.RequestContext.WORKSPACE_ID);
+            }
+            if (workspaceId == null || workspaceId.isBlank()) {
                 // USAGE-01：持久化行没有工作区就没法对账；宁可拒绝并告警，也不要写孤儿 usage
                 log.warn("拒绝记录缺少工作区归属的真实 usage: attemptId={}, model={}, completeness={}",
                         attemptId, usage.modelId(), usage.completeness());
