@@ -89,10 +89,25 @@ public class ArtifactExportService {
             Integer published = jdbcTemplate.queryForObject(
                     "select count(*) from artifact_candidate_receipt where artifact_version_id = ?",
                     Integer.class, row.versionId());
-            if (published != null && published > 0) {
+            String skillKey = jdbcTemplate.query("select skill_key from artifact_job where id = ?",
+                    rs -> rs.next() ? rs.getString(1) : null, row.artifactJobId());
+            boolean compiledPdfRequired = skillKey != null
+                    && skillCatalog.requiredFileRoles(skillKey).contains("PRIMARY_PDF");
+            if (compiledPdfRequired && published != null && published > 0) {
                 throw new BusinessException("ARTIFACT_EXPORT_NOT_READY", "已发布版本缺少 PDF 文件", HttpStatus.CONFLICT);
             }
-            materializeExports(row.versionId()); // historical compatibility only
+            if (published == null || published == 0) {
+                materializeExports(row.versionId()); // historical compatibility only
+            }
+            if (!hasFile(row.versionId(), PDF) && !compiledPdfRequired) {
+                // 只有视频讲义在生成时编译 PDF；其余产物按需把 Markdown 正文排成 PDF 并归档，下次直接复用
+                byte[] pdf = artifactWorkerClient.renderMarkdownPdf(row.title(), row.contentMarkdown());
+                verifyPdf(pdf);
+                persistFile(row, PDF, safeStem(row.title()) + ".pdf", "application/pdf", pdf);
+            }
+            if (!hasFile(row.versionId(), PDF)) {
+                throw new BusinessException("ARTIFACT_EXPORT_NOT_READY", "已发布版本缺少 PDF 文件", HttpStatus.CONFLICT);
+            }
         }
         StoredFile file = loadStoredFile(row.versionId(), PDF);
         byte[] content;
