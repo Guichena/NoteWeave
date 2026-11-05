@@ -351,7 +351,7 @@ noteweave:
     # model-default 不发参数，沿用模型默认；也可以填 enabled / disabled 强制指定。
     # 改写、抽取、判定这类短输出调用用 auxiliary-thinking，回答正文用 answer-thinking。
     auxiliary-thinking: ${NOTEWEAVE_LLM_AUXILIARY_THINKING:auto}
-    answer-thinking: ${NOTEWEAVE_LLM_ANSWER_THINKING:model-default}
+    answer-thinking: ${NOTEWEAVE_LLM_ANSWER_THINKING:auto}
   executors:
     scheduling:
       pool-size: ${NOTEWEAVE_SCHEDULING_POOL_SIZE:4}

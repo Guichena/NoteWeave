@@ -38,9 +38,9 @@ public class HttpChatLlmClient implements ChatLlmClient {
     @org.springframework.beans.factory.annotation.Value("${noteweave.llm.auxiliary-thinking:auto}")
     String auxiliaryThinking = "auto";
 
-    /** 回答正文的思考策略，默认沿用模型默认，评测确认质量后再调整。 */
-    @org.springframework.beans.factory.annotation.Value("${noteweave.llm.answer-thinking:model-default}")
-    String answerThinking = "model-default";
+    /** 回答正文的思考策略，默认 auto：2026-11-05 对比测试中关闭思考后长回答首字快一半，质量无明显差异。 */
+    @org.springframework.beans.factory.annotation.Value("${noteweave.llm.answer-thinking:auto}")
+    String answerThinking = "auto";
 
     public HttpChatLlmClient(ObjectMapper objectMapper, com.noteweave.config.NoteWeaveProperties properties) {
         this(objectMapper, properties, null);
