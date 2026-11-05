@@ -92,6 +92,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ApiResponse<Void>> handleMalformedRequest(HttpMessageNotReadableException ex) {
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            if (cause instanceof com.noteweave.config.UnknownJsonPropertyAudit.FieldNamingException naming) {
+                // 驼峰字段原来被静默忽略，调用方以为传了参数；现在明确指出正确的字段名
+                return ResponseEntity.badRequest().body(ApiResponse.error("REQUEST_FIELD_NAME_INVALID",
+                        "字段 " + naming.field() + " 应写成 " + naming.expected()));
+            }
+            if (cause instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException invalid
+                    && !invalid.getPath().isEmpty()) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("MALFORMED_REQUEST",
+                        "字段 " + invalid.getPath().get(invalid.getPath().size() - 1).getFieldName() + " 的取值类型不对"));
+            }
+            cause = cause.getCause() == cause ? null : cause.getCause();
+        }
         return ResponseEntity.badRequest().body(ApiResponse.error("MALFORMED_REQUEST", "request body is malformed"));
     }
 

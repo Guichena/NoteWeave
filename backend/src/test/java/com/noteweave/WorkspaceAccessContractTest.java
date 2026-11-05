@@ -322,6 +322,27 @@ class WorkspaceAccessContractTest {
         assertThat(listWorkspaceIds(member.token())).doesNotContain(workspaceId);
     }
 
+    /** 工作台可以删除：只有管理员能删，删除后列表不显示、接口全部拒绝。 */
+    @Test
+    void ownerCanDeleteWorkspaceAndItDisappears() throws Exception {
+        String ownerToken = createSessionForExistingUser("local-user", "delete-owner");
+        String workspaceId = createWorkspace(ownerToken, "To Delete");
+        UserSession editor = createUserAndSession("delete-editor");
+        addMember(workspaceId, editor.userId(), "EDITOR", "ACTIVE");
+
+        mockMvc.perform(delete("/api/v2/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + editor.token()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v2/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        assertThat(listWorkspaceIds(ownerToken)).doesNotContain(workspaceId);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden());
+    }
+
     private String createSessionForExistingUser(String userId, String prefix) {
         String token = prefix + "-" + UUID.randomUUID();
         jdbcTemplate.update("""

@@ -56,4 +56,28 @@ class UnknownJsonPropertyAuditTest {
 
         assertThat(registry.find("noteweave.api.unknown_property").counters()).isEmpty();
     }
+
+    /** 对外接口的请求体里写成驼峰、而 snake_case 字段确实存在时直接拒绝，并给出正确字段名。 */
+    @Test
+    void camelCaseFieldInRequestBodyIsRejectedWithTheExpectedName() {
+        DefaultListableBeanFactory factory = new DefaultListableBeanFactory();
+        ObjectMapper mapper = new ObjectMapper()
+                .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
+                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .addHandler(new UnknownJsonPropertyAudit.Handler(factory.getBeanProvider(MeterRegistry.class)));
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(
+                new MockHttpServletRequest("POST", "/api/v2/workspaces/w/research-runs")));
+        UnknownJsonPropertyAudit.markReadingRequestBody(true);
+        try {
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> mapper.readValue("{\"retrievalMode\":\"SOURCES_ONLY\"}", Payload.class))
+                    .isInstanceOf(UnknownJsonPropertyAudit.FieldNamingException.class)
+                    .hasMessageContaining("retrieval_mode");
+            // 与任何字段都对不上的多余字段仍然只记录、不拒绝
+            org.assertj.core.api.Assertions.assertThatCode(() -> mapper.readValue("{\"extra_flag\":true}", Payload.class))
+                    .doesNotThrowAnyException();
+        } finally {
+            UnknownJsonPropertyAudit.markReadingRequestBody(false);
+        }
+    }
 }
