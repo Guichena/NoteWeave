@@ -72,7 +72,8 @@ public class ResearchStandaloneMigrationService {
         String userMessageId = Ids.newId();
         String assistantMessageId = Ids.newId();
         String question = run.question() == null || run.question().isBlank() ? "历史研究" : run.question().strip();
-        String title = question.length() <= 80 ? question : question.substring(0, 80);
+        // 会话标题用短标题，完整问题仍作为第一条消息保留
+        String title = com.noteweave.research.ResearchDisplayLabels.shortTitle(question, 24);
         jdbcTemplate.update("""
                 insert into conversation(id, workspace_id, title, conversation_type, status, next_message_seq)
                 values (?, ?, ?, 'RESEARCH', 'ACTIVE', 3)
