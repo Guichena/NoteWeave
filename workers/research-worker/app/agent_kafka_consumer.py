@@ -46,6 +46,7 @@ from app.research_agent_completion_contract import (
 )
 from app.kafka_primitives import (
     DeadLetterPublishError,
+    JsonValueSerializer,
     DeadLetterSink,
     InMemoryDeadLetterSink,
     KafkaConsumeSummary,
@@ -384,7 +385,7 @@ def create_research_agent_kafka_dead_letter_sink() -> KafkaDeadLetterSink:
         bootstrap_servers=settings.kafka_bootstrap_servers,
         acks="all",
         retries=max(1, settings.kafka_consume_max_attempts),
-        value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         **kafka_security_options(settings),
     )
     return KafkaDeadLetterSink(producer, settings.kafka_research_agent_dlq_topic)

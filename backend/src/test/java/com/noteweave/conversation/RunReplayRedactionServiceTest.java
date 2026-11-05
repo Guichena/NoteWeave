@@ -37,6 +37,37 @@ class RunReplayRedactionServiceTest {
                 .hasRootCauseMessage("Stored Artifact source scope JSON must be an array");
     }
 
+    /** 契约按 snake_case 写库，脱敏必须清掉 system_prompt 与 allowed_page_titles 本身。 */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldClearStoredSnakeCaseContractFieldsWhenRedactingAnswerRun() throws Exception {
+        JdbcTemplate jdbc = org.mockito.Mockito.mock(JdbcTemplate.class);
+        org.mockito.Mockito.when(jdbc.query(
+                        org.mockito.ArgumentMatchers.startsWith("select generation_contract_json"),
+                        org.mockito.ArgumentMatchers.any(org.springframework.jdbc.core.ResultSetExtractor.class),
+                        org.mockito.ArgumentMatchers.eq("workspace-1"),
+                        org.mockito.ArgumentMatchers.eq("run-1")))
+                .thenReturn("{\"schema_version\":\"generation-contract-v1\",\"system_prompt\":\"含资料标题的提示\","
+                        + "\"allowed_page_titles\":[\"已撤销页面\"]}");
+        RunReplayRedactionService redaction = new RunReplayRedactionService(jdbc, new ObjectMapper());
+
+        redaction.redactAnswerRun("workspace-1", "run-1");
+
+        org.mockito.ArgumentCaptor<Object> written = org.mockito.ArgumentCaptor.forClass(Object.class);
+        org.mockito.Mockito.verify(jdbc).update(
+                org.mockito.ArgumentMatchers.eq(
+                        "update answer_run set generation_contract_json=? where workspace_id=? and id=?"),
+                written.capture(),
+                org.mockito.ArgumentMatchers.eq("workspace-1"),
+                org.mockito.ArgumentMatchers.eq("run-1"));
+        var stored = new ObjectMapper().readTree(String.valueOf(written.getValue()));
+        org.assertj.core.api.Assertions.assertThat(stored.path("system_prompt").asText()).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(stored.path("allowed_page_titles")).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(stored.has("systemPrompt")).isFalse();
+        org.assertj.core.api.Assertions.assertThat(stored.path("schema_version").asText())
+                .isEqualTo("generation-contract-v1");
+    }
+
     private Object invoke(String name, Object... args) throws Exception {
         Method method = switch (name) {
             case "artifactSourceScopeContains" -> service.getClass().getDeclaredMethod(

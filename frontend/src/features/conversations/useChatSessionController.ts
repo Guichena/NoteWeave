@@ -7,7 +7,7 @@ import { AnswerRunWaitTimeoutError,
   reduceAnswerRunState
 } from "../answers/store";
 import { answersApi } from "../answers/api";
-import type { AnswerFeedbackInput, AnswerRunState, SendAnswerInput } from "../answers/model";
+import { type AnswerFeedbackInput, type AnswerRunState, type SendAnswerInput, isAnswerInProgress } from "../answers/model";
 import {
   type Message,
   updateAssistantMessageByRun,
@@ -22,6 +22,9 @@ import { ConversationStreamClient } from "../../shared/event-stream";
 import { streamEvents } from "../../shared/event-stream/streamEvent";
 import type { ShellRun } from "../shell/useShellBusy";
 import { readAnswerModePreference, writeAnswerModePreference } from "./answerModePreference";
+
+/** 实时连接断开多久仍未恢复才提示（毫秒）。 */
+export const STREAM_WARNING_DELAY_MS = 5000;
 
 export type UseChatSessionControllerInput = {
   workspace: Workspace | null;
@@ -134,6 +137,10 @@ export function useChatSessionController({
     }
     const streamPath = `/api/v2/workspaces/${workspace.workspace_id}`
       + `/conversations/${conversation.conversation_id}/events`;
+    // 连接断开后会自动重连，短暂断开不提示；断开超过几秒仍没恢复才提示，恢复后撤掉提示。
+    // 原来任何一次断开都会提示，且恢复后不撤，会话页常驻「实时更新暂不可用」
+    let warningTimer: ReturnType<typeof setTimeout> | undefined;
+    let warningShown = false;
     const client = new ConversationStreamClient(streamPath, {
       onConnectionChange: (connected) => {
         if (!connected) {
@@ -141,15 +148,28 @@ export function useChatSessionController({
         }
       },
       onError: () => {
-        if (statusActiveRef.current) {
-          setStatus("实时更新暂不可用，回答将从任务快照同步");
-        }
+        if (warningTimer !== undefined) return;
+        warningTimer = setTimeout(() => {
+          warningTimer = undefined;
+          if (statusActiveRef.current) {
+            warningShown = true;
+            setStatus("实时更新暂不可用，回答将从任务快照同步");
+          }
+        }, STREAM_WARNING_DELAY_MS);
       },
       onEvent: (event) => {
         try {
           const updates = answerRunStoreRef.current.applyConversationEvent(event);
           if (event.event === "conversation.snapshot") {
             setConversationStreamConnected(true);
+            if (warningTimer !== undefined) {
+              clearTimeout(warningTimer);
+              warningTimer = undefined;
+            }
+            if (warningShown && statusActiveRef.current) {
+              warningShown = false;
+              setStatus("实时更新已恢复");
+            }
           }
           if (updates.length > 0) {
             setMessages((current) => updates.reduce(
@@ -166,6 +186,7 @@ export function useChatSessionController({
     });
     client.start();
     return () => {
+      if (warningTimer !== undefined) clearTimeout(warningTimer);
       client.stop();
       setConversationStreamConnected(false);
       answerRunStoreRef.current.clear("会话已切换");
@@ -235,7 +256,7 @@ export function useChatSessionController({
       }
       const authoritative = await reconcileAnswerRun(answerRunId);
       const status = authoritative?.status ?? "GENERATING";
-      if (status !== "GENERATING" && status !== "FINALIZING") {
+      if (!isAnswerInProgress(status)) {
         // 权威状态已是终态：把结果写回 store，让 waitFor 后续逻辑正常走完
         answerRunStoreRef.current.reconcileRun({
           id: answerRunId,
@@ -341,8 +362,11 @@ export function useChatSessionController({
         citations: buffered?.citations ?? [],
         citationProtocol: buffered?.citationProtocol,
         answerRunId: sent.answer_run_id,
-        answerStatus: buffered?.status ?? "GENERATING",
+        // 发消息接口在后台准备开始前就返回，运行此时是 PREPARING，阶段事件可能已经先到
+        answerStatus: buffered?.status ?? "PREPARING",
         answerError: buffered?.error ?? "",
+        answerStage: buffered?.stage,
+        answerEvidenceCount: buffered?.evidenceCount,
         retrievalDegraded: sent.retrieval_degraded === true,
         retrievalDegradationReasons: sent.retrieval_degradation_reasons ?? []
       }]);

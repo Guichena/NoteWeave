@@ -246,3 +246,77 @@ def test_concurrent_session_close_releases_each_resource_once() -> None:
 
     assert consumer.close_count == 1
     assert sink.close_count == 1
+
+
+def test_runtime_reopens_polling_session_after_long_idle(monkeypatch) -> None:
+    """空闲后消费者不再拉取消息时，运行时自己重建会话，不需要人工重启进程。"""
+    import app.artifact_kafka_consumer as module
+
+    created_consumers: list[object] = []
+    reopened = threading.Event()
+
+    class PollingConsumer:
+        def __init__(self) -> None:
+            self.close_count = 0
+
+        def poll(self, timeout_ms: int = 1000) -> dict:
+            return {}
+
+        def close(self, *args, **kwargs) -> None:
+            self.close_count += 1
+
+    class Sink:
+        def publish(self, record) -> bool:
+            return True
+
+        def close(self) -> None:
+            return None
+
+    def create_consumer(_settings):
+        consumer = PollingConsumer()
+        created_consumers.append(consumer)
+        if len(created_consumers) == 2:
+            reopened.set()
+        return consumer
+
+    clock = {"now": 0.0}
+    monkeypatch.setattr(module, "create_artifact_kafka_consumer", create_consumer)
+    monkeypatch.setattr(module, "create_artifact_dead_letter_sink", lambda _settings: Sink())
+    monkeypatch.setattr(module.time, "monotonic", lambda: clock["now"])
+
+    settings = Settings(artifact_consumer_enabled=True, kafka_artifact_idle_reset_seconds=30)
+    runtime = module.ArtifactKafkaConsumerRuntime(settings)
+    runtime.start()
+    clock["now"] = 31.0
+    assert reopened.wait(10) is True
+    runtime.stop()
+
+    assert created_consumers[0].close_count >= 1
+
+
+def test_consumer_pool_starts_one_lane_per_configured_job_slot() -> None:
+    """产物任务按配置的并发数开多条消费通道，停止时每条都要释放。"""
+    from app.artifact_kafka_consumer import ArtifactKafkaConsumerPool
+
+    started: list[int] = []
+    stopped: list[int] = []
+
+    class Lane:
+        def __init__(self, _settings) -> None:
+            self.index = len(started)
+            self.healthy = True
+
+        def start(self) -> None:
+            started.append(self.index)
+
+        def stop(self) -> None:
+            stopped.append(self.index)
+
+    pool = ArtifactKafkaConsumerPool(Settings(**{"NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY": 3}), Lane)
+    pool.start()
+    assert started == [0, 1, 2]
+    assert pool.healthy
+    pool.lanes[1].healthy = False
+    assert not pool.healthy
+    pool.stop()
+    assert stopped == [0, 1, 2]

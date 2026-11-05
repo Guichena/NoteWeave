@@ -210,6 +210,8 @@ class ResearchAgentCompletionCommitter {
         }
         resolveCounterfactualRepairDecisions(run.id(), task, mergeOutcome);
         new ResearchClaimClusterService(jdbcTemplate, objectMapper).persist(task, envelope, completionId);
+        new ResearchRuntimeMetricsService(jdbcTemplate, objectMapper)
+                .record(task, envelope, completionId, mergeOutcome.accepted().size());
 
         persistBudget(reservation, completionId, envelope.executionKey(), ledger);
         checkpoint(ResearchAgentCompletionFaultInjector.Stage.AFTER_BUDGET_FINALIZE, 0);

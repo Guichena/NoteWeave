@@ -25,6 +25,8 @@ public class ResearchIncrementalService {
 
     private static final Pattern KEY = Pattern.compile("[A-Za-z0-9._-]{1,64}");
     private static final int MAX_CELL_KEY = 160;
+    /** 增量请求没有产生任何需要重算的格子时的报告关系，运行保持完成态。 */
+    public static final String NO_CHANGE = "NO_CHANGE";
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
@@ -145,6 +147,22 @@ public class ResearchIncrementalService {
 
         int stale = markStaleBySources(runId, request.changedSourceIds());
 
+        int totalCells = jdbcTemplate.queryForObject(
+                "select count(*) from research_cell where research_run_id = ?", Integer.class, runId);
+        if (reopened == 0 && addedRows == 0 && addedColumns == 0 && stale == 0) {
+            // 变更的资料没有被任何已核实格引用，没有需要重算的格子：运行保持完成态。
+            // 此前这里仍把运行改回 RUNNING，但 coordinator 没有任务可派，运行永远不会收尾。
+            Map<String, Object> noop = new LinkedHashMap<>();
+            noop.put("changed_source_ids", request.changedSourceIds());
+            noop.put("reason", request.reason() == null ? "" : request.reason());
+            noop.put("report_version_relation", NO_CHANGE);
+            jdbcTemplate.update("""
+                    insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
+                    values (?, ?, 'INCREMENTAL_NOOP', '增量研究没有需要重算的单元格', ?)
+                    """, Ids.newId(), runId, Json.write(objectMapper, noop));
+            return new Receipt(runId, 0, 0, 0, 0, totalCells, NO_CHANGE);
+        }
+
         jdbcTemplate.update("""
                 update research_run set status = 'RUNNING', updated_at = current_timestamp
                 where id = ? and status in ('COMPLETED', 'COMPLETED_VERIFIED')
@@ -162,8 +180,6 @@ public class ResearchIncrementalService {
                 insert into research_trace(id, research_run_id, trace_type, trace_message, payload_json)
                 values (?, ?, 'INCREMENTAL_REOPEN', '增量研究重开指定格', ?)
                 """, Ids.newId(), runId, Json.write(objectMapper, payload));
-        int totalCells = jdbcTemplate.queryForObject(
-                "select count(*) from research_cell where research_run_id = ?", Integer.class, runId);
         return new Receipt(runId, reopened, addedRows, addedColumns, stale, totalCells,
                 "NEW_REPORT_APPENDED_TO_SAME_RUN");
     }

@@ -141,10 +141,9 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             tokenConsumer.accept(token);
         };
         String sessionId = ChatLlmClient.routingSessionId("chat", workspaceId, conversationId);
-        String streamed = sessionId == null
-                ? chatLlmClient.streamChat(systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken)
-                : chatLlmClient.streamChatInSession(
-                        sessionId, workspaceId, systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken);
+        // 回答正文走回答专用入口，思考策略与改写、判定等辅助调用分开配置
+        String streamed = chatLlmClient.streamAnswerInSession(
+                sessionId, workspaceId, systemPrompt, draft == null ? "" : draft, maximumOutputTokens, onToken);
         String generated = streamed == null || streamed.isEmpty() ? streamedBuffer[0] : streamed;
         if (generated == null || generated.isBlank()) {
             throw new BusinessException(

@@ -194,8 +194,12 @@ public class RunReplayRedactionService {
             try {
                 JsonNode node=objectMapper.readTree(contract);
                 if(!(node instanceof ObjectNode object)) throw new IllegalStateException("生成契约不是对象");
-                object.put("systemPrompt", "");
-                object.putArray("allowedPageTitles");
+                // 契约按全局 snake_case 写库。此前这里写的是驼峰键，原有的 system_prompt 与
+                // allowed_page_titles 原样保留，脱敏没有生效，只是多出两个读取时被忽略的字段。
+                object.remove("systemPrompt");
+                object.remove("allowedPageTitles");
+                object.put("system_prompt", "");
+                object.putArray("allowed_page_titles");
                 jdbcTemplate.update("update answer_run set generation_contract_json=? where workspace_id=? and id=?",
                         objectMapper.writeValueAsString(object),workspaceId,runId);
             } catch(JsonProcessingException ex) {

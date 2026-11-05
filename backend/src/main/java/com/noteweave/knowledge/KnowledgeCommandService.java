@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -98,13 +99,48 @@ public class KnowledgeCommandService {
                                 request.content(), request.sourceMessageId(), citationIds));
             }
         }
-        return createItemWithVersion(
+        KnowledgeItemResponse created = createItemWithVersion(
                 workspaceId,
                 request.itemType(),
                 request.title(),
                 request.content(),
                 request.sourceMessageId(),
                 citationIds);
+        // 调用方显式指定 Wiki 页面类型时以指定值为准，覆盖按正文推断的结果
+        if ("WIKI".equals(request.itemType()) && request.pageKind() != null && !request.pageKind().isBlank()
+                && !request.pageKind().equals(created.pageKind())) {
+            jdbcTemplate.update("update knowledge_item set page_kind = ? where id = ?",
+                    request.pageKind(), created.itemId());
+            return itemResponse(created.itemId());
+        }
+        return created;
+    }
+
+    /**
+     * 产物写入 Note 的幂等入口：同一工作台已有同标题、最新正文完全相同的 Note 时直接返回它。
+     * 先锁工作台行，让同一工作台的并发写回按顺序判断，重复点击不会生成两条同名 Note。
+     */
+    @Transactional
+    public KnowledgeItemResponse createNoteOnce(String workspaceId, String title, String content) {
+        requireWorkspace(workspaceId);
+        jdbcTemplate.query("select id from workspace where id = ? for update",
+                rs -> rs.next() ? rs.getString(1) : null, workspaceId);
+        // 正文是大字段，不在 SQL 里比较，按标题取候选后在内存里比对
+        List<Map.Entry<String, String>> candidates = jdbcTemplate.query("""
+                select item.id, version.content
+                from knowledge_item item
+                join knowledge_version version on version.id = item.latest_version_id
+                where item.workspace_id = ? and item.item_type = 'NOTE' and item.status = 'ACTIVE'
+                  and item.title = ?
+                order by item.created_at, item.id
+                """, (rs, rowNum) -> Map.entry(rs.getString(1), String.valueOf(rs.getString(2))),
+                workspaceId, title);
+        for (Map.Entry<String, String> candidate : candidates) {
+            if (candidate.getValue().equals(content)) {
+                return itemResponse(candidate.getKey());
+            }
+        }
+        return createItem(workspaceId, new KnowledgeItemRequest("NOTE", title, content, null));
     }
 
     @Transactional
@@ -176,10 +212,15 @@ public class KnowledgeCommandService {
     }
 
     private void deleteItemRow(KnowledgeItemRef item) {
-        deleteItemRow(item, auditActorProvider.currentOrSystem("KNOWLEDGE"));
+        // 用户删页时把自动页里的链接改成普通文字；后台撤回资料页时引用页会随资料重新 ingest，不在这里改
+        deleteItemRow(item, auditActorProvider.currentOrSystem("KNOWLEDGE"), true);
     }
 
     private void deleteItemRow(KnowledgeItemRef item, String actor) {
+        deleteItemRow(item, actor, false);
+    }
+
+    private void deleteItemRow(KnowledgeItemRef item, String actor, boolean unlinkAutoPages) {
         String itemId = item.itemId();
         jdbcTemplate.update("""
                 update knowledge_item
@@ -189,6 +230,9 @@ public class KnowledgeCommandService {
                 """, actor, itemId);
         if ("WIKI".equals(item.itemType())) {
             List<String> related = relatedWikiItemIds(item.workspaceId(), itemId, item.title());
+            if (unlinkAutoPages) {
+                unlinkDeletedPageFromAutoPages(item.workspaceId(), itemId, item.title());
+            }
             jdbcTemplate.update(
                     "delete from knowledge_item_link where source_item_id = ?", itemId);
             jdbcTemplate.update("""
@@ -268,6 +312,20 @@ public class KnowledgeCommandService {
                 internalActor());
         markWikiPageState(existingItemId, WikiPageState.AUTO);
         return updated;
+    }
+
+    /**
+     * 断链自动补缺建的占位页由系统写入，落 AUTO 状态。
+     * 此前沿用当前用户身份，占位页被标成 MANUAL，后续 ingest 一律跳过，残页永远不会补上正文。
+     */
+    @Transactional
+    KnowledgeItemResponse createWikiPlaceholderForInternalExecution(
+            String workspaceId,
+            String title,
+            String content
+    ) {
+        return createItemWithVersion(workspaceId, "WIKI", title, content, null, List.of(),
+                null, null, internalActor());
     }
 
     private WikiPageState wikiPageState(String itemId) {
@@ -581,6 +639,74 @@ public class KnowledgeCommandService {
                     "REFRESH_LINK_CONTENT",
                     "页面重命名后已刷新引用页正文：" + page.title() + " -> " + nextTitle);
         }
+    }
+
+    /**
+     * 删除 Wiki 页面后，系统维护的自动页里指向它的 [[链接]] 改成普通文字，不再留下断链。
+     * 此前删页只把入链标成未解析，验收时删除一页后留下 7 条断链，只能手动 Auto Fix（Auto Fix 还会再建出空页）。
+     * 人工页和待确认页是用户内容，不改正文，断链照常出现在问题面板里由用户处理。
+     */
+    private void unlinkDeletedPageFromAutoPages(String workspaceId, String deletedItemId, String deletedTitle) {
+        if (deletedTitle == null || deletedTitle.isBlank()) {
+            return;
+        }
+        List<IncomingWikiPageRef> incomingPages = jdbcTemplate.query("""
+                select distinct i.id, i.title, v.id as version_id, v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_item_link l on l.source_item_id = i.id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                  and i.id <> ?
+                  and (l.target_item_id = ? or lower(l.target_title) = lower(?))
+                """, (rs, rowNum) -> new IncomingWikiPageRef(
+                rs.getString("id"), rs.getString("title"), rs.getString("version_id"), rs.getString("content")
+        ), workspaceId, deletedItemId, deletedItemId, deletedTitle);
+        for (IncomingWikiPageRef page : incomingPages) {
+            if (!wikiPageState(page.itemId()).autoUpdatable()) {
+                continue;
+            }
+            String rewritten = unlinkExplicitWikiLinkTitle(page.content(), deletedTitle);
+            if (rewritten.equals(page.content())) {
+                continue;
+            }
+            List<String> citationIds = knowledgeVersionService.citationIdsForVersion(page.versionId());
+            try {
+                // 引用页自己的来源已失效时不改写（追加版本会被拒绝并让整个删除事务回滚），断链留给问题面板
+                citationReadGate.requireCitationIdsCurrent(workspaceId, citationIds);
+            } catch (BusinessException unavailable) {
+                continue;
+            }
+            knowledgeVersionService.appendVersion(
+                    page.itemId(),
+                    new AppendKnowledgeVersionRequest(rewritten, null, citationIds),
+                    internalActor());
+            wikiMutationService.logWiki(workspaceId, page.itemId(), "REFRESH_LINK_CONTENT",
+                    "被引用页面已删除，链接改为普通文字：" + page.title() + " -> " + deletedTitle);
+        }
+    }
+
+    /** 把指向指定标题的 [[标题]] 或 [[标题|别名]] 改成普通文字（有别名时保留别名）。 */
+    static String unlinkExplicitWikiLinkTitle(String content, String title) {
+        if (content == null || content.isBlank()) {
+            return content == null ? "" : content;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\[\\[([^\\]]{1,120})]]").matcher(content);
+        StringBuffer buffer = new StringBuffer();
+        boolean changed = false;
+        while (matcher.find()) {
+            String raw = matcher.group(1).trim();
+            int bar = raw.indexOf('|');
+            String target = bar >= 0 ? raw.substring(0, bar).trim() : raw;
+            if (!target.equalsIgnoreCase(title)) {
+                matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+            String text = bar >= 0 && !raw.substring(bar + 1).isBlank() ? raw.substring(bar + 1).trim() : target;
+            matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(text));
+            changed = true;
+        }
+        matcher.appendTail(buffer);
+        return changed ? buffer.toString() : content;
     }
 
     private String rewriteExplicitWikiLinkTitle(

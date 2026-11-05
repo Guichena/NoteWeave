@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { memoryApi, type MemoryApi } from "./api";
-import type { MemoryItem, MemoryReviewDecision } from "./model";
+import type { MemoryItem, MemoryReviewDecision, RevokedMemoryItem } from "./model";
 
 export type AddPreferenceInput = {
   text: string;
@@ -10,6 +10,7 @@ export type AddPreferenceInput = {
 
 export function useMemoryItems(workspaceId: string, api: MemoryApi = memoryApi) {
   const [items, setItems] = useState<MemoryItem[]>([]);
+  const [revokedItems, setRevokedItems] = useState<RevokedMemoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pendingRevisionId, setPendingRevisionId] = useState("");
@@ -20,13 +21,19 @@ export function useMemoryItems(workspaceId: string, api: MemoryApi = memoryApi) 
     const requestId = ++requestRef.current;
     if (!workspaceId) {
       setItems([]);
+      setRevokedItems([]);
       return [];
     }
     setLoading(true);
     try {
-      const next = await api.listItems(workspaceId);
+      // 已停用列表读取失败不影响主列表，只是暂时看不到重新启用入口
+      const [next, revoked] = await Promise.all([
+        api.listItems(workspaceId),
+        api.listRevokedItems ? api.listRevokedItems(workspaceId).catch(() => []) : Promise.resolve([])
+      ]);
       if (requestId === requestRef.current) {
         setItems(next);
+        setRevokedItems(revoked);
         setError("");
       }
       return next;
@@ -40,6 +47,7 @@ export function useMemoryItems(workspaceId: string, api: MemoryApi = memoryApi) 
 
   useEffect(() => {
     setItems([]);
+    setRevokedItems([]);
     void refresh();
   }, [refresh]);
 
@@ -70,7 +78,19 @@ export function useMemoryItems(workspaceId: string, api: MemoryApi = memoryApi) 
     }
   }, [api, refresh, workspaceId]);
 
-  return { items, loading, error, pendingRevisionId, refresh, addPreference, decide };
+  /** 重新启用一条已停用的记忆，完成后刷新两个列表。 */
+  const restore = useCallback(async (item: RevokedMemoryItem) => {
+    setPendingRevisionId(item.revision_id);
+    try {
+      const result = await api.restoreItem(workspaceId, item.memory_item_id);
+      await refresh();
+      return result;
+    } finally {
+      setPendingRevisionId("");
+    }
+  }, [api, refresh, workspaceId]);
+
+  return { items, revokedItems, loading, error, pendingRevisionId, refresh, addPreference, decide, restore };
 }
 
 export function errorMessage(error: unknown) {

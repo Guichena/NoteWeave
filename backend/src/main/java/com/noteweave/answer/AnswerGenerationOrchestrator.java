@@ -325,6 +325,18 @@ public class AnswerGenerationOrchestrator {
         stream(run.assistantRequestId(), consumer);
     }
 
+    /**
+     * 后台回答准备失败：运行已经标成 FAILED，这里把终态推给会话流和运行流上的订阅者。
+     * 没有这一步，发消息接口已经返回的前端只能等到超时后查快照才知道失败。
+     */
+    public void publishPreparationFailure(String workspaceId, String runId) {
+        AnswerRunRef run = answerRunService.requireRef(workspaceId, runId);
+        if (!"FAILED".equals(run.status())) {
+            return;
+        }
+        publishTerminal(run, "answer.failed", terminalData(run));
+    }
+
     public AnswerRunRef requireRun(String workspaceId, String runId) {
         return answerRunService.requireRef(workspaceId, runId);
     }

@@ -223,8 +223,10 @@ class MemoryApplicationFeedbackFollowUpTransactionTest {
 
     @Test
     void proxiedRatingDoesNotHoldTheRunLockWhileTheModelWaits() throws Exception {
-        jdbc.execute("create table answer_run(id varchar(36) primary key, workspace_id varchar(36), answer_message_id varchar(36))");
-        jdbc.update("insert into answer_run values ('run-1', ?, ?)", WORKSPACE, ASSISTANT_MESSAGE);
+        // status / error_code 与真实表一致：反馈入口会先确认回答没有被停止或删除
+        jdbc.execute("create table answer_run(id varchar(36) primary key, workspace_id varchar(36), "
+                + "answer_message_id varchar(36), status varchar(32), error_code varchar(64))");
+        jdbc.update("insert into answer_run values ('run-1', ?, ?, 'COMPLETED', null)", WORKSPACE, ASSISTANT_MESSAGE);
         var entered = new java.util.concurrent.CountDownLatch(1);
         var release = new java.util.concurrent.CountDownLatch(1);
         client.output = NEGATIVE_LENGTH;

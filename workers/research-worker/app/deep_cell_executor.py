@@ -7,9 +7,11 @@ consumer submits the single completion envelope to the Backend.
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import logging
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -80,6 +82,7 @@ from app.search_adapters import (
     run_research_search,
 )
 from app.task_snapshot_contract import ResearchAgentTaskSnapshot, require_trusted_claim_snapshot
+from app.tool_timing import PhaseTimer, TimedPermitClient, TimedToolchain, log_task_timing
 
 
 # Keep completion usage inside the coordinator's frozen per-cell reservation.
@@ -166,7 +169,26 @@ class DeepCellExecutor:
         self.enable_llm = enable_llm
 
     def __call__(self, command: ResearchAgentCommand, claim: AgentTaskClaim) -> ResearchAgentCompletionEnvelope:
+        # 每次执行用一份带计时包装的浅拷贝，不改动共享的执行器对象
+        timer = PhaseTimer()
+        runner = copy(self)
+        runner.toolchain = TimedToolchain(self.toolchain, timer)
+        runner.permit_client = TimedPermitClient(self.permit_client, timer)
+        outcome = "ERROR"
+        try:
+            envelope = runner._execute(command, claim, timer)
+            outcome = str(envelope.termination_reason)
+            return envelope
+        finally:
+            log_task_timing(timer, task_id=str(getattr(claim, "agent_task_id", "")),
+                            research_run_id=str(getattr(command, "research_run_id", "")),
+                            role=str(getattr(runner, "_timing_role", "") or ""),
+                            outcome=outcome)
+
+    def _execute(self, command: ResearchAgentCommand, claim: AgentTaskClaim,
+                 timer: PhaseTimer) -> ResearchAgentCompletionEnvelope:
         snapshot = require_trusted_claim_snapshot(claim)
+        self._timing_role = snapshot.role
         if command.research_run_id != snapshot.research_run_id:
             raise ValueError("command research run does not match claimed snapshot")
         counterfactual_slot = (
@@ -230,7 +252,8 @@ class DeepCellExecutor:
         query_planning: dict[str, object] = {"method": "SKIPPED_ARCHIVE_REPLAY"}
         workspace_queries = []
         if not reused:
-            plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
+            with timer.phase("query_planning"):
+                plan, _ = _plan_queries_for_cell(snapshot, plan, llm_client)
             plan = _scope_search_plan_to_domains(snapshot, plan)
             query_planning = dict(plan.stop_contract.get("query_planning", {}))
             require_active()
@@ -298,17 +321,19 @@ class DeepCellExecutor:
         uncovered: dict[str, list[str]] = {}
         column_cache: dict[str, tuple] = {}
         results, raw_by_column = _extract_raw_cards(self.toolchain, task_input, plan, windows, llm_client, require_active)
-        extraction, cards, trusted_evidence = _select_column_cards(
-            snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
-            uncovered_out=uncovered, column_cache=column_cache)
+        with timer.phase("answer_check"):
+            extraction, cards, trusted_evidence = _select_column_cards(
+                snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+                uncovered_out=uncovered, column_cache=column_cache)
         context.usage.add("extract_calls")
         executed_queries = (list(getattr(self.toolchain, "executed_queries", [item.query for item in build_search_query_plan(plan)]))
                             if not reused and plan.query_specs else [])
         supplement: dict[str, object] = {}
         if (uncovered and snapshot.role == "DEEP_CELL" and not reused and allow_external and llm_client is not None
                 and load_settings().research_supplement_round):
-            extra = self._supplement_uncovered(snapshot, task_input, plan, context, llm_client, require_active,
-                                               uncovered, documents, executed_queries)
+            with timer.phase("supplement_round"):
+                extra = self._supplement_uncovered(snapshot, task_input, plan, context, llm_client, require_active,
+                                                   uncovered, documents, executed_queries)
             supplement = {"columns": len(uncovered), "queries": len(extra["queries"]),
                           "windows": len(extra["windows"])}
             if extra["windows"]:
@@ -319,14 +344,16 @@ class DeepCellExecutor:
                 for key, extra_cards in extra["raw_by_column"].items():
                     raw_by_column[key] = list(raw_by_column.get(key, [])) + list(extra_cards)
                 retained_cards = []
-                extraction, cards, trusted_evidence = _select_column_cards(
-                    snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
-                    column_cache=column_cache)
+                with timer.phase("answer_check"):
+                    extraction, cards, trusted_evidence = _select_column_cards(
+                        snapshot, plan, results, raw_by_column, windows, llm_client, require_active, retained_cards,
+                        column_cache=column_cache)
             executed_queries = executed_queries + list(extra["queries"])
         require_active()
         claim_clusters = []
-        candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
-                                        llm=llm_client, clusters_out=claim_clusters)
+        with timer.phase("claim_clustering"):
+            candidates = _candidate_payload(snapshot, cards, trusted_evidence, windows=windows,
+                                            llm=llm_client, clusters_out=claim_clusters)
         report = {"queries": list(dict.fromkeys([*executed_queries, *workspace_queries])),
                   "strategy": query_planning.get("strategy", "DIRECT"), "counter_checks": []}
         repair_target = snapshot.query_policy.get("repair_target", {})
@@ -337,8 +364,9 @@ class DeepCellExecutor:
             originals += [(str(repair_target.get("cell_key", "")), c["claim_text"])
                           for c in repair_target.get("claims", []) if isinstance(c, dict) and c.get("claim_text")]
             originals = list(dict.fromkeys(originals))
-            self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
-                                 llm_client, context, trusted_evidence, report, require_active)
+            with timer.phase("counter_checks"):
+                self._counter_checks(snapshot, task_input, plan, allow_external, originals, windows,
+                                     llm_client, context, trusted_evidence, report, require_active)
         # 反证检索之后再补低级别材料，反证证据优先占用证据条数
         retained_evidence, retained_candidates = _retained_payload(
             snapshot, retained_cards, windows, trusted_evidence, candidates)
@@ -578,19 +606,89 @@ def _extract_raw_cards(toolchain, task_input: ResearchTaskInput, plan: ResearchP
         extraction = toolchain.extract(task_input, plan, windows, llm_client=llm_client)
         _require_extraction_provider_available(extraction, llm_client)
         return [extraction], {key: list(extraction.accepted_cards)}
-    results: list[ExtractionResult] = []
+    column_plans = [plan.model_copy(update={
+        "research_schema": plan.research_schema.model_copy(update={"columns": [column], "required_column_count": 1}),
+        "state_columns": [column.key],
+    }) for column in columns]
+    if _can_extract_columns_in_parallel(llm_client, len(columns)):
+        results = _parallel_column_extractions(toolchain, task_input, column_plans, windows, llm_client,
+                                               require_active)
+    else:
+        results = []
+        for column_plan in column_plans:
+            require_active()
+            result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
+            _require_extraction_provider_available(result, llm_client)
+            results.append(result)
     raw_by_column: dict[str | None, list[object]] = {}
-    for column in columns:
-        require_active()
-        column_plan = plan.model_copy(update={
-            "research_schema": plan.research_schema.model_copy(update={"columns": [column], "required_column_count": 1}),
-            "state_columns": [column.key],
-        })
-        result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
-        _require_extraction_provider_available(result, llm_client)
-        results.append(result)
+    for column, result in zip(columns, results):
         raw_by_column[column.key] = [card for card in result.accepted_cards if getattr(card, "column_key", "") == column.key]
     return results, raw_by_column
+
+
+EXTRACT_PURPOSE = "research.extract"
+
+
+def _column_extract_concurrency() -> int:
+    try:
+        return max(1, int(load_settings().research_agent_column_extract_concurrency))
+    except Exception:  # 配置读取失败时保持串行，不影响研究本身
+        return 1
+
+
+def _can_extract_columns_in_parallel(llm_client: object | None, column_count: int) -> bool:
+    """只有真实模型客户端、并发数大于 1、且剩余预算够每列都拿到完整重试次数时才并行。
+
+    预算紧张时串行会让排在后面的列先用完预算，并行则说不准是哪一列，结果会和串行不同，所以退回串行。
+    """
+    if llm_client is None or column_count <= 1 or _column_extract_concurrency() <= 1:
+        return False
+    headroom = getattr(llm_client, "has_headroom_for", None)
+    last_record = getattr(llm_client, "last_call_record_in_thread", None)
+    if not callable(headroom) or not callable(last_record):
+        return False
+    return bool(headroom(EXTRACT_PURPOSE, column_count))
+
+
+def _parallel_column_extractions(toolchain, task_input: ResearchTaskInput, column_plans: list[ResearchPlan],
+                                 windows: list[object], llm_client: object, require_active,
+                                 ) -> list[ExtractionResult]:
+    """各列抽取互不依赖，用有界线程池并行；返回值按列顺序排列，内容与串行执行一致。
+
+    一个深挖任务最多 6 列，原来逐列串行调用模型。串行时每列收据里的调用次数是截至该列的累计值，
+    合并收据按这些累计值求和；并行时各列完成先后不定，这里按列顺序重新累计，保证完成信封摘要不变。
+    网关失败判断原来看整个客户端的最后一条调用记录，并行后改看本列所在线程的那一次调用。
+    """
+    usage = getattr(llm_client, "usage_summary", None)
+    base_calls = int(usage().get("provider_call_count", 0)) if callable(usage) else 0
+    for _ in column_plans:
+        require_active()
+
+    def extract(column_plan: ResearchPlan) -> tuple[ExtractionResult, dict[str, object] | None]:
+        # 线程池里的线程会处理多列，没发生调用的列不能拿到上一列留下的记录
+        before = llm_client.last_call_record_in_thread()
+        result = toolchain.extract(task_input, column_plan, windows, llm_client=llm_client)
+        after = llm_client.last_call_record_in_thread()
+        return result, (after if after is not before else None)
+
+    concurrency = min(_column_extract_concurrency(), len(column_plans))
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="research-column-extract") as executor:
+        # 每个线程带上当前执行上下文，取消和租约失效的检查在线程里照样生效
+        futures = [executor.submit(contextvars.copy_context().run, extract, column_plan)
+                   for column_plan in column_plans]
+        outcomes = [future.result() for future in futures]
+    results: list[ExtractionResult] = []
+    cumulative = base_calls
+    for result, record in outcomes:
+        _require_extraction_provider_available(result, llm_client, last_call=record)
+        receipt = result.provider_receipt
+        if receipt.call_count:
+            # 串行时这一列的收据记的是截至本列的累计调用次数
+            cumulative += int((record or {}).get("attempt_count") or 0)
+            receipt = receipt.model_copy(update={"call_count": cumulative})
+            result = result.model_copy(update={"provider_receipt": receipt})
+        results.append(result)
+    return results
 
 
 def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan, results: list[ExtractionResult],
@@ -617,11 +715,13 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
     cards: list[object] = []
     evidence: list[dict[str, object]] = []
     per_cell_limit = max(1, min(MAX_EVIDENCE_CARDS_PER_CELL, MAX_EVIDENCE_PER_COMPLETION // len(columns)))
-    for column in columns:
-        require_active()
-        raw = list(raw_by_column.get(column.key, []))
-        column_cards = _column_selection(snapshot, column, raw, windows, llm_client, retained_out,
-                                         uncovered_out, column_cache)
+    for column, (column_cards, column_retained, column_uncovered) in zip(
+            columns, _parallel_column_selections(snapshot, columns, raw_by_column, windows, llm_client,
+                                                 require_active, column_cache)):
+        # 各列结果按列顺序合并，与串行执行的输出完全一致
+        retained_out.extend(column_retained)
+        if uncovered_out is not None:
+            uncovered_out.update(column_uncovered)
         cards.extend(column_cards)
         seen = {str(item["evidence_key"]) for item in evidence}
         # 同一段原文可能同时支撑多个单元格，证据只保留一份，候选按证据键引用
@@ -633,14 +733,55 @@ def _select_column_cards(snapshot: ResearchAgentTaskSnapshot, plan: ResearchPlan
     return _merge_extractions(results, cards), cards, evidence
 
 
-def _require_extraction_provider_available(extraction: ExtractionResult, llm_client: object | None) -> None:
-    """网关失败不能当作资料缺口；抛出后任务重试可复用已经归档的网页。"""
+def _column_check_concurrency() -> int:
+    try:
+        return max(1, int(load_settings().research_agent_column_check_concurrency))
+    except Exception:  # 配置读取失败时保持串行，不影响研究本身
+        return 1
+
+
+def _parallel_column_selections(snapshot: ResearchAgentTaskSnapshot, columns: list[object],
+                                raw_by_column: dict[str | None, list[object]], windows: list[object],
+                                llm_client: object | None, require_active,
+                                column_cache: dict[str, tuple] | None,
+                                ) -> list[tuple[list[object], list[object], dict[str, list[str]]]]:
+    """各列的答案核对互不依赖，用有界线程池并行；返回值按列顺序排列。
+
+    原来逐列串行调用模型，一个深挖任务最多 6 列，每次核对 8 到 25 秒。每列写自己的保留卡片和未答要求，
+    调用方按列顺序合并，输出与串行执行一致；column_cache 按列键写入，各线程互不覆盖。
+    """
+    def select(column: object) -> tuple[list[object], list[object], dict[str, list[str]]]:
+        retained: list[object] = []
+        uncovered: dict[str, list[str]] = {}
+        kept = _column_selection(snapshot, column, list(raw_by_column.get(column.key, [])), windows,
+                                 llm_client, retained, uncovered, column_cache)
+        return kept, retained, uncovered
+
+    for _ in columns:
+        require_active()
+    concurrency = min(_column_check_concurrency(), len(columns))
+    if concurrency <= 1 or llm_client is None:
+        return [select(column) for column in columns]
+    with ThreadPoolExecutor(max_workers=concurrency, thread_name_prefix="research-column-check") as executor:
+        futures = [executor.submit(select, column) for column in columns]
+        return [future.result() for future in futures]
+
+
+def _require_extraction_provider_available(extraction: ExtractionResult, llm_client: object | None, *,
+                                           last_call: dict[str, object] | None = None) -> None:
+    """网关失败不能当作资料缺口；抛出后任务重试可复用已经归档的网页。
+
+    last_call 是并行抽取时本列那一次调用的记录；不传时取客户端的最后一条调用记录。
+    """
     if extraction.termination_reason != ExtractionTerminationReason.INVALID_JSON:
         return
-    usage = getattr(llm_client, "usage_summary", None)
-    summary = usage() if callable(usage) else {}
-    calls = summary.get("calls", []) if isinstance(summary, dict) else []
-    last = calls[-1] if calls and isinstance(calls[-1], dict) else {}
+    if last_call is not None:
+        last = last_call
+    else:
+        usage = getattr(llm_client, "usage_summary", None)
+        summary = usage() if callable(usage) else {}
+        calls = summary.get("calls", []) if isinstance(summary, dict) else []
+        last = calls[-1] if calls and isinstance(calls[-1], dict) else {}
     if (last.get("purpose") == "research.extract" and int(last.get("attempt_count") or 0) > 0
             and last.get("finish_reason") != "length"
             and last.get("termination_reason") != "CALL_BUDGET_EXHAUSTED"):

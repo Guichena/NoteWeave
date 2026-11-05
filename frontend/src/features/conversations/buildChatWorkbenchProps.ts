@@ -80,6 +80,11 @@ export function buildChatWorkbenchProps(input: BuildChatWorkbenchPropsInput): Ch
     loadResearchRun: workspace
       ? (researchRunId) => researchApi.getRun(workspace.workspace_id, researchRunId)
       : undefined,
+    cancelResearchRun: workspace
+      ? async (researchRunId) => {
+          await researchApi.cancelRun(workspace.workspace_id, researchRunId);
+        }
+      : undefined,
     onOpenResearchRun,
     onRegenerateAnswer: chatBusy ? undefined : (answerRunId) => void chat.regenerateAnswer(answerRunId),
     onCancelAnswer: chatBusy ? (answerRunId) => void chat.cancelAnswer(answerRunId) : undefined

@@ -40,6 +40,34 @@ class GlobalExceptionHandlerTest {
                         .value("METHOD_NOT_ALLOWED"));
     }
 
+    /** 验收中缺必填参数、并发死锁都报成 500，不存在的资源报成 400。 */
+    @Test
+    void callerAndConcurrencyErrorsShouldNotBeInternalErrors() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.standaloneSetup(new DisconnectedStreamController())
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+
+        mockMvc.perform(get("/needs-param"))
+                .andExpect(status().isBadRequest())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("MISSING_REQUEST_PARAMETER"));
+        mockMvc.perform(get("/deadlock"))
+                .andExpect(status().isConflict())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("CONCURRENT_UPDATE_CONFLICT"));
+        mockMvc.perform(get("/missing-run"))
+                .andExpect(status().isNotFound())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("RESEARCH_RUN_NOT_FOUND"));
+    }
+
+    @Test
+    void validationMessagesShouldUseSnakeCaseFieldNames() {
+        org.assertj.core.api.Assertions.assertThat(GlobalExceptionHandler.snakeCase("signalType"))
+                .isEqualTo("signal_type");
+        org.assertj.core.api.Assertions.assertThat(GlobalExceptionHandler.snakeCase("content")).isEqualTo("content");
+    }
+
     @RestController
     static class DisconnectedStreamController {
 
@@ -47,6 +75,21 @@ class GlobalExceptionHandlerTest {
         void disconnectedStream(HttpServletResponse response) throws AsyncRequestNotUsableException {
             response.setContentType(MediaType.TEXT_EVENT_STREAM_VALUE);
             throw new AsyncRequestNotUsableException("ServletOutputStream failed to flush: broken pipe");
+        }
+
+        @GetMapping("/needs-param")
+        String needsParam(@org.springframework.web.bind.annotation.RequestParam("answer_mode") String answerMode) {
+            return answerMode;
+        }
+
+        @GetMapping("/deadlock")
+        String deadlock() {
+            throw new org.springframework.dao.CannotAcquireLockException("Deadlock found when trying to get lock");
+        }
+
+        @GetMapping("/missing-run")
+        String missingRun() {
+            throw new BusinessException("RESEARCH_RUN_NOT_FOUND", "研究运行不存在");
         }
     }
 }

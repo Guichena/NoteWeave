@@ -42,8 +42,8 @@ describe("WikiWorkbench Navigation Resilience & Retry", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("renders error state with retry button when wikiHome is null and isBusy is false", () => {
-    const refreshFn = vi.fn();
+  it("renders error state with retry button when wikiHome is null and isBusy is false", async () => {
+    const refreshFn = vi.fn().mockResolvedValue(undefined);
     render(
       <WikiWorkbench
         isBusy={false}
@@ -58,14 +58,16 @@ describe("WikiWorkbench Navigation Resilience & Retry", () => {
       />
     );
 
-    const alertMsg = screen.getByRole("alert");
+    // 首屏没有数据时先自动加载一次，确实还没有数据才显示错误
+    expect(refreshFn).toHaveBeenCalledTimes(1);
+    const alertMsg = await screen.findByRole("alert");
     expect(alertMsg.textContent).toContain("Wiki 工作台加载失败");
     expect(alertMsg.closest(".wiki-load-state")).toBeTruthy();
     const retryBtn = screen.getByRole("button", { name: "重试加载 Wiki" });
     expect(retryBtn).toBeTruthy();
 
     fireEvent.click(retryBtn);
-    expect(refreshFn).toHaveBeenCalled();
+    expect(refreshFn).toHaveBeenCalledTimes(2);
   });
 
   it("renders a focused preparation surface instead of empty governance controls", () => {

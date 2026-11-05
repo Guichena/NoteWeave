@@ -65,6 +65,15 @@ export function useArtifactWorkspace({
     }
   }, [state.refreshJobs]);
 
+  const loadMoreJobs = useCallback(async () => {
+    try {
+      return await state.loadMoreJobs();
+    } catch {
+      setStatus("更早的产物加载失败，请稍后重试");
+      return [];
+    }
+  }, [state.loadMoreJobs, setStatus]);
+
   useEffect(() => {
     if (!workspaceId) {
       state.clear();
@@ -244,6 +253,7 @@ export function useArtifactWorkspace({
   return {
     ...state,
     loadJobs,
+    loadMoreJobs,
     openArtifactHistoryVersion,
     saveArtifactVersionAsSource,
     writeArtifactVersionToKnowledge,

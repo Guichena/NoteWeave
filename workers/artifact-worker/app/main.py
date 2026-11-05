@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 
 from app.config import load_settings, resolve_mcp_sandbox_root
-from app.artifact_kafka_consumer import ArtifactKafkaConsumerRuntime
+from app.artifact_kafka_consumer import ArtifactKafkaConsumerPool, ArtifactKafkaConsumerRuntime
 from app.source_transcription import (accept_source_transcription, accept_video_link, recover_source_transcriptions,
     start_source_transcription_pool, shutdown_source_transcriptions, TranscriptionCapacityExceeded)
 
@@ -24,7 +24,8 @@ async def artifact_worker_lifespan(_: FastAPI):
     try:
         start_source_transcription_pool(settings)
         recover_source_transcriptions()
-        consumer_runtime = ArtifactKafkaConsumerRuntime(settings)
+        # 多条消费通道并行处理产物任务，数量由 NOTEWEAVE_ARTIFACT_JOB_CONCURRENCY 控制
+        consumer_runtime = ArtifactKafkaConsumerPool(settings, ArtifactKafkaConsumerRuntime)
         consumer_runtime.start()
         app.state.artifact_consumer_runtime = consumer_runtime
         yield
@@ -101,6 +102,23 @@ class VideoInfoRequest(BaseModel):
     source_url: str
 
 
+class MarkdownPdfRequest(BaseModel):
+    title: str = ""
+    markdown: str
+
+
+@app.post("/internal/markdown-pdf")
+def render_markdown_pdf_endpoint(body: MarkdownPdfRequest):
+    """把产物 Markdown 正文排成 PDF，供后端在下载 PDF 时按需生成并归档。"""
+    from fastapi.responses import Response
+    from app.markdown_pdf import render_markdown_pdf
+    try:
+        content = render_markdown_pdf(body.title, body.markdown)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(content=content, media_type="application/pdf")
+
+
 @app.post("/internal/source-video-info")
 def preview_source_video(body: VideoInfoRequest) -> dict:
     from app.media_mcp_client import call_media_tool
@@ -108,6 +126,24 @@ def preview_source_video(body: VideoInfoRequest) -> dict:
         return call_media_tool("get_video_info", {"source_url": body.source_url})
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # MCP 客户端把工具错误包在 anyio 异常组里
+        raise HTTPException(status_code=502, detail=_upstream_failure_message(exc)) from exc
+
+
+def _upstream_failure_message(exc: BaseException) -> str:
+    """从异常组里取出最内层的工具失败说明，便于 Host 把真实原因交给用户。"""
+    message = ""
+    pending: list[BaseException] = [exc]
+    while pending:
+        current = pending.pop()
+        nested = getattr(current, "exceptions", None)
+        if nested:
+            pending.extend(nested)
+            continue
+        text = str(current).strip()
+        if text:
+            message = text
+    return (message or "媒体解析服务调用失败")[:1000]
 
 
 @app.post("/internal/source-video-parses", status_code=202)

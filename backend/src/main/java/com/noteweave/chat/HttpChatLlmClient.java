@@ -34,6 +34,14 @@ public class HttpChatLlmClient implements ChatLlmClient {
     private final OpenAIClient client;
     private final com.noteweave.conversation.ActualUsageRecorder usageRecorder;
 
+    /** 改写、抽取、判定等短输出调用的思考策略，见 application.yml 的 noteweave.llm.auxiliary-thinking。 */
+    @org.springframework.beans.factory.annotation.Value("${noteweave.llm.auxiliary-thinking:auto}")
+    String auxiliaryThinking = "auto";
+
+    /** 回答正文的思考策略，默认 auto：2026-11-05 对比测试中关闭思考后长回答首字快一半，质量无明显差异。 */
+    @org.springframework.beans.factory.annotation.Value("${noteweave.llm.answer-thinking:auto}")
+    String answerThinking = "auto";
+
     public HttpChatLlmClient(ObjectMapper objectMapper, com.noteweave.config.NoteWeaveProperties properties) {
         this(objectMapper, properties, null);
     }
@@ -100,10 +108,56 @@ public class HttpChatLlmClient implements ChatLlmClient {
             int maximumOutputTokens,
             Consumer<String> onToken
     ) {
+        return stream(sessionId, workspaceId, systemPrompt, userPrompt, maximumOutputTokens, onToken,
+                resolveThinking(auxiliaryThinking));
+    }
+
+    @Override
+    public String streamAnswerInSession(
+            String sessionId,
+            String workspaceId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens,
+            Consumer<String> onToken
+    ) {
+        return stream(sessionId, workspaceId, systemPrompt, userPrompt, maximumOutputTokens, onToken,
+                resolveThinking(answerThinking));
+    }
+
+    /**
+     * 把配置的思考策略换成请求里的 thinking.type；返回 null 表示不发该参数。
+     * deepseek-v4 默认开启思考，实测同一提示首个正文字符从 7.1 秒降到 2.7 秒。
+     */
+    String resolveThinking(String policy) {
+        String normalized = policy == null ? "auto" : policy.trim().toLowerCase(Locale.ROOT);
+        boolean thinkingModel = isThinkingModel(model);
+        return switch (normalized) {
+            case "enabled", "disabled" -> normalized;
+            // glm-5 历来一律关闭思考，沿用旧行为
+            case "model-default" -> model.toLowerCase(Locale.ROOT).startsWith("glm-5") ? "disabled" : null;
+            default -> thinkingModel ? "disabled" : null;
+        };
+    }
+
+    static boolean isThinkingModel(String model) {
+        String lower = model == null ? "" : model.toLowerCase(Locale.ROOT);
+        return lower.startsWith("glm-5") || lower.startsWith("deepseek-v4") || lower.equals("deepseek-flash");
+    }
+
+    private String stream(
+            String sessionId,
+            String workspaceId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens,
+            Consumer<String> onToken,
+            String thinking
+    ) {
         if (!enabled) {
             throw new IllegalStateException("HttpChatLlmClient is not enabled; check noteweave.llm.* configuration");
         }
-        ChatCompletionCreateParams params = buildRequest(sessionId, systemPrompt, userPrompt, maximumOutputTokens);
+        ChatCompletionCreateParams params = buildRequest(sessionId, systemPrompt, userPrompt, maximumOutputTokens, thinking);
         // attemptId 在尝试开始时生成并稳定复用；一次 streamChat 调用就是一次尝试
         String attemptId = sessionId == null || sessionId.isBlank()
                 ? "chat-" + java.util.UUID.randomUUID()
@@ -184,6 +238,16 @@ public class HttpChatLlmClient implements ChatLlmClient {
             String userPrompt,
             int maximumOutputTokens
     ) {
+        return buildRequest(sessionId, systemPrompt, userPrompt, maximumOutputTokens, resolveThinking(auxiliaryThinking));
+    }
+
+    ChatCompletionCreateParams buildRequest(
+            String sessionId,
+            String systemPrompt,
+            String userPrompt,
+            int maximumOutputTokens,
+            String thinking
+    ) {
         ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
                 .model(model)
                 .addSystemMessage(systemPrompt)
@@ -192,8 +256,8 @@ public class HttpChatLlmClient implements ChatLlmClient {
                 .putAdditionalBodyProperty("max_tokens", JsonValue.from(Math.max(1, maximumOutputTokens)))
                 // 显式请求流式 usage 帧；供应商不支持时按未上报处理，不伪造真实用量
                 .putAdditionalBodyProperty("stream_options", JsonValue.from(Map.of("include_usage", true)));
-        if (model.toLowerCase(Locale.ROOT).startsWith("glm-5")) {
-            builder.putAdditionalBodyProperty("thinking", JsonValue.from(Map.of("type", "disabled")));
+        if (thinking != null) {
+            builder.putAdditionalBodyProperty("thinking", JsonValue.from(Map.of("type", thinking)));
         }
         // 会话标识只随本次请求发送，单例客户端不保存，避免串到其他对话
         if (sessionId != null && !sessionId.isBlank()) {

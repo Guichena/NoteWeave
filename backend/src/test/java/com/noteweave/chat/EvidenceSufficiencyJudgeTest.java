@@ -5,6 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -186,6 +188,52 @@ class EvidenceSufficiencyJudgeTest {
         assertThat(EvidenceSufficiencyJudge.hitText("没有相邻段落\n\n第二段")).isEqualTo("没有相邻段落\n\n第二段");
         assertThat(EvidenceSufficiencyJudge.hitText("  前后有空白  ")).isEqualTo("前后有空白");
         assertThat(EvidenceSufficiencyJudge.hitText(null)).isEmpty();
+    }
+
+    @Test
+    void lowProviderScoreSkipsModelAndMatchesCombinedVerdict() {
+        ChatLlmClient llm = enabledClient();
+
+        EvidenceSufficiencyJudge.Judgement judgement =
+                judge(llm, true).judge("问题", bundle(passage(0.10)));
+
+        assertThat(judgement.verdict()).isEqualTo(EvidenceSufficiency.INSUFFICIENT);
+        assertThat(judgement.reasons()).containsExactly(EvidenceSufficiencyJudge.REASON_RULE_LOW);
+        verify(llm, never()).streamChat(anyString(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void highProviderScoreSkipsModelWhenRuleEnabled() {
+        ChatLlmClient llm = enabledClient();
+        EvidenceSufficiencyJudge judge = new EvidenceSufficiencyJudge(llm, objectMapper, true, 0.80d);
+
+        EvidenceSufficiencyJudge.Judgement judgement = judge.judge("问题", bundle(passage(0.10), passage(0.86)));
+
+        assertThat(judgement.verdict()).isEqualTo(EvidenceSufficiency.SUFFICIENT);
+        assertThat(judgement.reasons()).containsExactly(EvidenceSufficiencyJudge.REASON_RULE_HIGH);
+        verify(llm, never()).streamChat(anyString(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void middleProviderScoreStillAsksModel() {
+        ChatLlmClient llm = enabledClient();
+        when(llm.streamChat(anyString(), anyString(), anyInt(), any())).thenReturn("{\"verdict\":\"PARTIAL\"}");
+        EvidenceSufficiencyJudge judge = new EvidenceSufficiencyJudge(llm, objectMapper, true, 0.80d);
+
+        EvidenceSufficiencyJudge.Judgement judgement = judge.judge("问题", bundle(passage(0.50)));
+
+        assertThat(judgement.verdict()).isEqualTo(EvidenceSufficiency.PARTIAL);
+        verify(llm).streamChat(anyString(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void rulesNeedProviderScoreAndAvailableModel() {
+        assertThat(EvidenceSufficiencyJudge.ruleJudgement(List.of(scored(ScoreInfo.fusion())), 0.80d)).isNull();
+        ChatLlmClient unavailable = mock(ChatLlmClient.class);
+        when(unavailable.isEnabled()).thenReturn(false);
+        EvidenceSufficiencyJudge judge = new EvidenceSufficiencyJudge(unavailable, objectMapper, true, 0.80d);
+
+        assertThat(judge.judge("问题", bundle(passage(0.95))).verdict()).isEqualTo(EvidenceSufficiency.NOT_RUN);
     }
 
     private EvidenceSufficiencyJudge.Judgement combine(

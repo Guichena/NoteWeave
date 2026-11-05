@@ -49,6 +49,7 @@ const item: ArtifactOutputItem = {
   phaseIndex: -1,
   detail: "",
   technicalDetail: "",
+  queuePosition: null,
   updatedAt: "2026-09-01T00:00:00Z"
 };
 
@@ -151,6 +152,18 @@ describe("ArtifactReader", () => {
     expect(props.rollbackArtifactVersion).toHaveBeenCalledWith({ artifact_job_id: "job-report", version_no: 1 });
   });
 
+  it("shows a visible restore entry while viewing an older version", async () => {
+    const props = readerProps({ versionNo: 2, version: version(2) });
+    render(<ArtifactReader {...props} />);
+
+    expect(screen.getByText("正在查看 v2，最新版本是 v3。")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "回到最新版本" }));
+    expect(props.onSelectVersion).toHaveBeenCalledWith(3);
+    fireEvent.click(screen.getByRole("button", { name: "恢复为此版本" }));
+    await waitFor(() => expect(props.onRolledBack).toHaveBeenCalledOnce());
+    expect(props.rollbackArtifactVersion).toHaveBeenCalledWith({ artifact_job_id: "job-report", version_no: 2 });
+  });
+
   it("offers downloads only for ready files and hides restore on the latest version", () => {
     const props = readerProps({
       version: version(3, {
@@ -167,6 +180,7 @@ describe("ArtifactReader", () => {
     expect(screen.getByRole("button", { name: "下载 Markdown" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "下载 PPTX" })).toBeNull();
     expect(screen.queryByRole("menuitem", { name: "恢复为此版本" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "恢复为此版本" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "下载 Markdown" }));
     expect(props.downloadArtifactVersionFile).toHaveBeenCalledWith(
       { artifact_job_id: "job-report", version_no: 3 },

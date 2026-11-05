@@ -115,7 +115,35 @@ public class ConversationTurnModule {
                 rs -> rs.next() ? rs.getString(1) : null, submissionId);
     }
 
+    /** 同步提交：创建回合后在当前线程完成回答准备，返回时运行已经可以开始生成。 */
     public TurnReceipt submitNewTurn(SubmitTurnCommand command) {
+        TurnStart start = beginNewTurn(command);
+        PendingAnswerPreparation pending = start.pending();
+        if (pending == null) {
+            return start.receipt();
+        }
+        try {
+            ChatService.PreparedAnswerMaterial material = chatService.compilePreparedAnswer(
+                    command.conversationId(),
+                    pending.receipt().messageId(),
+                    pending.workspaceId(),
+                    command.toLegacyAnswerRequest()
+            );
+            transactionTemplate.executeWithoutResult(
+                    status -> finalizeAnswerTurn(command, pending.prepared(), material, null));
+            return pending.receipt();
+        } catch (RuntimeException failure) {
+            recordPreparationFailure(pending.prepared(), failure, null);
+            throw failure;
+        }
+    }
+
+    /**
+     * 提交的第一段：查重、写入用户消息与助手占位消息、创建 PREPARING 运行。
+     * 研究回合和重复提交在这一步就完成，此时 {@link TurnStart#pending()} 为 null；
+     * 问答回合返回待准备的句柄，由调用方同步或在后台完成准备。
+     */
+    public TurnStart beginNewTurn(SubmitTurnCommand command) {
         command.effectiveRetrievalConfig();
         String actor = auditActorProvider.currentOrSystem("CONVERSATION");
         String executionKind = executionKind(command.requestedTurnMode());
@@ -142,14 +170,15 @@ public class ConversationTurnModule {
                         existing.errorMessage() == null ? "Turn submission preparation failed" : existing.errorMessage()
                 );
             }
-            return payloadCodec.readReceipt(existing.receiptJson()).asReused();
+            return TurnStart.done(payloadCodec.readReceipt(existing.receiptJson()).asReused());
         }
 
         if ("RESEARCH".equals(executionKind)) {
             try {
-                return transactionTemplate.execute(status -> submitResearchTurn(command, actor, requestHash));
+                return TurnStart.done(
+                        transactionTemplate.execute(status -> submitResearchTurn(command, actor, requestHash)));
             } catch (DuplicateKeyException duplicate) {
-                return awaitWinner(actor, command, requestHash);
+                return TurnStart.done(awaitWinner(actor, command, requestHash));
             }
         }
 
@@ -158,21 +187,87 @@ public class ConversationTurnModule {
             prepared = transactionTemplate.execute(
                     status -> prepareAnswerTurn(command, actor, requestHash));
         } catch (DuplicateKeyException duplicate) {
-            return awaitWinner(actor, command, requestHash);
+            return TurnStart.done(awaitWinner(actor, command, requestHash));
         }
         freezeShadowAnswer(command, actor, prepared);
+        return new TurnStart(prepared.receipt(), new PendingAnswerPreparation(command, prepared));
+    }
+
+    /**
+     * 异步准备的准入检查，在请求线程里执行：失败时记录准备失败并抛出，请求按原错误码返回，
+     * 与同步提交时的错误契约一致。
+     */
+    public void admitAnswerPreparation(PendingAnswerPreparation pending) {
         try {
-            ChatService.PreparedAnswerMaterial material = chatService.compilePreparedAnswer(
-                    command.conversationId(),
-                    prepared.receipt().messageId(),
-                    prepared.workspaceId(),
-                    command.toLegacyAnswerRequest()
-            );
-            transactionTemplate.executeWithoutResult(status -> finalizeAnswerTurn(command, prepared, material, null));
-            return prepared.receipt();
+            chatService.requireAnswerAdmission(
+                    pending.conversationId(), pending.workspaceId(), pending.command().toLegacyAnswerRequest());
         } catch (RuntimeException failure) {
-            recordPreparationFailure(prepared, failure, null);
+            recordPreparationFailure(pending.prepared(), failure, null);
             throw failure;
+        }
+    }
+
+    /**
+     * 准入通过后的回答准备，可以在后台线程执行。失败时把提交、运行和助手消息标成失败后抛出，
+     * 调用方负责把失败推送给前端。
+     */
+    public TurnReceipt completeAdmittedPreparation(
+            PendingAnswerPreparation pending,
+            com.noteweave.chat.AnswerPreparationListener listener
+    ) {
+        SubmitTurnCommand command = pending.command();
+        try {
+            ChatService.PreparedAnswerMaterial material = chatService.compileAdmittedAnswer(
+                    command.conversationId(),
+                    pending.receipt().messageId(),
+                    pending.workspaceId(),
+                    command.toLegacyAnswerRequest(),
+                    listener
+            );
+            transactionTemplate.executeWithoutResult(
+                    status -> finalizeAnswerTurn(command, pending.prepared(), material, null));
+            return pending.receipt();
+        } catch (RuntimeException failure) {
+            recordPreparationFailure(pending.prepared(), failure, null);
+            throw failure;
+        }
+    }
+
+    /** 提交第一段的结果：pending 为 null 表示这一轮已经不需要回答准备。 */
+    public record TurnStart(TurnReceipt receipt, PendingAnswerPreparation pending) {
+        static TurnStart done(TurnReceipt receipt) {
+            return new TurnStart(receipt, null);
+        }
+    }
+
+    /** 已创建 PREPARING 运行、等待回答准备的问答回合。 */
+    public static final class PendingAnswerPreparation {
+        private final SubmitTurnCommand command;
+        private final PreparedAnswerTurn prepared;
+
+        private PendingAnswerPreparation(SubmitTurnCommand command, PreparedAnswerTurn prepared) {
+            this.command = command;
+            this.prepared = prepared;
+        }
+
+        public TurnReceipt receipt() {
+            return prepared.receipt();
+        }
+
+        public String workspaceId() {
+            return prepared.workspaceId();
+        }
+
+        public String conversationId() {
+            return command.conversationId();
+        }
+
+        SubmitTurnCommand command() {
+            return command;
+        }
+
+        PreparedAnswerTurn prepared() {
+            return prepared;
         }
     }
 
@@ -719,11 +814,18 @@ public class ConversationTurnModule {
         return payloadCodec.readFrozenCommand(conversationId, preparationJson);
     }
 
+    /**
+     * 两个调用方都在回合事务里：先对会话行加排他锁，同一会话的并发提交按顺序执行。
+     * 此前先插入 turn_submission（外键检查对会话行加共享锁），再更新 next_message_seq 需要排他锁，
+     * 两个并发请求各持共享锁互等，MySQL 判死锁返回 500。现在后到的请求等前一个提交后再读会话头，
+     * 头已变化时按 CONVERSATION_HEAD_CONFLICT 返回 409。
+     */
     private ConversationState requireConversationState(String conversationId) {
         List<ConversationState> rows = jdbcTemplate.query("""
                 select workspace_id, active_head_message_id, lock_version
                 from conversation
                 where id = ?
+                for update
                 """, (rs, rowNum) -> new ConversationState(
                 rs.getString("workspace_id"),
                 rs.getString("active_head_message_id"),

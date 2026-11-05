@@ -73,6 +73,17 @@ def test_deepseek_bounded_json_uses_the_output_budget_for_content_instead_of_thi
     assert requests[0]["max_tokens"] == 3000
 
 
+@pytest.mark.parametrize("purpose", ["research.cell.queries", "research.answer_check", "research.claims.equivalent",
+                                     "research.verify.cell", "research.counter.queries"])
+def test_deepseek_short_json_purposes_skip_thinking(monkeypatch, purpose):
+    requests = _provider(monkeypatch, [("{}", "stop")])
+    client = OpenAICompatibleLlmClient(api_key="test-key", model="deepseek-v4.1-flash",
+                                       base_url="http://127.0.0.1:9999/v1")
+    client.complete_json(purpose, {})
+
+    assert json.loads(requests[0].data)["thinking"] == {"type": "disabled"}
+
+
 def test_thinking_can_be_explicitly_enabled_without_changing_other_purposes(monkeypatch):
     requests = _provider(monkeypatch, [("{}", "stop")])
     client = OpenAICompatibleLlmClient(api_key="test-key", model="deepseek-v4.1-flash",

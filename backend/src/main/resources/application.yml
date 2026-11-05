@@ -105,6 +105,11 @@ noteweave:
       rollout-max-terminal-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_TERMINAL_FAILURE_RATE:0.20}
       rollout-max-delivery-failure-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_DELIVERY_FAILURE_RATE:0.20}
       rollout-max-rejected-merge-rate: ${NOTEWEAVE_RESEARCH_AGENT_ROLLOUT_MAX_REJECTED_MERGE_RATE:0.30}
+      repair:
+        # 每个单元格最多补查几次，取值 1 或 2；每多一次通常多一整波等待
+        max-per-cell: ${NOTEWEAVE_RESEARCH_AGENT_REPAIR_MAX_PER_CELL:2}
+        # 已核验、带证据且置信度不低于这个值（百万分比，如 900000 表示 0.9）的单元格不再补查，0 表示关闭
+        skip-verified-min-confidence-ppm: ${NOTEWEAVE_RESEARCH_AGENT_REPAIR_SKIP_VERIFIED_MIN_CONFIDENCE_PPM:0}
       rate-limit:
         enabled: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ENABLED:true}
         allow-local-fallback: ${NOTEWEAVE_RESEARCH_AGENT_RATE_LIMIT_ALLOW_LOCAL_FALLBACK:false}
@@ -119,7 +124,11 @@ noteweave:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
     evidence-sufficiency:
       enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
+      # 最高提供方重排分达到这个值时不调用模型，直接判 SUFFICIENT；设成 2 即关闭
+      rule-sufficient-at: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_RULE_SUFFICIENT_AT:0.80}
   answer:
+    # 发消息只创建回合和 PREPARING 运行就返回，改写、检索与判定在后台执行并推送阶段事件
+    async-preparation: ${NOTEWEAVE_ANSWER_ASYNC_PREPARATION:true}
     events:
       channel-retention-seconds: ${NOTEWEAVE_ANSWER_EVENTS_CHANNEL_RETENTION_SECONDS:900}
       max-retained-channels: ${NOTEWEAVE_ANSWER_EVENTS_MAX_RETAINED_CHANNELS:10000}
@@ -338,6 +347,11 @@ noteweave:
     model: ${NOTEWEAVE_LLM_MODEL:noteweave-chat}
     api-key: ${NOTEWEAVE_LLM_API_KEY:}
     timeout-seconds: ${NOTEWEAVE_LLM_TIMEOUT_SECONDS:60}
+    # 思考模式：auto 对已知的思考模型（deepseek-v4、glm-5）关闭，其他模型不发该参数；
+    # model-default 不发参数，沿用模型默认；也可以填 enabled / disabled 强制指定。
+    # 改写、抽取、判定这类短输出调用用 auxiliary-thinking，回答正文用 answer-thinking。
+    auxiliary-thinking: ${NOTEWEAVE_LLM_AUXILIARY_THINKING:auto}
+    answer-thinking: ${NOTEWEAVE_LLM_ANSWER_THINKING:auto}
   executors:
     scheduling:
       pool-size: ${NOTEWEAVE_SCHEDULING_POOL_SIZE:4}

@@ -8,6 +8,8 @@ export type ArtifactServerState = {
   revision: number;
   jobsLoading: boolean;
   artifactJobs: ArtifactJobSummary[];
+  /** 最近一次加载的最后一页是满的，说明后面可能还有更早的产物。 */
+  hasMoreJobs: boolean;
   latestArtifactVersion: ArtifactVersionDetail | null;
   selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
   selectedArtifactHistoryKey: string;
@@ -19,7 +21,12 @@ export type ArtifactServerState = {
 export type ArtifactStateAction =
   | { type: "workspace"; workspaceId: string }
   | { type: "jobs-loading" }
-  | { type: "jobs-snapshot"; jobs: ArtifactJobSummary[]; latestVersion: ArtifactVersionDetail | null }
+  | {
+    type: "jobs-snapshot";
+    jobs: ArtifactJobSummary[];
+    latestVersion: ArtifactVersionDetail | null;
+    hasMore?: boolean;
+  }
   | { type: "history-loading"; key: string }
   | { type: "history-selected"; key: string; version: ArtifactVersionDetail | null }
   | { type: "history-failed" }
@@ -34,6 +41,7 @@ export function createArtifactServerState(workspaceId = ""): ArtifactServerState
     revision: 0,
     jobsLoading: false,
     artifactJobs: [],
+    hasMoreJobs: false,
     latestArtifactVersion: null,
     selectedArtifactHistoryVersion: null,
     selectedArtifactHistoryKey: "",
@@ -61,6 +69,7 @@ export function reduceArtifactServerState(
         revision: state.revision + 1,
         jobsLoading: false,
         artifactJobs: action.jobs,
+        hasMoreJobs: action.hasMore ?? false,
         latestArtifactVersion: action.latestVersion
       };
     case "history-loading":

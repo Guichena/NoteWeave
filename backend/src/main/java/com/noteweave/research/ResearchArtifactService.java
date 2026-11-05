@@ -211,8 +211,10 @@ public class ResearchArtifactService {
         // COMPLIANCE 撤销或内部缺失的依赖会在这里以结构化原因阻断正文下发
         requireReportDependenciesReadable(workspaceId, researchRunId);
         String fileName = sanitize(reportTitle(row)) + ".md";
+        // 导出正文按页面同款编号替换内联证据标记：Markdown 里没有前端把 [evidence:...] 渲染成角标
+        String markdown = ResearchReportCitations.forExport(jdbcTemplate, researchRunId, row.finalReportMarkdown());
         return new ResearchReportDownload(fileName, "text/markdown; charset=UTF-8",
-                row.finalReportMarkdown().getBytes(StandardCharsets.UTF_8));
+                markdown.getBytes(StandardCharsets.UTF_8));
     }
 
     /** 文件准备段：内容摘要、file_object 登记与报告文件写入都不在长数据库事务内。 */

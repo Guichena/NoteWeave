@@ -19,6 +19,8 @@ export type RestoredMessage = {
   citations?: string[];
   researchRunId?: string;
   researchProjectionJson?: string;
+  /** 消息已删除，只展示删除说明。 */
+  deleted?: boolean;
 };
 
 export type RestoredWorkspaceSession = {
@@ -118,6 +120,11 @@ function toRestoredMessage(message: ConversationMessage): RestoredMessage {
   const mode = (message.requested_turn_mode || "").toLowerCase();
   if (mode === "qa" || mode === "note" || mode === "wiki") {
     restored.answerMode = mode;
+  }
+  if (message.context_status === "DELETED") {
+    // 已删除的消息只保留位置，后端已把正文置空，由消息气泡显示此消息已删除，不带回答运行等可操作信息
+    restored.deleted = true;
+    return restored;
   }
   if (restored.role === "assistant") {
     const answerStatus = (message.answer_status || "").toUpperCase();

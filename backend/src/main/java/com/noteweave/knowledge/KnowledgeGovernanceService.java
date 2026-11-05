@@ -426,15 +426,13 @@ public class KnowledgeGovernanceService {
         int created = 0;
         for (String title : missingTitles) {
             if (wikiMutationService.findWikiItemIdByTitle(workspaceId, title) == null) {
-                knowledgeCommandService.createItemWithVersion(
+                // 占位页按系统写入，保持 AUTO，之后 ingest 命中同名页时可以直接写入正文
+                knowledgeCommandService.createWikiPlaceholderForInternalExecution(
                         workspaceId,
-                        "WIKI",
                         title,
                         "# " + title
                                 + "\n\n## 待补充\n\n"
-                                + "该页面由 Wiki auto-fix 根据断链自动创建，需要人工补充内容和来源。\n",
-                        null,
-                        List.of());
+                                + "该页面由 Wiki auto-fix 根据断链自动创建，需要人工补充内容和来源。\n");
                 created++;
             }
         }

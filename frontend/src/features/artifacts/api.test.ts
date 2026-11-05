@@ -71,5 +71,12 @@ describe("ArtifactsApi", () => {
     expect(get.mock.calls.every(([, init]) => init?.signal === controller.signal)).toBe(true);
   });
 
+  it("adds limit and offset only when a page is requested", async () => {
+    const get = vi.fn(async (_path: string, _init?: RequestInit) => ([]));
+    const api = new ArtifactsApi({ get } as unknown as ApiClient);
 
+    await api.listJobs("workspace", undefined, { limit: 100, offset: 0 });
+
+    expect(get).toHaveBeenCalledWith("/api/v2/workspaces/workspace/artifact-jobs?limit=100&offset=0", undefined);
+  });
 });

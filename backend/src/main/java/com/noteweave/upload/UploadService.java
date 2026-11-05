@@ -348,7 +348,11 @@ public class UploadService {
             }
             size = Math.addExact(size, ((Number) chunk.get("byte_size")).longValue());
         }
-        if (size != upload.fileSize()) throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH", "上传分片大小与声明不一致");
+        if (size != upload.fileSize()) {
+            // 报错带上实际与声明的字节数，调用方能直接看出是哪一侧算错了
+            throw new BusinessException("UPLOAD_FILE_SIZE_MISMATCH",
+                    "上传分片合计 " + size + " 字节，与创建上传时声明的 " + upload.fileSize() + " 字节不一致");
+        }
         return new CompletionCandidate(upload, chunkRows, size, false);
     }
 

@@ -51,6 +51,28 @@ describe("WorkspaceSessionLoader", () => {
     });
   });
 
+  it("已删除的消息只保留删除说明，不带回答运行 ID", async () => {
+    const port = createPort({
+      conversations: [conversation("deleted")],
+      messages: [{
+        ...message(1, "ASSISTANT", ""),
+        requested_turn_mode: "QA",
+        context_status: "DELETED",
+        answer_status: "CANCELLED",
+        answer_run_id: "run-deleted"
+      }]
+    });
+    const loader = new WorkspaceSessionLoader(port as never);
+
+    const restored = await loader.restoreWorkspace(workspace("workspace"));
+    expect(restored?.messages[0]).toEqual({
+      role: "assistant",
+      content: "",
+      answerMode: "qa",
+      deleted: true
+    });
+  });
+
   it("恢复助手消息的回答运行 ID 与引用，刷新后仍能查看证据", async () => {
     const port = createPort({
       conversations: [conversation("cited")],

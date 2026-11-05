@@ -253,6 +253,16 @@ class WorkspaceAccessContractTest {
                         .content("{\"wiki_enabled\":false}"))
                 .andExpect(status().isOk());
 
+        // 缺少 wiki_enabled 时拒绝，不能把知识库静默关掉
+        jdbcTemplate.update("update workspace set wiki_enabled = 1 where id = ?", workspaceId);
+        mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/wiki-settings", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"auto_ingest\":true}"))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcTemplate.queryForObject(
+                "select wiki_enabled from workspace where id = ?", Boolean.class, workspaceId)).isTrue();
+
         Long versionBefore = jdbcTemplate.queryForObject(
                 "select acl_version from workspace where id = ?", Long.class, workspaceId);
         mockMvc.perform(put("/api/v2/workspaces/{workspaceId}/members/{userId}", workspaceId, viewer.userId())
@@ -310,6 +320,27 @@ class WorkspaceAccessContractTest {
                 where workspace_id = ? and user_id = ?
                 """, workspaceId, member.userId());
         assertThat(listWorkspaceIds(member.token())).doesNotContain(workspaceId);
+    }
+
+    /** 工作台可以删除：只有管理员能删，删除后列表不显示、接口全部拒绝。 */
+    @Test
+    void ownerCanDeleteWorkspaceAndItDisappears() throws Exception {
+        String ownerToken = createSessionForExistingUser("local-user", "delete-owner");
+        String workspaceId = createWorkspace(ownerToken, "To Delete");
+        UserSession editor = createUserAndSession("delete-editor");
+        addMember(workspaceId, editor.userId(), "EDITOR", "ACTIVE");
+
+        mockMvc.perform(delete("/api/v2/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + editor.token()))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(delete("/api/v2/workspaces/{workspaceId}", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+
+        assertThat(listWorkspaceIds(ownerToken)).doesNotContain(workspaceId);
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/sources", workspaceId)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isForbidden());
     }
 
     private String createSessionForExistingUser(String userId, String prefix) {

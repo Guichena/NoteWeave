@@ -84,6 +84,32 @@ class HttpChatLlmClientTest {
         assertThat(body.path("thinking").path("type").asText()).isEqualTo("disabled");
     }
 
+    /** deepseek-v4 默认开思考：辅助调用和回答正文默认都关闭思考。 */
+    @Test
+    void shouldDisableThinkingForAuxiliaryAndAnswerCallsOnDeepseekV4ByDefault() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        start(200, chunk("答案", "stop") + "data: [DONE]\n\n", body, new AtomicReference<>());
+        HttpChatLlmClient deepseek = client("deepseek-v4.1-flash", "");
+        deepseek.streamChat("system", "user", 300, ignored -> {});
+        assertThat(mapper.readTree(body.get()).path("thinking").path("type").asText()).isEqualTo("disabled");
+        deepseek.streamAnswerInSession(null, null, "system", "user", 300, ignored -> {});
+        assertThat(mapper.readTree(body.get()).path("thinking").path("type").asText()).isEqualTo("disabled");
+    }
+
+    @Test
+    void shouldResolveThinkingPolicyPerPurpose() throws Exception {
+        start(200, chunk("答案", "stop") + "data: [DONE]\n\n", new AtomicReference<>(), new AtomicReference<>());
+        HttpChatLlmClient deepseek = client("deepseek-v4.1-flash", "");
+        assertThat(deepseek.resolveThinking("auto")).isEqualTo("disabled");
+        assertThat(deepseek.resolveThinking("model-default")).isNull();
+        assertThat(deepseek.resolveThinking("enabled")).isEqualTo("enabled");
+        HttpChatLlmClient other = client("test-model", "");
+        assertThat(other.resolveThinking("auto")).isNull();
+        assertThat(other.resolveThinking("disabled")).isEqualTo("disabled");
+        HttpChatLlmClient glm = client("glm-5.3-flash", "");
+        assertThat(glm.resolveThinking("model-default")).isEqualTo("disabled");
+    }
+
     @Test
     void shouldRejectSuccessfulStreamWithoutContent() throws Exception {
         start(200, chunk(null, "stop") + "data: [DONE]\n\n", new AtomicReference<>(), new AtomicReference<>());

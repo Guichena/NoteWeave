@@ -197,6 +197,29 @@
   font-size: var(--text-sm);
 }
 
+/* 停用、重新启用后的即时提示 */
+.memory-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.memory-notice > span {
+  flex: 1 1 240px;
+}
+
+.memory-notice .secondary-button {
+  min-height: 28px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
+}
+
 /* ---------- 分组 ---------- */
 
 .memory-section {
@@ -520,4 +543,29 @@
   display: grid;
   gap: 6px;
   margin-top: 10px;
+}
+
+/* ---------- 已停用 ---------- */
+
+.memory-revoked > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.memory-revoked > summary::-webkit-details-marker {
+  display: none;
+}
+
+.memory-active-row.is-revoked .memory-active-copy strong {
+  color: var(--muted);
+}
+
+.memory-restore-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: var(--text-xs);
 }

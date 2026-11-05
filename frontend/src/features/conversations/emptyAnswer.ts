@@ -1,5 +1,5 @@
 import { createAnswerRunState } from "../answers/store";
-import type { AnswerRunState } from "../answers/model";
+import { type AnswerRunState, isAnswerInProgress } from "../answers/model";
 
 /**
  * 回答没有正文时应该显示的状态。
@@ -9,7 +9,7 @@ import type { AnswerRunState } from "../answers/model";
  *
  * <ul>
  *   <li>FAILED / CANCELLED：保留原状态，补上可读的失败原因；</li>
- *   <li>GENERATING / FINALIZING：仍是进行中，保留等待态，不写入伪正文；</li>
+ *   <li>PREPARING / RETRIEVING / GENERATING / FINALIZING：仍是进行中，保留等待态，不写入伪正文；</li>
  *   <li>其余终态（含 COMPLETED）但没有正文：如实标记失败，提供重试入口。</li>
  * </ul>
  */
@@ -35,7 +35,7 @@ export function resolveMissingContentState(
       error: base.error || (status === "CANCELLED" ? "回答已取消" : "回答生成失败")
     };
   }
-  if (status === "GENERATING" || status === "FINALIZING") {
+  if (isAnswerInProgress(status)) {
     return { ...base, content: "" };
   }
   return {
