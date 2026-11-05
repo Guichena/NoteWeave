@@ -275,6 +275,26 @@ class WikiIngestServiceTest {
     }
 
     @Test
+    void busyWorkspaceShouldBeRetriedBeforeFailing() {
+        // 工作台锁被占用时先等待重试，前一个任务释放后本次 ingest 照常执行
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
+                .thenReturn(1);
+        when(jdbcTemplate.queryForList(anyString(), eq(String.class),
+                eq("workspace-1"), eq("source-1")))
+                .thenReturn(List.of("READY"));
+        when(workspaceLock.tryAcquire(anyString(), anyString(), any())).thenReturn(false, false, true);
+        service.workspaceLockWait = java.time.Duration.ofSeconds(5);
+        service.workspaceLockPoll = java.time.Duration.ofMillis(1);
+
+        service.runSourceIngestNow("task-4", "workspace-1", "source-1");
+
+        verify(taskCommandPort, never()).failTask(
+                "task-4", "WIKI_WORKSPACE_BUSY",
+                "同一工作台已有 Wiki 任务在写入，本次 ingest 稍后重试", "WIKI_WORKSPACE_BUSY", true);
+        verify(workspaceLock, org.mockito.Mockito.times(3)).tryAcquire(anyString(), eq("task-4"), any());
+    }
+
+    @Test
     void busyWorkspaceShouldFailIngestTaskWithoutStartingWork() {
         // WIKI-02：同一工作台已有 Wiki 任务在写入时，新任务必须让路，不能并发重灌
         when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), eq("workspace-1")))
@@ -283,6 +303,7 @@ class WikiIngestServiceTest {
                 eq("workspace-1"), eq("source-1")))
                 .thenReturn(List.of("READY"));
         when(workspaceLock.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
+        service.workspaceLockWait = java.time.Duration.ZERO;
 
         service.runSourceIngestNow("task-3", "workspace-1", "source-1");
 

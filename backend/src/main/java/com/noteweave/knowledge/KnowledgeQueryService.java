@@ -268,7 +268,14 @@ public class KnowledgeQueryService implements WikiRetrievalQueryPort {
                 wiki ? listBacklinks(item.workspaceId(), item.itemId()) : List.of(),
                 snapshot.createdAt(),
                 item.updatedAt(),
-                sourceAvailability(item.workspaceId(), snapshot.versionId()));
+                sourceAvailability(item.workspaceId(), snapshot.versionId()),
+                wiki ? wikiPageState(item.itemId()) : null);
+    }
+
+    /** 页面详情也返回内容来源状态，前端据此显示手工编辑提示和恢复自动同步入口。 */
+    private String wikiPageState(String itemId) {
+        return jdbcTemplate.query("select wiki_page_state, updated_by from knowledge_item where id = ?",
+                rs -> rs.next() ? WikiPageState.fromStored(rs.getString(1), rs.getString(2)).name() : null, itemId);
     }
 
     /** 版本引用来源的可用性说明；COMPLIANCE 撤销等原因据此对用户可见。 */

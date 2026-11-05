@@ -48,6 +48,9 @@ public class WikiIngestService {
     private static final Duration ORPHANED_PENDING_TASK_AGE = Duration.ofMinutes(10);
     /** 工作台写入租约：远大于单次 ingest，进程崩溃后自动失效。 */
     private static final Duration WORKSPACE_LOCK_TTL = Duration.ofMinutes(15);
+    /** 工作台锁被占用时的等待上限与轮询间隔：先等一会儿再判失败，不再立刻把任务记成 WIKI_WORKSPACE_BUSY。 */
+    Duration workspaceLockWait = Duration.ofSeconds(90);
+    Duration workspaceLockPoll = Duration.ofSeconds(2);
     /** 自动概念页正文里的固定说明，用来区分自动生成的概念页和用户手工创建的页面。 */
     static final String CONCEPT_PAGE_MARKER = "该概念页由工作台级 Wiki ingest 自动汇聚";
     /** 资料页构建说明里的固定文字，用来识别自动生成的资料页。 */
@@ -180,6 +183,28 @@ public class WikiIngestService {
     /**
      * Kafka 消费者回调入口：直接执行 source ingest。
      */
+    /**
+     * 获取工作台写锁，被占用时按固定间隔重试，最多等待 workspaceLockWait（默认 90 秒）。
+     * 验收时近 6 小时 74 条 Wiki 任务因为同一工作台另一个任务正在写入而直接失败，文案说稍后重试却没有重试。
+     */
+    boolean acquireWorkspaceLockWithWait(String lockKey, String taskId) {
+        long deadline = System.nanoTime() + workspaceLockWait.toNanos();
+        while (true) {
+            if (workspaceLock.tryAcquire(lockKey, taskId, WORKSPACE_LOCK_TTL)) {
+                return true;
+            }
+            if (System.nanoTime() >= deadline) {
+                return false;
+            }
+            try {
+                Thread.sleep(Math.max(1L, workspaceLockPoll.toMillis()));
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+
     public void runSourceIngestNow(String taskId, String workspaceId, String sourceId) {
         if (!isWikiEnabledForInternalExecution(workspaceId)) {
             taskCommandPort.cancelTask(taskId, "WIKI_DISABLED", "Wiki 构建已关闭，跳过资料 ingest", sourceId);
@@ -201,7 +226,7 @@ public class WikiIngestService {
                 taskId, workspaceId, sourceId, "WIKI_INGEST", "ingest");
         taskCommandPort.startTask(taskId);
         String lockKey = workspaceLock.keyForWorkspace(workspaceId);
-        if (!workspaceLock.tryAcquire(lockKey, taskId, WORKSPACE_LOCK_TTL)) {
+        if (!acquireWorkspaceLockWithWait(lockKey, taskId)) {
             taskCommandPort.failTask(taskId, "WIKI_WORKSPACE_BUSY",
                     "同一工作台已有 Wiki 任务在写入，本次 ingest 稍后重试", "WIKI_WORKSPACE_BUSY", true);
             return;
@@ -238,7 +263,7 @@ public class WikiIngestService {
                 taskId, workspaceId, sourceId, "WIKI_RETRACT", "retract");
         taskCommandPort.startTask(taskId);
         String lockKey = workspaceLock.keyForWorkspace(workspaceId);
-        if (!workspaceLock.tryAcquire(lockKey, taskId, WORKSPACE_LOCK_TTL)) {
+        if (!acquireWorkspaceLockWithWait(lockKey, taskId)) {
             taskCommandPort.failTask(taskId, "WIKI_WORKSPACE_BUSY",
                     "同一工作台已有 Wiki 任务在写入，本次 retract 稍后重试", "WIKI_WORKSPACE_BUSY", true);
             return;
