@@ -255,6 +255,22 @@ public class MemoryConversationExtractionService {
      */
     public ExtractionResult extract(String taskId, String workspaceId, String messageId, String userId,
                                     String content) {
+        // Kafka 消费线程没有请求上下文；写入工作区后模型 usage 才能按工作区归属
+        String previousWorkspace = org.slf4j.MDC.get(com.noteweave.common.RequestContext.WORKSPACE_ID);
+        org.slf4j.MDC.put(com.noteweave.common.RequestContext.WORKSPACE_ID, workspaceId);
+        try {
+            return extractInWorkspace(taskId, workspaceId, messageId, userId, content);
+        } finally {
+            if (previousWorkspace == null) {
+                org.slf4j.MDC.remove(com.noteweave.common.RequestContext.WORKSPACE_ID);
+            } else {
+                org.slf4j.MDC.put(com.noteweave.common.RequestContext.WORKSPACE_ID, previousWorkspace);
+            }
+        }
+    }
+
+    private ExtractionResult extractInWorkspace(String taskId, String workspaceId, String messageId, String userId,
+                                                String content) {
         if (processingReceipts != null) {
             return extractWithReceipt(taskId, workspaceId, messageId, userId, content);
         }

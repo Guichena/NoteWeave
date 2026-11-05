@@ -63,11 +63,12 @@ public class WikiAutoSyncService {
         if (page.originSourceId() != null && !page.originSourceId().isBlank()) {
             sourceWikiCommandPort.requestSourceIngest(page.workspaceId(), page.originSourceId());
         }
-        return knowledgeQueryService.listItems(page.workspaceId(), null).stream()
+        return knowledgeQueryService.listItems(page.workspaceId(), "WIKI").stream()
                 .filter(item -> item.itemId().equals(itemId))
                 .findFirst()
-                .orElseThrow(() -> new BusinessException("KNOWLEDGE_ITEM_NOT_FOUND", "知识对象不存在",
-                        HttpStatus.NOT_FOUND));
+                // 列表只含当前可读的页面；状态已经改好，查不到时返回基本信息，不能因此回滚
+                .orElseGet(() -> new KnowledgeItemResponse(itemId, "WIKI", null, page.title(), "ACTIVE",
+                        null, 0, "", java.time.Instant.now(), 0, 0, 0, 0, "AUTO"));
     }
 
     private record Page(String workspaceId, String itemType, String status, String title, String originSourceId) { }

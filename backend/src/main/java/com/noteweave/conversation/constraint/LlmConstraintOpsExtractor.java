@@ -144,8 +144,19 @@ public class LlmConstraintOpsExtractor implements ConstraintOpsExtractor {
 
     private String call(String userPrompt) throws TimeoutException, InterruptedException {
         // 显式声明为 Callable：submit 的 Runnable/Callable 重载在 lambda 上都可推断，写清楚避免歧义。
-        Callable<String> task = () -> llmClient.streamChat(
-                ConstraintOpsPrompt.SYSTEM_PROMPT, userPrompt, ConstraintOpsPrompt.MAX_OUTPUT_TOKENS, token -> { });
+        // 抽取在独立线程执行，把调用方的日志上下文带过去，模型 usage 才能按工作区归属
+        java.util.Map<String, String> logContext = org.slf4j.MDC.getCopyOfContextMap();
+        Callable<String> task = () -> {
+            if (logContext != null) {
+                org.slf4j.MDC.setContextMap(logContext);
+            }
+            try {
+                return llmClient.streamChat(
+                        ConstraintOpsPrompt.SYSTEM_PROMPT, userPrompt, ConstraintOpsPrompt.MAX_OUTPUT_TOKENS, token -> { });
+            } finally {
+                org.slf4j.MDC.clear();
+            }
+        };
         Future<String> future = executor.submit(task);
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
