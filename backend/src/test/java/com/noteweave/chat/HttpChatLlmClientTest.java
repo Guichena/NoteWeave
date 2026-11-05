@@ -84,14 +84,16 @@ class HttpChatLlmClientTest {
         assertThat(body.path("thinking").path("type").asText()).isEqualTo("disabled");
     }
 
-    /** deepseek-v4 默认开思考：辅助调用关闭，回答正文默认不发参数，沿用模型默认。 */
+    /** deepseek-v4 默认开思考：辅助调用和回答正文默认都关闭思考。 */
     @Test
-    void shouldDisableThinkingForAuxiliaryCallsButKeepAnswerDefaultOnDeepseekV4() throws Exception {
-        AtomicReference<String> auxiliaryBody = new AtomicReference<>();
-        start(200, chunk("答案", "stop") + "data: [DONE]\n\n", auxiliaryBody, new AtomicReference<>());
-        client("deepseek-v4.1-flash", "").streamChat("system", "user", 300, ignored -> {});
-        assertThat(mapper.readTree(auxiliaryBody.get()).path("thinking").path("type").asText())
-                .isEqualTo("disabled");
+    void shouldDisableThinkingForAuxiliaryAndAnswerCallsOnDeepseekV4ByDefault() throws Exception {
+        AtomicReference<String> body = new AtomicReference<>();
+        start(200, chunk("答案", "stop") + "data: [DONE]\n\n", body, new AtomicReference<>());
+        HttpChatLlmClient deepseek = client("deepseek-v4.1-flash", "");
+        deepseek.streamChat("system", "user", 300, ignored -> {});
+        assertThat(mapper.readTree(body.get()).path("thinking").path("type").asText()).isEqualTo("disabled");
+        deepseek.streamAnswerInSession(null, null, "system", "user", 300, ignored -> {});
+        assertThat(mapper.readTree(body.get()).path("thinking").path("type").asText()).isEqualTo("disabled");
     }
 
     @Test
