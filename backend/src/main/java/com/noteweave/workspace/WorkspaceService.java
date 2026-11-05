@@ -83,6 +83,25 @@ public class WorkspaceService implements WorkspaceQueryPort {
         return Boolean.TRUE.equals(enabled);
     }
 
+    /**
+     * 删除工作台（软删除）：只有工作台管理员可以操作，状态改为 DELETED 后列表不再显示，
+     * 所有接口按访问守卫拒绝；数据保留，便于审计和误删恢复。此前没有删除路由，工作台无法回收。
+     */
+    @Transactional
+    public void deleteWorkspace(String workspaceId) {
+        workspaceAccessGuard.requireOwner(workspaceId);
+        String actor = auditActorProvider.currentOrSystem("WORKSPACE");
+        int updated = jdbcTemplate.update("""
+                update workspace
+                set status = 'DELETED', acl_version = acl_version + 1,
+                    updated_by = ?, updated_at = current_timestamp
+                where id = ? and status = 'ACTIVE'
+                """, actor, workspaceId);
+        if (updated == 0) {
+            throw new BusinessException("WORKSPACE_NOT_FOUND", "工作台不存在", org.springframework.http.HttpStatus.NOT_FOUND);
+        }
+    }
+
     @Transactional
     public WorkspaceWikiSettingsResponse updateWikiSettings(String workspaceId, UpdateWorkspaceWikiSettingsRequest request) {
         workspaceAccessGuard.requireOwner(workspaceId);

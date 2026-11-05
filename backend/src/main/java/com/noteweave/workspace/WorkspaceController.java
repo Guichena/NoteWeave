@@ -40,6 +40,12 @@ public class WorkspaceController {
         return ApiResponse.success(workspaceService.listWorkspaces());
     }
 
+    @DeleteMapping("/{workspaceId}")
+    ApiResponse<Void> deleteWorkspace(@PathVariable String workspaceId) {
+        workspaceService.deleteWorkspace(workspaceId);
+        return ApiResponse.success(null);
+    }
+
     @GetMapping("/{workspaceId}/wiki-settings")
     ApiResponse<WorkspaceWikiSettingsResponse> getWikiSettings(@PathVariable String workspaceId) {
         return ApiResponse.success(workspaceService.getWikiSettings(workspaceId));

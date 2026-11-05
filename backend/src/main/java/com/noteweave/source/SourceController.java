@@ -58,8 +58,24 @@ public class SourceController {
     }
 
     @GetMapping
-    ApiResponse<List<SourceResponse>> listSources(@PathVariable String workspaceId) {
-        return ApiResponse.success(sourceService.listSources(workspaceId));
+    ApiResponse<List<SourceResponse>> listSources(
+            @PathVariable String workspaceId,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) String q,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Integer limit,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int offset
+    ) {
+        // 原来 q、limit 等查询参数都被忽略，总是返回全量；不传时行为不变
+        java.util.stream.Stream<SourceResponse> sources = sourceService.listSources(workspaceId).stream();
+        if (q != null && !q.isBlank()) {
+            String keyword = q.trim().toLowerCase(java.util.Locale.ROOT);
+            sources = sources.filter(source -> source.title() != null
+                    && source.title().toLowerCase(java.util.Locale.ROOT).contains(keyword));
+        }
+        sources = sources.skip(Math.max(0, offset));
+        if (limit != null) {
+            sources = sources.limit(Math.max(1, Math.min(limit, 500)));
+        }
+        return ApiResponse.success(sources.toList());
     }
 
     /**
