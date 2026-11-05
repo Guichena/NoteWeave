@@ -212,10 +212,15 @@ public class KnowledgeCommandService {
     }
 
     private void deleteItemRow(KnowledgeItemRef item) {
-        deleteItemRow(item, auditActorProvider.currentOrSystem("KNOWLEDGE"));
+        // 用户删页时把自动页里的链接改成普通文字；后台撤回资料页时引用页会随资料重新 ingest，不在这里改
+        deleteItemRow(item, auditActorProvider.currentOrSystem("KNOWLEDGE"), true);
     }
 
     private void deleteItemRow(KnowledgeItemRef item, String actor) {
+        deleteItemRow(item, actor, false);
+    }
+
+    private void deleteItemRow(KnowledgeItemRef item, String actor, boolean unlinkAutoPages) {
         String itemId = item.itemId();
         jdbcTemplate.update("""
                 update knowledge_item
@@ -225,7 +230,9 @@ public class KnowledgeCommandService {
                 """, actor, itemId);
         if ("WIKI".equals(item.itemType())) {
             List<String> related = relatedWikiItemIds(item.workspaceId(), itemId, item.title());
-            unlinkDeletedPageFromAutoPages(item.workspaceId(), itemId, item.title());
+            if (unlinkAutoPages) {
+                unlinkDeletedPageFromAutoPages(item.workspaceId(), itemId, item.title());
+            }
             jdbcTemplate.update(
                     "delete from knowledge_item_link where source_item_id = ?", itemId);
             jdbcTemplate.update("""
@@ -662,10 +669,16 @@ public class KnowledgeCommandService {
             if (rewritten.equals(page.content())) {
                 continue;
             }
+            List<String> citationIds = knowledgeVersionService.citationIdsForVersion(page.versionId());
+            try {
+                // 引用页自己的来源已失效时不改写（追加版本会被拒绝并让整个删除事务回滚），断链留给问题面板
+                citationReadGate.requireCitationIdsCurrent(workspaceId, citationIds);
+            } catch (BusinessException unavailable) {
+                continue;
+            }
             knowledgeVersionService.appendVersion(
                     page.itemId(),
-                    new AppendKnowledgeVersionRequest(
-                            rewritten, null, knowledgeVersionService.citationIdsForVersion(page.versionId())),
+                    new AppendKnowledgeVersionRequest(rewritten, null, citationIds),
                     internalActor());
             wikiMutationService.logWiki(workspaceId, page.itemId(), "REFRESH_LINK_CONTENT",
                     "被引用页面已删除，链接改为普通文字：" + page.title() + " -> " + deletedTitle);
