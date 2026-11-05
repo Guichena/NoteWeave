@@ -23,6 +23,9 @@ import { streamEvents } from "../../shared/event-stream/streamEvent";
 import type { ShellRun } from "../shell/useShellBusy";
 import { readAnswerModePreference, writeAnswerModePreference } from "./answerModePreference";
 
+/** 实时连接断开多久仍未恢复才提示（毫秒）。 */
+export const STREAM_WARNING_DELAY_MS = 5000;
+
 export type UseChatSessionControllerInput = {
   workspace: Workspace | null;
   conversation: Conversation | null;
@@ -134,6 +137,10 @@ export function useChatSessionController({
     }
     const streamPath = `/api/v2/workspaces/${workspace.workspace_id}`
       + `/conversations/${conversation.conversation_id}/events`;
+    // 连接断开后会自动重连，短暂断开不提示；断开超过几秒仍没恢复才提示，恢复后撤掉提示。
+    // 原来任何一次断开都会提示，且恢复后不撤，会话页常驻「实时更新暂不可用」
+    let warningTimer: ReturnType<typeof setTimeout> | undefined;
+    let warningShown = false;
     const client = new ConversationStreamClient(streamPath, {
       onConnectionChange: (connected) => {
         if (!connected) {
@@ -141,15 +148,28 @@ export function useChatSessionController({
         }
       },
       onError: () => {
-        if (statusActiveRef.current) {
-          setStatus("实时更新暂不可用，回答将从任务快照同步");
-        }
+        if (warningTimer !== undefined) return;
+        warningTimer = setTimeout(() => {
+          warningTimer = undefined;
+          if (statusActiveRef.current) {
+            warningShown = true;
+            setStatus("实时更新暂不可用，回答将从任务快照同步");
+          }
+        }, STREAM_WARNING_DELAY_MS);
       },
       onEvent: (event) => {
         try {
           const updates = answerRunStoreRef.current.applyConversationEvent(event);
           if (event.event === "conversation.snapshot") {
             setConversationStreamConnected(true);
+            if (warningTimer !== undefined) {
+              clearTimeout(warningTimer);
+              warningTimer = undefined;
+            }
+            if (warningShown && statusActiveRef.current) {
+              warningShown = false;
+              setStatus("实时更新已恢复");
+            }
           }
           if (updates.length > 0) {
             setMessages((current) => updates.reduce(
@@ -166,6 +186,7 @@ export function useChatSessionController({
     });
     client.start();
     return () => {
+      if (warningTimer !== undefined) clearTimeout(warningTimer);
       client.stop();
       setConversationStreamConnected(false);
       answerRunStoreRef.current.clear("会话已切换");

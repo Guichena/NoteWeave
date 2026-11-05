@@ -87,7 +87,23 @@ public class AnswerTurnDispatcher {
         turnModule.admitAnswerPreparation(pending);
         String userId = currentUserProvider.currentUserId().orElse(null);
         try {
-            preparationExecutor.execute(() -> CurrentUserProvider.runAs(userId, () -> prepareInBackground(pending)));
+            // 日志上下文（请求号、工作区等）带到后台线程：日志可追踪，模型调用的 usage 也能按工作区归属
+            java.util.Map<String, String> logContext = org.slf4j.MDC.getCopyOfContextMap();
+            preparationExecutor.execute(() -> {
+                java.util.Map<String, String> previous = org.slf4j.MDC.getCopyOfContextMap();
+                if (logContext != null) {
+                    org.slf4j.MDC.setContextMap(logContext);
+                }
+                try {
+                    CurrentUserProvider.runAs(userId, () -> prepareInBackground(pending));
+                } finally {
+                    if (previous == null) {
+                        org.slf4j.MDC.clear();
+                    } else {
+                        org.slf4j.MDC.setContextMap(previous);
+                    }
+                }
+            });
         } catch (RejectedExecutionException saturated) {
             // 准备线程池已满时退回请求线程同步准备，用户只是等得久一些，消息不会丢
             log.warn("answer preparation executor saturated, preparing inline runId={}",

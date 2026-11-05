@@ -17,6 +17,26 @@ from app.config import Settings, load_settings
 from app.error_sanitizer import sanitize_error_message
 
 
+
+try:  # kafka-python 新版要求序列化器继承 Serializer，传函数时每次创建生产者都会告警 DeprecationWarning
+    from kafka.serializer import Serializer as _KafkaSerializer
+except Exception:  # pragma: no cover - 没装 kafka-python 时只在单测里用到
+    _KafkaSerializer = object
+
+
+class JsonValueSerializer(_KafkaSerializer):
+    """把消息值序列化成 UTF-8 JSON，兼容新旧两版 kafka-python 的调用方式。"""
+
+    def serialize(self, topic, *args):
+        data = args[-1] if args else None
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def __call__(self, data):
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+    def close(self):
+        return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -141,7 +161,7 @@ def create_artifact_dead_letter_sink(settings: Settings | None = None) -> KafkaA
         bootstrap_servers=active.kafka_bootstrap_servers,
         acks="all",
         retries=active.kafka_consume_max_attempts,
-        value_serializer=lambda value: json.dumps(value, ensure_ascii=False).encode("utf-8"),
+        value_serializer=JsonValueSerializer(),
         **_kafka_security_options(active),
     )
     return KafkaArtifactDeadLetterSink(producer, active.kafka_artifact_dlq_topic)
