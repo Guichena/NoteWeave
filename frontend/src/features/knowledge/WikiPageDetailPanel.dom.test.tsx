@@ -77,6 +77,14 @@ describe("WikiPageDetailPanel", () => {
     render(<WikiPageDetailPanel {...buildProps({ wiki_page_state: "MANUAL" })} />);
 
     expect(screen.queryByRole("status")).toBeNull();
+    // 人工页提供恢复自动同步的入口
+    expect(screen.getByRole("button", { name: "恢复自动同步" })).toBeTruthy();
+  });
+
+  it("does not offer auto sync on automatic pages", () => {
+    render(<WikiPageDetailPanel {...buildProps({ wiki_page_state: "AUTO" })} />);
+
+    expect(screen.queryByRole("button", { name: "恢复自动同步" })).toBeNull();
   });
 });
 

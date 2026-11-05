@@ -225,6 +225,7 @@ public class KnowledgeCommandService {
                 """, actor, itemId);
         if ("WIKI".equals(item.itemType())) {
             List<String> related = relatedWikiItemIds(item.workspaceId(), itemId, item.title());
+            unlinkDeletedPageFromAutoPages(item.workspaceId(), itemId, item.title());
             jdbcTemplate.update(
                     "delete from knowledge_item_link where source_item_id = ?", itemId);
             jdbcTemplate.update("""
@@ -631,6 +632,68 @@ public class KnowledgeCommandService {
                     "REFRESH_LINK_CONTENT",
                     "页面重命名后已刷新引用页正文：" + page.title() + " -> " + nextTitle);
         }
+    }
+
+    /**
+     * 删除 Wiki 页面后，系统维护的自动页里指向它的 [[链接]] 改成普通文字，不再留下断链。
+     * 此前删页只把入链标成未解析，验收时删除一页后留下 7 条断链，只能手动 Auto Fix（Auto Fix 还会再建出空页）。
+     * 人工页和待确认页是用户内容，不改正文，断链照常出现在问题面板里由用户处理。
+     */
+    private void unlinkDeletedPageFromAutoPages(String workspaceId, String deletedItemId, String deletedTitle) {
+        if (deletedTitle == null || deletedTitle.isBlank()) {
+            return;
+        }
+        List<IncomingWikiPageRef> incomingPages = jdbcTemplate.query("""
+                select distinct i.id, i.title, v.id as version_id, v.content
+                from knowledge_item i
+                join knowledge_version v on v.id = i.latest_version_id
+                join knowledge_item_link l on l.source_item_id = i.id
+                where i.workspace_id = ? and i.item_type = 'WIKI' and i.status = 'ACTIVE'
+                  and i.id <> ?
+                  and (l.target_item_id = ? or lower(l.target_title) = lower(?))
+                """, (rs, rowNum) -> new IncomingWikiPageRef(
+                rs.getString("id"), rs.getString("title"), rs.getString("version_id"), rs.getString("content")
+        ), workspaceId, deletedItemId, deletedItemId, deletedTitle);
+        for (IncomingWikiPageRef page : incomingPages) {
+            if (!wikiPageState(page.itemId()).autoUpdatable()) {
+                continue;
+            }
+            String rewritten = unlinkExplicitWikiLinkTitle(page.content(), deletedTitle);
+            if (rewritten.equals(page.content())) {
+                continue;
+            }
+            knowledgeVersionService.appendVersion(
+                    page.itemId(),
+                    new AppendKnowledgeVersionRequest(
+                            rewritten, null, knowledgeVersionService.citationIdsForVersion(page.versionId())),
+                    internalActor());
+            wikiMutationService.logWiki(workspaceId, page.itemId(), "REFRESH_LINK_CONTENT",
+                    "被引用页面已删除，链接改为普通文字：" + page.title() + " -> " + deletedTitle);
+        }
+    }
+
+    /** 把指向指定标题的 [[标题]] 或 [[标题|别名]] 改成普通文字（有别名时保留别名）。 */
+    static String unlinkExplicitWikiLinkTitle(String content, String title) {
+        if (content == null || content.isBlank()) {
+            return content == null ? "" : content;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\[\\[([^\\]]{1,120})]]").matcher(content);
+        StringBuffer buffer = new StringBuffer();
+        boolean changed = false;
+        while (matcher.find()) {
+            String raw = matcher.group(1).trim();
+            int bar = raw.indexOf('|');
+            String target = bar >= 0 ? raw.substring(0, bar).trim() : raw;
+            if (!target.equalsIgnoreCase(title)) {
+                matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+            String text = bar >= 0 && !raw.substring(bar + 1).isBlank() ? raw.substring(bar + 1).trim() : target;
+            matcher.appendReplacement(buffer, java.util.regex.Matcher.quoteReplacement(text));
+            changed = true;
+        }
+        matcher.appendTail(buffer);
+        return changed ? buffer.toString() : content;
     }
 
     private String rewriteExplicitWikiLinkTitle(

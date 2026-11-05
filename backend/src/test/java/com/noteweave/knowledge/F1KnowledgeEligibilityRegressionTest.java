@@ -116,6 +116,15 @@ class F1KnowledgeEligibilityRegressionTest {
         jdbc.update("update knowledge_version set provenance_schema_version='legacy-unknown' where id='v'");
         org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).isEmpty();
     }
+    /** 刚恢复自动同步、尚未重新生成的页面仍按用户内容认证；普通旧自动页仍然拒绝。 */
+    @Test void resumedAutoSyncPageStaysCurrentEvidenceUntilRegenerated() {
+        dependency("s","ss","c",1);
+        jdbc.update("update knowledge_item set wiki_page_state='AUTO', updated_by=? where id='item'",
+                WikiAutoSyncService.RESUME_ACTOR);
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).containsExactly("v");
+        jdbc.update("update knowledge_item set updated_by='SYSTEM:KNOWLEDGE' where id='item'");
+        org.assertj.core.api.Assertions.assertThat(gate.certifiedCurrentEvidenceVersionIds("w",List.of("v"))).isEmpty();
+    }
     @Test void oldVersionIsRejectedAfterLatestVersionChanges() {
         dependency("s","ss","c",1);
         jdbc.update("insert into knowledge_version(id,item_id,version_no,content) values ('v2','item',2,'新版')");

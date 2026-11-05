@@ -72,7 +72,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                             "provenance", rs.getString("provenance_schema_version"));
                 }, workspaceId, itemId, versionId);
         String pageState = WikiPageState.fromStored(page.get("state"), page.get("updated_by")).name();
-        if (!userAuthoredVersion(WikiPageState.valueOf(pageState), page.get("provenance"))) {
+        if (!userAuthoredVersion(WikiPageState.valueOf(pageState), page.get("provenance"), page.get("updated_by"))) {
             String provenance = page.get("provenance");
             // 自动页必须由受支持的编译策略标记过；旧自动页没有标记时显式未认证，不按依赖为空放行
             if (provenance == null || !SUPPORTED_PROVENANCE_SCHEMA_VERSIONS.contains(provenance)) {
@@ -437,8 +437,18 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
      * 此前只认 MANUAL，人工编辑过的页面一旦被标成待确认，任何命中它的 Wiki 回答都会整体失败。
      */
     static boolean userAuthoredVersion(WikiPageState state, String provenance) {
+        return userAuthoredVersion(state, provenance, null);
+    }
+
+    /**
+     * 刚恢复自动同步、还没被 ingest 重新生成的页面：状态已是 AUTO，但最新版本仍是用户内容，
+     * 写入者记为 {@link WikiAutoSyncService#RESUME_ACTOR}，同样按用户内容处理。
+     */
+    static boolean userAuthoredVersion(WikiPageState state, String provenance, String updatedBy) {
+        boolean unmarked = provenance == null || provenance.isBlank();
         return state == WikiPageState.MANUAL
-                || (state == WikiPageState.NEEDS_REVIEW && (provenance == null || provenance.isBlank()));
+                || (state == WikiPageState.NEEDS_REVIEW && unmarked)
+                || (state == WikiPageState.AUTO && unmarked && WikiAutoSyncService.RESUME_ACTOR.equals(updatedBy));
     }
 
     public Set<String> certifiedCurrentEvidenceVersionIds(String workspaceId, List<String> versionIds) {
@@ -468,7 +478,7 @@ public class KnowledgeCitationReadGate implements com.noteweave.answer.generatio
                 parameters.toArray());
         LinkedHashSet<String> certified = new LinkedHashSet<>();
         for (String[] row : rows) {
-            if (userAuthoredVersion(WikiPageState.fromStored(row[1], row[2]), row[3])) {
+            if (userAuthoredVersion(WikiPageState.fromStored(row[1], row[2]), row[3], row[2])) {
                 certified.add(row[0]);
                 continue;
             }
