@@ -332,7 +332,8 @@ noteweave:
     max-input-characters: ${NOTEWEAVE_EMBEDDING_MAX_INPUT_CHARACTERS:12000}
     max-attempts: ${NOTEWEAVE_EMBEDDING_MAX_ATTEMPTS:3}
   rerank:
-    enabled: ${NOTEWEAVE_RERANK_ENABLED:true}
+    # 默认关闭重排：Jina 不再续费，模型打分兜底每次检索要多等约 3 秒；关闭后按向量与关键词的融合排序取候选
+    enabled: ${NOTEWEAVE_RERANK_ENABLED:false}
     endpoint: ${NOTEWEAVE_RERANK_ENDPOINT:http://localhost:11434/v1/rerank}
     model: ${NOTEWEAVE_RERANK_MODEL:noteweave-rerank}
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
@@ -342,8 +343,8 @@ noteweave:
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}
     score-scale: ${NOTEWEAVE_RERANK_SCORE_SCALE:UNKNOWN}
     threshold-policy: ${NOTEWEAVE_RERANK_THRESHOLD_POLICY:NOT_APPLICABLE}
-    # 重排服务关闭或调用失败时改用对话模型给候选打相关度分
-    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:true}
+    # 重排服务关闭或调用失败时是否改用对话模型给候选打相关度分；默认关闭，打开后每次检索多一次模型调用
+    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:false}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
