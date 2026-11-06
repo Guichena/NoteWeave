@@ -70,7 +70,7 @@ public class RetrievalProviderHealthIndicator implements HealthIndicator {
         String errorCode = "";
         if (embeddingEnabled && rerankEnabled) {
             try {
-                EmbeddingClient.EmbeddingResult embedding = embeddingClient.embedQuery("noteweave-health-probe");
+                EmbeddingClient.EmbeddingResult embedding = embeddingClient.embedQueryFresh("noteweave-health-probe");
                 int required = expectedDimensions > 0 ? expectedDimensions : embedding.dimensions();
                 embeddingProbe = embedding.vectors().size() == 1
                         && embedding.dimensions() == required

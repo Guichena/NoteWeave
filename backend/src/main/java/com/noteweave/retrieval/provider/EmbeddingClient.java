@@ -7,6 +7,11 @@ public interface EmbeddingClient {
 
     EmbeddingResult embedQuery(String text);
 
+    /** 健康检查等必须真实访问提供方的场景，显式绕过短时向量复用。 */
+    default EmbeddingResult embedQueryFresh(String text) {
+        return embedQuery(text);
+    }
+
     EmbeddingResult embedDocuments(List<String> texts);
 
     /** 仅持久化资料批次使用：每次真实 HTTP 尝试前调用，拒绝时不得发送。 */
