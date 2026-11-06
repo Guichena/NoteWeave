@@ -1,6 +1,8 @@
 package com.noteweave.retrieval.provider;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import com.noteweave.config.NoteWeaveProperties;
 import com.noteweave.config.OpenAiSdkClients;
 import com.openai.client.OpenAIClient;
@@ -40,6 +42,11 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
     private final Duration queryTimeout;
     private final Duration batchTimeout;
     private final int maxInputCharacters;
+    /** 话题切分已经计算过的原文向量，供紧接着的检索复用；不缓存提供方失败。 */
+    private final Cache<String, EmbeddingResult> recentDocumentVectors = CacheBuilder.newBuilder()
+            .maximumSize(512)
+            .expireAfterWrite(Duration.ofMinutes(5))
+            .build();
 
     public OpenAiCompatibleEmbeddingClient(
             ObjectMapper objectMapper,
@@ -80,6 +87,18 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
     @Override
     public EmbeddingResult embedQuery(String text) {
         ensureEnabled();
+        String input = limit(text);
+        EmbeddingResult reused = recentDocumentVectors.getIfPresent(vectorKey(input));
+        if (reused != null) {
+            return reused;
+        }
+        // 查询未命中时仍真实请求，不把健康探针等查询结果写入文档向量缓存。
+        return embedQueryFresh(input);
+    }
+
+    @Override
+    public EmbeddingResult embedQueryFresh(String text) {
+        ensureEnabled();
         return request(List.of(limit(text)), queryTimeout);
     }
 
@@ -97,6 +116,11 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
             EmbeddingResult result = request(batch, batchTimeout);
             vectors.addAll(result.vectors());
             totalTokens += result.totalTokens();
+            for (int index = 0; index < batch.size(); index++) {
+                // 向量按完全相同的截断输入复用；命中不重复计入已消耗的 token。
+                recentDocumentVectors.put(vectorKey(batch.get(index)), new EmbeddingResult(
+                        List.of(result.vectors().get(index)), result.model(), result.dimensions(), 0L));
+            }
         }
         return new EmbeddingResult(vectors, model, dimensions, totalTokens);
     }
@@ -210,6 +234,15 @@ public class OpenAiCompatibleEmbeddingClient implements EmbeddingClient {
             return input;
         }
         return input.substring(0, maxInputCharacters);
+    }
+
+    private static String vectorKey(String input) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
     }
 
     private void ensureEnabled() {
