@@ -122,10 +122,14 @@ noteweave:
   retrieval:
     query-rewrite:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
+      # 追问足够长且没有指代、承接词时不调用模型改写，直接用原句检索
+      skip-standalone: ${NOTEWEAVE_QUERY_REWRITE_SKIP_STANDALONE:true}
     evidence-sufficiency:
       enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
       # 最高提供方重排分达到这个值时不调用模型，直接判 SUFFICIENT；设成 2 即关闭
       rule-sufficient-at: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_RULE_SUFFICIENT_AT:0.80}
+      # 规则给不出结论时是否在生成前调用模型判定；默认关闭，改为在回答提示里要求模型自行说明覆盖范围
+      llm-judge-enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_LLM_JUDGE_ENABLED:false}
   answer:
     # 发消息只创建回合和 PREPARING 运行就返回，改写、检索与判定在后台执行并推送阶段事件
     async-preparation: ${NOTEWEAVE_ANSWER_ASYNC_PREPARATION:true}

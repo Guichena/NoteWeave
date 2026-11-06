@@ -28,6 +28,7 @@ import org.springframework.stereotype.Component;
 public class HttpChatLlmClient implements ChatLlmClient {
 
     private static final String CHAT_COMPLETIONS_PATH = "/chat/completions";
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(HttpChatLlmClient.class);
 
     private final boolean enabled;
     private final String model;
@@ -159,9 +160,7 @@ public class HttpChatLlmClient implements ChatLlmClient {
         }
         ChatCompletionCreateParams params = buildRequest(sessionId, systemPrompt, userPrompt, maximumOutputTokens, thinking);
         // attemptId 在尝试开始时生成并稳定复用；一次 streamChat 调用就是一次尝试
-        String attemptId = sessionId == null || sessionId.isBlank()
-                ? "chat-" + java.util.UUID.randomUUID()
-                : "chat-" + sessionId + "-" + java.util.UUID.randomUUID();
+        String attemptId = attemptId(sessionId);
         // 已收到的 usage 事实：断流/异常路径也要保留，不能把已有事实丢成 UNKNOWN
         java.util.concurrent.atomic.AtomicReference<CompletionUsage> receivedUsage =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -193,6 +192,32 @@ public class HttpChatLlmClient implements ChatLlmClient {
         }
     }
 
+    /** actual_usage_fact.request_attempt_id 的列宽。 */
+    static final int MAX_ATTEMPT_ID_LENGTH = 128;
+
+    /**
+     * 一次调用的尝试号。会话号较长时（例如前提抽取的 routingSessionId 约 104 个字符），
+     * 直接拼接会超过列宽导致 usage 写库失败，进而让整次调用的结果被丢弃；
+     * 超长时改用会话号的摘要前缀，同一会话的尝试号仍然可以按前缀归在一起。
+     */
+    static String attemptId(String sessionId) {
+        String suffix = java.util.UUID.randomUUID().toString();
+        if (sessionId == null || sessionId.isBlank()) {
+            return "chat-" + suffix;
+        }
+        String direct = "chat-" + sessionId + "-" + suffix;
+        if (direct.length() <= MAX_ATTEMPT_ID_LENGTH) {
+            return direct;
+        }
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(sessionId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return "chat-s" + java.util.HexFormat.of().formatHex(digest).substring(0, 40) + "-" + suffix;
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
+        }
+    }
+
     /** 同一尝试只记录一次 usage；避免 close 异常与主路径重复记录。 */
     private void recordUsageOnce(
             String workspaceId,
@@ -221,7 +246,13 @@ public class HttpChatLlmClient implements ChatLlmClient {
                 : com.noteweave.conversation.ActualUsage.reported(model,
                         usage.promptTokens(),
                         usage.completionTokens());
-        usageRecorder.record(requestIdentity, workspaceId, actual);
+        try {
+            usageRecorder.record(requestIdentity, workspaceId, actual);
+        } catch (RuntimeException ex) {
+            // usage 只用于对账：写库失败不能连带丢掉已经拿到的模型输出
+            log.warn("LLM usage could not be recorded: attemptId={}, type={}",
+                    requestIdentity, ex.getClass().getSimpleName());
+        }
     }
 
     ChatCompletionCreateParams buildRequest(

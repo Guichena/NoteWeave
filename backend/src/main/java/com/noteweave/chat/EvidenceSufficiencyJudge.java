@@ -36,6 +36,8 @@ public class EvidenceSufficiencyJudge {
     static final String REASON_RULE_LOW = "RULE_RERANK_SCORE_BELOW_0_15";
     /** 最高提供方重排分很高，不调用模型直接判 SUFFICIENT。 */
     static final String REASON_RULE_HIGH = "RULE_RERANK_SCORE_HIGH";
+    /** 分数落在中间区间或没有分数，且关闭了模型判定：不单独判定，由回答提示要求模型自行说明覆盖范围。 */
+    static final String REASON_LLM_SKIPPED = "EVIDENCE_SUFFICIENCY_DEFERRED_TO_ANSWER";
 
     static final double PARTIAL_BELOW = 0.35d;
     static final double INSUFFICIENT_BELOW = 0.15d;
@@ -60,6 +62,11 @@ public class EvidenceSufficiencyJudge {
     private final boolean enabled;
     /** 最高提供方重排分达到这个值时按规则判 SUFFICIENT；设成大于 1 的值即关闭这条规则。 */
     private final double ruleSufficientAt;
+    /**
+     * 规则给不出结论时是否调用模型判定。默认关闭：这次调用要在生成之前多等一次模型往返（实测 2 到 4 秒），
+     * 而它的结论只决定提示里是否多一句覆盖不全的说明，这句要求可以直接交给回答模型。
+     */
+    private final boolean llmJudgeEnabled;
 
     public EvidenceSufficiencyJudge(
             ChatLlmClient llmClient,
@@ -67,7 +74,16 @@ public class EvidenceSufficiencyJudge {
             boolean enabled
     ) {
         // 只用于单元测试：关闭高分规则，保留与模型结论等价的低分规则
-        this(llmClient, objectMapper, enabled, 2.0d);
+        this(llmClient, objectMapper, enabled, 2.0d, true);
+    }
+
+    public EvidenceSufficiencyJudge(
+            ChatLlmClient llmClient,
+            ObjectMapper objectMapper,
+            boolean enabled,
+            double ruleSufficientAt
+    ) {
+        this(llmClient, objectMapper, enabled, ruleSufficientAt, true);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -75,12 +91,14 @@ public class EvidenceSufficiencyJudge {
             ChatLlmClient llmClient,
             ObjectMapper objectMapper,
             @Value("${noteweave.retrieval.evidence-sufficiency.enabled:true}") boolean enabled,
-            @Value("${noteweave.retrieval.evidence-sufficiency.rule-sufficient-at:0.80}") double ruleSufficientAt
+            @Value("${noteweave.retrieval.evidence-sufficiency.rule-sufficient-at:0.80}") double ruleSufficientAt,
+            @Value("${noteweave.retrieval.evidence-sufficiency.llm-judge-enabled:false}") boolean llmJudgeEnabled
     ) {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
         this.enabled = enabled;
         this.ruleSufficientAt = ruleSufficientAt;
+        this.llmJudgeEnabled = llmJudgeEnabled;
     }
 
     public Judgement judge(String question, EvidenceBundle bundle) {
@@ -97,6 +115,9 @@ public class EvidenceSufficiencyJudge {
         Judgement byRule = ruleJudgement(bundle.evidence(), ruleSufficientAt);
         if (byRule != null) {
             return byRule;
+        }
+        if (!llmJudgeEnabled) {
+            return new Judgement(EvidenceSufficiency.NOT_RUN, List.of(REASON_LLM_SKIPPED));
         }
         String prompt = userPrompt(question, bundle);
         try {
@@ -248,6 +269,11 @@ public class EvidenceSufficiencyJudge {
     }
 
     public record Judgement(EvidenceSufficiency verdict, List<String> reasons) {
+        /** 充分性留给回答模型自行判断时，提示里要加上覆盖范围的要求。 */
+        public boolean deferredToAnswer() {
+            return reasons != null && reasons.contains(REASON_LLM_SKIPPED);
+        }
+
         public Judgement {
             verdict = verdict == null ? EvidenceSufficiency.NOT_RUN : verdict;
             reasons = reasons == null ? List.of() : List.copyOf(reasons);

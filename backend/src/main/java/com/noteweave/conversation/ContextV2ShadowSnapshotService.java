@@ -64,7 +64,42 @@ public class ContextV2ShadowSnapshotService {
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose) {
+        freezeAnswer(workspaceId, actorId, conversationId, queryMessageId, answerRunId,
+                currentInput, taskPurpose, true);
+    }
+
+    /**
+     * @param includeCurrentQuery false 时本轮问题不做约束抽取，调用方随后用
+     *                            {@link #catchUpAnswerConstraints} 在后台补抽。
+     */
+    public void freezeAnswer(String workspaceId, String actorId, String conversationId,
+                             String queryMessageId, String answerRunId,
+                             String currentInput, String taskPurpose, boolean includeCurrentQuery) {
         if (!rollout.shadowEnabled(workspaceId) || settled(answerRunId)) return;
+        int cutoff = answerCutoff(workspaceId, conversationId, queryMessageId, answerRunId);
+        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery);
+        independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
+    }
+
+    /**
+     * 回答冻结之后补抽本轮问题的约束，结果供后续轮次使用；本轮快照已经冻结，不受影响。
+     * 助手占位已经结束（回答完成或失败）时切分前置检查不通过，这时放弃补抽，下一轮冻结会把它补上。
+     */
+    public void catchUpAnswerConstraints(String workspaceId, String conversationId,
+                                         String queryMessageId, String answerRunId) {
+        if (!rollout.shadowEnabled(workspaceId)) return;
+        try {
+            int cutoff = answerCutoff(workspaceId, conversationId, queryMessageId, answerRunId);
+            topics.refreshForAnswer(workspaceId, conversationId, cutoff, true);
+        } catch (RuntimeException ex) {
+            String code = ex instanceof BusinessException business ? business.code() : ex.getClass().getSimpleName();
+            log.info("本轮约束补抽未完成，留给下一轮冻结: runId={}, reason={}", answerRunId, code);
+        }
+    }
+
+    private int answerCutoff(String workspaceId, String conversationId,
+                             String queryMessageId, String answerRunId) {
         Integer cutoff = jdbc.queryForObject("""
                 select m.message_seq from answer_run r
                 join conversation_message m on m.id = r.query_message_id
@@ -73,9 +108,7 @@ public class ContextV2ShadowSnapshotService {
                 """, Integer.class, answerRunId, workspaceId, conversationId,
                 queryMessageId, workspaceId, conversationId);
         if (cutoff == null) throw new IllegalArgumentException("Answer Run query identity is invalid");
-        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff);
-        independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
-                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
+        return cutoff;
     }
 
     /**

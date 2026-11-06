@@ -77,14 +77,18 @@ public class AnswerTurnDispatcher {
             startGeneration(receipt);
             return receipt;
         }
-        ConversationTurnModule.TurnStart start = turnModule.beginNewTurn(command);
+        long acceptStarted = System.nanoTime();
+        // 会话上下文冻结（话题切分嵌入、约束抽取）放到后台准备里做，接口只写库和做准入检查
+        ConversationTurnModule.TurnStart start = turnModule.beginNewTurnDeferringContext(command);
         ConversationTurnModule.PendingAnswerPreparation pending = start.pending();
         if (pending == null) {
             // 研究回合或重复提交：与同步路径一样，问答运行若还没开始就补一次启动
             startGeneration(start.receipt());
             return start.receipt();
         }
+        long turnCreated = System.nanoTime();
         turnModule.admitAnswerPreparation(pending);
+        long admitted = System.nanoTime();
         String userId = currentUserProvider.currentUserId().orElse(null);
         try {
             // 日志上下文（请求号、工作区等）带到后台线程：日志可追踪，模型调用的 usage 也能按工作区归属
@@ -110,6 +114,11 @@ public class AnswerTurnDispatcher {
                     pending.receipt().answerRunId());
             prepareInBackground(pending);
         }
+        log.info("answer accept timing runId={} create_turn_ms={} admission_ms={} total_ms={}",
+                pending.receipt().answerRunId(),
+                (turnCreated - acceptStarted) / 1_000_000L,
+                (admitted - turnCreated) / 1_000_000L,
+                (System.nanoTime() - acceptStarted) / 1_000_000L);
         return start.receipt();
     }
 
