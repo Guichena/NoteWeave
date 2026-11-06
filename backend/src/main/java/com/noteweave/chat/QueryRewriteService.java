@@ -46,17 +46,62 @@ public class QueryRewriteService {
     private final ObjectMapper objectMapper;
     private final ConversationRetrievalContextAssembler contextAssembler;
     private final boolean enabled;
+    /** 追问本身已经能独立检索时跳过模型改写，见 {@link #looksStandalone}。 */
+    private final boolean skipStandalone;
+
+    /** 判定为可独立检索的最短长度（按字符计）；更短的追问大多省略了主语。 */
+    static final int STANDALONE_MIN_CHARS = 12;
+    /** 出现这些词就认为问题依赖上文，仍交给模型改写。宁可多改写，也不要漏掉指代。 */
+    private static final List<String> CONTEXT_DEPENDENT_HINTS = List.of(
+            "这", "那", "它", "他", "她", "其", "该", "此", "上述", "以上", "前面", "上面", "之前", "刚才",
+            "上一", "继续", "接着", "展开", "再", "还有", "呢", "同样", "对应", "相比", "比较", "对比",
+            "区别", "差异", "哪个", "前者", "后者", "第一", "第二", "第三", "具体", "详细", "说说", "讲讲",
+            "举例", "例子", "你说", "你提", "刚刚", "另外", "其他", "其余", "怎么样", "如何呢",
+            " it ", " this", " that", " they", " them", " these", " those", "above", "previous", "more");
 
     public QueryRewriteService(
             ChatLlmClient llmClient,
             ObjectMapper objectMapper,
             ConversationRetrievalContextAssembler contextAssembler,
-            @Value("${noteweave.retrieval.query-rewrite.enabled:true}") boolean enabled
+            boolean enabled
+    ) {
+        this(llmClient, objectMapper, contextAssembler, enabled, false);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public QueryRewriteService(
+            ChatLlmClient llmClient,
+            ObjectMapper objectMapper,
+            ConversationRetrievalContextAssembler contextAssembler,
+            @Value("${noteweave.retrieval.query-rewrite.enabled:true}") boolean enabled,
+            @Value("${noteweave.retrieval.query-rewrite.skip-standalone:true}") boolean skipStandalone
     ) {
         this.llmClient = llmClient;
         this.objectMapper = objectMapper;
         this.contextAssembler = contextAssembler;
         this.enabled = enabled;
+        this.skipStandalone = skipStandalone;
+    }
+
+    /**
+     * 足够长、且不含任何指代或承接词的问题按可独立检索处理。规则只做保守的放行：
+     * 判断错了的代价是检索只用原句，回答提示里仍有对话上下文。
+     */
+    static boolean looksStandalone(String question) {
+        if (question == null) {
+            return false;
+        }
+        String trimmed = question.trim();
+        if (trimmed.codePointCount(0, trimmed.length()) < STANDALONE_MIN_CHARS) {
+            return false;
+        }
+        String padded = " " + trimmed.toLowerCase(java.util.Locale.ROOT) + " ";
+        for (String hint : CONTEXT_DEPENDENT_HINTS) {
+            if (padded.contains(hint)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     public QueryRewrite rewrite(ConversationRetrievalContextAssembler.Context context) {
@@ -66,6 +111,14 @@ public class QueryRewriteService {
         }
         if (!enabled) {
             return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_DISABLED"));
+        }
+        if (skipStandalone && looksStandalone(current)) {
+            // 与首轮相同：检索直接用原句，省掉一次模型调用（实测约 2.5 秒）
+            QueryRewrite standalone = firstTurn(current);
+            return new QueryRewrite(standalone.standalone(), standalone.standaloneQuery(),
+                    standalone.keywordQuery(), standalone.alternatives(), standalone.questionType(),
+                    standalone.mustTerms(), standalone.lowLevelKeywords(), standalone.highLevelKeywords(),
+                    standalone.language(), "RULE_STANDALONE", List.of());
         }
         if (llmClient == null || !llmClient.isEnabled()) {
             return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_UNAVAILABLE"));

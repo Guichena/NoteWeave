@@ -44,7 +44,7 @@ public class FallbackRerankClient implements RerankClient {
             OpenAiCompatibleRerankClient provider,
             ObjectProvider<ChatLlmClient> llmProvider,
             ObjectMapper objectMapper,
-            @Value("${noteweave.rerank.llm-fallback-enabled:true}") boolean llmFallbackEnabled
+            @Value("${noteweave.rerank.llm-fallback-enabled:false}") boolean llmFallbackEnabled
     ) {
         this.provider = provider;
         this.llmProvider = llmProvider;
@@ -73,7 +73,13 @@ public class FallbackRerankClient implements RerankClient {
             return requireValid(provider.rerank(query, documents, topN),
                     documents == null ? 0 : documents.size());
         }
-        return llmRerank(llm, query, documents, topN);
+        long started = System.nanoTime();
+        RerankResult result = llmRerank(llm, query, documents, topN);
+        // 模型打分比专用重排慢一个数量级，单独打日志，便于从计时里看出检索为什么慢
+        log.info("rerank served by chat model documents={} provider_enabled={} elapsed_ms={}",
+                documents == null ? 0 : documents.size(), provider.isEnabled(),
+                (System.nanoTime() - started) / 1_000_000L);
+        return result;
     }
 
     /**

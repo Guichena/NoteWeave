@@ -167,6 +167,55 @@ class ConstraintFreezeConcurrentConflictPromptTest {
         assertThat(jdbc.queryForObject("select count(*) from context_v2_shadow_snapshot", Integer.class)).isEqualTo(1);
     }
 
+    /**
+     * 后台准备时本轮问题不做约束抽取：冻结只补齐之前的消息，本轮约束由冻结之后的补抽写入，
+     * 供后续轮次使用；已冻结的本轮快照不变。
+     */
+    @Test
+    void deferredFreezeSkipsCurrentQueryAndCatchUpExtractsItAfterwards() {
+        userMessage("m1", 1, "以后都用表格。");
+        assistantMessage("m2", 2, "好的。");
+        userMessage(QUERY_MESSAGE, CUTOFF, "这次用中文。");
+        pendingAssistant("m4", CUTOFF + 1, QUERY_MESSAGE);
+        jdbc.update("""
+                insert into answer_run(id, workspace_id, conversation_id, query_message_id)
+                values (?, ?, ?, ?)
+                """, ANSWER_RUN, WORKSPACE, CONVERSATION, QUERY_MESSAGE);
+        extractor.ops.put("m1", table());
+        extractor.ops.put(QUERY_MESSAGE, language("中文"));
+
+        snapshots.freezeAnswer(WORKSPACE, ACTOR, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN,
+                "这次用中文。", "QA", false);
+
+        assertThat(extractor.messageIds).containsExactly("m1");
+        assertThat(processedSeq()).isEqualTo(1);
+        assertThat(frozenProjection().constraints()).extracting(ContextProjectionV2.UserConstraint::text)
+                .containsExactly("format.table");
+
+        snapshots.catchUpAnswerConstraints(WORKSPACE, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN);
+
+        assertThat(extractor.messageIds).containsExactly("m1", QUERY_MESSAGE);
+        assertThat(processedSeq()).isEqualTo(CUTOFF);
+        assertThat(stepsJson()).contains(QUERY_MESSAGE);
+        // 本轮快照已经冻结，不因补抽改写
+        assertThat(frozenProjection().constraints()).extracting(ContextProjectionV2.UserConstraint::text)
+                .containsExactly("format.table");
+    }
+
+    /** 助手占位已经结束时补抽放弃，不抛异常，留给下一轮冻结。 */
+    @Test
+    void catchUpAfterTheAnswerSettledIsSkippedQuietly() {
+        userMessage(QUERY_MESSAGE, 1, "以后用中文。");
+        assistantMessage("m2", 2, "好的。");
+        jdbc.update("insert into answer_run(id, workspace_id, conversation_id, query_message_id) values (?, ?, ?, ?)",
+                ANSWER_RUN, WORKSPACE, CONVERSATION, QUERY_MESSAGE);
+        extractor.ops.put(QUERY_MESSAGE, language("中文"));
+
+        snapshots.catchUpAnswerConstraints(WORKSPACE, CONVERSATION, QUERY_MESSAGE, ANSWER_RUN);
+
+        assertThat(extractor.messageIds).isEmpty();
+    }
+
     /** 失败回执可以被成功重试替换，最终每个 answer_run 只有一行。 */
     @Test
     void failedReceiptCanBeReplacedByARetry() {

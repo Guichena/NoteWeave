@@ -57,17 +57,20 @@ def test_repeated_page_timeouts_push_the_site_to_the_back() -> None:
     task_input = _build_task_input()
     plan = build_research_plan(task_input)
     plan.stop_contract["tool_response_retention_budget"] = 1
-    slow_url = "https://example.com/hit-1"
+    # 换一个其他用例不用的站点：别的用例放弃的慢页面释放后会在后台记一次读取成功，不能算到这个站点上
+    slow_url = "https://slow-pages.example.org/hit-1"
+    slow_hit = _url_hit("hit-1", 1).model_copy(update={"url": slow_url})
     transport = _SlowPagesTransport({slow_url})
     adapter = CompositeFetchAdapter([UrlFetchAdapter(transport=transport)], max_concurrency=1,
                                     page_deadline_seconds=0.2)
     try:
         for _ in range(2):
-            adapter.fetch(task_input, plan, [_url_hit("hit-1", 1)])
+            adapter.fetch(task_input, plan, [slow_hit])
+        # 释放前就断言：释放后被放弃的后台线程会读完页面，记一次成功
+        assert fetch_blocked(slow_url)
     finally:
         transport.release.set()
-    assert fetch_blocked(slow_url)
-    reset_fetch_outcomes()
+        reset_fetch_outcomes()
 
 
 def test_without_page_deadline_fetch_keeps_previous_behavior() -> None:

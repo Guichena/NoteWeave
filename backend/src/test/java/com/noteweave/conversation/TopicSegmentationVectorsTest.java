@@ -48,6 +48,24 @@ class TopicSegmentationVectorsTest {
     }
 
     @Test
+    void cachedMessagesAreNotEmbeddedAgain() {
+        TopicSegmentationVectors.Cache cache = new TopicSegmentationVectors.Cache(10);
+        CapturingClient first = new CapturingClient(List.of(List.of(1f, 0f)));
+        TopicSegmentationVectors.attach(List.of(
+                new TopicSegmenterV2.Message("m1", 1, "USER", "第一问")), first, cache);
+
+        CapturingClient second = new CapturingClient(List.of(List.of(0f, 1f)));
+        List<TopicSegmenterV2.Message> attached = TopicSegmentationVectors.attach(List.of(
+                new TopicSegmenterV2.Message("m1", 1, "USER", "第一问"),
+                new TopicSegmenterV2.Message("a2", 2, "ASSISTANT", "回答"),
+                new TopicSegmenterV2.Message("m3", 3, "USER", "第二问")), second, cache);
+
+        assertThat(second.inputs).containsExactly("第二问");
+        assertThat(attached.get(0).vector()).containsExactly(1f, 0f);
+        assertThat(attached.get(2).vector()).containsExactly(0f, 1f);
+    }
+
+    @Test
     void aShortVectorResultDiscardsEveryVector() {
         CapturingClient client = new CapturingClient(List.of());
 

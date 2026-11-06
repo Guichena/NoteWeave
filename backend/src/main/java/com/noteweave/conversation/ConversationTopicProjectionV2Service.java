@@ -44,6 +44,8 @@ public class ConversationTopicProjectionV2Service {
     private final ConversationTopicSummaryV2Service summaries;
     private final EmbeddingClient embeddings;
     private final boolean semanticSegmentationEnabled;
+    /** 切分向量缓存：每条用户消息只嵌入一次，约 2000 条、按 1024 维计约 8 MB。 */
+    private final TopicSegmentationVectors.Cache vectorCache = new TopicSegmentationVectors.Cache(2_000);
     private final TopicBoundaryReviewService reviews;
     private final TopicSegmenterV2 segmenter = new TopicSegmenterV2();
     private final ConversationConstraintProjectionV2Service constraintProjection;
@@ -105,17 +107,37 @@ public class ConversationTopicProjectionV2Service {
 
     /** 仅聊天冻结使用完整性回执；研究入口保持原有调用契约。 */
     public ConstraintRefresh refreshForAnswer(String workspaceId, String conversationId, int cutoffSeq) {
-        return refreshConstraints(workspaceId, conversationId, cutoffSeq);
+        return refreshForAnswer(workspaceId, conversationId, cutoffSeq, true);
+    }
+
+    /**
+     * @param includeCurrentQuery false 时本轮问题这一条不做约束抽取，只补齐之前的消息。
+     *                            本轮问题原文已经在回答提示里，它的约束由回答之后的后台补抽写入，
+     *                            这样一次模型调用不必卡在用户等待首字的路径上。
+     */
+    public ConstraintRefresh refreshForAnswer(String workspaceId, String conversationId, int cutoffSeq,
+                                              boolean includeCurrentQuery) {
+        return refreshConstraints(workspaceId, conversationId, cutoffSeq,
+                includeCurrentQuery ? null : cutoffSeq);
     }
 
     private ConstraintRefresh refreshConstraints(String workspaceId, String conversationId, Integer cutoffSeq) {
+        return refreshConstraints(workspaceId, conversationId, cutoffSeq, null);
+    }
+
+    /** extractBeforeSeq 不为空时，只抽取序号小于它的消息；切分仍覆盖到 cutoffSeq。 */
+    private ConstraintRefresh refreshConstraints(String workspaceId, String conversationId, Integer cutoffSeq,
+                                                 Integer extractBeforeSeq) {
         Segmentation segmentation = null;
         for (int attempt = 0; attempt < CONSTRAINT_APPLY_ATTEMPTS; attempt++) {
             segmentation = Objects.requireNonNull(independentTransaction(conversationId,
                     () -> segment(workspaceId, conversationId, cutoffSeq)));
             ConstraintState observed = segmentation.constraintState();
             boolean rebuild = !usable(observed);
-            var extraction = constraintProjection.extract(segmentation.messages(),
+            List<TopicSegmenterV2.Message> extractable = extractBeforeSeq == null
+                    ? segmentation.messages()
+                    : segmentation.messages().stream().filter(message -> message.seq() < extractBeforeSeq).toList();
+            var extraction = constraintProjection.extract(extractable,
                     segmentation.projection().segments(), rebuild ? 0 : observed.processedSeq(),
                     rebuild ? List.of() : observed.steps());
             // 重建不能发布半份新规则；已提交的旧基线和旧行保持原样。
@@ -226,7 +248,7 @@ public class ConversationTopicProjectionV2Service {
         boolean embed = semanticSegmentationEnabled && embeddings != null && embeddings.isEnabled();
         if (embed) {
             // 切分向量始终取用户原话，检索改写的 standalone query 不参与（M5-M08）
-            messages = TopicSegmentationVectors.attach(messages, embeddings);
+            messages = TopicSegmentationVectors.attach(messages, embeddings, vectorCache);
         }
         TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, persisted);
         if (embed && projection.degradationReasons().contains(TopicSegmenterV2.VECTOR_UNAVAILABLE)) {
