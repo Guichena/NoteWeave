@@ -144,6 +144,19 @@ public class ConversationTurnModule {
      * 问答回合返回待准备的句柄，由调用方同步或在后台完成准备。
      */
     public TurnStart beginNewTurn(SubmitTurnCommand command) {
+        return beginNewTurn(command, true);
+    }
+
+    /**
+     * 与 {@link #beginNewTurn(SubmitTurnCommand)} 相同，但不在请求线程里冻结会话上下文：
+     * 话题切分要嵌入用户消息、约束抽取要调用模型，放在发消息接口里会让接口等上好几秒。
+     * 冻结改由 {@link #completeAdmittedPreparation} 在后台准备开始时完成。
+     */
+    public TurnStart beginNewTurnDeferringContext(SubmitTurnCommand command) {
+        return beginNewTurn(command, false);
+    }
+
+    private TurnStart beginNewTurn(SubmitTurnCommand command, boolean freezeContextNow) {
         command.effectiveRetrievalConfig();
         String actor = auditActorProvider.currentOrSystem("CONVERSATION");
         String executionKind = executionKind(command.requestedTurnMode());
@@ -189,8 +202,11 @@ public class ConversationTurnModule {
         } catch (DuplicateKeyException duplicate) {
             return TurnStart.done(awaitWinner(actor, command, requestHash));
         }
-        freezeShadowAnswer(command, actor, prepared);
-        return new TurnStart(prepared.receipt(), new PendingAnswerPreparation(command, prepared));
+        if (freezeContextNow) {
+            freezeShadowAnswer(command, actor, prepared, true);
+        }
+        return new TurnStart(prepared.receipt(),
+                new PendingAnswerPreparation(command, prepared, actor, freezeContextNow));
     }
 
     /**
@@ -217,12 +233,19 @@ public class ConversationTurnModule {
     ) {
         SubmitTurnCommand command = pending.command();
         try {
+            ChatService.ContextFreeze contextFreeze = pending.contextFrozen()
+                    ? ChatService.ContextFreeze.NONE
+                    : new ChatService.ContextFreeze(
+                            // 本轮问题的约束不在等待首字的路径上抽取，冻结后在后台补抽
+                            () -> freezeShadowAnswer(command, pending.actor(), pending.prepared(), false),
+                            () -> catchUpShadowConstraints(command, pending.prepared()));
             ChatService.PreparedAnswerMaterial material = chatService.compileAdmittedAnswer(
                     command.conversationId(),
                     pending.receipt().messageId(),
                     pending.workspaceId(),
                     command.toLegacyAnswerRequest(),
-                    listener
+                    listener,
+                    contextFreeze
             );
             transactionTemplate.executeWithoutResult(
                     status -> finalizeAnswerTurn(command, pending.prepared(), material, null));
@@ -245,9 +268,23 @@ public class ConversationTurnModule {
         private final SubmitTurnCommand command;
         private final PreparedAnswerTurn prepared;
 
-        private PendingAnswerPreparation(SubmitTurnCommand command, PreparedAnswerTurn prepared) {
+        private final String actor;
+        private final boolean contextFrozen;
+
+        private PendingAnswerPreparation(SubmitTurnCommand command, PreparedAnswerTurn prepared,
+                                         String actor, boolean contextFrozen) {
             this.command = command;
             this.prepared = prepared;
+            this.actor = actor;
+            this.contextFrozen = contextFrozen;
+        }
+
+        String actor() {
+            return actor;
+        }
+
+        boolean contextFrozen() {
+            return contextFrozen;
         }
 
         public TurnReceipt receipt() {
@@ -271,14 +308,21 @@ public class ConversationTurnModule {
         }
     }
 
+    private void catchUpShadowConstraints(SubmitTurnCommand command, PreparedAnswerTurn prepared) {
+        if (shadowSnapshots == null) return;
+        TurnReceipt receipt = prepared.receipt();
+        shadowSnapshots.catchUpAnswerConstraints(prepared.workspaceId(), command.conversationId(),
+                receipt.messageId(), receipt.answerRunId());
+    }
+
     private void freezeShadowAnswer(SubmitTurnCommand command, String actor,
-                                    PreparedAnswerTurn prepared) {
+                                    PreparedAnswerTurn prepared, boolean includeCurrentQuery) {
         if (shadowSnapshots == null) return;
         TurnReceipt receipt = prepared.receipt();
         try {
             shadowSnapshots.freezeAnswer(prepared.workspaceId(), actor, command.conversationId(),
                     receipt.messageId(), receipt.answerRunId(), command.content(),
-                    command.requestedTurnMode());
+                    command.requestedTurnMode(), includeCurrentQuery);
         } catch (RuntimeException failure) {
             String code = failure instanceof BusinessException business
                     ? business.code() : "CONTEXT_V2_SHADOW_FAILURE";

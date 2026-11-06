@@ -33,8 +33,12 @@ noteweave:
   retrieval:
     query-rewrite:
       enabled: true
+      # 契约测试按每轮追问都调用模型改写的口径断言
+      skip-standalone: false
     evidence-sufficiency:
       enabled: true
+      # 契约测试按生成前模型判定的口径断言
+      llm-judge-enabled: true
   llm:
     enabled: false
     template-fallback-enabled: true

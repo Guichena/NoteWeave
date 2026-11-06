@@ -136,6 +136,42 @@ class QueryRewriteServiceTest {
         assertThat(rewrite.keywordQuery()).isEqualTo("它为什么重要 AnchorAlpha");
     }
 
+    @Test
+    void standaloneFollowUpSkipsTheModelWhenEnabled() {
+        ChatLlmClient llm = enabledClient();
+        QueryRewriteService skipping = new QueryRewriteService(llm, objectMapper, assembler, true, true);
+
+        QueryRewrite rewrite = skipping.rewrite(followUp("PostgreSQL 的 GIN 索引适合什么查询场景"));
+
+        assertThat(rewrite.standaloneQuery()).isEqualTo("PostgreSQL 的 GIN 索引适合什么查询场景");
+        assertThat(rewrite.method()).isEqualTo("RULE_STANDALONE");
+        assertThat(rewrite.degradationReasons()).isEmpty();
+        verify(llm, never()).streamChat(any(), any(), anyInt(), any());
+    }
+
+    @Test
+    void contextDependentFollowUpStillCallsTheModel() {
+        ChatLlmClient llm = enabledClient();
+        when(llm.streamChat(any(), any(), anyInt(), any())).thenReturn(validRewrite(false));
+        QueryRewriteService skipping = new QueryRewriteService(llm, objectMapper, assembler, true, true);
+
+        skipping.rewrite(followUp("那它在高并发写入下的表现怎么样"));
+
+        verify(llm).streamChat(any(), any(), anyInt(), any());
+    }
+
+    @Test
+    void standaloneRuleIsConservative() {
+        assertThat(QueryRewriteService.looksStandalone("PostgreSQL 的 GIN 索引适合什么查询场景")).isTrue();
+        assertThat(QueryRewriteService.looksStandalone("RabbitMQ 消息持久化需要哪些配置")).isTrue();
+        assertThat(QueryRewriteService.looksStandalone("缺点有哪些")).isFalse();
+        assertThat(QueryRewriteService.looksStandalone("这个方案在高并发下会有什么问题")).isFalse();
+        assertThat(QueryRewriteService.looksStandalone("跟 Kafka 相比各自适合什么场景")).isFalse();
+        assertThat(QueryRewriteService.looksStandalone("详细说说落地时要注意哪些事项")).isFalse();
+        assertThat(QueryRewriteService.looksStandalone("How does it handle write amplification")).isFalse();
+        assertThat(QueryRewriteService.looksStandalone(null)).isFalse();
+    }
+
     private QueryRewriteService service(ChatLlmClient llm, boolean enabled) {
         return new QueryRewriteService(llm, objectMapper, assembler, enabled);
     }
