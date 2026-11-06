@@ -164,7 +164,6 @@ class ArchitectureBoundaryTest {
         assertThat(application)
                 .contains("enabled: ${NOTEWEAVE_EMBEDDING_ENABLED:true}")
                 .contains("api-key: ${NOTEWEAVE_EMBEDDING_API_KEY:}")
-                .contains("enabled: ${NOTEWEAVE_RERANK_ENABLED:true}")
                 .contains("api-key: ${NOTEWEAVE_RERANK_API_KEY:}")
                 .contains("enabled: ${NOTEWEAVE_LLM_ENABLED:true}")
                 .contains("api-key: ${NOTEWEAVE_LLM_API_KEY:}");
@@ -180,12 +179,18 @@ class ArchitectureBoundaryTest {
                 .replace("\r\n", "\n");
 
         assertThat(application)
+                .contains("enabled: ${NOTEWEAVE_RERANK_ENABLED:false}")
+                .contains("llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:false}")
                 .contains("timeout-seconds: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:5}")
                 .contains("max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}");
         assertThat(compose)
+                .contains("NOTEWEAVE_RERANK_ENABLED: ${NOTEWEAVE_RERANK_ENABLED:-false}")
+                .contains("NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:-false}")
                 .contains("NOTEWEAVE_RERANK_TIMEOUT_SECONDS: ${NOTEWEAVE_RERANK_TIMEOUT_SECONDS:-5}")
                 .contains("NOTEWEAVE_RERANK_MAX_ATTEMPTS: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:-1}");
         assertThat(envExample)
+                .contains("NOTEWEAVE_RERANK_ENABLED=false")
+                .contains("NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED=false")
                 .contains("NOTEWEAVE_RERANK_TIMEOUT_SECONDS=5")
                 .contains("NOTEWEAVE_RERANK_MAX_ATTEMPTS=1");
     }
