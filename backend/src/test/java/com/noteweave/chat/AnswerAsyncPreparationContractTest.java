@@ -104,8 +104,8 @@ class AnswerAsyncPreparationContractTest {
                 AnswerTurnDispatcher.STAGE_EVENT, "evidence.ready", "answer.completed");
         assertThat(types.lastIndexOf(AnswerTurnDispatcher.STAGE_EVENT)).isLessThan(types.indexOf("evidence.ready"));
         assertThat(jdbcTemplate.queryForObject(
-                "select status from turn_submission where client_request_id = ?",
-                String.class, "async-prepare-1")).isEqualTo("READY");
+                "select status from turn_submission where conversation_id = ? and client_request_id = ?",
+                String.class, conversationId, "async-prepare-1")).isEqualTo("READY");
     }
 
     @Test
@@ -131,7 +131,7 @@ class AnswerAsyncPreparationContractTest {
                 .andExpect(jsonPath("$.data.error_code").value("ANSWER_SOURCE_SCOPE_UNSUPPORTED"));
     }
 
-    private void awaitSubmissionLeavesPreparing(String workspaceId, String conversationId, String clientRequestId)
+    void awaitSubmissionLeavesPreparing(String workspaceId, String conversationId, String clientRequestId)
             throws Exception {
         long deadline = System.currentTimeMillis() + 20_000;
         while (System.currentTimeMillis() < deadline) {
@@ -159,7 +159,7 @@ class AnswerAsyncPreparationContractTest {
         }
     }
 
-    private JsonNode submit(String conversationId, Map<String, Object> request, int expectedStatus) throws Exception {
+    JsonNode submit(String conversationId, Map<String, Object> request, int expectedStatus) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/conversations/{conversationId}/messages", conversationId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
@@ -168,7 +168,7 @@ class AnswerAsyncPreparationContractTest {
         return objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
     }
 
-    private String createWorkspace() throws Exception {
+    String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
@@ -182,7 +182,7 @@ class AnswerAsyncPreparationContractTest {
         return workspaceId;
     }
 
-    private String createConversation(String workspaceId) throws Exception {
+    String createConversation(String workspaceId) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/conversations", workspaceId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(

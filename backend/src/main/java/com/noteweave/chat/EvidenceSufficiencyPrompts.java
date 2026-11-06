@@ -17,6 +17,36 @@ final class EvidenceSufficiencyPrompts {
         return apply(prompt, verdict, bundle, "");
     }
 
+    /** 没有单独判定充分性时附加的要求，让回答模型自己说明资料覆盖到哪里。 */
+    static final String SELF_CHECK_INSTRUCTION =
+            "回答前先核对资料是否覆盖了问题：资料只覆盖一部分时，只回答覆盖的部分，并明确说明缺什么；"
+                    + "资料与问题无关时，直接说明现有资料不足以回答，不要编造。";
+
+    /**
+     * deferredToAnswer 为 true 表示没有单独判定充分性（verdict 为 NOT_RUN），
+     * 在提示末尾加上 {@link #SELF_CHECK_INSTRUCTION}；其余情况与 {@link #apply(PromptSpec, EvidenceSufficiency, EvidenceBundle, String)} 相同。
+     */
+    static PromptSpec apply(PromptSpec prompt, EvidenceSufficiency verdict, EvidenceBundle bundle, String question,
+                            boolean deferredToAnswer) {
+        if (deferredToAnswer && prompt != null && !prompt.refusal()
+                && verdict == EvidenceSufficiency.NOT_RUN) {
+            return append(prompt, SELF_CHECK_INSTRUCTION);
+        }
+        return apply(prompt, verdict, bundle, question);
+    }
+
+    private static PromptSpec append(PromptSpec prompt, String instruction) {
+        String body = prompt.userPrompt().endsWith("\n")
+                ? prompt.userPrompt()
+                : prompt.userPrompt() + "\n";
+        return new PromptSpec(
+                prompt.systemPrompt(),
+                body + "\n" + instruction,
+                prompt.referencedEvidenceIds(),
+                prompt.promptVersion(),
+                false);
+    }
+
     static PromptSpec apply(PromptSpec prompt, EvidenceSufficiency verdict, EvidenceBundle bundle, String question) {
         if (prompt == null || verdict == null
                 || verdict == EvidenceSufficiency.SUFFICIENT

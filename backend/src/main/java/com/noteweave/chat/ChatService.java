@@ -83,6 +83,7 @@ public class ChatService {
             premiseChains = new java.util.concurrent.ConcurrentHashMap<>();
     /** 下一轮准备上下文前最多等待上一轮前提抽取的时间，超时就按已落库的前提继续。 */
     static final long PREVIOUS_PREMISE_WAIT_MILLIS = 3_000L;
+    private static final String CONSTRAINT_CHAIN_PREFIX = "constraint:";
 
     public ChatService(
             JdbcTemplate jdbcTemplate,
@@ -176,6 +177,23 @@ public class ChatService {
             SendMessageRequest request,
             AnswerPreparationListener listener
     ) {
+        return compileAdmittedAnswer(conversationId, userMessageId, workspaceId, request, listener,
+                ContextFreeze.NONE);
+    }
+
+    /**
+     * 会话上下文冻结推迟到后台准备时使用：先等上一轮的后台抽取，再冻结本轮上下文，
+     * 然后把本轮的前提抽取和约束补抽排到后台，最后整理上下文、改写、检索。
+     */
+    public PreparedAnswerMaterial compileAdmittedAnswer(
+            String conversationId,
+            String userMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            AnswerPreparationListener listener,
+            ContextFreeze contextFreeze
+    ) {
+        ContextFreeze freeze = contextFreeze == null ? ContextFreeze.NONE : contextFreeze;
         workspaceAccessGuard.requirePermission(workspaceId, WorkspacePermission.ANSWER_RUN);
         AnswerMode.parse(request.answerMode());
         EffectiveRetrievalConfig retrievalConfig = EffectiveRetrievalConfig.resolve(
@@ -187,13 +205,23 @@ public class ChatService {
         // 上一轮的前提抽取在后台执行，这里最多等一小会儿，让本轮上下文尽量看到上一轮的前提
         awaitPendingPremises(conversationId);
         timer.mark("premise_wait");
+        if (freeze.freeze() != null) {
+            freeze.freeze().run();
+            timer.mark("context_freeze");
+        }
         // 本轮消息的前提抽取不进入关键路径：本轮问题原文已经在提示里，抽取结果服务于后续追问
         schedulePremiseExtraction(workspaceId, conversationId, userMessageId, request.content());
+        if (freeze.catchUp() != null) {
+            scheduleConversationBackground(CONSTRAINT_CHAIN_PREFIX + conversationId, freeze.catchUp());
+        }
         AnswerDraft draft = buildAnswerDraft(
                 conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages);
         // 分阶段耗时：发消息后到开始生成之间的等待都在这里，后续提速以这些数字为准
-        PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={}",
-                workspaceId, request.answerMode(), timer.render(), timer.totalMillis());
+        PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={} "
+                        + "evidence={} sufficiency={} retrieval_degraded={}",
+                workspaceId, request.answerMode(), timer.render(), timer.totalMillis(),
+                draft.evidenceBundle().evidence().size(), draft.evidenceSufficiency(),
+                String.join(",", draft.evidenceBundle().degradationReasons()));
         return new PreparedAnswerMaterial(
                 draft.answer(),
                 draft.existingCitationIds(),
@@ -518,7 +546,8 @@ public class ChatService {
                 context.query(), bundle);
         timer.mark("sufficiency");
         PromptSpec prompt = EvidenceSufficiencyPrompts.apply(
-                strategy.compose(context, bundle), sufficiency.verdict(), bundle, request.content());
+                strategy.compose(context, bundle), sufficiency.verdict(), bundle, request.content(),
+                sufficiency.deferredToAnswer());
         AnswerPolicy policy = strategy.policy();
         strategyContractValidator.validatePromptAndPolicy(
                 plan, bundle, prompt, policy);
@@ -588,17 +617,23 @@ public class ChatService {
 
     /** 等待同一会话里尚未完成的前提抽取，最多 {@link #PREVIOUS_PREMISE_WAIT_MILLIS} 毫秒。 */
     void awaitPendingPremises(String conversationId) {
-        java.util.concurrent.CompletableFuture<Void> pending = premiseChains.get(conversationId);
-        if (pending == null || pending.isDone()) {
-            return;
-        }
-        try {
-            pending.get(PREVIOUS_PREMISE_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ex) {
-            Thread.currentThread().interrupt();
-        } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException ex) {
-            PREPARATION_LOG.info("previous premise extraction not finished conversation={} reason={}",
-                    conversationId, ex.getClass().getSimpleName());
+        // 前提抽取和约束补抽各自一条链，两条共用同一个等待上限
+        long deadline = System.nanoTime() + PREVIOUS_PREMISE_WAIT_MILLIS * 1_000_000L;
+        for (String key : java.util.List.of(conversationId, CONSTRAINT_CHAIN_PREFIX + conversationId)) {
+            java.util.concurrent.CompletableFuture<Void> pending = premiseChains.get(key);
+            if (pending == null || pending.isDone()) {
+                continue;
+            }
+            long remaining = Math.max(0L, deadline - System.nanoTime());
+            try {
+                pending.get(remaining, java.util.concurrent.TimeUnit.NANOSECONDS);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (java.util.concurrent.TimeoutException | java.util.concurrent.ExecutionException ex) {
+                PREPARATION_LOG.info("previous background extraction not finished chain={} reason={}",
+                        key, ex.getClass().getSimpleName());
+            }
         }
     }
 
@@ -608,19 +643,45 @@ public class ChatService {
      */
     void schedulePremiseExtraction(String workspaceId, String conversationId,
                                    String userMessageId, String content) {
+        scheduleConversationBackground(conversationId,
+                () -> extractPremises(workspaceId, conversationId, userMessageId, content));
+    }
+
+    /**
+     * 同一条链上的后台任务按提交顺序串行执行；线程池已满时放弃本次任务，这些后台抽取本来就允许失败。
+     * 日志上下文带到后台线程，模型调用的 usage 才能按工作区归属。
+     */
+    private void scheduleConversationBackground(String chainKey, Runnable task) {
+        java.util.Map<String, String> logContext = org.slf4j.MDC.getCopyOfContextMap();
+        Runnable withContext = () -> {
+            java.util.Map<String, String> previous = org.slf4j.MDC.getCopyOfContextMap();
+            if (logContext != null) {
+                org.slf4j.MDC.setContextMap(logContext);
+            }
+            try {
+                task.run();
+            } catch (RuntimeException ex) {
+                PREPARATION_LOG.info("conversation background task failed chain={} type={}",
+                        chainKey, ex.getClass().getSimpleName());
+            } finally {
+                if (previous == null) {
+                    org.slf4j.MDC.clear();
+                } else {
+                    org.slf4j.MDC.setContextMap(previous);
+                }
+            }
+        };
         java.util.concurrent.atomic.AtomicReference<java.util.concurrent.CompletableFuture<Void>> created =
                 new java.util.concurrent.atomic.AtomicReference<>();
-        premiseChains.compute(conversationId, (key, previous) -> {
+        premiseChains.compute(chainKey, (key, previous) -> {
             java.util.concurrent.CompletableFuture<Void> base = previous == null
                     ? java.util.concurrent.CompletableFuture.completedFuture(null)
                     : previous.exceptionally(ignored -> null);
             java.util.concurrent.CompletableFuture<Void> next;
             try {
-                next = base.thenRunAsync(
-                        () -> extractPremises(workspaceId, conversationId, userMessageId, content),
-                        premiseExecutor);
+                next = base.thenRunAsync(withContext, premiseExecutor);
             } catch (java.util.concurrent.RejectedExecutionException rejected) {
-                PREPARATION_LOG.warn("premise extraction skipped, executor saturated conversation={}", conversationId);
+                PREPARATION_LOG.warn("conversation background task skipped, executor saturated chain={}", chainKey);
                 return previous;
             }
             created.set(next);
@@ -628,8 +689,16 @@ public class ChatService {
         });
         java.util.concurrent.CompletableFuture<Void> mine = created.get();
         if (mine != null) {
-            mine.whenComplete((ignored, failure) -> premiseChains.remove(conversationId, mine));
+            mine.whenComplete((ignored, failure) -> premiseChains.remove(chainKey, mine));
         }
+    }
+
+    /**
+     * 推迟到后台准备的会话上下文冻结。freeze 在等待上一轮后台抽取之后、整理上下文之前执行；
+     * catchUp 排到后台，补抽本轮问题的约束。两者为空表示上下文已在请求线程里冻结。
+     */
+    public record ContextFreeze(Runnable freeze, Runnable catchUp) {
+        public static final ContextFreeze NONE = new ContextFreeze(null, null);
     }
 
     /**

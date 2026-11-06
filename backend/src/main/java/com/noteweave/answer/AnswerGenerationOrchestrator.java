@@ -142,8 +142,14 @@ public class AnswerGenerationOrchestrator {
             CitationMarkerNormalizer normalizer = new CitationMarkerNormalizer(material.contract());
             StringBuilder normalized = new StringBuilder();
             AtomicBoolean receivedCallback = new AtomicBoolean();
+            long generationStarted = System.nanoTime();
             Consumer<String> sink = token -> {
                 if (token != null && !token.isEmpty()) {
+                    if (receivedCallback.compareAndSet(false, true)) {
+                        // 模型首字耗时：从发起生成请求到收到第一段正文，用于和准备阶段计时拼出完整首字时间
+                        log.info("answer generation first token runId={} first_token_ms={}",
+                                run == null ? null : run.runId(), (System.nanoTime() - generationStarted) / 1_000_000L);
+                    }
                     receivedCallback.set(true);
                 }
                 String safe = normalizer.accept(token);

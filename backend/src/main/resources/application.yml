@@ -122,10 +122,14 @@ noteweave:
   retrieval:
     query-rewrite:
       enabled: ${NOTEWEAVE_QUERY_REWRITE_ENABLED:true}
+      # 追问足够长且没有指代、承接词时不调用模型改写，直接用原句检索
+      skip-standalone: ${NOTEWEAVE_QUERY_REWRITE_SKIP_STANDALONE:true}
     evidence-sufficiency:
       enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_ENABLED:true}
       # 最高提供方重排分达到这个值时不调用模型，直接判 SUFFICIENT；设成 2 即关闭
       rule-sufficient-at: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_RULE_SUFFICIENT_AT:0.80}
+      # 规则给不出结论时是否在生成前调用模型判定；默认关闭，改为在回答提示里要求模型自行说明覆盖范围
+      llm-judge-enabled: ${NOTEWEAVE_EVIDENCE_SUFFICIENCY_LLM_JUDGE_ENABLED:false}
   answer:
     # 发消息只创建回合和 PREPARING 运行就返回，改写、检索与判定在后台执行并推送阶段事件
     async-preparation: ${NOTEWEAVE_ANSWER_ASYNC_PREPARATION:true}
@@ -328,7 +332,8 @@ noteweave:
     max-input-characters: ${NOTEWEAVE_EMBEDDING_MAX_INPUT_CHARACTERS:12000}
     max-attempts: ${NOTEWEAVE_EMBEDDING_MAX_ATTEMPTS:3}
   rerank:
-    enabled: ${NOTEWEAVE_RERANK_ENABLED:true}
+    # 默认关闭重排：Jina 不再续费，模型打分兜底每次检索要多等约 3 秒；关闭后按向量与关键词的融合排序取候选
+    enabled: ${NOTEWEAVE_RERANK_ENABLED:false}
     endpoint: ${NOTEWEAVE_RERANK_ENDPOINT:http://localhost:11434/v1/rerank}
     model: ${NOTEWEAVE_RERANK_MODEL:noteweave-rerank}
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
@@ -338,8 +343,8 @@ noteweave:
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}
     score-scale: ${NOTEWEAVE_RERANK_SCORE_SCALE:UNKNOWN}
     threshold-policy: ${NOTEWEAVE_RERANK_THRESHOLD_POLICY:NOT_APPLICABLE}
-    # 重排服务关闭或调用失败时改用对话模型给候选打相关度分
-    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:true}
+    # 重排服务关闭或调用失败时是否改用对话模型给候选打相关度分；默认关闭，打开后每次检索多一次模型调用
+    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:false}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}

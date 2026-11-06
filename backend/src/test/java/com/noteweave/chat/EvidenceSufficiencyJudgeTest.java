@@ -12,6 +12,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.noteweave.answer.EvidenceSufficiency;
 import com.noteweave.answer.strategy.EvidenceBundle;
+import com.noteweave.answer.strategy.PromptSpec;
 import com.noteweave.answer.strategy.ScoreInfo;
 import java.time.Instant;
 import java.util.List;
@@ -224,6 +225,37 @@ class EvidenceSufficiencyJudgeTest {
 
         assertThat(judgement.verdict()).isEqualTo(EvidenceSufficiency.PARTIAL);
         verify(llm).streamChat(anyString(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void middleScoreIsDeferredToTheAnswerWhenModelJudgeIsOff() {
+        ChatLlmClient llm = enabledClient();
+        EvidenceSufficiencyJudge judge = new EvidenceSufficiencyJudge(llm, objectMapper, true, 0.80d, false);
+
+        EvidenceSufficiencyJudge.Judgement middle = judge.judge("问题", bundle(passage(0.50)));
+        EvidenceSufficiencyJudge.Judgement low = judge.judge("问题", bundle(passage(0.10)));
+
+        assertThat(middle.verdict()).isEqualTo(EvidenceSufficiency.NOT_RUN);
+        assertThat(middle.deferredToAnswer()).isTrue();
+        // 分数明显时规则照常生效
+        assertThat(low.verdict()).isEqualTo(EvidenceSufficiency.INSUFFICIENT);
+        assertThat(low.deferredToAnswer()).isFalse();
+        verify(llm, never()).streamChat(anyString(), anyString(), anyInt(), any());
+    }
+
+    @Test
+    void deferredJudgementAddsTheSelfCheckInstructionToTheAnswerPrompt() {
+        PromptSpec prompt = new PromptSpec("系统", "资料与问题", List.of("e1"), "v1", false);
+
+        PromptSpec deferred = EvidenceSufficiencyPrompts.apply(
+                prompt, EvidenceSufficiency.NOT_RUN, bundle(passage(0.50)), "问题", true);
+        PromptSpec unavailable = EvidenceSufficiencyPrompts.apply(
+                prompt, EvidenceSufficiency.NOT_RUN, bundle(passage(0.50)), "问题", false);
+
+        assertThat(deferred.userPrompt()).startsWith("资料与问题")
+                .endsWith(EvidenceSufficiencyPrompts.SELF_CHECK_INSTRUCTION);
+        assertThat(deferred.referencedEvidenceIds()).containsExactly("e1");
+        assertThat(unavailable).isSameAs(prompt);
     }
 
     @Test

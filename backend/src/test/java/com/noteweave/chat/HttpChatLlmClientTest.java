@@ -28,6 +28,22 @@ class HttpChatLlmClientTest {
     }
 
     @Test
+    void attemptIdShouldFitUsageColumnEvenForLongRoutingSessions() {
+        String premiseSession = ChatLlmClient.routingSessionId(
+                "conversation.premise.extract", "workspace-1", "message-1");
+        String longId = HttpChatLlmClient.attemptId(premiseSession);
+        assertThat(longId).hasSizeLessThanOrEqualTo(HttpChatLlmClient.MAX_ATTEMPT_ID_LENGTH)
+                .startsWith("chat-s");
+        assertThat(HttpChatLlmClient.attemptId(premiseSession)).isNotEqualTo(longId)
+                .startsWith(longId.substring(0, 46));
+
+        String shortSession = ChatLlmClient.routingSessionId("answer", "workspace-1", "run-1");
+        assertThat(HttpChatLlmClient.attemptId(shortSession)).startsWith("chat-" + shortSession + "-")
+                .hasSizeLessThanOrEqualTo(HttpChatLlmClient.MAX_ATTEMPT_ID_LENGTH);
+        assertThat(HttpChatLlmClient.attemptId(null)).startsWith("chat-").hasSize(41);
+    }
+
+    @Test
     void shouldStreamTokensThroughOfficialSdkWithBudgetAndAuthorization() throws Exception {
         AtomicReference<String> requestBody = new AtomicReference<>();
         AtomicReference<String> authorization = new AtomicReference<>();
