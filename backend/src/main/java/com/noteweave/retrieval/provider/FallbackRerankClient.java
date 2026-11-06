@@ -44,7 +44,7 @@ public class FallbackRerankClient implements RerankClient {
             OpenAiCompatibleRerankClient provider,
             ObjectProvider<ChatLlmClient> llmProvider,
             ObjectMapper objectMapper,
-            @Value("${noteweave.rerank.llm-fallback-enabled:true}") boolean llmFallbackEnabled
+            @Value("${noteweave.rerank.llm-fallback-enabled:false}") boolean llmFallbackEnabled
     ) {
         this.provider = provider;
         this.llmProvider = llmProvider;

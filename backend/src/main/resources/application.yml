@@ -328,7 +328,8 @@ noteweave:
     max-input-characters: ${NOTEWEAVE_EMBEDDING_MAX_INPUT_CHARACTERS:12000}
     max-attempts: ${NOTEWEAVE_EMBEDDING_MAX_ATTEMPTS:3}
   rerank:
-    enabled: ${NOTEWEAVE_RERANK_ENABLED:true}
+    # 重排默认关闭：模型打分兜底每次检索多一次约 3 秒的模型调用，问答首字延迟明显变长
+    enabled: ${NOTEWEAVE_RERANK_ENABLED:false}
     endpoint: ${NOTEWEAVE_RERANK_ENDPOINT:http://localhost:11434/v1/rerank}
     model: ${NOTEWEAVE_RERANK_MODEL:noteweave-rerank}
     api-key: ${NOTEWEAVE_RERANK_API_KEY:}
@@ -338,8 +339,8 @@ noteweave:
     max-attempts: ${NOTEWEAVE_RERANK_MAX_ATTEMPTS:1}
     score-scale: ${NOTEWEAVE_RERANK_SCORE_SCALE:UNKNOWN}
     threshold-policy: ${NOTEWEAVE_RERANK_THRESHOLD_POLICY:NOT_APPLICABLE}
-    # 重排服务关闭或调用失败时改用对话模型给候选打相关度分
-    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:true}
+    # 重排服务关闭或调用失败时改用对话模型给候选打相关度分，默认关闭，关闭后按融合排名取证据
+    llm-fallback-enabled: ${NOTEWEAVE_RERANK_LLM_FALLBACK_ENABLED:false}
   llm:
     enabled: ${NOTEWEAVE_LLM_ENABLED:true}
     template-fallback-enabled: ${NOTEWEAVE_LLM_TEMPLATE_FALLBACK_ENABLED:false}
