@@ -133,9 +133,11 @@ def test_default_inside_an_optional_mode_requires_separate_scope_approval():
 @pytest.mark.parametrize("quote", [
     "从 3.13 版本开始，CPython 提供实验性的自由线程构建。",
     "自 3.13 起，CPython 提供实验性的自由线程构建。",
+    "从 Python 3.13 版本开始，提供实验性的自由线程构建。",
+    "Starting with Python 3.13, CPython supports a free-threaded build.",
 ])
 def test_localized_explicit_introduction_supports_only_negative_earlier_findings(quote):
     from app.version_scope import supports_entity_version
     window = SimpleNamespace(url="https://docs.python.org/zh-cn/3.13/howto/free-threading-python.html")
-    assert supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="尚未提供该可选构建"), window)
-    assert not supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="提供可选构建"), window)
+    assert supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="尚未提供该可选构建"), window, "Python 3.12")
+    assert not supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="提供可选构建"), window, "Python 3.12")
