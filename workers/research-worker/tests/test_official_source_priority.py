@@ -251,6 +251,7 @@ def test_secondary_answers_are_dropped_only_when_official_cards_answer_every_req
     both = SimpleNamespace(key="col-a", label="Policies", requirements=["Default policy", "Supported policies"])
 
     complete = _Llm({"answering_indices": [1, 0], "default_configuration_indices": [0],
+                     "default_configuration_quotes": [{"claim_index": 0, "quote": "Round robin is the default policy"}],
                      "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     assert _answering_column_cards(_lb_snapshot(), one, [official, blog], _lb_windows(), complete, []) == [official]
 
