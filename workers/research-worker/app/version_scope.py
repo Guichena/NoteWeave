@@ -40,6 +40,9 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
         boundary = tuple(int(part) for part in introduced.group(1).split("."))
         if all(tuple(int(part) for part in version.split(".")) < boundary for version in versions):
             return True
+    # 旧版提案即使写着目标版本，也不能用将来时的设计承诺证明已经发布的能力。
+    if re.search(r"\bwill\s+(?:be|remain|support|provide|add|allow)\b|计划(?:提供|支持|加入)|将(?:提供|支持|加入|保持)", quote, re.I):
+        return False
     scoped = source_versions(source)
     if scoped:
         return bool(scoped & versions)

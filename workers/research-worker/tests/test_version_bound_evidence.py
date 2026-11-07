@@ -172,3 +172,12 @@ def test_default_proof_cannot_remove_the_optional_mode_subject():
                 "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
                                    [card], [window], llm, []) == []
+
+
+def test_historical_proposal_metadata_does_not_prove_released_behaviour():
+    from app.version_scope import supports_entity_version
+    window = SimpleNamespace(url="https://raw.githubusercontent.com/python/peps/oldcommit/pep-0703.rst",
+                             window_text="Python-Version: 3.12\nStatus: Draft")
+    card = SimpleNamespace(quote_text="The global interpreter lock will remain the default for CPython builds.",
+                           claim_text="GIL 是默认配置")
+    assert not supports_entity_version({"3.12"}, card, window, "Python 3.12")
