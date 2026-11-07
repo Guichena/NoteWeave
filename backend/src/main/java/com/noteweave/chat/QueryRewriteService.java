@@ -39,7 +39,9 @@ public class QueryRewriteService {
             6. question_type 只能是 comparison、summary、source_lookup、reasoning、definition 之一。
             7. must_terms 是需要加重的专名或标识符。low_level_keywords 是具体实体，high_level_keywords 是主题词。
             8. language 只能是 zh 或 en。
-            字段：is_standalone, standalone_query, keyword_query, alternatives, question_type, must_terms, low_level_keywords, high_level_keywords, language。
+            使用短字段名输出，含义和上述规则完全相同：s=is_standalone, q=standalone_query, k=keyword_query,
+            a=alternatives, t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords, lang=language。
+            输出紧凑 JSON，不缩减查询或遗漏指代、否定、比较对象与版本等限定。
             """;
 
     private final ChatLlmClient llmClient;
@@ -227,6 +229,18 @@ public class QueryRewriteService {
             JsonNode root = objectMapper.readTree(output.substring(start, end + 1));
             if (!root.isObject()) {
                 return Parsed.invalid("根节点不是 JSON 对象");
+            }
+            // 紧凑输出减少模型生成的结构字符；下游契约与旧字段保持兼容。
+            var object = (com.fasterxml.jackson.databind.node.ObjectNode) root;
+            var aliases = java.util.Map.of("s", "is_standalone", "q", "standalone_query", "k", "keyword_query",
+                    "a", "alternatives", "t", "question_type", "m", "must_terms", "l", "low_level_keywords",
+                    "h", "high_level_keywords", "lang", "language");
+            for (var alias : aliases.entrySet()) {
+                JsonNode compact = root.get(alias.getKey());
+                if (compact == null) continue;
+                JsonNode legacy = root.get(alias.getValue());
+                if (legacy != null && !legacy.equals(compact)) return Parsed.invalid("长短字段值冲突");
+                object.set(alias.getValue(), compact);
             }
             if (!root.path("is_standalone").isBoolean()) {
                 return Parsed.invalid("is_standalone 必须是布尔值");

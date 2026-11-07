@@ -826,6 +826,13 @@ def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object,
     单元格最后只剩旁支事实，或者全部判为没回答而成为缺口。uncovered_out 记录答案检查认为没有答到的要求，
     没做成答案检查时按全部要求都没答到处理。
     """
+    from app.version_scope import supports_entity_version
+    versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
+    by_window = {getattr(window, "window_id", ""): window for window in windows}
+    # 先剔除不适用版本，避免模型将无版本的通用结论借给指定版本，也不将其保留成该版本的线索。
+    raw = [card for card in raw if supports_entity_version(
+        versions, card, by_window.get(getattr(card, "window_id", "")),
+        str(snapshot.query_policy.get("entity_label") or ""))]
     if llm_client is None:
         # 没有模型做答案检查时不知道各项要求是否答全，只按来源档次取舍
         kept = _keep_answering_cards(snapshot, column, _prefer_primary_cards(snapshot, raw, windows), None)
@@ -957,6 +964,10 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     payload = {
         "policy": [
             "Decide which claims directly answer the column for the entity.",
+            "For a versioned entity, verify applicability to that exact released version. A proposal's "
+            "future feature or a later release is not evidence of support in an earlier release. A quoted "
+            "explicit introduction boundary may establish lack of support before that release. Distinguish "
+            "negative findings from missing evidence; never infer availability from an official domain alone.",
             "This is ONE cell in a row for entity, not the whole comparison. Interpret every requirement "
             "only for the given entity. A requirement may name several compared entities or describe "
             "per-product examples: clauses specific to other entities do not apply to this cell. Do not "
@@ -998,6 +1009,7 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
                     "quote": str(getattr(card, "quote_text", "")),
                     "source_url": str(getattr(sources.get(getattr(card, "window_id", "")), "url", "")),
                     "source_title": str(getattr(sources.get(getattr(card, "window_id", "")), "source_title", "")),
+                    "source_context": str(getattr(sources.get(getattr(card, "window_id", "")), "window_text", ""))[:1800],
                     "published_at": str(getattr(sources.get(getattr(card, "window_id", "")), "published_at", "")),
                     "updated_at": str(getattr(sources.get(getattr(card, "window_id", "")), "updated_at", ""))}
                    for index, card in enumerate(cards)],
@@ -1050,7 +1062,11 @@ def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[objec
             return 0
         source_tier = _source_tier(snapshot, window)
         # 只把二手来源判为第 2 档；规划域名之外的官方文档（如云厂商托管服务的文档）排在规划域名之后
-        return (2 if source_tier >= 2 else source_tier) + _version_mismatch(versions, window)
+        from app.version_scope import supports_entity_version
+        mismatch = _version_mismatch(versions, window)
+        if mismatch and supports_entity_version(versions, card, window):
+            mismatch = 0
+        return (2 if source_tier >= 2 else source_tier) + mismatch
 
     best = min(tier(card) for card in cards)
     # 明确要求官方或指定版本时，补查也不能将第三方文档、镜像或其他版本升级为正式证据。
@@ -1302,13 +1318,8 @@ def _version_mismatch(versions: set[str], hit: object) -> int:
     """官方文档的网址常带版本号（如 /refman/9.3/），与研究对象的版本不一致时排到同一档的后面。"""
     if not versions:
         return 0
-    path = urlsplit(str(getattr(hit, "url", "") or "")).path
-    found = set(re.findall(r"(?<![\w.])(\d+\.\d+(?:\.\d+)*)(?![\w.])", path))
-    # 只有主版本号的文档网址（如 PostgreSQL 的 /docs/16/）只认文档目录后面那一段，
-    # 避免把 /jeps/444 这类编号当成版本
-    segments = [segment for segment in path.lower().split("/") if segment]
-    found |= {segment for previous, segment in zip(segments, segments[1:])
-              if previous in _VERSIONED_DOC_DIRS and re.fullmatch(r"\d{1,3}", segment)}
+    from app.version_scope import source_versions
+    found = source_versions(hit)
     if not found:
         return 0
     return 0 if found & versions else 1

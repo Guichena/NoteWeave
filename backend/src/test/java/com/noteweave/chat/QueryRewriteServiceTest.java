@@ -176,6 +176,25 @@ class QueryRewriteServiceTest {
         return new QueryRewriteService(llm, objectMapper, assembler, enabled);
     }
 
+    @Test
+    void compactRewriteRetainsEveryRetrievalChannelWithoutRetry() {
+        ChatLlmClient llm = enabledClient();
+        when(llm.streamChat(any(), any(), anyInt(), any())).thenReturn("""
+                {"s":false,"q":"AnchorAlpha 的第二点为什么重要","k":"AnchorAlpha 第二点",
+                 "a":["AnchorAlpha 证据窗口"],"t":"reasoning","m":["AnchorAlpha"],
+                 "l":["证据窗口"],"h":["资料定位"],"lang":"zh"}
+                """);
+        QueryRewrite result = service(llm, true).rewrite(followUp("它为什么重要"));
+        assertThat(result.method()).isEqualTo("LLM");
+        assertThat(result.standaloneQuery()).isEqualTo("AnchorAlpha 的第二点为什么重要");
+        assertThat(result.keywordQuery()).isEqualTo("它为什么重要 AnchorAlpha 第二点");
+        assertThat(result.alternatives()).containsExactly("AnchorAlpha 证据窗口");
+        assertThat(result.mustTerms()).containsExactly("AnchorAlpha");
+        assertThat(result.lowLevelKeywords()).containsExactly("证据窗口");
+        assertThat(result.highLevelKeywords()).containsExactly("资料定位");
+        verify(llm).streamChat(any(), any(), anyInt(), any());
+    }
+
     private ChatLlmClient enabledClient() {
         ChatLlmClient llm = mock(ChatLlmClient.class);
         when(llm.isEnabled()).thenReturn(true);

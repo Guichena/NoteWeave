@@ -134,6 +134,10 @@ def _extract_evidence_cards_detailed_with_llm(
             "target_entity": str(plan.stop_contract.get("deep_cell_entity_label") or ""),
             "recovery_mode": str(plan.stop_contract.get("recovery_mode", "")).strip().upper(),
             "extraction_policy": [
+                "Bind every claim to target_entity's exact version. An official proposal or another version's "
+                "documentation does not prove this version supports the feature. For a feature explicitly "
+                "introduced in a later version, extract the introduction quote and a negative availability "
+                "finding for an earlier target version; do not turn the later feature into earlier support.",
                 "NEVER write internal knowledge; every claim must cite a window_id",
                 "quote_text must be one contiguous exact substring of window.text copied character-for-character",
                 "keep quote_text at 160 characters or fewer; copy one short sentence or clause and never use ellipses",
