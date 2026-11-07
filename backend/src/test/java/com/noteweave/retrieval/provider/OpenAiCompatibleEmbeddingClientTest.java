@@ -39,8 +39,12 @@ class OpenAiCompatibleEmbeddingClientTest {
             assertThat(query.totalTokens()).isZero();
             assertThat(requests.get()).isEqualTo(1);
 
-            // 不同文本不能复用；健康探针等查询也仍然实际请求提供方。
-            client.embedQuery("另一个问题");
+            // 资料召回、阅读窗口和记忆评分会再次请求同一查询；只应消耗一次提供方调用。
+            var firstQuery = client.embedQuery("另一个问题");
+            var repeatedQuery = client.embedQuery("另一个问题");
+            assertThat(firstQuery.totalTokens()).isEqualTo(7);
+            assertThat(repeatedQuery.totalTokens()).isZero();
+            assertThat(repeatedQuery.singleVector()).isEqualTo(firstQuery.singleVector());
             assertThat(requests.get()).isEqualTo(2);
             AtomicInteger permits = new AtomicInteger();
             client.embedDocumentsWithBudget(List.of("项目上线时间"), permits::incrementAndGet);
