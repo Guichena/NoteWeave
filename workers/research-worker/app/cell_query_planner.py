@@ -128,6 +128,10 @@ def _call_model(
             "or an exact product version), put it in a query; this reaches the specification page directly.",
             "When the entity names a version (for example MySQL 8.4), keep that version in the queries so the "
             "matching version of the documentation is found.",
+            "Exception for whether a release provides a feature: use one query to find the feature's official "
+            "first-introduction release, without pinning that query to the target version. An explicit later "
+            "introduction can prove a negative earlier-version finding. This is still about the same product, "
+            "not a comparison article; never use a later release's capability as earlier support.",
             "For empirical questions (whether X improves Y, results of studies or organizations), include queries "
             "that target studies and data, such as 'empirical study', 'paper', 'case study' or 'survey results'. "
             "For a column asking for opposing or inconclusive evidence, search for null or negative results, "

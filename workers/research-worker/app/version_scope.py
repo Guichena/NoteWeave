@@ -9,6 +9,7 @@ _METADATA = re.compile(r"(?im)^\s*(?:[-*|]\s*)?(?:Python-Version|JDK-Version|Rel
                        r"(?:\n\s*[-*]?\s*)?v?(\d+(?:\.\d+)*)\b")
 _INTRODUCED = re.compile(r"(?i)(?:starting\s+(?:with\s+)?(?:the\s+)?|(?:added|introduced|new)\s+in\s+(?:version\s+)?"
                          r"|since\s+(?:version\s+)?)(\d+(?:\.\d+)+)\b")
+_INTRODUCED_ZH = re.compile(r"(?:从|自)\s*(\d+(?:\.\d+)+)\s*(?:版本\s*)?(?:开始|起)")
 _NEGATIVE = re.compile(r"(?i)\b(?:unavailable|unsupported)\b|\b(?:does|do|did)\s+not\s+(?:support|provide|offer)\b"
                        r"|\bnot\s+(?:yet\s+)?(?:available|supported|provided|offered)\b"
                        r"|不支持|尚未提供|未提供|不提供|不可用")
@@ -32,7 +33,7 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
     quote = str(getattr(card, "quote_text", "") or "")
     claim = str(getattr(card, "claim_text", "") or "")
     # 明确的引入边界可以证明旧版没有这项能力；仍须通过后续逐项语义核验。
-    introduced = _INTRODUCED.search(quote)
+    introduced = _INTRODUCED.search(quote) or _INTRODUCED_ZH.search(quote)
     if introduced and _NEGATIVE.search(claim):
         boundary = tuple(int(part) for part in introduced.group(1).split("."))
         if all(tuple(int(part) for part in version.split(".")) < boundary for version in versions):
