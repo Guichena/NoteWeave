@@ -181,3 +181,48 @@ def test_historical_proposal_metadata_does_not_prove_released_behaviour():
     card = SimpleNamespace(quote_text="The global interpreter lock will remain the default for CPython builds.",
                            claim_text="GIL 是默认配置")
     assert not supports_entity_version({"3.12"}, card, window, "Python 3.12")
+
+
+@pytest.mark.parametrize("proof", ["the default GIL-enabled build",
+    "The free-threaded build has additional overhead when executing Python code compared to the default GIL-enabled build."])
+def test_default_build_fact_in_a_comparison_is_not_discarded(proof):
+    quote = ("The free-threaded build has additional overhead when executing Python code compared to the "
+             "default GIL-enabled build. In 3.13, this overhead is about 40% on the pyperformance suite.")
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", "默认构建启用 GIL").model_copy(update={"quote_text": quote})
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "default_configuration_quotes": [{"claim_index": 0, "quote": proof}],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == [card]
+
+
+def test_future_grammar_in_published_runtime_documentation_is_not_a_proposal():
+    from app.version_scope import supports_entity_version
+    window = SimpleNamespace(url="https://docs.python.org/3.12/c-api/init.html")
+    card = SimpleNamespace(quote_text="The GIL will be released while the blocking operation runs.",
+                           claim_text="执行阻塞操作时释放 GIL")
+    assert supports_entity_version({"3.12"}, card, window, "Python 3.12")
+
+
+def test_optional_distribution_default_interpreter_is_not_the_standard_configuration():
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", "默认解释器禁用 GIL").model_copy(update={
+        "quote_text": "In the optional free-threaded distribution, the default interpreter runs with the GIL disabled."})
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "default_configuration_quotes": [{"claim_index": 0, "quote": "the default interpreter"}],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == []
+
+
+@pytest.mark.parametrize("metadata", ["Status: Draft", "| Status | Draft |", "- Status:\n- Draft"])
+def test_draft_metadata_does_not_prove_implementation_on_a_versioned_url(metadata):
+    from app.version_scope import supports_entity_version
+    window = SimpleNamespace(url="https://example.org/docs/1.0/feature", window_text=metadata)
+    card = SimpleNamespace(quote_text="Version 1.0 will support this feature.", claim_text="Version 1.0 supports the feature")
+    assert not supports_entity_version({"1.0"}, card, window, "Product 1.0")
