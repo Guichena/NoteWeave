@@ -87,3 +87,25 @@ def test_query_parameters_identify_independent_documents():
     second.url = 'https://docs.example/docs/3.13/view?page=optional'
     payloads, _ = _extract('Python 3.13', [first, second])
     assert [w['window_id'] for w in payloads[0]['windows']] == ['default', 'optional']
+
+
+def test_grounding_preserves_a_negative_finding_bound_to_the_server_owned_entity():
+    from app.llm_client import FakeLlmClient
+    from app.version_scope import supports_entity_version
+    quote = ('Starting with the 3.13 release, CPython has experimental support for a build '
+             'of Python called free threading where the global interpreter lock (GIL) is disabled.')
+    window = _window('intro', '3.13', quote)
+    plan = ResearchPlan(normalized_question='比较可选构建',
+        research_schema=ResearchSchema(columns=[ResearchColumn(key='optional', label='可选构建')]),
+        stop_contract={'deep_cell_entity_label': 'Python 3.12', 'deep_cell_entity_id': 'python-312'})
+    llm = FakeLlmClient({'research.extract': json.dumps({'evidence_cards': [{
+        'window_id': 'intro', 'column_key': 'optional',
+        'claim_text': 'free threading 自 3.13 起提供，Python 3.12 不提供该可选构建。',
+        'quote_text': quote, 'relation_type': 'SUPPORTS', 'support_score': .95}]})})
+    result = extract_evidence_cards_detailed(None, plan, [window], llm_client=llm)
+    assert result.accepted_count == 1
+    card = result.accepted_cards[0]
+    assert '不提供' in card.claim_text
+    assert '3.12' not in card.claim_text
+    assert card.quote_text == quote
+    assert supports_entity_version({'3.12'}, card, window, 'Python 3.12')

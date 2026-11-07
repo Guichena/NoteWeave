@@ -15,6 +15,10 @@ _NEGATIVE = re.compile(r"(?i)\b(?:unavailable|unsupported)\b|\b(?:does|do|did)\s
                        r"|不支持|尚未提供|未提供|不提供|不可用")
 
 
+def is_negative_availability(claim: str) -> bool:
+    return bool(_NEGATIVE.search(claim))
+
+
 def entity_versions(label: str) -> set[str]:
     """只取研究对象的发布版本，忽略规范编号、edition 年份与协议名称中的数字。"""
     label = re.sub(r"\b(?:RFC|PEP|JEP|CVE|ISO|IEC)\s*[-:]?\s*\d+(?:[-.:]\d+)*", "", label, flags=re.I)
@@ -73,17 +77,17 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
     quote = str(getattr(card, "quote_text", "") or "")
     claim = str(getattr(card, "claim_text", "") or "")
     product = re.split(r"\s+v?\d", entity_label, maxsplit=1)[0].strip()
-    # 明确的引入边界可以证明旧版没有这项能力；仍须通过后续逐项语义核验。
-    if _NEGATIVE.search(claim) and later_introduction(versions, quote, entity_label):
-        return True
     # 旧版提案即使写着目标版本，也不能用将来时的设计承诺证明已经发布的能力。
     proposal = re.search(r"(?:^|/)(?:pep-\d+|jep-\d+|jeps/\d+)(?:[./]|$)",
                          urlsplit(str(getattr(source, "url", "") or "")).path, re.I)
     draft = re.search(r"(?im)^[ \t|*+-]*(?:Status|状态)[ \t|*]*(?:[:|])[ \t]*"
                       r"(?:\n[ \t]*[-*]?[ \t]*)?(?:Draft|Proposed|Deferred|Withdrawn|草案|提案)\b",
                       str(getattr(source, "window_text", "") or "")[:2000])
-    if (proposal or draft) and re.search(r"\bwill\s+(?:be|remain|support|provide|add|allow)\b|计划(?:提供|支持|加入)|将(?:提供|支持|加入|保持)", quote, re.I):
+    if draft or (proposal and re.search(r"\bproposes?\b|\bwould\s+(?:be|support|provide|add|allow)\b|\bwill\s+(?:be|remain|support|provide|add|allow)\b|提议|拟议|计划(?:提供|支持|加入)|将(?:提供|支持|加入|保持)", quote, re.I)):
         return False
+    # 只有明确的实际引入边界才能证明旧版缺少功能；草案和将来的承诺不能充当该边界。
+    if is_negative_availability(claim) and later_introduction(versions, quote, entity_label):
+        return True
     scoped = source_versions(source)
     if scoped:
         return bool(scoped & versions)

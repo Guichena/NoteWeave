@@ -240,3 +240,39 @@ def test_similar_to_comparison_preserves_the_default_build_fact():
                 'coverage': [{'requirement_index': 0, 'claim_indices': [0]}]})
     assert _answering_column_cards(snapshot, SimpleNamespace(key='default', label='默认 GIL 状态'),
                                    [card], [window], llm, []) == [card]
+
+
+def test_a_proposal_is_not_a_released_capability_even_without_future_tense():
+    from app.version_scope import supports_entity_version
+    quote = ('This PEP proposes adding a build configuration (``--without-gil``) to CPython '
+             'to let it run Python code without the global interpreter lock')
+    source = SimpleNamespace(url='https://raw.githubusercontent.com/python/peps/oldcommit/pep-0703.rst',
+                             window_text='Python-Version: 3.12\nStatus: Draft')
+    assert not supports_entity_version({'3.12'}, SimpleNamespace(quote_text=quote, claim_text=quote), source, 'Python 3.12')
+
+
+def test_draft_introduction_cannot_prove_a_historical_negative_but_proposal_topics_are_preserved():
+    from app.version_scope import supports_entity_version
+    quote = 'Starting with the 3.13 release, CPython supports a free-threaded build.'
+    source = SimpleNamespace(url='https://peps.python.org/pep-0703/', window_text='Python-Version: 3.13\nStatus: Draft')
+    card = SimpleNamespace(quote_text=quote, claim_text='该版本不提供该可选构建')
+    assert not supports_entity_version({'3.12'}, card, source, 'Python 3.12')
+    assert supports_entity_version(set(), card, source, 'PEP 703')
+
+
+@pytest.mark.parametrize('claim', [
+    'Python 3.12 提供 free threading。',
+    'Python 3.12 不提供 64 线程构建。',
+    'Python 3.11 不提供该可选构建。',
+    'Python 3.12 does not support this build; its memory limit is 3.12 GB.',
+])
+def test_negative_context_normalization_does_not_erase_unquoted_facts(claim):
+    from app.extractor import _grounded_claim
+    quote = 'Starting with the 3.13 release, CPython supports a free-threaded build.'
+    assert _grounded_claim(claim, quote, entity_label='Python 3.12') == quote
+
+
+def test_negative_context_normalization_requires_an_explicit_later_introduction():
+    from app.extractor import _grounded_claim
+    quote = 'CPython supports a free-threaded build.'
+    assert _grounded_claim('Python 3.12 不提供该构建', quote, entity_label='Python 3.12') == quote
