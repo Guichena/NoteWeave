@@ -110,7 +110,7 @@ def test_an_optional_build_cannot_answer_the_default_state_column():
 ])
 def test_default_state_evidence_is_preserved(quote):
     snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
-    card = _card("w", quote)
+    card = _card("w", quote).model_copy(update={"quote_text": quote})
     window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/library/threading.html",
         source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
     llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
@@ -157,6 +157,18 @@ def test_default_scope_approval_needs_an_exact_standard_configuration_quote(proo
         source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
     llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
                 "default_configuration_quotes": [{"claim_index": 0, "quote": proof}],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == []
+
+
+def test_default_proof_cannot_remove_the_optional_mode_subject():
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", "The experimental free-threaded build disables the GIL by default.")
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "default_configuration_quotes": [{"claim_index": 0, "quote": "disables the GIL by default"}],
                 "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
                                    [card], [window], llm, []) == []
