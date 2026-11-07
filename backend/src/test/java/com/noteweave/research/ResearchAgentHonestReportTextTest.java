@@ -49,9 +49,10 @@ class ResearchAgentHonestReportTextTest {
     }
 
     @Test
-    void limitationLineSaysWhatKindOfSourceWasFound() {
+    void limitationLineDoesNotInventWhyASourcedFindingIsUnverified() {
         assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.SOURCED, "NO_SUPPORTED_CANDIDATE"))
-                .contains("第三方资料", "待核实");
+                .contains("有原文出处", "待核实")
+                .doesNotContain("第三方", "版本不一致");
         assertThat(ResearchAgentHonestReportService.leadText(ResearchCellLevels.RELATED, "NO_SUPPORTED_CANDIDATE"))
                 .contains("相关背景材料");
         assertThat(ResearchAgentHonestReportService.leadText(null, "NO_SUPPORTED_CANDIDATE"))
