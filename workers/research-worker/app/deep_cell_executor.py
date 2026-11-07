@@ -1061,7 +1061,18 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             # 带可选配置的原文不能裁掉主语，只拿谓词中的 default 充当标准配置证明。
             first_clause = re.split(r"[;；]|(?<=[.!?。！？])\s+", str(getattr(cards[index], "quote_text", "")), maxsplit=1)[0].strip()
             complete_default = explicit_default and quote.strip() == first_clause
-            if standard or (not optional and (not full_optional or complete_default)):
+            # 比较句也能明确写出默认构建（如 default GIL-enabled build）；不能因同句提到可选构建而删除。
+            default_binding = re.search(r"\bdefault(?:[\s`*-]+[a-z0-9_.+-]+){0,5}[\s`*-]+(?:build|configuration|interpreter)\b"
+                                        r"|默认[^。！？；;\n]{0,40}(?:构建|配置|解释器)", quote, re.I)
+            comparison_binding = False
+            if default_binding and not re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程",
+                                                  default_binding.group(), re.I):
+                full_quote = str(getattr(cards[index], "quote_text", ""))
+                comparison_binding = any(re.search(
+                    r"(?:compared\s+(?:to|with)|in\s+contrast\s+to|unlike|相(?:比|较)(?:于)?|与)\s*(?:(?:the|a|an)\s+)?$",
+                    full_quote[max(0, match.start() - 80):match.start()], re.I)
+                    for match in re.finditer(re.escape(default_binding.group()), full_quote, re.I))
+            if standard or comparison_binding or (not optional and (not full_optional or complete_default)):
                 grounded.add(index)
         order = [index for index in order if index in scope and index in grounded]
     keep = set(order)

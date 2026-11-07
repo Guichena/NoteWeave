@@ -41,7 +41,12 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
         if all(tuple(int(part) for part in version.split(".")) < boundary for version in versions):
             return True
     # 旧版提案即使写着目标版本，也不能用将来时的设计承诺证明已经发布的能力。
-    if re.search(r"\bwill\s+(?:be|remain|support|provide|add|allow)\b|计划(?:提供|支持|加入)|将(?:提供|支持|加入|保持)", quote, re.I):
+    proposal = re.search(r"(?:^|/)(?:pep-\d+|jep-\d+|jeps/\d+)(?:[./]|$)",
+                         urlsplit(str(getattr(source, "url", "") or "")).path, re.I)
+    draft = re.search(r"(?im)^[ \t|*+-]*(?:Status|状态)[ \t|*]*(?:[:|])[ \t]*"
+                      r"(?:\n[ \t]*[-*]?[ \t]*)?(?:Draft|Proposed|Deferred|Withdrawn|草案|提案)\b",
+                      str(getattr(source, "window_text", "") or "")[:2000])
+    if (proposal or draft) and re.search(r"\bwill\s+(?:be|remain|support|provide|add|allow)\b|计划(?:提供|支持|加入)|将(?:提供|支持|加入|保持)", quote, re.I):
         return False
     scoped = source_versions(source)
     if scoped:
