@@ -1058,7 +1058,10 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             full_optional = re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程",
                                       str(getattr(cards[index], "quote_text", "")), re.I)
             explicit_default = re.search(r"\bdefault\b|默认", quote, re.I)
-            if standard or (not optional and (not full_optional or explicit_default)):
+            # 带可选配置的原文不能裁掉主语，只拿谓词中的 default 充当标准配置证明。
+            first_clause = re.split(r"[;；]|(?<=[.!?。！？])\s+", str(getattr(cards[index], "quote_text", "")), maxsplit=1)[0].strip()
+            complete_default = explicit_default and quote.strip() == first_clause
+            if standard or (not optional and (not full_optional or complete_default)):
                 grounded.add(index)
         order = [index for index in order if index in scope and index in grounded]
     keep = set(order)
