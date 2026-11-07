@@ -327,7 +327,7 @@ def _extract_evidence_cards_detailed_with_llm(
         raw_claim = str(raw_card.get("claim_text") or "").strip()
         quote_start, quote = _extend_quote_past_colon(window.window_text, quote_start, quote)
         quote_start, quote = _extend_quote_for_claim(window.window_text, quote_start, quote, raw_claim)
-        claim = _grounded_claim(raw_claim, quote)
+        claim = _grounded_claim(raw_claim, quote, entity_label=str(plan.stop_contract.get("deep_cell_entity_label") or ""))
         if not claim:
             # 缺关键字段,直接跳过
             rejected.append(
@@ -709,12 +709,23 @@ def _extend_quote_past_colon(text: str, quote_start: int, quote: str) -> tuple[i
     return quote_start, (quote + following).rstrip()
 
 
-def _grounded_claim(claim: str, quote: str) -> str:
+def _grounded_claim(claim: str, quote: str, *, entity_label: str = "") -> str:
     """结论写成对这一列的简短回答；其中的数字、版本号、日期和命令、参数名必须都出现在引用原文里，
     否则 Java 侧会按引用不支撑判为不合格，或者成文时因原文没有而略去，这时退回用原文本身作为结论。"""
     if not claim:
         return ""
-    if any(token not in quote for token in _claim_tokens(claim)):
+    missing = {token for token in _claim_tokens(claim) if token not in quote}
+    if missing:
+        from app.version_scope import entity_versions, is_negative_availability, later_introduction
+        versions = entity_versions(entity_label)
+        if (len(versions) == 1 and missing <= versions and is_negative_availability(claim)
+                and later_introduction(versions, quote, entity_label)):
+            # 行身份已绑定目标版本，避免把带目标版本号的正确否定结论退回成原文中的正向结论。
+            reference = "该版本" if re.search(r"[\u4e00-\u9fff]", claim) else "this release"
+            identity = r"(?<![A-Za-z0-9_])" + re.escape(entity_label).replace(r"\ ", r"\s*") + r"(?![A-Za-z0-9_.])"
+            grounded = re.sub(identity, reference, claim, flags=re.I)
+            if is_negative_availability(grounded) and all(token in quote for token in _claim_tokens(grounded)):
+                return grounded
         return quote.strip()
     return claim
 
