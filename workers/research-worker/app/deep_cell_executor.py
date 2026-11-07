@@ -1069,7 +1069,7 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
                                                   default_binding.group(), re.I):
                 full_quote = str(getattr(cards[index], "quote_text", ""))
                 comparison_binding = any(re.search(
-                    r"(?:compared\s+(?:to|with)|in\s+contrast\s+to|unlike|相(?:比|较)(?:于)?|与)\s*(?:(?:the|a|an)\s+)?$",
+                    r"(?:compared\s+(?:to|with)|in\s+contrast\s+to|unlike|(?:similar|equivalent|identical)\b[^.!?;\n]{0,80}\bto|相(?:比|较)(?:于)?|与)\s*(?:(?:the|a|an)\s+)?$",
                     full_quote[max(0, match.start() - 80):match.start()], re.I)
                     for match in re.finditer(re.escape(default_binding.group()), full_quote, re.I))
             if standard or comparison_binding or (not optional and (not full_optional or complete_default)):
@@ -1353,14 +1353,8 @@ def _source_tier(snapshot: ResearchAgentTaskSnapshot, item: object) -> int:
 
 
 def _entity_versions(label: str) -> set[str]:
-    """研究对象名称里的版本号，例如 MySQL 8.4 得到 8.4，JDK 21 得到 21。"""
-    # edition 年份和规范编号不与实现版本比较，例如 Rust 2024 edition 对应 Rust 1.85。
-    label = re.sub(r"\b(?:RFC|PEP|JEP|CVE|ISO|IEC)\s*[-:]?\s*\d+(?:[-.:]\d+)*", "", label, flags=re.I)
-    label = re.sub(r"\b(?:19|20)\d{2}\s*(?:edition|版|版本|年版)\b|\bedition\s+(?:19|20)\d{2}\b",
-                   "", label, flags=re.I)
-    # 连在名称后面的数字是算法或协议名的一部分，例如 SHA-256、AES-128、UTF-8、HTTP/2，不是版本号；
-    # 误当成版本时，网址带任何版本号的官方文档都被判为版本不符，要求官方来源的单元格全部成为缺口
-    return set(re.findall(r"(?<![\w./-])(\d+(?:\.\d+)*)(?![\w.])", label))
+    from app.version_scope import entity_versions
+    return entity_versions(label)
 
 
 def _version_mismatch(versions: set[str], hit: object) -> int:

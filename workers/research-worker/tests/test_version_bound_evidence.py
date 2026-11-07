@@ -226,3 +226,17 @@ def test_draft_metadata_does_not_prove_implementation_on_a_versioned_url(metadat
     window = SimpleNamespace(url="https://example.org/docs/1.0/feature", window_text=metadata)
     card = SimpleNamespace(quote_text="Version 1.0 will support this feature.", claim_text="Version 1.0 supports the feature")
     assert not supports_entity_version({"1.0"}, card, window, "Product 1.0")
+
+
+def test_similar_to_comparison_preserves_the_default_build_fact():
+    quote = ('The free-threaded build of CPython aims to provide similar thread-safety behavior '
+             'at the Python level to the default GIL-enabled build.')
+    snapshot = SimpleNamespace(query_policy={'entity_label': 'Python 3.13', 'authoritative_domains': ['python.org']})
+    card = _card('w', '默认构建启用 GIL').model_copy(update={'quote_text': quote})
+    window = SimpleNamespace(window_id='w', url='https://docs.python.org/3.13/howto/free-threading-python.html',
+        source_domain='docs.python.org', adapter='serper', source_quality='OFFICIAL_DOC')
+    llm = _Llm({'answering_indices': [0], 'default_configuration_indices': [0],
+                'default_configuration_quotes': [{'claim_index': 0, 'quote': 'the default GIL-enabled build'}],
+                'coverage': [{'requirement_index': 0, 'claim_indices': [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key='default', label='默认 GIL 状态'),
+                                   [card], [window], llm, []) == [card]
