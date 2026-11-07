@@ -276,3 +276,21 @@ def test_negative_context_normalization_requires_an_explicit_later_introduction(
     from app.extractor import _grounded_claim
     quote = 'CPython supports a free-threaded build.'
     assert _grounded_claim('Python 3.12 不提供该构建', quote, entity_label='Python 3.12') == quote
+
+
+def test_negative_context_can_omit_an_unquoted_reference_note_without_losing_its_finding():
+    from app.extractor import _grounded_claim
+    quote = 'Starting with the 3.13 release, CPython supports a free-threaded build.'
+    claim = 'Python 3.12 不提供 free-threaded 构建；该支持从 3.13 版本起才引入（PEP 703）。'
+    grounded = _grounded_claim(claim, quote, entity_label='Python 3.12')
+    assert '不提供' in grounded
+    assert 'PEP' not in grounded
+    assert '703' not in grounded
+    assert grounded != quote
+
+
+@pytest.mark.parametrize('note', ['（PEP 703，最多 64 线程）', '(64 threads)', '(PEP 703: 64 threads)'])
+def test_negative_context_does_not_hide_unquoted_facts_inside_reference_notes(note):
+    from app.extractor import _grounded_claim
+    quote = 'Starting with the 3.13 release, CPython supports a free-threaded build.'
+    assert _grounded_claim('Python 3.12 不提供该构建' + note, quote, entity_label='Python 3.12') == quote

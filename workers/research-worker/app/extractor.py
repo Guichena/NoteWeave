@@ -718,12 +718,19 @@ def _grounded_claim(claim: str, quote: str, *, entity_label: str = "") -> str:
     if missing:
         from app.version_scope import entity_versions, is_negative_availability, later_introduction
         versions = entity_versions(entity_label)
-        if (len(versions) == 1 and missing <= versions and is_negative_availability(claim)
+        if (len(versions) == 1 and is_negative_availability(claim)
                 and later_introduction(versions, quote, entity_label)):
+            # 模型偶尔附加引文未提到的规范编号。只移除纯编号括注，含数量、条件等事实的括注仍按原规则拒绝。
+            note = r"(?:PEP|JEP|RFC)\s*[-:]?\s*\d+"
+            candidate = re.sub(r"\(\s*" + note + r"\s*\)|（\s*" + note + r"\s*）",
+                               lambda match: "" if any(token not in quote for token in _claim_tokens(match.group()))
+                               else match.group(), claim, flags=re.I)
+            if not {token for token in _claim_tokens(candidate) if token not in quote} <= versions:
+                return quote.strip()
             # 行身份已绑定目标版本，避免把带目标版本号的正确否定结论退回成原文中的正向结论。
             reference = "该版本" if re.search(r"[\u4e00-\u9fff]", claim) else "this release"
             identity = r"(?<![A-Za-z0-9_])" + re.escape(entity_label).replace(r"\ ", r"\s*") + r"(?![A-Za-z0-9_.])"
-            grounded = re.sub(identity, reference, claim, flags=re.I)
+            grounded = re.sub(identity, reference, candidate, flags=re.I)
             if is_negative_availability(grounded) and all(token in quote for token in _claim_tokens(grounded)):
                 return grounded
         return quote.strip()
