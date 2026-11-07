@@ -126,6 +126,23 @@ def _executor(llm, toolchain=None, permit=None) -> PlanningExecutor:
                             llm_factory=lambda _context: llm)
 
 
+def test_review_can_approve_without_regenerating_the_validated_plan():
+    llm = _SequenceLlm(_plan(), {"approved": True})
+    result = _executor(llm)(_command(), _claim()).role_result
+    assert len(llm.calls) == 2
+    assert result["degradation_reasons"] == []
+    assert result["planning_diagnostics"]["attempts"][1]["status"] == "APPROVED"
+    assert result["plan"] == llm.calls[1][1]["candidate_plan_for_review"]
+
+
+@pytest.mark.parametrize("invalid", [{"approved": "true"}, {"approved": 1}, {"approved": True, "dimensions": []}])
+def test_approval_marker_is_strict_and_cannot_replace_an_initial_plan(invalid):
+    initial = _executor(_SequenceLlm(invalid, invalid, invalid))(_command(), _claim()).role_result
+    assert initial["status"] == "FALLBACK"
+    review = _executor(_SequenceLlm(_plan(), invalid))(_command(), _claim()).role_result
+    assert "PLANNING_REVIEW_INVALID" in review["degradation_reasons"]
+
+
 def test_planning_should_probe_then_return_validated_plan_role_result() -> None:
     llm = _SequenceLlm(_plan())
     permit = _Permit()
