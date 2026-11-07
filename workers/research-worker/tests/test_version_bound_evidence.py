@@ -91,3 +91,40 @@ def test_a_count_in_an_unversioned_quote_is_not_release_applicability():
     from app.version_scope import supports_entity_version
     assert not supports_entity_version({"12"}, _card("w", "Supports 12 threads"), None, "JDK 12")
     assert supports_entity_version({"12"}, _card("w", "JDK 12 supports the feature"), None, "JDK 12")
+
+
+def test_an_optional_build_cannot_answer_the_default_state_column():
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", "CPython provides an experimental free-threaded build with the GIL disabled")
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == []
+
+
+@pytest.mark.parametrize("quote", [
+    "The GIL is enabled by default; an experimental build can disable it.",
+    "The standard build enables the GIL; an experimental build can disable it.",
+    "In CPython, only one thread can execute Python code at once because of the GIL.",
+])
+def test_default_state_evidence_is_preserved(quote):
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", quote)
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/library/threading.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == [card]
+
+
+def test_default_inside_an_optional_mode_requires_separate_scope_approval():
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", "The experimental free-threaded build disables the GIL by default.")
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == []

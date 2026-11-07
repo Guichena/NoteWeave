@@ -960,7 +960,9 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     if llm_client is None:
         return sorted(cards, key=lambda card: -float(getattr(card, "support_score", 0.0) or 0.0))
     requirements = _column_requirements(column)
+    default_required = bool(re.search(r"\bdefault\b|默认", str(getattr(column, "label", "")), re.I))
     sources = {getattr(window, "window_id", ""): window for window in windows or []}
+    from app.version_scope import source_versions
     payload = {
         "policy": [
             "Decide which claims directly answer the column for the entity.",
@@ -968,6 +970,12 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             "future feature or a later release is not evidence of support in an earlier release. A quoted "
             "explicit introduction boundary may establish lack of support before that release. Distinguish "
             "negative findings from missing evidence; never infer availability from an official domain alone.",
+            "When the column asks for default behaviour, optional/experimental modes alone do not answer. "
+            "Require the default/standard configuration, not just instructions to opt into a different build.",
+            "For default_configuration_indices, separately identify claims describing the ordinary standard "
+            "configuration. An experimental build's own default is NOT the standard configuration. A quote "
+            "contrasting standard and optional builds IS usable for its standard-build fact. The literal word "
+            "default is neither required nor sufficient. Return an empty list if no claim establishes it.",
             "This is ONE cell in a row for entity, not the whole comparison. Interpret every requirement "
             "only for the given entity. A requirement may name several compared entities or describe "
             "per-product examples: clauses specific to other entities do not apply to this cell. Do not "
@@ -1009,13 +1017,15 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
                     "quote": str(getattr(card, "quote_text", "")),
                     "source_url": str(getattr(sources.get(getattr(card, "window_id", "")), "url", "")),
                     "source_title": str(getattr(sources.get(getattr(card, "window_id", "")), "source_title", "")),
-                    "source_context": str(getattr(sources.get(getattr(card, "window_id", "")), "window_text", ""))[:1800],
+                    "source_release_versions": sorted(source_versions(sources.get(getattr(card, "window_id", "")))),
                     "published_at": str(getattr(sources.get(getattr(card, "window_id", "")), "published_at", "")),
                     "updated_at": str(getattr(sources.get(getattr(card, "window_id", "")), "updated_at", ""))}
                    for index, card in enumerate(cards)],
         "output_schema": {"answering_indices": ["integer index of each answering claim, most direct first"],
                           "coverage": [{"requirement_index": "integer", "claim_indices": ["integer"]}]},
     }
+    if default_required:
+        payload["output_schema"]["default_configuration_indices"] = ["integer claim index for standard configuration only"]
     try:
         parsed = parse_json_payload(llm_client.complete_json(ANSWER_CHECK_PURPOSE, payload))
     except Exception:
@@ -1026,6 +1036,10 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             partial_out.extend(cards)
         return []
     order = list(dict.fromkeys(index for index in indices if type(index) is int and 0 <= index < len(cards)))
+    if default_required:
+        scope_indices = parsed.get("default_configuration_indices")
+        scope = {index for index in scope_indices if type(index) is int} if isinstance(scope_indices, list) else set()
+        order = [index for index in order if index in scope]
     keep = set(order)
     answering = [cards[index] for index in order]
     covered: dict[int, list[object]] = {}
