@@ -32,8 +32,10 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
         return True
     quote = str(getattr(card, "quote_text", "") or "")
     claim = str(getattr(card, "claim_text", "") or "")
+    product = re.split(r"\s+v?\d", entity_label, maxsplit=1)[0].strip()
+    boundary_quote = re.sub(re.escape(product) + r"\s+(?=v?\d)", "", quote, flags=re.I) if product and product != entity_label else quote
     # 明确的引入边界可以证明旧版没有这项能力；仍须通过后续逐项语义核验。
-    introduced = _INTRODUCED.search(quote) or _INTRODUCED_ZH.search(quote)
+    introduced = _INTRODUCED.search(boundary_quote) or _INTRODUCED_ZH.search(boundary_quote)
     if introduced and _NEGATIVE.search(claim):
         boundary = tuple(int(part) for part in introduced.group(1).split("."))
         if all(tuple(int(part) for part in version.split(".")) < boundary for version in versions):
@@ -44,7 +46,6 @@ def supports_entity_version(versions: set[str], card: object, source: object, en
     # 无版本的网址或提案不能仅凭官方域名证明某一发布版；引文须明确包含目标版本。
     # 普通计数（如 12 个线程）不能证明版本 12；只识别明确的版本词或当前产品名。
     prefixes = [r"\bversion", r"\brelease", "版本", "发行版"]
-    product = re.split(r"\s+v?\d", entity_label, maxsplit=1)[0].strip()
     if product and product != entity_label:
         prefixes.append(re.escape(product))
     quoted = set(re.findall(r"(?i)(?:" + "|".join(prefixes) + r")\s*v?(\d+(?:\.\d+)*)(?![\w.])", quote))
