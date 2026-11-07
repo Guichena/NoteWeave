@@ -976,6 +976,9 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             "configuration. An experimental build's own default is NOT the standard configuration. A quote "
             "contrasting standard and optional builds IS usable for its standard-build fact. The literal word "
             "default is neither required nor sufficient. Return an empty list if no claim establishes it.",
+            "For default_configuration_quotes, copy the exact contiguous part of each claim's quote that "
+            "establishes the standard configuration. Do not supply a paraphrase, inference or a description "
+            "of an optional mode. Include claim_index and quote for each such proof.",
             "This is ONE cell in a row for entity, not the whole comparison. Interpret every requirement "
             "only for the given entity. A requirement may name several compared entities or describe "
             "per-product examples: clauses specific to other entities do not apply to this cell. Do not "
@@ -1026,6 +1029,7 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     }
     if default_required:
         payload["output_schema"]["default_configuration_indices"] = ["integer claim index for standard configuration only"]
+        payload["output_schema"]["default_configuration_quotes"] = [{"claim_index": "integer", "quote": "exact standard-configuration proof"}]
     try:
         parsed = parse_json_payload(llm_client.complete_json(ANSWER_CHECK_PURPOSE, payload))
     except Exception:
@@ -1039,7 +1043,24 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     if default_required:
         scope_indices = parsed.get("default_configuration_indices")
         scope = {index for index in scope_indices if type(index) is int} if isinstance(scope_indices, list) else set()
-        order = [index for index in order if index in scope]
+        proofs = parsed.get("default_configuration_quotes")
+        grounded = set()
+        for proof in proofs if isinstance(proofs, list) else []:
+            if not isinstance(proof, dict):
+                continue
+            index, quote = proof.get("claim_index"), proof.get("quote")
+            if type(index) is not int or not 0 <= index < len(cards) or not isinstance(quote, str) or not quote.strip():
+                continue
+            if quote not in str(getattr(cards[index], "quote_text", "")):
+                continue
+            optional = re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程", quote, re.I)
+            standard = re.search(r"\b(?:standard|regular|ordinary|normal)\s+(?:build|configuration)\b|标准构建|常规构建|标准配置", quote, re.I)
+            full_optional = re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程",
+                                      str(getattr(cards[index], "quote_text", "")), re.I)
+            explicit_default = re.search(r"\bdefault\b|默认", quote, re.I)
+            if standard or (not optional and (not full_optional or explicit_default)):
+                grounded.add(index)
+        order = [index for index in order if index in scope and index in grounded]
     keep = set(order)
     answering = [cards[index] for index in order]
     covered: dict[int, list[object]] = {}

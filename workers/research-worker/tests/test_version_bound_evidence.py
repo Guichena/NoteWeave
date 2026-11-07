@@ -114,6 +114,7 @@ def test_default_state_evidence_is_preserved(quote):
     window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/library/threading.html",
         source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
     llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "default_configuration_quotes": [{"claim_index": 0, "quote": quote.split(";")[0]}],
                 "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
     assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
                                    [card], [window], llm, []) == [card]
@@ -141,3 +142,21 @@ def test_localized_explicit_introduction_supports_only_negative_earlier_findings
     window = SimpleNamespace(url="https://docs.python.org/zh-cn/3.13/howto/free-threading-python.html")
     assert supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="尚未提供该可选构建"), window, "Python 3.12")
     assert not supports_entity_version({"3.12"}, SimpleNamespace(quote_text=quote, claim_text="提供可选构建"), window, "Python 3.12")
+
+
+@pytest.mark.parametrize("proof", [
+    "The free-threaded build supports optionally enabling the GIL at runtime.",
+    "The standard build enables the GIL.",
+    "enabling the GIL at runtime",
+])
+def test_default_scope_approval_needs_an_exact_standard_configuration_quote(proof):
+    quote = "The free-threaded build supports optionally enabling the GIL at runtime."
+    snapshot = SimpleNamespace(query_policy={"entity_label": "Python 3.13", "authoritative_domains": ["python.org"]})
+    card = _card("w", quote)
+    window = SimpleNamespace(window_id="w", url="https://docs.python.org/3.13/howto/free-threading-python.html",
+        source_domain="docs.python.org", adapter="serper", source_quality="OFFICIAL_DOC")
+    llm = _Llm({"answering_indices": [0], "default_configuration_indices": [0],
+                "default_configuration_quotes": [{"claim_index": 0, "quote": proof}],
+                "coverage": [{"requirement_index": 0, "claim_indices": [0]}]})
+    assert _answering_column_cards(snapshot, SimpleNamespace(key="default", label="默认 GIL 状态"),
+                                   [card], [window], llm, []) == []
