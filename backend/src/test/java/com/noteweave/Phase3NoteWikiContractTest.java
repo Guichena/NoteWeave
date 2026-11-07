@@ -838,6 +838,9 @@ class Phase3NoteWikiContractTest {
                 .andExpect(jsonPath("$.data.source_count").value(1))
                 .andExpect(jsonPath("$.data.task_count").value(1));
 
+        // 页面版本写入后任务可能仍在收尾，不能用请求返回时刻代替异步任务完成。
+        awaitWikiIngestTasksCompleted(workspaceId);
+
         mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/wiki-home", workspaceId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.pages[*].title").value(org.hamcrest.Matchers.hasItem("phase3.md")))
@@ -1844,6 +1847,24 @@ class Phase3NoteWikiContractTest {
         String indexStatus = jdbcTemplate.queryForObject(
                 "select index_status from source where id = ?", String.class, sourceId);
         throw new AssertionError("等待资料检索投影超时(30s): sourceId=" + sourceId + ", index_status=" + indexStatus);
+    }
+
+    private void awaitWikiIngestTasksCompleted(String workspaceId) throws InterruptedException {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        List<String> statuses = List.of();
+        while (System.nanoTime() < deadline) {
+            statuses = jdbcTemplate.queryForList(
+                    "select status from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
+                    String.class, workspaceId);
+            if (!statuses.isEmpty() && statuses.stream().allMatch("COMPLETED"::equals)) {
+                return;
+            }
+            if (statuses.contains("FAILED") || statuses.contains("CANCELLED")) {
+                throw new AssertionError("Wiki 编译未成功完成: workspaceId=" + workspaceId + ", statuses=" + statuses);
+            }
+            Thread.sleep(50L);
+        }
+        throw new AssertionError("等待 Wiki 编译任务完成超时(10s): workspaceId=" + workspaceId + ", statuses=" + statuses);
     }
 
     /** 把 Wiki 索引发件箱中的待投递页面写入 ES，并刷新索引，保证后续检索可见。 */
