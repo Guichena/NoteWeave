@@ -118,6 +118,9 @@ def _extract_evidence_cards_detailed_with_llm(
             int(plan.stop_contract.get("evidence_horizon_window_budget", 5)),
         ),
     )
+    if not focused_windows:
+        return ExtractionResult(provider_receipt=_build_provider_receipt(llm_client, "", called=False),
+                                termination_reason=ExtractionTerminationReason.NO_READ_WINDOWS)
     response = llm_client.complete_json(
         "research.extract",
         {
@@ -879,6 +882,30 @@ def _select_focused_windows(
     """
     if not read_windows:
         return []
+    from app.version_scope import document_family, entity_versions, later_introduction, source_versions
+    entity = str(plan.stop_contract.get("deep_cell_entity_label") or "")
+    versions = entity_versions(entity)
+    if versions:
+        # 在抽取前隔离无适用性的版本，避免模型只摘录错误版本；明确引入边界仍可证明旧版否定结论。
+        grouped = {}
+        selected = set()
+        for index, window in enumerate(read_windows):
+            scoped = source_versions(window)
+            category = (0 if scoped & versions else 1 if later_introduction(versions, window.window_text, entity, scan_window=True)
+                        else 2 if not scoped else 3)
+            if category == 3:
+                continue
+            family = document_family(window)
+            if family is None:
+                selected.add(index)
+            else:
+                grouped.setdefault(family, []).append((category, not bool(scoped), index))
+        for candidates in grouped.values():
+            categories = {category for category, _, _ in candidates}
+            # 版本对应的正文和用于旧版否定结论的引入边界都保留，普通别名不再挤占输入。
+            for category in categories - ({2} if categories & {0, 1} else set()):
+                selected.add(min(item for item in candidates if item[0] == category)[2])
+        read_windows = [window for index, window in enumerate(read_windows) if index in selected]
     if len(read_windows) <= max_windows:
         return read_windows
     target_columns = {

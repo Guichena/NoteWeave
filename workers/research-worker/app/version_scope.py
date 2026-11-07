@@ -15,6 +15,31 @@ _NEGATIVE = re.compile(r"(?i)\b(?:unavailable|unsupported)\b|\b(?:does|do|did)\s
                        r"|不支持|尚未提供|未提供|不提供|不可用")
 
 
+def entity_versions(label: str) -> set[str]:
+    """只取研究对象的发布版本，忽略规范编号、edition 年份与协议名称中的数字。"""
+    label = re.sub(r"\b(?:RFC|PEP|JEP|CVE|ISO|IEC)\s*[-:]?\s*\d+(?:[-.:]\d+)*", "", label, flags=re.I)
+    label = re.sub(r"\b(?:19|20)\d{2}\s*(?:edition|版|版本|年版)\b|\bedition\s+(?:19|20)\d{2}\b", "", label, flags=re.I)
+    return set(re.findall(r"(?<![\w./-])(\d+(?:\.\d+)*)(?![\w.])", label))
+
+
+def later_introduction(versions: set[str], quote: str, entity_label: str = "", *, scan_window: bool = False) -> bool:
+    """只识别目标版本之后的明确引入边界，保留原文供后续抽取和核验。"""
+    if not versions:
+        return False
+    product = re.split(r"\s+v?\d", entity_label, maxsplit=1)[0].strip()
+    boundary_quote = re.sub(re.escape(product) + r"\s+(?=v?\d)", "", quote, flags=re.I) if product and product != entity_label else quote
+    if scan_window:
+        # 页面可能先谈另一个功能的旧版引入时间；这里只决定是否展示原文，不授予结论资格。
+        return any(all(tuple(int(part) for part in version.split(".")) <
+                       tuple(int(part) for part in match.group(1).split(".")) for version in versions)
+                   for match in [*_INTRODUCED.finditer(boundary_quote), *_INTRODUCED_ZH.finditer(boundary_quote)])
+    introduced = _INTRODUCED.search(boundary_quote) or _INTRODUCED_ZH.search(boundary_quote)
+    if not introduced:
+        return False
+    boundary = tuple(int(part) for part in introduced.group(1).split("."))
+    return all(tuple(int(part) for part in version.split(".")) < boundary for version in versions)
+
+
 def source_versions(source: object) -> set[str]:
     path = urlsplit(str(getattr(source, "url", "") or "")).path
     # 网址中同一页面可能有发布版本和文档站版本；具体章节路径优先，正文语义仍由答案检查核对。
@@ -27,19 +52,30 @@ def source_versions(source: object) -> set[str]:
     return found or metadata
 
 
+def document_family(source: object) -> tuple[str, str] | None:
+    """同站点、同文档路径的语言和版本别名；只有识别到版本目录时才归并。"""
+    parsed = urlsplit(str(getattr(source, "url", "") or ""))
+    if parsed.query:
+        return None
+    segments = [part for part in parsed.path.split("/") if part]
+    if segments and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", segments[0], re.I):
+        segments = segments[1:]
+    for index, part in enumerate(segments):
+        if (index == 0 or segments[index - 1].lower() in _DOC_DIRS) and re.fullmatch(
+                r"v?\d{1,3}(?:\.\d+)*|dev|latest|current|stable", part, re.I):
+            return (parsed.hostname or "", "/".join(segments[:index] + segments[index + 1:]))
+    return None
+
+
 def supports_entity_version(versions: set[str], card: object, source: object, entity_label: str = "") -> bool:
     if not versions:
         return True
     quote = str(getattr(card, "quote_text", "") or "")
     claim = str(getattr(card, "claim_text", "") or "")
     product = re.split(r"\s+v?\d", entity_label, maxsplit=1)[0].strip()
-    boundary_quote = re.sub(re.escape(product) + r"\s+(?=v?\d)", "", quote, flags=re.I) if product and product != entity_label else quote
     # 明确的引入边界可以证明旧版没有这项能力；仍须通过后续逐项语义核验。
-    introduced = _INTRODUCED.search(boundary_quote) or _INTRODUCED_ZH.search(boundary_quote)
-    if introduced and _NEGATIVE.search(claim):
-        boundary = tuple(int(part) for part in introduced.group(1).split("."))
-        if all(tuple(int(part) for part in version.split(".")) < boundary for version in versions):
-            return True
+    if _NEGATIVE.search(claim) and later_introduction(versions, quote, entity_label):
+        return True
     # 旧版提案即使写着目标版本，也不能用将来时的设计承诺证明已经发布的能力。
     proposal = re.search(r"(?:^|/)(?:pep-\d+|jep-\d+|jeps/\d+)(?:[./]|$)",
                          urlsplit(str(getattr(source, "url", "") or "")).path, re.I)
