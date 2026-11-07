@@ -103,7 +103,7 @@ class PlanningExecutor:
             # 复核仍调用模型；认可原方案时只返回批准标记，不重复生成已经校验的整张表。
             if (accepted_plan is not None and isinstance(raw, dict)
                     and set(raw) == {"approved"} and raw["approved"] is True):
-                attempts.append({"attempt": attempt + 1, "status": "APPROVED", "problems": []})
+                attempts.append(_planning_attempt(attempt + 1, accepted_plan, PlanDraft(accepted_plan)))
                 break
             # 第一次规划与复核已采用的方案时检查研究对象是否该合成一个主题；修复时不再检查，避免整张表退回模板
             draft = validate_plan(raw, planning_input, final_attempt=attempt >= 1,
@@ -188,6 +188,10 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "Keep only dimensions needed to answer the question, including the expert-expected ones described "
             "next; perspectives help choose them but must not add other dimensions. Prefer the smallest table that "
             "fully answers the question.",
+            "If the user explicitly limits the investigation to named aspects, that boundary takes priority "
+            "over expert-expected additions and the suggested 3-to-5 points below. Do not expand a yes/no "
+            "availability check into installation commands or prerequisites unless asked. Keep all requested "
+            "qualifiers and the evidence needed to distinguish the answers.",
             "Start with required_points: the 3 to 5 points an expert reviewer would check in a complete answer, "
             "covering every part of the question plus what a complete answer obviously needs (the identifier the "
             "question asks to cite, the release that made a change effective, the production build when comparing "

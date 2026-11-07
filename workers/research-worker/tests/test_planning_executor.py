@@ -131,7 +131,7 @@ def test_review_can_approve_without_regenerating_the_validated_plan():
     result = _executor(llm)(_command(), _claim()).role_result
     assert len(llm.calls) == 2
     assert result["degradation_reasons"] == []
-    assert result["planning_diagnostics"]["attempts"][1]["status"] == "APPROVED"
+    assert result["planning_diagnostics"]["attempts"][1]["status"] == "ACCEPTED"
     assert result["plan"] == llm.calls[1][1]["candidate_plan_for_review"]
 
 
