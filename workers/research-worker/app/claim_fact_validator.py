@@ -35,8 +35,8 @@ _NUMBER_RE = re.compile(
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(
-    r"(?<!\d)(?P<year>(?:19|20)\d{2})(?:[-/.年](?P<month>0?[1-9]|1[0-2])"
-    r"(?:[-/.月](?P<day>0?[1-9]|[12]\d|3[01])日?)?)?(?!\d)"
+    r"(?<!\d)(?P<year>(?:19|20)\d{2})(?:[ \t]*[-/.年][ \t]*(?P<month>0?[1-9]|1[0-2])"
+    r"(?:[ \t]*[-/.月][ \t]*(?P<day>0?[1-9]|[12]\d|3[01])[ \t]*日?)?)?(?!\d)"
 )
 _MONTH_NAME = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
                r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?")

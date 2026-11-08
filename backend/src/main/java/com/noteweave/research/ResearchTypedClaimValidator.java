@@ -29,7 +29,7 @@ class ResearchTypedClaimValidator {
                     + "\\s*(%|percent(?:age)?|百分比|个百分点|kb|mb|gb|tb|ms|毫秒|秒|分钟|小时|s\\b)?",
             Pattern.CASE_INSENSITIVE);
     static final Pattern DATE = Pattern.compile(
-            "(?<!\\d)((?:19|20)\\d{2})(?:[-/.年](0?[1-9]|1[0-2])(?:[-/.月](0?[1-9]|[12]\\d|3[01])日?)?)?(?!\\d)");
+            "(?<!\\d)((?:19|20)\\d{2})(?:[ \\t]*[-/.年][ \\t]*(0?[1-9]|1[0-2])(?:[ \\t]*[-/.月][ \\t]*(0?[1-9]|[12]\\d|3[01])[ \\t]*日?)?)?(?!\\d)");
     private static final String MONTH_NAME = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
             + "Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
     static final Pattern NAMED_MONTH_FIRST = Pattern.compile(
