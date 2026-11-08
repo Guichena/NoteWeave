@@ -99,6 +99,12 @@ class NarrativeReportPolisher:
                 "sentences must not introduce facts that no frozen cell supports.",
                 "For a question that weighs supporting against opposing evidence, present both sides with their "
                 "sources and the conditions that explain the difference before giving the conclusion.",
+                "Preserve the outcome each quote actually measures. Benefits or null effects in a different "
+                "outcome (such as satisfaction, retention or preference when the target is productivity), or in "
+                "unspecified outcomes, do not establish the target result. Do not place them in a "
+                "supporting/opposing outcome paragraph or table row. A defined "
+                "proxy must be identified as a proxy. Keep relevant methodological background separately and "
+                "state its limits; do not convert it into evidence for the target result.",
                 "executive_summary is the bottom line: one or two sentences that answer research_question with the "
                 "verified facts, for example 'X became final in JDK 21 (JEP 444)'; never describe the report "
                 "instead of answering, and never copy a sentence that also appears in the sections: the summary "

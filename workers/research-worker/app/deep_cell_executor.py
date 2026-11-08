@@ -1010,6 +1010,12 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             "research_question is context only and adds no requirement to this cell. Columns such as supporting "
             "or opposing evidence are relative to the claim in the question: a claim answers the supporting column "
             "only when it supports that claim, and the opposing column only when it contradicts it or finds no effect.",
+            "Keep the outcome being measured distinct from related outcomes. For a question about X's effect "
+            "on Y, evidence about a different outcome (such as satisfaction, retention or preference when "
+            "these differ from Y) does not establish "
+            "Y's direction or absence of effect. Require Y or an explicitly defined proxy for a supporting or "
+            "opposing result. Retain applicable design or measurement facts for a methods requirement, without "
+            "promoting them into outcome evidence. An unspecified 'outcomes' finding is not a result for Y.",
         ],
         "research_question": str(snapshot.query_policy.get("query") or ""),
         "entity": str(snapshot.query_policy.get("entity_label") or ""),

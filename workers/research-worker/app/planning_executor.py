@@ -232,6 +232,10 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "dimensions: supporting evidence with its source, opposing or inconclusive evidence with its source, "
             "and the conditions, methods or confounders that explain the difference. This rule wins over the rule "
             "about naming organizations or studies as entities: name the studies inside the evidence cells instead.",
+            "Use exactly those three dimensions unless the user explicitly requests another distinct aspect. "
+            "A study design or source type, including a meta-analysis, belongs within those dimensions, not in "
+            "an extra deliverable. Do not require a pooled effect size or a meta-analytic conclusion unless asked. "
+            "Keep useful findings from such sources in the requested evidence and methods dimensions.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
             "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "
@@ -287,6 +291,8 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "inspection procedures unless the user asks for them. An official-source constraint does not require "
             "naming an unrequested technical identifier. Keep needed release boundaries, without making "
             "incidental identifiers mandatory. Do not approve a plan with such additions. "
+            "For a supporting/opposing/conditions question, merge an unrequested extra synthesis or study-type "
+            "column into the corresponding requested aspects and remove its extra obligations. "
             "Then check whether "
             "its rows and columns would let a reader answer the whole question and make the requested decision. "
             "Look for missing core concepts or stages, not just details of the existing columns. Replace "
