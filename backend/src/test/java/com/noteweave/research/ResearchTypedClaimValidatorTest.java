@@ -42,6 +42,8 @@ class ResearchTypedClaimValidatorTest {
     void matchesTranslatedMonthWithoutTreatingDatePartsAsQuantities() {
         String quote = "Phase two: 600 teachers in February 2027.";
         assertThat(validator.validate("第二阶段计划为2027年2月覆盖600名教师", quote).status()).isEqualTo("ENTAILED");
+        assertThat(validator.validate("第二阶段计划为 2027 年 2 月覆盖 600 名教师", quote).status()).isEqualTo("ENTAILED");
+        assertThat(validator.validate("第二阶段计划为 2027 年 3 月覆盖 600 名教师", quote).status()).isEqualTo("CONTRADICTED");
         assertThat(validator.validate("第二阶段计划为2027年3月覆盖600名教师", quote).status()).isEqualTo("CONTRADICTED");
         assertThat(validator.validate("第二阶段计划为2027年2月覆盖601名教师", quote).status()).isEqualTo("CONTRADICTED");
         assertThat(validator.validate("2 schools in 2027年2月", quote).status()).isNotEqualTo("ENTAILED");
@@ -77,5 +79,12 @@ class ResearchTypedClaimValidatorTest {
         assertThat(validator.validate("Memory 2027.2 GB", "Memory 2027.2 MB").reasonCodes()).contains("UNIT_CONTRADICTION");
         assertThat(validator.validate("Memory 2027.2 GB", "Memory 2027.3 GB").status()).isEqualTo("CONTRADICTED");
         assertThat(validator.facts("Memory 2027.2 GB").dates()).isEmpty();
+    }
+
+    @Test
+    void dateSpacingDoesNotJoinAYearToANewListItem() {
+        var facts = validator.facts("Release 2027\n- 2 items");
+        assertThat(facts.dates()).containsExactly("2027");
+        assertThat(facts.numbers()).extracting(ResearchTypedClaimValidator.NumberFact::value).containsExactly("2");
     }
 }

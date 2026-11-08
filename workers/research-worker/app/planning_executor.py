@@ -227,6 +227,10 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "Requests about the report itself, such as citing the original text or giving sources, are output "
             "requirements, never dimensions; but identifiers the question asks to name (for example the JEP or "
             "RFC number) belong in the description of the matching dimension.",
+            "An instruction to mark missing, unstated or uncertain information is handled by coverage and report "
+            "limitations. It is not an extra factual dimension, nor an obligation to prove absence in each "
+            "fact cell. Only make missing information a research dimension when auditing such gaps is itself "
+            "the user's research subject.",
             "For a question that asks whether X improves or causes Y and wants supporting and opposing evidence "
             "(or results from different studies or organizations), use one entity for the topic and the "
             "dimensions: supporting evidence with its source, opposing or inconclusive evidence with its source, "
@@ -293,6 +297,8 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "incidental identifiers mandatory. Do not approve a plan with such additions. "
             "For a supporting/opposing/conditions question, merge an unrequested extra synthesis or study-type "
             "column into the corresponding requested aspects and remove its extra obligations. "
+            "Keep instructions to flag missing or uncertain information in report output requirements, not "
+            "in an extra factual column or as an absence-proof requirement inside other dimensions. "
             "Then check whether "
             "its rows and columns would let a reader answer the whole question and make the requested decision. "
             "Look for missing core concepts or stages, not just details of the existing columns. Replace "

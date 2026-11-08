@@ -59,6 +59,8 @@ def test_negation_is_scoped_to_the_nearby_fact() -> None:
 def test_translated_month_keeps_quantity_and_date_boundaries() -> None:
     quote = "Phase two: 600 teachers in February 2027."
     assert validate_claim_facts("第二阶段计划为2027年2月覆盖600名教师", quote).status == "ENTAILED"
+    assert validate_claim_facts("第二阶段计划为 2027 年 2 月覆盖 600 名教师", quote).status == "ENTAILED"
+    assert validate_claim_facts("第二阶段计划为 2027 年 3 月覆盖 600 名教师", quote).status == "CONTRADICTED"
     assert validate_claim_facts("第二阶段计划为2027年3月覆盖600名教师", quote).status == "CONTRADICTED"
     assert validate_claim_facts("第二阶段计划为2027年2月覆盖601名教师", quote).status == "CONTRADICTED"
     assert validate_claim_facts("2 schools in 2027年2月", quote).status != "ENTAILED"
@@ -89,3 +91,9 @@ def test_year_like_decimal_with_unit_remains_a_quantity() -> None:
     assert "UNIT_CONTRADICTION" in validate_claim_facts("Memory 2027.2 GB", "Memory 2027.2 MB").reason_codes
     assert validate_claim_facts("Memory 2027.2 GB", "Memory 2027.3 GB").status == "CONTRADICTED"
     assert not [a for a in extract_fact_atoms("Memory 2027.2 GB") if a.kind == "DATE"]
+
+
+def test_date_spacing_does_not_join_a_year_to_a_new_list_item() -> None:
+    atoms = extract_fact_atoms("Release 2027\n- 2 items")
+    assert [a.value for a in atoms if a.kind == "DATE"] == ["2027"]
+    assert [a.value for a in atoms if a.kind == "NUMBER"] == ["2"]
