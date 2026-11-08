@@ -13,6 +13,30 @@ import org.junit.jupiter.api.Test;
 class QaEvidenceSelectionPolicyTest {
 
     @Test
+    void signedRerankScoresKeepTheirOrderWhenDiversityIsApplied() {
+        record Passage(String id, String text, double score) { }
+        List<Passage> candidates = List.of(
+                new Passage("best", "shared baseline method", 1.0),
+                new Passage("caveat", "shared baseline method caveats", -0.1),
+                new Passage("unrelated", "unrelated different wording", -20.0));
+        var selected = QaEvidenceSelectionPolicy.selectMmrWithinBudget(
+                candidates, Passage::id, Passage::id, Passage::text, Passage::score, item -> 1, 2, 2);
+        assertThat(selected).extracting(Passage::id).containsExactly("best", "caveat");
+    }
+
+    @Test
+    void allNegativeOrExtremeFiniteScoresAreComparedWithoutClampingOrOverflow() {
+        record Passage(String id, double score) { }
+        for (double[] scores : List.of(new double[] {-20, -0.1},
+                new double[] {-Double.MAX_VALUE, Double.MAX_VALUE})) {
+            List<Passage> candidates = List.of(new Passage("lower", scores[0]), new Passage("higher", scores[1]));
+            var selected = QaEvidenceSelectionPolicy.selectMmrWithinBudget(
+                    candidates, Passage::id, Passage::id, Passage::id, Passage::score, item -> 1, 1, 1);
+            assertThat(selected).extracting(Passage::id).containsExactly("higher");
+        }
+    }
+
+    @Test
     void shouldSelectOnePerSourceBeforeFillingInCandidateOrder() {
         List<Item> candidates = List.of(
                 new Item("a-1", "a"),
