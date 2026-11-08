@@ -256,6 +256,8 @@ class ResearchGlobalConflictDetector {
      */
     String skeleton(String claim) {
         String value = claim == null ? "" : claim;
+        value = ResearchTypedClaimValidator.NAMED_DAY_FIRST.matcher(value).replaceAll(" ");
+        value = ResearchTypedClaimValidator.NAMED_MONTH_FIRST.matcher(value).replaceAll(" ");
         value = ResearchTypedClaimValidator.DATE.matcher(value).replaceAll(" ");
         value = ResearchTypedClaimValidator.NUMBER.matcher(value).replaceAll(" ");
         for (ResearchTypedClaimValidator.ComparisonPattern comparison
