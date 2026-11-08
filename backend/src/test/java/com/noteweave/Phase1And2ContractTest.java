@@ -792,6 +792,8 @@ class Phase1And2ContractTest {
                 .andReturn();
         String workspaceId = objectMapper.readTree(result.getResponse().getContentAsString())
                 .path("data").path("workspace_id").asText();
+        // 本组验证 QA/NOTE 契约，关闭无关的后台 Wiki 摄取，避免其引用写入与问答完成事务竞争。
+        jdbcTemplate.update("update workspace set wiki_enabled = false where id = ?", workspaceId);
         workspaceIds.add(workspaceId);
         return workspaceId;
     }
