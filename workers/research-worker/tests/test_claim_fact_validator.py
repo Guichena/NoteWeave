@@ -54,3 +54,38 @@ def test_negation_is_scoped_to_the_nearby_fact() -> None:
     assert contradiction.status == "CONTRADICTED"
     assert "LOCAL_POLARITY_CONTRADICTION" in contradiction.reason_codes
     assert unrelated.status == "ENTAILED"
+
+
+def test_translated_month_keeps_quantity_and_date_boundaries() -> None:
+    quote = "Phase two: 600 teachers in February 2027."
+    assert validate_claim_facts("第二阶段计划为2027年2月覆盖600名教师", quote).status == "ENTAILED"
+    assert validate_claim_facts("第二阶段计划为2027年3月覆盖600名教师", quote).status == "CONTRADICTED"
+    assert validate_claim_facts("第二阶段计划为2027年2月覆盖601名教师", quote).status == "CONTRADICTED"
+    assert validate_claim_facts("2 schools in 2027年2月", quote).status != "ENTAILED"
+    assert validate_claim_facts("2027年2月覆盖600名教师", "600 teachers in 2027.").status != "ENTAILED"
+
+
+def test_named_month_orders_and_date_precision() -> None:
+    for quote in ["December 15, 2026", "15 December 2026", "Dec. 15, 2026"]:
+        assert validate_claim_facts("2026年12月15日", quote).status == "ENTAILED"
+        assert validate_claim_facts("Released before 2026-12", "Released before " + quote).status != "ENTAILED"
+        assert validate_claim_facts("Not released in 2026-12", "Not released on " + quote).status != "ENTAILED"
+        assert validate_claim_facts("2026年12月16日", quote).status == "CONTRADICTED"
+
+
+def test_ungrouped_quantities_keep_every_digit() -> None:
+    assert validate_claim_facts("预算300000", "预算300001").status == "CONTRADICTED"
+    assert validate_claim_facts("1024 people", "1025 people").status == "CONTRADICTED"
+    assert validate_claim_facts("300000 TWD", "300,000 TWD").status == "ENTAILED"
+
+
+def test_named_dates_do_not_leak_day_or_year_as_quantities() -> None:
+    atoms = extract_fact_atoms("600 teachers on 15 December 2026")
+    assert [a.value for a in atoms if a.kind == "DATE"] == ["2026-12-15"]
+    assert [a.value for a in atoms if a.kind == "NUMBER"] == ["600"]
+
+
+def test_year_like_decimal_with_unit_remains_a_quantity() -> None:
+    assert "UNIT_CONTRADICTION" in validate_claim_facts("Memory 2027.2 GB", "Memory 2027.2 MB").reason_codes
+    assert validate_claim_facts("Memory 2027.2 GB", "Memory 2027.3 GB").status == "CONTRADICTED"
+    assert not [a for a in extract_fact_atoms("Memory 2027.2 GB") if a.kind == "DATE"]
