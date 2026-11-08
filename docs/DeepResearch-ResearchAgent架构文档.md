@@ -90,9 +90,13 @@ Plan 不是自然语言步骤列表，而是 `Goal + Frozen Context + Constraint
 
 ## 搜索、读取与证据归档
 
+`[当前实现]` 规划与规划复核提示以用户原始问题为范围依据，覆盖 Required Point、维度描述、Brief 与研究视角。支持证据、反对或不确定证据、方法与适用条件这类问题默认使用三个维度；用户明确要求额外方面时保留。元分析等来源中的相关发现可以使用，来源类型本身不增加必填维度或合成效应量要求。
+
 外部搜索结果、网页、Workspace Window 和 Tool Output 都是不可信输入。工具调用前使用服务端 Permit 固化 Workspace、Run、Task、Lease、Role、Source Policy、域名和预算；网络层限制协议、域名、重定向、私网/Loopback、DNS Rebinding、响应大小、媒体类型和凭据转发。
 
 `[当前实现]` External Snapshot Archive、Source Identity、Content Digest 和 Evidence Manifest 提供归档边界；Worker 的 Search/Read Adapter、SSRF/HTTP Security 测试和 Claim Fact Validator 提供受控执行面。
+
+`[当前实现]` 普通单元格与特定缺口补查可在同一进程内复用成功抓取的未聚焦正文，按 Workspace、Run、研究对象、完整 URL 与读取预算隔离，十分钟过期，并限制条目与总字节数。新问题重新选择正文片段、检查注入并归档，不复用旧问题的结论。高风险、要求独立反证的任务不使用该缓存；明确排除的 Source 在读取前过滤。该缓存不跨进程，也不替代 Source Snapshot 或独立来源核验。
 
 `[目标设计]` 网页每次读取保存 URL Canonical Form、Fetch Time、HTTP Metadata、Content Digest、提取器版本和不可变文本快照。报告引用 Snapshot，不引用一份会变化的在线正文。链接失效时，历史报告仍能按保留政策展示归档摘要；新研究重新抓取并标记内容变化。
 
@@ -107,6 +111,8 @@ Evidence Qualification 分三层：
 `[当前实现]` `V097` 建立 Research Evidence Validation；Typed Claim Validator 检查数字、百分比、常见单位、年份/日期、比较方向和否定。确定性矛盾不能被 LLM 判断覆盖。Global Verifier 从 Canonical Facts 独立重算，不复制 Local Result；两者不一致保留 `VERIFIER_DISAGREEMENT` 并阻止无条件成文。
 
 ### 来源冲突
+
+`[当前实现]` 答案筛选与报告生成提示要求区分目标指标、已定义的代理指标和相关结果。例如研究生产效率时，满意度改善不能直接作为效率改善的证据；用户研究满意度本身时仍正常保留。方法事实可以解释适用条件，但不能提升为未测量指标的结果。这些语义约束仍需真实答案评测，不能仅凭完成状态或核实格数判断通过。
 
 | 情况 | 状态 | 动作 |
 | --- | --- | --- |
