@@ -1854,7 +1854,7 @@ class Phase3NoteWikiContractTest {
         List<String> statuses = List.of();
         while (System.nanoTime() < deadline) {
             statuses = jdbcTemplate.queryForList(
-                    "select status from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
+                    "select task_status from task where workspace_id = ? and task_type = 'WIKI_INGEST'",
                     String.class, workspaceId);
             if (!statuses.isEmpty() && statuses.stream().allMatch("COMPLETED"::equals)) {
                 return;
