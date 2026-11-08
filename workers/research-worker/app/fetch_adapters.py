@@ -45,6 +45,7 @@ from app.config import load_settings
 from app.rate_limit import FixedIntervalRateLimiter
 from app.search_adapters import _QUOTA_MARKERS
 from app.trace_security import sanitize_error_message
+from app.run_page_cache import RUN_PAGES
 
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,6 @@ class UrlFetchAdapter:
         hit: ResearchSearchHit,
         fetch_index: int,
     ) -> ResearchFetchedDocument | None:
-        del task_input
         if not hit.url.strip():
             return None
 
@@ -199,7 +199,7 @@ class UrlFetchAdapter:
             transport_fallback_reason = fetch_error_reason
             transport_fallback_code = fetch_failure_code
             focus = "\n".join([" ".join(hit.query.split()), *_column_focus(plan)])
-            snapshot = self.transport.read(hit.url, focus, self.token_budget)
+            snapshot = _read_run_page(task_input, plan, self.transport, hit.url, focus, self.token_budget)
             untrusted_content = bool(snapshot.get("untrusted_content", True))
             prompt_injection_detected = bool(snapshot.get("prompt_injection_detected", False))
             prompt_injection_signals = [
@@ -451,7 +451,8 @@ class HttpUrlSnapshotTransport:
                 end = re.search(r"<h[12](?:\s|>)", text[match.end():], re.I)
                 stop = match.end() + end.start() if end else min(len(text),match.end() + 40000)
                 anchor_text = _strip_html(text[start:stop])
-        cleaned_text = _select_query_relevant_text(anchor_text or _strip_html(text), query, token_budget)
+        unfocused_text = anchor_text or _strip_html(text)
+        cleaned_text = _select_query_relevant_text(unfocused_text, query, token_budget)
         if not cleaned_text:
             return {
                 "snapshot_status": "FETCH_FAILED",
@@ -467,6 +468,7 @@ class HttpUrlSnapshotTransport:
         injection_signals = detect_prompt_injection(cleaned_text)
         return {
             "text": cleaned_text,
+            "_unfocused_text": unfocused_text,
             "snapshot_key": _snapshot_key(url, cleaned_text),
             "snapshot_status": "HTTP_FETCHED",
             "fetch_status": "FETCHED",
@@ -530,12 +532,13 @@ class JinaUrlSnapshotTransport:
                 )
                 content_type = response_headers.get("Content-Type", "")
                 text = _decode_response(raw, content_type)
-                cleaned_text = _select_query_relevant_text(
-                    _unescape_markdown(_strip_jina_wrapper(text)), query, token_budget)
+                unfocused_text = _unescape_markdown(_strip_jina_wrapper(text))
+                cleaned_text = _select_query_relevant_text(unfocused_text, query, token_budget)
                 if cleaned_text:
                     injection_signals = detect_prompt_injection(cleaned_text)
                     return {
                         "text": cleaned_text,
+                        "_unfocused_text": unfocused_text,
                         "snapshot_key": _snapshot_key(url, cleaned_text),
                         "snapshot_status": "JINA_FETCHED",
                         "fetch_status": "FETCHED",
@@ -632,6 +635,7 @@ class TavilyMcpUrlSnapshotTransport:
                     injection_signals = detect_prompt_injection(cleaned_text)
                     return {
                         "text": cleaned_text,
+                        "_unfocused_text": text,
                         "snapshot_key": _snapshot_key(url, cleaned_text),
                         "snapshot_status": "FETCHED",
                         "fetch_status": "FETCHED",
@@ -980,6 +984,29 @@ def build_default_fetch_adapter() -> CompositeFetchAdapter:
         max_concurrency=settings.fetch_max_concurrency,
         page_deadline_seconds=settings.fetch_page_deadline_seconds,
     )
+
+
+def _read_run_page(task_input, plan, transport, url, focus, token_budget):
+    parts = urllib.parse.urlsplit(url)
+    scope = (getattr(task_input, 'workspace_id', ''), getattr(task_input, 'target_id', ''),
+             plan.stop_contract.get('deep_cell_entity_id', ''))
+    reusable = (plan.stop_contract.get('reuse_fetched_pages') is True and all(scope)
+                and parts.scheme in {'http', 'https'} and not parts.username and not parts.password
+                and not fetch_blocked(url))
+    # 不同版本路径、参数、锚点及读取预算保持隔离；缓存不授予访问或引用资格。
+    key = (*scope, url, token_budget)
+    snapshot = RUN_PAGES.get(key) if reusable else None
+    if snapshot is None:
+        snapshot = transport.read(url, focus, token_budget)
+        if reusable:
+            RUN_PAGES.put(key, snapshot)
+        return snapshot
+    text = _select_query_relevant_text(snapshot['_unfocused_text'], focus, token_budget)
+    snapshot.update(text=text, snapshot_key=_snapshot_key(url, text), fetch_method='RUN_CACHE_REUSE',
+                    fetch_attempts=[], transport_attempt_count=0,
+                    transport_chain=[*snapshot.get('transport_chain', []), 'RUN_CACHE_REUSE'],
+                    prompt_injection_detected=False, prompt_injection_signals=[])
+    return snapshot
 
 
 def run_research_fetch(

@@ -1233,6 +1233,12 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     plan.stop_contract["deep_cell_entity_id"] = snapshot.entity_id
     plan.stop_contract["deep_cell_entity_label"] = entity_label
     plan.stop_contract["retrieval_mode"] = retrieval_mode
+    repair = snapshot.query_policy.get("repair_target")
+    # 独立反证与高风险双候选必须重新读取；普通补缺口仅复用抓取正文，仍重新选段、抽取和核验。
+    plan.stop_contract["reuse_fetched_pages"] = (
+        not snapshot.high_risk and snapshot.query_policy.get("counter_required") is not True
+        and (snapshot.role == "DEEP_CELL" or (isinstance(repair, dict)
+             and repair.get("repair_cause") in {"MARGINAL_GAIN_EXHAUSTED", "FETCH_FAILED", "PROVIDER_FAILED"})))
     # 合并任务要用同一批网页回答多个单元格，抓取与阅读的网页数按单元格数增加
     document_budget = min(MAX_DOCUMENTS_PER_TASK, BASE_DOCUMENTS_PER_TASK + len(columns))
     plan.stop_contract["tool_response_retention_budget"] = max(
@@ -1260,6 +1266,9 @@ def _maybe_crash_after_archive(
 def _filter_external_hits_by_domain(
     snapshot: ResearchAgentTaskSnapshot, hits: list[object], plan: ResearchPlan | None = None
 ) -> list[object]:
+    # 已被服务端排除的来源不能再次抓取、抽取后才拒绝，补查从发现阶段就跳过它们。
+    excluded = set(snapshot.source_policy.get("excluded_source_ids", []))
+    hits = [hit for hit in hits if str(getattr(hit, "source_id", "")) not in excluded]
     allowed = _effective_allowed_external_domains(snapshot, plan)
     if not allowed:
         return list(hits)
