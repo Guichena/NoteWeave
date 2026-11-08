@@ -135,12 +135,19 @@ public final class QaEvidenceSelectionPolicy {
         }
         int size = pool.size();
         double[] relevance = new double[size];
-        double maxScore = 0;
+        double maxScore = Double.NEGATIVE_INFINITY;
+        double minScore = Double.POSITIVE_INFINITY;
         for (int index = 0; index < size; index++) {
             maxScore = Math.max(maxScore, score.applyAsDouble(pool.get(index)));
+            minScore = Math.min(minScore, score.applyAsDouble(pool.get(index)));
         }
+        // 原始重排分可为负数，不能全部截成零；先缩放再平移，保持差异并避免有限极值相减溢出。
+        boolean signed = minScore < 0 && maxScore > minScore;
+        double scale = signed ? Math.max(Math.abs(minScore), Math.abs(maxScore)) : 1;
+        double low = signed ? minScore / scale : 0;
+        double span = signed ? maxScore / scale - low : 1;
         for (int index = 0; index < size; index++) {
-            relevance[index] = maxScore > 0
+            relevance[index] = signed ? (score.applyAsDouble(pool.get(index)) / scale - low) / span : maxScore > 0
                     ? Math.max(0, score.applyAsDouble(pool.get(index))) / maxScore
                     : 1.0d / (index + 1);
         }
