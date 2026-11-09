@@ -230,7 +230,8 @@ public class RetrievalOrchestrator {
         StringBuilder stages = new StringBuilder();
         if (measurements != null) {
             measurements.forEach((key, value) -> {
-                if (key != null && key.endsWith("_ms") && value != null) {
+                // 召回后被复核拒绝的条数一并输出：撤销墓碑生效时它应接近 0
+                if (key != null && (key.endsWith("_ms") || key.equals("ownership_rejected_count")) && value != null) {
                     stages.append(' ').append(key).append('=').append(value);
                 }
             });

@@ -39,4 +39,18 @@ class ElasticsearchNoteSourceSearchAdapterQueryTest {
         assertThat(query.bool().filter()).hasSize(1);
         assertThat(query.bool().filter().get(0).bool().filter()).hasSize(2);
     }
+
+    @Test
+    void revokedSourcesAreExcludedFromNoteSourceRecall() {
+        ElasticsearchNoteSourceSearchAdapter withTombstones = new ElasticsearchNoteSourceSearchAdapter(null);
+        withTombstones.setRevokedSources(workspaceId -> java.util.Set.of("revoked-a"));
+
+        Query query = withTombstones.scope("workspace-1");
+
+        assertThat(query.bool().filter()).hasSize(2);
+        assertThat(query.bool().mustNot()).hasSize(1);
+        assertThat(query.bool().mustNot().get(0).terms().field()).isEqualTo("source_id");
+        assertThat(withTombstones.vectorScope("workspace-1", "").bool().filter().get(0).bool().mustNot())
+                .hasSize(1);
+    }
 }

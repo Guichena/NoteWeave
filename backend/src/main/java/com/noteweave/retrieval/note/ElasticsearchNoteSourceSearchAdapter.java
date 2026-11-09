@@ -16,6 +16,7 @@ import com.noteweave.retrieval.provider.RetrievalProviderException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,28 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
     ) {
         this.client = client;
         this.embeddingVersions = embeddingVersions;
+    }
+
+    /** 撤销墓碑：ES 删除完成之前，已撤销资料在查询里直接排除，不占召回名额。 */
+    private com.noteweave.retrieval.RevokedSourceFilter revokedSources =
+            com.noteweave.retrieval.RevokedSourceFilter.NONE;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRevokedSources(com.noteweave.retrieval.RevokedSourceFilter revokedSources) {
+        this.revokedSources = revokedSources == null ? com.noteweave.retrieval.RevokedSourceFilter.NONE : revokedSources;
+    }
+
+    private void excludeRevoked(BoolQuery.Builder bool, String workspaceId) {
+        Set<String> revoked = revokedSources.revokedSourceIds(workspaceId);
+        if (revoked == null || revoked.isEmpty()) {
+            return;
+        }
+        bool.mustNot(mustNot -> mustNot.terms(terms -> terms
+                .field("source_id")
+                .terms(values -> values.value(revoked.stream()
+                        .sorted()
+                        .map(co.elastic.clients.elasticsearch._types.FieldValue::of)
+                        .toList()))));
     }
 
     @Override
@@ -124,10 +147,12 @@ public class ElasticsearchNoteSourceSearchAdapter implements NoteSourceSearchPor
         return Query.of(query -> query.bool(bool -> bool.filter(filters)));
     }
 
-    private Query scope(String workspaceId) {
-        return Query.of(query -> query.bool(bool -> bool
+    Query scope(String workspaceId) {
+        BoolQuery.Builder bool = new BoolQuery.Builder()
                 .filter(filter -> filter.term(term -> term.field("workspace_id").value(workspaceId)))
-                .filter(filter -> filter.term(term -> term.field("is_current_snapshot").value(true)))));
+                .filter(filter -> filter.term(term -> term.field("is_current_snapshot").value(true)));
+        excludeRevoked(bool, workspaceId);
+        return Query.of(query -> query.bool(bool.build()));
     }
 
     @SuppressWarnings("rawtypes")
