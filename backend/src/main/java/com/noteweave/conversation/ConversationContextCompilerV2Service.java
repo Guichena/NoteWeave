@@ -78,8 +78,11 @@ public class ConversationContextCompilerV2Service {
         List<ContextProjectionV2.RawMessage> messages = new ArrayList<>();
         for (int index = 0; index < rows.size(); index++) {
             MessageRow row = rows.get(index);
-            if (row.seq() != index + 1 || !"CURRENT".equals(row.status()))
+            if (row.seq() != index + 1
+                    || !ConversationTopicProjectionV2Service.SETTLED_CONTEXT_STATUSES.contains(row.status()))
                 throw invalid("conversation prefix contains pending or deleted messages");
+            // 生成失败的助手消息没有正文，不进入原文窗口；话题投影仍覆盖它的序号
+            if ("FAILED".equals(row.status())) continue;
             messages.add(new ContextProjectionV2.RawMessage(row.id(), row.seq(), row.role(),
                     row.text(), sha256(row.text())));
         }
