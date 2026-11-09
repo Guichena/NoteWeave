@@ -187,6 +187,41 @@ class ContextV2ActiveAnswerContractTest {
     }
 
     @Test
+    void failedEarlierTurnDoesNotDisableTheProjectionForLaterTurns() throws Exception {
+        String workspace = workspace();
+        data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspace)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(mapper.writeValueAsBytes(Map.of("mode", "ACTIVE"))));
+        String conversation = conversation(workspace, "failed-turn");
+        submit(conversation, "请解释缓存一致性", "QA");
+        JsonNode failedTurn = submit(conversation, "延迟双删的第二次删除什么时候做", "QA");
+        // 第二轮生成失败（网关报错、准备阶段拒绝等）：助手消息停在 FAILED，正文为空
+        String failedAssistant = jdbc.queryForObject("""
+                select id from conversation_message where conversation_id = ? and message_seq = 4
+                """, String.class, conversation);
+        jdbc.update("update conversation_message set context_status = 'FAILED', content = '' where id = ?",
+                failedAssistant);
+        jdbc.update("update answer_run set status = 'FAILED' where id = ?",
+                failedTurn.path("answer_run_id").asText());
+
+        JsonNode later = submit(conversation, "那缓存过期时间怎么设置", "QA");
+
+        String runId = later.path("answer_run_id").asText();
+        var snapshot = jdbc.queryForMap("""
+                select compiler_version, snapshot_json from run_input_snapshot where answer_run_id = ?
+                """, runId);
+        // 修复前这里退回旧版上下文：话题投影把失败消息当成待脱敏消息，此后每一轮都冻结失败
+        assertThat(snapshot.get("compiler_version")).isEqualTo(ContextWindowPlannerV2.COMPILER_VERSION);
+        JsonNode frozenInput = mapper.readTree((String) snapshot.get("snapshot_json"));
+        assertThat(frozenInput.path("context_v2_fallback_code").isMissingNode()
+                || frozenInput.path("context_v2_fallback_code").asText().isEmpty()).isTrue();
+        assertThat(frozenInput.path("context_v2_raw_message_refs").toString()).doesNotContain(failedAssistant);
+        assertThat(jdbc.queryForObject("""
+                select max(end_seq) from conversation_topic_segment_v2 where conversation_id = ?
+                """, Integer.class, conversation)).isGreaterThanOrEqualTo(5);
+    }
+
+    @Test
     void answerActiveGateDoesNotEnableResearchConsumption() throws Exception {
         String workspace = workspace();
         data(put("/api/v2/workspaces/{workspaceId}/context-v2-rollout", workspace)
