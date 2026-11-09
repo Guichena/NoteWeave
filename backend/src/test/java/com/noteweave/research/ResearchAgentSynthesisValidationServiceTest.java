@@ -38,6 +38,15 @@ class ResearchAgentSynthesisValidationServiceTest {
     }
 
     @Test
+    void sequenceWordsNeedDatedQuotes() {
+        // 资料研究回放：引用的原文都没有日期，却用随后排了先后
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL 17 uses GIN [evidence:pg]，随后 MySQL 8.4 indexes virtual columns [evidence:mysql]。",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of()))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
     void sameStudyMustShareACitationWithThePreviousSentence() {
         assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
                 validParagraphs().get(0),

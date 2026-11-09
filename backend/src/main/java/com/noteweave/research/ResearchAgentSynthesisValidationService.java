@@ -29,6 +29,15 @@ class ResearchAgentSynthesisValidationService {
             "(?<![A-Za-z])([A-Z][A-Za-z'\\-]{1,30})(?:\\s+(?:et\\s+al\\.?|and|&)(?:\\s+[A-Z][A-Za-z'\\-]{1,30})?)?"
                     + "\\s*(?:等人?)?\\s*[（(]\\s*(?:19|20)\\d{2}[a-z]?\\s*[)）]");
     /** 指回上一句那项研究的说法，与 Worker 侧 _SAME_STUDY 一致：必须和上一句引用同一条证据。 */
+    /** 明确表示先后的说法，与 Worker 侧 _SEQUENCE 一致。 */
+    private static final Pattern SEQUENCE = Pattern.compile(
+            "随后|此后|上线前|上线后|在此之前|\\bsubsequently\\b|\\bafterwards\\b|\\b(?:before|after|prior to)(?: the)? launch\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static boolean hasDate(Set<String> tokens) {
+        return tokens.stream().anyMatch(token -> token.startsWith("date:") || token.matches("(?:19|20)\\d{2}"));
+    }
+
     private static final Pattern SAME_STUDY = Pattern.compile(
             "同一(?:项)?研究|该研究|这项研究|上述研究|\\bthe same study\\b|\\bthis study\\b", Pattern.CASE_INSENSITIVE);
     /** 与 Worker 成文的标题一致（narrative_report.BACKGROUND_HEADING_*），前端按它们给这一节单独的样式。 */
@@ -265,6 +274,7 @@ class ResearchAgentSynthesisValidationService {
         }
         Matcher statements = STATEMENT.matcher(prose);
         Set<String> previousRefs = new HashSet<>();
+        String previousSources = null;
         while (statements.find()) {
             String statement = statements.group();
             if (statement.isBlank()) continue;
@@ -278,14 +288,35 @@ class ResearchAgentSynthesisValidationService {
             List<FrozenCell> cited = bound.values().stream()
                     .filter(cell -> cell.evidenceKeys().stream().anyMatch(refs::contains)).toList();
             StringBuilder sources = new StringBuilder();
+            List<String> quoteTexts = new java.util.ArrayList<>();
             for (FrozenCell cell : cited) {
                 if (cell.quotes().isEmpty()) {
                     sources.append(' ').append(trustedContext).append(' ').append(cell.value()).append(' ').append(cell.context());
+                    quoteTexts.add(cell.value() + " " + cell.context());
                 } else {
-                    cell.quotes().forEach((key, quote) -> { if (refs.contains(key)) sources.append(' ').append(quote); });
+                    cell.quotes().forEach((key, quote) -> {
+                        if (refs.contains(key)) {
+                            sources.append(' ').append(quote);
+                            quoteTexts.add(quote);
+                        }
+                    });
                     sources.append(' ').append(cell.entity());
                 }
             }
+            // 用随后、上线前这类词排先后时，句中每条原文都要有日期；承接上一句时上一句的原文也要有日期，
+            // 与 Worker 侧 _sequence_supported 一致
+            Matcher sequence = SEQUENCE.matcher(statement);
+            if (!inline.isEmpty() && sequence.find()) {
+                if (quoteTexts.isEmpty() || quoteTexts.stream().anyMatch(text -> !hasDate(typedTokens(text)))) {
+                    throw invalid("句子排了先后，但所引原文没有写出对应日期");
+                }
+                Matcher firstCitation = INLINE_CITATION.matcher(statement);
+                boolean refersBack = !firstCitation.find() || sequence.start() < firstCitation.start();
+                if (refersBack && previousSources != null && !hasDate(typedTokens(previousSources))) {
+                    throw invalid("句子承接上一句排了先后，但上一句所引原文没有写出日期");
+                }
+            }
+            if (!refs.isEmpty()) previousSources = sources.toString();
             String statementProse = INLINE_CITATION.matcher(statement).replaceAll("");
             Matcher author = AUTHOR_YEAR.matcher(statementProse);
             while (author.find()) {

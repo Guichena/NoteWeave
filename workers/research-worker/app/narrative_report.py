@@ -727,6 +727,7 @@ def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidenc
     has_inline = bool(_INLINE_CITATION.search(text))
     checked: list[tuple[str, bool]] = []
     previous_refs: set[str] = set()
+    previous_sources: str | None = None
     for statement in _STATEMENT.findall(text):
         if not statement.strip():
             checked.append((statement, True))
@@ -756,10 +757,39 @@ def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidenc
         # 说"同一研究"时要和上一句引用同一条证据，不能把相邻引用的不同研究写成一项
         same_study = not (has_inline and previous_refs and refs and _SAME_STUDY.search(statement)
                           and not refs & previous_refs)
-        checked.append((statement, attributed and same_study and not (mentioned and not mentioned & cited_stems)))
+        quote_texts = [str(item["quote"]) if quotes else _cell_source_text(cell)
+                       for cell in cited for quotes in [cell.get("evidence_quotes") or []]
+                       for item in (quotes if quotes else [{}]) if not quotes or item["evidence_key"] in refs]
+        ordered = not has_inline or _sequence_supported(statement, quote_texts, previous_sources)
+        checked.append((statement, attributed and same_study and ordered
+                        and not (mentioned and not mentioned & cited_stems)))
         if refs:
             previous_refs = refs
+            previous_sources = " ".join(sources)
     return checked
+
+
+# 明确表示先后的说法；只收时间顺序专用的词，"之后""然后"这类在技术说明里常表示条件的词不收
+_SEQUENCE = re.compile(r"随后|此后|上线前|上线后|在此之前|\bsubsequently\b|\bafterwards\b|\b(?:before|after|prior to)(?: the)? launch\b",
+                       re.I)
+
+
+def _has_date(tokens: set[str]) -> bool:
+    return any(token.startswith("date:") or re.fullmatch(r"(?:19|20)\d{2}", token) for token in tokens)
+
+
+def _sequence_supported(statement: str, quote_texts: list[str], previous_sources: str | None) -> bool:
+    """句子用随后、上线前这类词排先后时，句中引用的每条原文都要写出日期（一句话用逗号连起多件事时，
+    没有日期的那件不能被排进先后）；先后词出现在本句第一个引用之前、承接上一句时，上一句的原文也要有日期。
+    资料没写时间的安排不能写成发生在某事件之前或之后。"""
+    match = _SEQUENCE.search(statement)
+    if not match:
+        return True
+    if not quote_texts or not all(_has_date(_typed_tokens(text)) for text in quote_texts):
+        return False
+    first_citation = _INLINE_CITATION.search(statement)
+    refers_back = first_citation is None or match.start() < first_citation.start()
+    return not refers_back or previous_sources is None or _has_date(_typed_tokens(previous_sources))
 
 
 def _attribution_supported(prose: str, sources: str) -> bool:
