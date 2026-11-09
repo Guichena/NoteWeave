@@ -214,8 +214,9 @@ public class ChatService {
         if (freeze.catchUp() != null) {
             scheduleConversationBackground(CONSTRAINT_CHAIN_PREFIX + conversationId, freeze.catchUp());
         }
-        AnswerDraft draft = buildAnswerDraft(
-                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages);
+        // 交互式回答的重排限时：重排服务卡住时按已有降级继续，不让用户等满重试预算
+        AnswerDraft draft = com.noteweave.retrieval.provider.InteractiveRerankBudget.run(() -> buildAnswerDraft(
+                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages));
         // 分阶段耗时：发消息后到开始生成之间的等待都在这里，后续提速以这些数字为准
         PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={} "
                         + "evidence={} sufficiency={} retrieval_degraded={}",

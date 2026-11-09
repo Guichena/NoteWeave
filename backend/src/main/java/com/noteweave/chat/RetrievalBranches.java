@@ -54,7 +54,9 @@ final class RetrievalBranches {
                 return new Branch<>(null, null, ex);
             }
         }
-        return new Branch<>(CompletableFuture.supplyAsync(work, executor), null, null);
+        // 交互式重排预算标记跟着分支进入工作线程
+        return new Branch<>(CompletableFuture.supplyAsync(
+                com.noteweave.retrieval.provider.InteractiveRerankBudget.propagate(work), executor), null, null);
     }
 
     private static RuntimeException unwrap(Throwable cause) {
