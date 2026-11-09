@@ -26,6 +26,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class QaHybridRetriever {
     private static final int LOW_RECALL_EXPANSION_THRESHOLD = 3;
+    /** 测量值：首轮融合候选不足、满足扩展召回条件时为 1。渐进改写据此判断是否需要等 alternatives 重检索。 */
+    public static final String LOW_RECALL_EXPANSION_ELIGIBLE = "low_recall_expansion_eligible";
     /** V3 只保留相邻段落里靠近命中段落的这一段文字：前一段取结尾，后一段取开头。 */
     static final int ADJACENT_WINDOW_CHARACTERS = 300;
     /** 相邻段落块的开头标记；证据充分性判定据此跳过相邻段落，只看命中段落。 */
@@ -56,6 +58,17 @@ public class QaHybridRetriever {
         this.queryExpansionService = queryExpansionService;
     }
 
+    /** 检索分支线程池；未注入时（例如单元测试）各分支在调用线程内顺序执行。 */
+    private java.util.concurrent.Executor branchExecutor;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setBranchExecutor(
+            @org.springframework.beans.factory.annotation.Qualifier("retrievalBranchExecutor")
+            java.util.concurrent.Executor branchExecutor
+    ) {
+        this.branchExecutor = branchExecutor;
+    }
+
     public HybridResult retrieve(String workspaceId, String query, Set<String> sourceScope) {
         return retrieve(workspaceId, RetrievalChannels.same(query), sourceScope);
     }
@@ -78,21 +91,22 @@ public class QaHybridRetriever {
         String embeddingModel = "";
         boolean vectorAvailable = false;
         boolean keywordAvailable = false;
-        try {
+        long startedAt = System.nanoTime();
+        // 向量召回（远程向量化 + 向量检索）与关键词召回互不依赖，并行执行；结果按原顺序合并
+        RetrievalBranches.Branch<VectorRecall> vectorBranch = RetrievalBranches.start(branchExecutor, () -> {
+            long branchStart = System.nanoTime();
             if (!embeddingClient.isEnabled()) {
                 throw new RetrievalProviderException("EMBEDDING_PROVIDER_DISABLED", "Query embedding is disabled");
             }
             var embedding = embeddingClient.embedQuery(safeChannels.vectorQuery());
-            embeddingModel = embedding.model();
-            vectorHits.addAll(searchPort.vectorRetrieve(new QaVectorQuery(
+            long embeddedAt = System.nanoTime();
+            List<QaHybridSearchPort.QaSearchHit> hits = searchPort.vectorRetrieve(new QaVectorQuery(
                     workspaceId, safeChannels.vectorQuery(), embedding.singleVector(), sourceScope,
-                    QaRetrievalStrategyProfile.RECALL_LIMIT, QaRetrievalStrategyProfile.VECTOR_THRESHOLD)));
-            vectorAvailable = true;
-        } catch (BusinessException ex) {
-            throw ex;
-        } catch (RuntimeException ex) {
-            pipelineDegradations.add("QA_VECTOR_RECALL_UNAVAILABLE");
-        }
+                    QaRetrievalStrategyProfile.RECALL_LIMIT, QaRetrievalStrategyProfile.VECTOR_THRESHOLD));
+            return new VectorRecall(embedding.model(), hits, millis(branchStart, embeddedAt),
+                    millis(embeddedAt, System.nanoTime()));
+        });
+        long keywordStart = System.nanoTime();
         try {
             keywordHits.addAll(searchPort.keywordRetrieve(
                     keywordQuery(workspaceId, safeChannels.lexicalQuery(), sourceScope, safeChannels)));
@@ -102,6 +116,23 @@ public class QaHybridRetriever {
         } catch (RuntimeException ex) {
             pipelineDegradations.add("QA_KEYWORD_RECALL_UNAVAILABLE");
         }
+        long keywordMillis = millis(keywordStart, System.nanoTime());
+        long embeddingMillis = 0L;
+        long vectorSearchMillis = 0L;
+        try {
+            VectorRecall recall = vectorBranch.join();
+            embeddingModel = recall.model();
+            vectorHits.addAll(recall.hits());
+            embeddingMillis = recall.embeddingMillis();
+            vectorSearchMillis = recall.searchMillis();
+            vectorAvailable = true;
+        } catch (BusinessException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            // 降级原因保持原来的先后顺序：向量在前，关键词在后
+            pipelineDegradations.add(0, "QA_VECTOR_RECALL_UNAVAILABLE");
+        }
+        long recallMillis = millis(startedAt, System.nanoTime());
         if (!vectorAvailable && !keywordAvailable) {
             throw new RetrievalProviderException("QA_RECALL_CHANNELS_UNAVAILABLE", "QA recall channels are unavailable");
         }
@@ -149,8 +180,10 @@ public class QaHybridRetriever {
             return owner != null && hit.sourceId().equals(owner.sourceId())
                     && hit.sourceSnapshotId().equals(owner.sourceSnapshotId());
         }).toList();
+        long rerankStart = System.nanoTime();
         QaRerankService.RerankOutcome reranked = rerankService.rerank(
                 safeChannels.rerankQuery(), eligible, QaRetrievalStrategyProfile.RERANK_LIMIT);
+        long rerankMillis = millis(rerankStart, System.nanoTime());
         Map<String, List<RetrievalHydrator.AdjacentPassage>> hydratedAdjacent =
                 retrievalHydrator.hydrateAdjacentPassages(
                         workspaceId, reranked.hits().stream().map(hit -> hit.hit().chunkId()).toList());
@@ -194,6 +227,15 @@ public class QaHybridRetriever {
         }
         measurements.put("mysql_fallback_used", 0L);
         measurements.put("query_expansion_count", (long) expansions.size());
+        measurements.put(LOW_RECALL_EXPANSION_ELIGIBLE,
+                primaryFused.size() < LOW_RECALL_EXPANSION_THRESHOLD ? 1L : 0L);
+        // 分阶段耗时：召回墙钟时间、远程向量化、向量检索、关键词检索、重排
+        measurements.put("recall_ms", recallMillis);
+        measurements.put("embedding_ms", embeddingMillis);
+        measurements.put("vector_search_ms", vectorSearchMillis);
+        measurements.put("keyword_search_ms", keywordMillis);
+        measurements.put("rerank_ms", rerankMillis);
+        measurements.put("total_ms", millis(startedAt, System.nanoTime()));
         pipelineDegradations.addAll(reranked.degradationReasons());
         return new HybridResult(selected, !pipelineDegradations.isEmpty(),
                 List.copyOf(new java.util.LinkedHashSet<>(pipelineDegradations)), measurements,
@@ -304,6 +346,18 @@ public class QaHybridRetriever {
                             ? content : content.substring(0, RANKED_TRACE_EXCERPT_CHARACTERS)));
         }
         return List.copyOf(trace);
+    }
+
+    private record VectorRecall(
+            String model,
+            List<QaHybridSearchPort.QaSearchHit> hits,
+            long embeddingMillis,
+            long searchMillis
+    ) {
+    }
+
+    private static long millis(long fromNanos, long toNanos) {
+        return Math.max(0L, (toNanos - fromNanos) / 1_000_000L);
     }
 
     record OwnedHit(

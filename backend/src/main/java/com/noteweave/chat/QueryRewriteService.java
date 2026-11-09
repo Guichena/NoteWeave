@@ -40,9 +40,13 @@ public class QueryRewriteService {
             7. must_terms 是需要加重的专名或标识符。low_level_keywords 是具体实体，high_level_keywords 是主题词。
             8. language 只能是 zh 或 en。
             使用短字段名输出，含义和上述规则完全相同：s=is_standalone, q=standalone_query, k=keyword_query,
-            a=alternatives, t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords, lang=language。
+            t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords, lang=language, a=alternatives。
+            按 s、q、k、t、m、l、h、lang、a 的顺序输出，a 放在最后。
             输出紧凑 JSON，不缩减查询或遗漏指代、否定、比较对象与版本等限定。
             """;
+    /** 流式输出里 alternatives 键的开始位置；它之前的字段已经足够发起检索。 */
+    private static final java.util.regex.Pattern ALTERNATIVES_KEY =
+            java.util.regex.Pattern.compile(",\\s*\"(?:a|alternatives)\"\\s*:");
 
     private final ChatLlmClient llmClient;
     private final ObjectMapper objectMapper;
@@ -125,9 +129,143 @@ public class QueryRewriteService {
         if (llmClient == null || !llmClient.isEnabled()) {
             return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_UNAVAILABLE"));
         }
+        return llmRewrite(current, context, null);
+    }
+
+    /** 本轮是否会调用模型改写；只有这种情况才值得边输出边发起检索。 */
+    boolean usesModel(ConversationRetrievalContextAssembler.Context context) {
+        String current = context.currentQuestion() == null ? "" : context.currentQuestion().trim();
+        return context.contextApplied() && enabled
+                && !(skipStandalone && looksStandalone(current))
+                && llmClient != null && llmClient.isEnabled();
+    }
+
+    /**
+     * 渐进改写：模型输出到 alternatives 之前的字段都已完整时，先交出不含 alternatives 的结果供检索；
+     * 完整结果在后台继续生成。调用方检索结束后用 {@link ProgressiveRewrite#awaitComplete()} 取完整结果，
+     * 两者除 alternatives 外不一致、或召回不足需要 alternatives 时，必须用完整结果重新检索。
+     * 线程池为空、被拒绝或本轮不调用模型时退回同步改写，结果与 {@link #rewrite} 完全相同。
+     */
+    public ProgressiveRewrite rewriteProgressive(
+            ConversationRetrievalContextAssembler.Context context,
+            java.util.concurrent.Executor executor
+    ) {
+        if (executor == null || !usesModel(context)) {
+            return ProgressiveRewrite.complete(rewrite(context));
+        }
+        String current = context.currentQuestion() == null ? "" : context.currentQuestion().trim();
+        java.util.concurrent.CompletableFuture<QueryRewrite> early = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<QueryRewrite> full;
+        try {
+            full = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> llmRewrite(current, context, draft -> early.complete(accept(current, draft))), executor);
+        } catch (java.util.concurrent.RejectedExecutionException ex) {
+            return ProgressiveRewrite.complete(rewrite(context));
+        }
+        return new ProgressiveRewrite(early, full, () -> rule(current, context.topicAnchor(),
+                List.of("QUERY_REWRITE_LLM_CALL_FAILED")));
+    }
+
+    /** 两次改写除 alternatives 外是否完全相同；相同则早先发起的检索与完整结果的检索输入一致。 */
+    public static boolean sameExceptAlternatives(QueryRewrite left, QueryRewrite right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return left.standalone() == right.standalone()
+                && java.util.Objects.equals(left.standaloneQuery(), right.standaloneQuery())
+                && java.util.Objects.equals(left.keywordQuery(), right.keywordQuery())
+                && java.util.Objects.equals(left.questionType(), right.questionType())
+                && java.util.Objects.equals(left.mustTerms(), right.mustTerms())
+                && java.util.Objects.equals(left.lowLevelKeywords(), right.lowLevelKeywords())
+                && java.util.Objects.equals(left.highLevelKeywords(), right.highLevelKeywords())
+                && java.util.Objects.equals(left.language(), right.language())
+                && java.util.Objects.equals(left.method(), right.method())
+                && java.util.Objects.equals(left.degradationReasons(), right.degradationReasons());
+    }
+
+    /** 渐进改写的两个阶段。 */
+    public static final class ProgressiveRewrite {
+        private final java.util.concurrent.CompletableFuture<QueryRewrite> early;
+        private final java.util.concurrent.CompletableFuture<QueryRewrite> full;
+        private final java.util.function.Supplier<QueryRewrite> failure;
+        private QueryRewrite dispatched;
+
+        private ProgressiveRewrite(
+                java.util.concurrent.CompletableFuture<QueryRewrite> early,
+                java.util.concurrent.CompletableFuture<QueryRewrite> full,
+                java.util.function.Supplier<QueryRewrite> failure
+        ) {
+            this.early = early;
+            this.full = full;
+            this.failure = failure;
+        }
+
+        static ProgressiveRewrite complete(QueryRewrite rewrite) {
+            var done = java.util.concurrent.CompletableFuture.completedFuture(rewrite);
+            return new ProgressiveRewrite(done, done, () -> rewrite);
+        }
+
+        /** 等到可以发起检索：早先结果或完整结果，谁先到用谁。 */
+        public QueryRewrite awaitDispatchable() {
+            try {
+                Object first = java.util.concurrent.CompletableFuture.anyOf(early, full).get();
+                dispatched = (QueryRewrite) first;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                dispatched = failure.get();
+            } catch (java.util.concurrent.ExecutionException ex) {
+                dispatched = failure.get();
+            }
+            return dispatched;
+        }
+
+        /** 交给检索的是不是不含 alternatives 的早先结果。 */
+        public boolean dispatchedPartial() {
+            return early != full && dispatched != null && early.isDone() && early.getNow(null) == dispatched;
+        }
+
+        /** 完整改写结果；后台失败时退回规则改写。 */
+        public QueryRewrite awaitComplete() {
+            try {
+                return full.get();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return failure.get();
+            } catch (java.util.concurrent.ExecutionException ex) {
+                return failure.get();
+            }
+        }
+    }
+
+    private QueryRewrite llmRewrite(
+            String current,
+            ConversationRetrievalContextAssembler.Context context,
+            java.util.function.Consumer<Draft> onEarlyDraft
+    ) {
         String prompt = userPrompt(current, context);
         try {
-            String first = llmClient.streamChat(SYSTEM_PROMPT, prompt, OUTPUT_TOKENS, token -> { });
+            StringBuilder streamed = new StringBuilder();
+            boolean[] earlyTried = {onEarlyDraft == null};
+            String first = llmClient.streamChat(SYSTEM_PROMPT, prompt, OUTPUT_TOKENS, token -> {
+                if (earlyTried[0] || token == null) {
+                    return;
+                }
+                streamed.append(token);
+                java.util.regex.Matcher marker = ALTERNATIVES_KEY.matcher(streamed);
+                if (!marker.find()) {
+                    return;
+                }
+                // alternatives 之前的字段已经完整：补上右括号按同一套规则校验，通过才提前交出
+                earlyTried[0] = true;
+                Parsed prefix = parse(streamed.substring(0, marker.start()) + "}");
+                if (prefix.draft() != null && prefix.draft().alternatives().isEmpty()) {
+                    try {
+                        onEarlyDraft.accept(prefix.draft());
+                    } catch (RuntimeException ex) {
+                        log.debug("提前交出改写结果失败：{}", ex.getMessage());
+                    }
+                }
+            });
             Parsed parsed = parse(first);
             if (parsed.draft() != null) {
                 return accept(current, parsed.draft());

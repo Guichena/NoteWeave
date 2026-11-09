@@ -94,6 +94,31 @@ public class RealtimeExecutorConfig {
         return executor;
     }
 
+    /**
+     * 检索分支线程池：向量召回（远程向量化 + 向量检索）与关键词召回互不依赖，并行执行。
+     * 队列满时由调用线程自己执行该分支，结果与串行执行完全相同，只是不再并行。
+     */
+    @Bean(name = "retrievalBranchExecutor")
+    public Executor retrievalBranchExecutor(
+            @Value("${noteweave.executors.retrieval-branch.core-size:8}") int coreSize,
+            @Value("${noteweave.executors.retrieval-branch.max-size:32}") int maxSize,
+            @Value("${noteweave.executors.retrieval-branch.queue-capacity:64}") int queueCapacity
+    ) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("retrieval-branch-");
+        executor.setCorePoolSize(coreSize);
+        executor.setMaxPoolSize(maxSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setKeepAliveSeconds(60);
+        executor.setAllowCoreThreadTimeOut(true);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setTaskDecorator(RealtimeExecutorConfig::withCallerMdc);
+        executor.initialize();
+        return executor;
+    }
+
     /** 把提交线程的 MDC 带到工作线程，执行完恢复工作线程原来的 MDC。 */
     static Runnable withCallerMdc(Runnable runnable) {
         java.util.Map<String, String> captured = MDC.getCopyOfContextMap();
