@@ -232,12 +232,10 @@ public class WikiIngestService {
             return;
         }
         try {
-            transactionExecutor.execute(() -> {
-                KnowledgeItemResponse page = ingestSource(workspaceId, sourceId);
-                taskCommandPort.completeTask(taskId, "WIKI_INDEXED",
-                        "Wiki ingest 已生成或更新工作台级页面", page.itemId());
-                return null;
-            });
+            // 模型调用放在事务之外：事务内会对资料行和片段行加排他锁，持锁期间调用模型会让
+            // 引用同一资料的问答在生成前等待整个 Wiki 编译结束
+            ingestWithShortTransaction(workspaceId, sourceId, page -> taskCommandPort.completeTask(taskId,
+                    "WIKI_INDEXED", "Wiki ingest 已生成或更新工作台级页面", page.itemId()));
         } catch (RuntimeException ex) {
             taskCommandPort.failTask(taskId, "WIKI_INDEXED_FAILED",
                     "Wiki ingest 失败：" + failureMessage(ex), "WIKI_INGEST_FAILED", true);
@@ -284,10 +282,7 @@ public class WikiIngestService {
             int failedSources = 0;
             for (String remainingSourceId : remainingSourceIds) {
                 try {
-                    transactionExecutor.execute(() -> {
-                        ingestSource(workspaceId, remainingSourceId);
-                        return null;
-                    });
+                    ingestWithShortTransaction(workspaceId, remainingSourceId, page -> { });
                     refreshedSources++;
                 } catch (RuntimeException ex) {
                     failedSources++;
@@ -575,18 +570,132 @@ public class WikiIngestService {
                 : ex.getMessage();
     }
 
-    private KnowledgeItemResponse ingestSource(String workspaceId, String sourceId) {
+    /** 一个概念页在事务外准备好的输入与摘要。 */
+    record ConceptDraft(String concept, List<SourceForWiki> relatedSources, List<ChunkForWiki> relatedChunks,
+                        String summaryFingerprint, String summary) {
+    }
+
+    /** 事务外完成的编译规划：读取到的资料、片段、概念选择和每个概念页的摘要。 */
+    record IngestPlan(SourceForWiki source, List<ChunkForWiki> chunks, List<String> concepts,
+                      List<ConceptDraft> conceptDrafts) {
+    }
+
+    /**
+     * 在事务外完成全部读取和模型调用（概念选择、概念摘要）。工作台级 Wiki 租约已经保证同一工作台
+     * 没有其他 Wiki 写入，写入阶段仍会按同一套读取复核输入。
+     */
+    IngestPlan planIngest(String workspaceId, String sourceId) {
         SourceForWiki source = loadSource(workspaceId, sourceId);
         List<ChunkForWiki> chunks = loadChunks(workspaceId, sourceId);
+        List<String> concepts = selectConcepts(workspaceId, source, chunks);
+        List<ConceptDraft> drafts = new ArrayList<>();
+        for (String concept : concepts) {
+            ConceptInputs inputs = loadConceptInputs(workspaceId, source, concept);
+            String summary = reusableSummary(workspaceId, concept, inputs.summaryFingerprint());
+            if (summary == null) {
+                summary = conceptWriter.summarize(concept, excerptsOf(inputs));
+            }
+            drafts.add(new ConceptDraft(concept, inputs.relatedSources(), inputs.relatedChunks(),
+                    inputs.summaryFingerprint(), summary));
+        }
+        return new IngestPlan(source, chunks, List.copyOf(concepts), List.copyOf(drafts));
+    }
+
+    static final int MAX_PLANNING_ATTEMPTS = 3;
+
+    /**
+     * 先在事务外规划（含模型调用），再用短事务复核并写入。规划后输入变化时重新规划；
+     * 连续多次都赶上变化才退回事务内完整编译，保证最终写入的页面与引用依赖来自同一份当前输入。
+     */
+    void ingestWithShortTransaction(String workspaceId, String sourceId,
+                                    java.util.function.Consumer<KnowledgeItemResponse> afterWrite) {
+        for (int attempt = 1; attempt <= MAX_PLANNING_ATTEMPTS; attempt++) {
+            IngestPlan plan = planIngest(workspaceId, sourceId);
+            boolean lastAttempt = attempt == MAX_PLANNING_ATTEMPTS;
+            KnowledgeItemResponse written = transactionExecutor.execute(() -> {
+                KnowledgeItemResponse page = applyIngest(workspaceId, sourceId, plan);
+                if (page == null && lastAttempt) {
+                    page = ingestSource(workspaceId, sourceId);
+                }
+                if (page != null) {
+                    afterWrite.accept(page);
+                }
+                return page;
+            });
+            if (written != null) {
+                return;
+            }
+            log.info("Wiki ingest inputs changed after planning, replanning: workspaceId={}, sourceId={}, attempt={}",
+                    workspaceId, sourceId, attempt);
+        }
+    }
+
+    /**
+     * 在事务内按规划写入。写入前重新读取资料、片段和每个概念的相关片段，与规划时完全一致才写入并返回资料页；
+     * 任何一项变化都不写入、返回 null，由调用方重新规划。资料已不再 READY 时直接抛出。
+     */
+    KnowledgeItemResponse applyIngest(String workspaceId, String sourceId, IngestPlan plan) {
+        SourceForWiki source = loadSource(workspaceId, sourceId);
+        List<ChunkForWiki> chunks = loadChunks(workspaceId, sourceId);
+        if (!source.equals(plan.source()) || !chunks.equals(plan.chunks())) {
+            return null;
+        }
+        for (ConceptDraft draft : plan.conceptDrafts()) {
+            ConceptInputs current = loadConceptInputs(workspaceId, source, draft.concept());
+            if (!current.relatedSources().equals(draft.relatedSources())
+                    || !current.relatedChunks().equals(draft.relatedChunks())) {
+                return null;
+            }
+        }
+        return writeIngest(workspaceId, source, chunks, plan.concepts(), plan.conceptDrafts());
+    }
+
+    private record ConceptInputs(List<SourceForWiki> relatedSources, List<ChunkForWiki> relatedChunks,
+                                 String summaryFingerprint) {
+    }
+
+    private List<String> selectConcepts(String workspaceId, SourceForWiki source, List<ChunkForWiki> chunks) {
         String leadingText = String.join("\n", chunks.stream().map(ChunkForWiki::content).toList());
         String fingerprint = conceptFingerprint(source, leadingText);
-        // 先选定概念，再写入页面和引用，缩短事务内持有写锁的时间。
         // 资料内容没变时沿用上次选出的概念，避免每次重建都让模型重新挑选、概念页来回变动
         List<String> concepts = reusableConcepts(workspaceId, source.title(), fingerprint);
         if (concepts.isEmpty()) {
             concepts = conceptSuggester.suggest(source.title(), source.summary(), source.tagsJson(), leadingText,
                     loadAutoConceptTitles(workspaceId));
         }
+        return concepts;
+    }
+
+    private ConceptInputs loadConceptInputs(String workspaceId, SourceForWiki source, String concept) {
+        List<SourceForWiki> relatedSources = loadRelatedSourcesForConcept(workspaceId, concept, 4);
+        if (relatedSources.isEmpty()) {
+            relatedSources = List.of(source);
+        }
+        List<ChunkForWiki> relatedChunks = loadConceptChunks(
+                workspaceId,
+                relatedSources.stream().map(SourceForWiki::sourceId).toList(),
+                concept,
+                6
+        );
+        // 相关资料小节的来源级摘要也会进入正文；没有片段的来源补一条代表片段，避免摘要无血缘
+        relatedChunks = withSourceCoverage(workspaceId, relatedSources, relatedChunks);
+        return new ConceptInputs(List.copyOf(relatedSources), List.copyOf(relatedChunks),
+                summaryFingerprint(concept, relatedChunks));
+    }
+
+    private List<WikiConceptWriter.Excerpt> excerptsOf(ConceptInputs inputs) {
+        List<WikiConceptWriter.Excerpt> excerpts = new ArrayList<>();
+        for (ChunkForWiki chunk : inputs.relatedChunks()) {
+            excerpts.add(new WikiConceptWriter.Excerpt(
+                    titleOfChunkSource(inputs.relatedSources(), chunk.sourceId()), chunk.content()));
+        }
+        return excerpts;
+    }
+
+    KnowledgeItemResponse writeIngest(String workspaceId, SourceForWiki source, List<ChunkForWiki> chunks,
+                                              List<String> concepts, List<ConceptDraft> drafts) {
+        String leadingText = String.join("\n", chunks.stream().map(ChunkForWiki::content).toList());
+        String fingerprint = conceptFingerprint(source, leadingText);
         // 在写入资料页之前清理旧概念页，写入时的自动链接就不会再指向即将删除的页面
         pruneOrphanedConceptPages(workspaceId, source.title(), concepts);
         // 编译输入、正文模板与 citation 依赖使用同一份冻结片段集合：正文里出现的每个片段都要有依赖
@@ -599,39 +708,24 @@ public class WikiIngestService {
                         citationIds,
                         source.sourceId()
                 );
-        for (String concept : concepts) {
-            List<SourceForWiki> relatedSources = loadRelatedSourcesForConcept(workspaceId, concept, 4);
-            if (relatedSources.isEmpty()) {
-                relatedSources = List.of(source);
-            }
-            List<ChunkForWiki> relatedChunks = loadConceptChunks(
-                    workspaceId,
-                    relatedSources.stream().map(SourceForWiki::sourceId).toList(),
-                    concept,
-                    6
-            );
-            // 相关资料小节的来源级摘要也会进入正文；没有片段的来源补一条代表片段，避免摘要无血缘
-            relatedChunks = withSourceCoverage(workspaceId, relatedSources, relatedChunks);
-            List<String> conceptCitationIds = createCitations(workspaceId, relatedChunks);
-            String summaryFingerprint = summaryFingerprint(concept, relatedChunks);
-            String summary = reusableSummary(workspaceId, concept, summaryFingerprint);
-            if (summary == null) {
-                List<WikiConceptWriter.Excerpt> excerpts = new ArrayList<>();
-                for (ChunkForWiki chunk : relatedChunks) {
-                    excerpts.add(new WikiConceptWriter.Excerpt(
-                            titleOfChunkSource(relatedSources, chunk.sourceId()), chunk.content()));
-                }
-                summary = conceptWriter.summarize(concept, excerpts);
-            }
+        for (ConceptDraft draft : drafts) {
+            List<String> conceptCitationIds = createCitations(workspaceId, draft.relatedChunks());
             knowledgeCommandService.upsertWikiPageForInternalExecution(
                     workspaceId,
-                    concept,
-                    buildConceptPageContent(concept, relatedSources, relatedChunks, concepts, summary, summaryFingerprint),
+                    draft.concept(),
+                    buildConceptPageContent(draft.concept(), draft.relatedSources(), draft.relatedChunks(),
+                            concepts, draft.summary(), draft.summaryFingerprint()),
                     conceptCitationIds
             );
         }
         refreshWorkspaceIndexPage(workspaceId, source.title());
         return sourcePage;
+    }
+
+    /** 事务内完整编译：多次规划都赶上输入变化时的退路，行为与拆分前一致。 */
+    private KnowledgeItemResponse ingestSource(String workspaceId, String sourceId) {
+        IngestPlan plan = planIngest(workspaceId, sourceId);
+        return writeIngest(workspaceId, plan.source(), plan.chunks(), plan.concepts(), plan.conceptDrafts());
     }
 
     /**
