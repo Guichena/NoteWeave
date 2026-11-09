@@ -106,6 +106,50 @@ class RetrievalLiveElasticsearchIntegrationTest {
         }
     }
 
+    @Test
+    void revokedSourceTombstonesKeepRecallSlotsForValidEvidenceBeforeIndexDeletionFinishes() throws Exception {
+        String workspace = "live-" + UUID.randomUUID().toString().substring(0, 8);
+        String qa = RetrievalIndexNames.physical(ProjectionType.QA_CHUNK, "live-v1", "embed:3", workspace);
+        String host = System.getenv().getOrDefault("NOTEWEAVE_ES_HOST", "127.0.0.1");
+        int port = Integer.parseInt(System.getenv().getOrDefault("NOTEWEAVE_ES_PORT", "19200"));
+        try (RestClient rest = RestClient.builder(new HttpHost(host, port, "http")).build();
+             RestClientTransport transport = new RestClientTransport(rest, new JacksonJsonpMapper())) {
+            ElasticsearchClient client = new ElasticsearchClient(transport);
+            RetrievalIndexManager manager = RetrievalIndexManager.withClient(client);
+            ElasticsearchRetrievalProjectionWriter writer = new ElasticsearchRetrievalProjectionWriter(client);
+            try {
+                manager.createIndex(ProjectionType.QA_CHUNK, qa, 3);
+                // 已撤销资料的片段与问题更相关，ES 删除尚未完成
+                for (int i = 0; i < 6; i++) {
+                    writer.writeQaChunk(qa, qa(workspace, "revoked-" + i, "source-revoked", "snapshot-revoked",
+                            "Checkpoint recovery budget checkpoint recovery " + i, true, List.of(1f, 0f, 0f)));
+                }
+                for (int i = 0; i < 3; i++) {
+                    writer.writeQaChunk(qa, qa(workspace, "valid-" + i, "source-valid", "snapshot-valid",
+                            "Checkpoint recovery note " + i, true, List.of(0.9f, 0.1f, 0f)));
+                }
+                manager.switchAliases(Map.of(RetrievalIndexNames.alias(ProjectionType.QA_CHUNK, workspace), qa));
+                client.indices().refresh(refresh -> refresh.index(List.of(qa)));
+
+                ElasticsearchQaHybridSearchAdapter search = new ElasticsearchQaHybridSearchAdapter(client);
+                var before = search.keywordRetrieve(new QaKeywordQuery(
+                        workspace, "Checkpoint recovery budget", Set.of(), 3, 0));
+                assertThat(before).extracting(hit -> hit.sourceId()).containsOnly("source-revoked");
+
+                search.setRevokedSources(id -> workspace.equals(id) ? Set.of("source-revoked") : Set.of());
+                var keyword = search.keywordRetrieve(new QaKeywordQuery(
+                        workspace, "Checkpoint recovery budget", Set.of(), 3, 0));
+                var vector = search.vectorRetrieve(new QaVectorQuery(
+                        workspace, "checkpoint", List.of(1f, 0f, 0f), Set.of(), 3, 0));
+                // TopK 全部留给有效证据，而不是召回后被复核过滤剩 0 条
+                assertThat(keyword).hasSize(3).extracting(hit -> hit.sourceId()).containsOnly("source-valid");
+                assertThat(vector).hasSize(3).extracting(hit -> hit.sourceId()).containsOnly("source-valid");
+            } finally {
+                client.indices().delete(delete -> delete.index(List.of(qa)).ignoreUnavailable(true));
+            }
+        }
+    }
+
     private QaChunkDocument qa(String workspace, String chunk, String source, String snapshot,
                                String content, boolean current, List<Float> vector) {
         return new QaChunkDocument(workspace, source, snapshot, chunk, 0, "heading", "title",
