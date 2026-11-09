@@ -48,3 +48,21 @@ def test_et_al_does_not_split_the_sentence() -> None:
     statements = [statement for statement, _ in _checked_statements(
         "Bloom et al. (2015) 报告了 13% 的绩效提升 [evidence:bloom]。", [CELL], [], [CELL]) if statement.strip()]
     assert len(statements) == 1
+
+
+PILOT = {"cell_key": "c-pilot", "candidate_value": "试点 3 所学校、180 名教师", "guarded": False,
+         "entity_label": "Star River 项目", "column_label": "试点规模", "evidence_keys": ["evidence:pilot"],
+         "evidence_quotes": [{"evidence_key": "evidence:pilot", "quote": "Pilot: 180 teachers in 3 schools."}]}
+LAUNCH = {"cell_key": "c-launch", "candidate_value": "2026 年 12 月 15 日上线", "guarded": False,
+          "entity_label": "Star River 项目", "column_label": "上线日期", "evidence_keys": ["evidence:launch"],
+          "evidence_quotes": [{"evidence_key": "evidence:launch",
+                               "quote": "Star River project launches on December 15, 2026."}]}
+
+
+def test_undated_arrangement_is_not_placed_before_launch() -> None:
+    # latency2-sources-20261110 原句：试点没有日期，却写成随后上线
+    text = ("试点覆盖 3 所学校 180 名教师 [evidence:pilot]，随后项目于 2026 年 12 月 15 日上线 [evidence:launch]。")
+    results = [ok for statement, ok in _checked_statements(text, [PILOT, LAUNCH], [], [PILOT, LAUNCH]) if statement.strip()]
+    assert results == [False]
+    plain = "试点覆盖 3 所学校 180 名教师 [evidence:pilot]。项目于 2026 年 12 月 15 日上线 [evidence:launch]。"
+    assert all(ok for _, ok in _checked_statements(plain, [PILOT, LAUNCH], [], [PILOT, LAUNCH]))
