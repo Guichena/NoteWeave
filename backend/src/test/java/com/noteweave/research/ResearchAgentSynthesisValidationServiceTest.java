@@ -473,4 +473,31 @@ class ResearchAgentSynthesisValidationServiceTest {
                                 "evidence_keys", List.of("evidence-a"))))),
                 "background_notes", List.of(Map.of("point", "延迟受哪些因素影响", "text", note)));
     }
+
+    @Test
+    void datesCompareAsWholeDatesAtTheSamePrecision() {
+        // 原文英文日期与中文成文是同一日期时放行；多写了日、或只借用月份里的数字时仍然拒绝
+        String[][] accepted = {
+                {"Star River 项目于 2026 年 12 月 15 日上线。", "Star River project launches on December 15, 2026."},
+                {"第二阶段：2027 年 2 月覆盖 600 名教师", "Phase two: 600 teachers in February 2027."},
+                {"于2024年3月1日发布", "Released 2024-03-01"},
+                {"12 月 15 日上线", "December 15, 2026"},
+                {"2027 年", "Phase two in February 2027."},
+        };
+        for (String[] pair : accepted) {
+            org.assertj.core.api.Assertions.assertThat(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[1]))
+                    .as(pair[0]).containsAll(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[0]));
+        }
+        String[][] rejected = {
+                {"2027 年 2 月 3 日", "February 2027"},
+                {"2 所学校", "February 2027"},
+                {"15 名教师", "Released 2024-03-01"},
+                {"2026 年 12 月 16 日", "December 15, 2026"},
+        };
+        for (String[] pair : rejected) {
+            org.assertj.core.api.Assertions.assertThat(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[1])
+                            .containsAll(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[0])))
+                    .as(pair[0]).isFalse();
+        }
+    }
 }

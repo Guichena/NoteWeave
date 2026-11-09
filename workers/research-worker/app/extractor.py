@@ -150,7 +150,10 @@ def _extract_evidence_cards_detailed_with_llm(
                 "NEVER write internal knowledge; every claim must cite a window_id",
                 "quote_text must be one contiguous exact substring of window.text copied character-for-character",
                 "keep quote_text at 160 characters or fewer; copy one short sentence or clause and never use ellipses",
-                "every number, date, unit, and comparison in claim_text must appear verbatim in quote_text; never copy version numbers from the question into a claim",
+                "every number, date, unit, and comparison in claim_text must appear in quote_text with the same value "
+                "and precision; never copy version numbers from the question into a claim. A date may be written "
+                "in the language of question (for example 'December 15, 2026' as '2026 年 12 月 15 日', 'February "
+                "2027' as '2027 年 2 月'), but never add a day or month that quote_text does not state",
                 "claim_text is a short direct answer to the column for target_entity, written in the language of question and based only on quote_text, for example 'JDK 21 正式发布（JEP 444）'; do not add facts that quote_text does not state",
                 "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
