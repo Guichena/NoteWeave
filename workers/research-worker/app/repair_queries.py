@@ -2,7 +2,8 @@
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from app.cell_query_planner import CellQueryPlan, ensure_unrestricted_query, normalize_query, query_rejection_reason
+from app.cell_query_planner import (CellQueryPlan, ensure_introduction_query, ensure_unrestricted_query, normalize_query,
+                                    query_rejection_reason)
 from app.json_repair import parse_json_payload
 from app.models import ResearchQuerySpec
 
@@ -28,7 +29,11 @@ def plan_repair_queries(context, target, llm):
                      "both query wording and source type. Do not repeat tried queries. Use each column's label and "
                      "description to decide what is still missing. For software, standards and science topics write "
                      "English queries, include known identifiers (JEP, RFC, PEP, version numbers) and keep the "
-                     "entity's version. Every query is about the given entity alone: never name another subject the "
+                     "entity's version. Exception: when the column asks whether a release provides a feature or "
+                     "what its default behaviour is, use one query for the feature's official first-introduction "
+                     "release without the entity's version; an explicit later introduction can prove that the "
+                     "earlier release lacks it, but a later release's capability never counts as earlier support. "
+                     "Do not repeat a version-pinned query that only returned related fragments. Every query is about the given entity alone: never name another subject the "
                      "question compares it with. For empirical questions target studies and data. Every query must look for "
                      "what the column of repair_target.cell_key asks for: when that column asks for one side of a "
                      "debate, such as supporting evidence or opposing or inconclusive evidence, phrase every query "
@@ -79,6 +84,8 @@ def plan_repair_queries(context, target, llm):
                          if not query_rejection_reason(spec.query, [], tried)]
                 if not specs:
                     raise ValueError("移除域名限制后检索词与已试查询重复")
+                if chosen != "COUNTER_EVIDENCE":
+                    specs = ensure_introduction_query(specs, context)
                 return CellQueryPlan(specs, "LLM"), chosen
             except Exception as exc:
                 errors = [str(exc)[:240]]
@@ -105,4 +112,6 @@ def plan_repair_queries(context, target, llm):
             specs.append(ResearchQuerySpec(query=query, family="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
                                           search_angle="counterfactual" if strategy == "COUNTER_EVIDENCE" else "coverage_gap",
                                           search_lane="COUNTERFACTUAL" if strategy == "COUNTER_EVIDENCE" else "DEEP_FOCUS"))
+    if strategy != "COUNTER_EVIDENCE":
+        specs = ensure_introduction_query(specs, context)
     return CellQueryPlan(specs, "RULE", ["REPAIR_QUERY_LLM_UNAVAILABLE_OR_INVALID"]), strategy
