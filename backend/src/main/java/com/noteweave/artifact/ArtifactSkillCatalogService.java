@@ -310,6 +310,65 @@ public class ArtifactSkillCatalogService implements CapabilityCatalogPort {
         );
     }
 
+    private static final java.util.regex.Pattern REQUESTED_QUANTITY = java.util.regex.Pattern.compile(
+            "([0-9]{1,3}|[一二两三四五六七八九十]{1,3})\\s*(?:道|题|张|页|条|个问题|个知识点)");
+
+    /**
+     * 调用方没有传某个数量选项时，按需求原文里明确写出的数量取值，而不是默认值；
+     * 例如需求写了出 5 道题、调用方没有传 count，就不能按默认 10 道生成。
+     * 只认带数量单位、且唯一、且在可选值里的数字；调用方显式传入的选项原样使用。
+     */
+    public Map<String, Object> validateAndNormalizeInputs(
+            ArtifactSkillDefinition skill,
+            Map<String, Object> rawInputs,
+            String userRequirement
+    ) {
+        Map<String, Object> inputs = rawInputs == null ? Map.of() : rawInputs;
+        Map<String, Object> resolved = new LinkedHashMap<>(inputs);
+        Map<String, Object> schemaProperties = readSchemaProperties(skill.inputSchema());
+        for (Map.Entry<String, Object> property : schemaProperties.entrySet()) {
+            if (inputs.containsKey(property.getKey()) || !(property.getValue() instanceof Map<?, ?> schema)
+                    || !(schema.get("enum") instanceof List<?> choices) || choices.isEmpty()
+                    || !choices.stream().allMatch(choice -> choice instanceof String text && text.matches("[0-9]+"))) {
+                continue;
+            }
+            String requested = requestedQuantity(userRequirement);
+            if (requested != null && choices.contains(requested)) {
+                resolved.put(property.getKey(), requested);
+            }
+        }
+        return validateAndNormalizeInputs(skill, resolved);
+    }
+
+    /** 需求原文里唯一明确的数量（带道、题、张、页等单位）；没有或出现多个不同数量时返回 null。 */
+    static String requestedQuantity(String requirement) {
+        if (requirement == null || requirement.isBlank()) return null;
+        java.util.regex.Matcher matcher = REQUESTED_QUANTITY.matcher(requirement);
+        java.util.Set<Integer> found = new java.util.LinkedHashSet<>();
+        while (matcher.find()) {
+            Integer value = parseQuantity(matcher.group(1));
+            if (value != null) found.add(value);
+        }
+        return found.size() == 1 ? String.valueOf(found.iterator().next()) : null;
+    }
+
+    private static Integer parseQuantity(String text) {
+        if (text.chars().allMatch(Character::isDigit)) return Integer.parseInt(text);
+        String digits = "零一二三四五六七八九";
+        java.util.function.IntUnaryOperator digit = ch -> ch == '两' ? 2 : digits.indexOf(ch);
+        if (text.length() == 1) {
+            if (text.charAt(0) == '十') return 10;
+            int value = digit.applyAsInt(text.charAt(0));
+            return value > 0 ? value : null;
+        }
+        int ten = text.indexOf('十');
+        if (ten < 0 || text.indexOf('十', ten + 1) >= 0) return null;
+        int tens = ten == 0 ? 1 : digit.applyAsInt(text.charAt(0));
+        int ones = ten == text.length() - 1 ? 0 : digit.applyAsInt(text.charAt(ten + 1));
+        if (tens <= 0 || ones < 0 || text.length() > 3 || (ten > 1)) return null;
+        return tens * 10 + ones;
+    }
+
     public Map<String, Object> validateAndNormalizeInputs(
             ArtifactSkillDefinition skill,
             Map<String, Object> rawInputs

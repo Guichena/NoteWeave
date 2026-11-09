@@ -98,7 +98,8 @@ public class ArtifactJobService {
         String userRequirement = request.userRequirement().trim();
         Map<String, Object> inputs = artifactSkillCatalogService.validateAndNormalizeInputs(
                 skill,
-                request.inputs()
+                request.inputs(),
+                userRequirement
         );
         List<WorkerSourceScopeItemResponse> sourceScopeSnapshot = captureRequestedSourceScope(
                 workspaceId, request.sourceScopeSourceIds());
