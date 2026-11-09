@@ -394,8 +394,64 @@ public class ChatService {
         ConversationRetrievalContextAssembler.Context conversationContext = buildConversationContext(
                 workspaceId, conversationId, currentUserMessageId, request.content());
         timer.mark("context");
-        QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
+        // 渐进改写：alternatives 之前的字段齐全就先检索，alternatives 在后台继续生成
+        QueryRewriteService.ProgressiveRewrite progressive =
+                queryRewriteService.rewriteProgressive(conversationContext, rewriteExecutor);
+        QueryRewrite dispatched = progressive.awaitDispatchable();
         timer.mark("rewrite");
+        AnswerDraft draft = draftWithRewrite(conversationContext, dispatched, conversationId,
+                currentUserMessageId, workspaceId, request, retrievalConfig, timer, stages);
+        if (progressive.dispatchedPartial()) {
+            QueryRewrite complete = progressive.awaitComplete();
+            timer.mark("rewrite_tail");
+            if (requiresFullRewriteRetrieval(dispatched, complete, draft.evidenceBundle())) {
+                // 完整改写与提前检索的输入不一致，或召回不足需要 alternatives 扩展：按完整结果重新检索
+                PREPARATION_LOG.info("answer preparation rerun with complete rewrite workspace={} sameFields={}",
+                        workspaceId, QueryRewriteService.sameExceptAlternatives(dispatched, complete));
+                draft = draftWithRewrite(conversationContext, complete, conversationId,
+                        currentUserMessageId, workspaceId, request, retrievalConfig, timer, stages);
+                timer.mark("rewrite_rerun");
+            }
+        }
+        return draft;
+    }
+
+    /** 检索前提早交出的改写不足以代表最终结果时返回 true。 */
+    static boolean requiresFullRewriteRetrieval(QueryRewrite dispatched, QueryRewrite complete, EvidenceBundle bundle) {
+        if (!QueryRewriteService.sameExceptAlternatives(dispatched, complete)) {
+            return true;
+        }
+        if (complete.alternatives().isEmpty() || complete.alternatives().equals(dispatched.alternatives())) {
+            return false;
+        }
+        // 只有召回不足时检索才会用到 alternatives；检索步骤会记下是否满足扩展条件
+        return bundle != null && bundle.trace() != null && bundle.trace().steps().stream()
+                .anyMatch(step -> step.measurements() != null
+                        && Long.valueOf(1L).equals(step.measurements().get(QaHybridRetriever.LOW_RECALL_EXPANSION_ELIGIBLE)));
+    }
+
+    /** 渐进改写使用的线程池；未注入时（例如单元测试）退回同步改写。 */
+    private java.util.concurrent.Executor rewriteExecutor;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setRewriteExecutor(
+            @org.springframework.beans.factory.annotation.Qualifier("retrievalBranchExecutor")
+            java.util.concurrent.Executor rewriteExecutor
+    ) {
+        this.rewriteExecutor = rewriteExecutor;
+    }
+
+    private AnswerDraft draftWithRewrite(
+            ConversationRetrievalContextAssembler.Context conversationContext,
+            QueryRewrite rewrite,
+            String conversationId,
+            String currentUserMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            EffectiveRetrievalConfig retrievalConfig,
+            PreparationTimer timer,
+            AnswerPreparationListener stages
+    ) {
         stages.stage(AnswerPreparationListener.STAGE_RETRIEVING, Map.of());
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
                 workspaceId, request.answerMode(), rewrite.standaloneQuery());

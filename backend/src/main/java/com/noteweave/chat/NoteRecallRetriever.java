@@ -68,6 +68,17 @@ public class NoteRecallRetriever {
         this.tagResolver = tagResolver;
     }
 
+    /** 检索分支线程池；未注入时（例如单元测试）语义召回在调用线程内先执行。 */
+    private java.util.concurrent.Executor branchExecutor;
+
+    @Autowired(required = false)
+    void setBranchExecutor(
+            @org.springframework.beans.factory.annotation.Qualifier("retrievalBranchExecutor")
+            java.util.concurrent.Executor branchExecutor
+    ) {
+        this.branchExecutor = branchExecutor;
+    }
+
     public NoteRecallPlan retrieve(String workspaceId, String query) {
         return retrieve(workspaceId, RetrievalChannels.same(query), Set.of());
     }
@@ -91,28 +102,29 @@ public class NoteRecallRetriever {
         String lexicalQuery = safeChannels.lexicalQuery();
         List<String> degradationReasons = new ArrayList<>();
         Set<String> terms = LexicalTerms.queryTerms(lexicalQuery);
+        long startedAt = System.nanoTime();
+        // 语义召回（远程向量化 + 向量检索）不依赖日志与元数据查询，先提交到分支线程池并行执行
+        boolean semanticEnabled = embeddingClient != null && sourceSearchPort != null && embeddingClient.isEnabled();
+        RetrievalBranches.Branch<List<String>> semanticBranch = semanticEnabled
+                ? RetrievalBranches.start(branchExecutor, () -> {
+                    var vector = embeddingClient.embedQuery(safeChannels.vectorQuery()).singleVector();
+                    List<String> order = new ArrayList<>();
+                    for (var hit : sourceSearchPort.semanticRetrieve(
+                            workspaceId, vector, NoteRetrievalStrategyProfile.CHANNEL_LIMIT)) {
+                        if (hit != null && hit.sourceId() != null && !hit.sourceId().isBlank()) {
+                            order.add(hit.sourceId());
+                        }
+                    }
+                    return order;
+                })
+                : null;
         Map<String, Integer> noteSignals = journalRetriever.sourceSignals(workspaceId, terms);
         List<NoteJournalHit> journalHits = journalRetriever.retrieve(workspaceId, lexicalQuery);
+        long journalMillis = (System.nanoTime() - startedAt) / 1_000_000L;
         List<String> semanticOrder = new ArrayList<>();
         List<String> metadataOrder = new ArrayList<>();
         boolean semanticAvailable = false;
         boolean metadataAvailable = false;
-        if (embeddingClient != null && sourceSearchPort != null && embeddingClient.isEnabled()) {
-            try {
-                var vector = embeddingClient.embedQuery(safeChannels.vectorQuery()).singleVector();
-                for (var hit : sourceSearchPort.semanticRetrieve(
-                        workspaceId, vector, NoteRetrievalStrategyProfile.CHANNEL_LIMIT)) {
-                    if (hit != null && hit.sourceId() != null && !hit.sourceId().isBlank()) {
-                        semanticOrder.add(hit.sourceId());
-                    }
-                }
-                semanticAvailable = true;
-            } catch (BusinessException ex) {
-                throw ex;
-            } catch (RuntimeException ex) {
-                degradationReasons.add("NOTE_SEMANTIC_RECALL_UNAVAILABLE");
-            }
-        }
         if (sourceSearchPort != null) {
             try {
                 for (var hit : metadataHits(workspaceId, safeChannels)) {
@@ -127,6 +139,20 @@ public class NoteRecallRetriever {
                 degradationReasons.add("NOTE_METADATA_RECALL_UNAVAILABLE");
             }
         }
+        long lexicalMillis = (System.nanoTime() - startedAt) / 1_000_000L;
+        long semanticWaitStart = System.nanoTime();
+        if (semanticBranch != null) {
+            try {
+                semanticOrder.addAll(semanticBranch.join());
+                semanticAvailable = true;
+            } catch (BusinessException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                // 此前只可能有元数据降级；语义降级放在最前，保持与串行写法相同的顺序
+                degradationReasons.add(0, "NOTE_SEMANTIC_RECALL_UNAVAILABLE");
+            }
+        }
+        long semanticWaitMillis = (System.nanoTime() - semanticWaitStart) / 1_000_000L;
         if (!semanticAvailable && metadataAvailable
                 && !degradationReasons.contains("NOTE_SEMANTIC_RECALL_UNAVAILABLE")) {
             degradationReasons.add("NOTE_SEMANTIC_RECALL_UNAVAILABLE");
@@ -225,6 +251,10 @@ public class NoteRecallRetriever {
         baseMeasurements.put("resolved_tag_count", (long) tagResolution.resolvedTags().size());
         baseMeasurements.put("semantic_hit_count", (long) semanticOrder.size());
         baseMeasurements.put("metadata_index_hit_count", (long) metadataOrder.size());
+        // 分阶段耗时：日志信号、日志与元数据召回、等待语义召回的额外时间
+        baseMeasurements.put("journal_ms", journalMillis);
+        baseMeasurements.put("lexical_recall_ms", lexicalMillis);
+        baseMeasurements.put("semantic_wait_ms", semanticWaitMillis);
         if (scored.isEmpty()) {
             degradationReasons.add("note_no_relevant_candidates");
             return new NoteRecallPlan(journalHits, List.of(), List.of(), List.of(), new NoteRecallTrace(
@@ -232,6 +262,7 @@ public class NoteRecallRetriever {
             ), true, List.copyOf(degradationReasons), baseMeasurements);
         }
 
+        long rerankStart = System.nanoTime();
         NoteSourceRerankService.Outcome rerankOutcome = rerankService == null
                 ? new NoteSourceRerankService.Outcome(scored, true,
                         List.of("NOTE_SOURCE_RERANK_UNAVAILABLE"), "")
@@ -245,6 +276,8 @@ public class NoteRecallRetriever {
         List<CandidateSource> verifySources = selection.verifySources();
         baseMeasurements.put("source_rerank_count", (long) reranked.size());
         baseMeasurements.put("verify_batch_count", (long) verifySources.size());
+        baseMeasurements.put("source_rerank_ms", (System.nanoTime() - rerankStart) / 1_000_000L);
+        baseMeasurements.put("recall_total_ms", (System.nanoTime() - startedAt) / 1_000_000L);
         return new NoteRecallPlan(
                 journalHits,
                 selected.stream().map(NoteRecallRanker.ScoredCandidate::source).toList(),
