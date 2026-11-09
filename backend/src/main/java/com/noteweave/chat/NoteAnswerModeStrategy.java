@@ -145,6 +145,7 @@ public class NoteAnswerModeStrategy implements AnswerModeStrategy {
                 .append("每个主题下列出要点和必要的解释；用户提问时先用一两句话直接回答，再展开。\n")
                 .append("- 只使用摘录证据一节中的原文，不补写原文里没有的事实；与请求无关的内容不要写进来。\n")
                 .append("- 依据原文的句子末尾用方括号标注摘录编号，例如 [2] 或 [1][3]，不要编造编号。\n")
+                .append("- 原文没有写明时间或先后顺序的安排，不要写成某个事件之前或之后发生，直接说明原文未说明时间；同一指标没有在两个时间点都给出时，不要推断它不变或已变化。\n")
                 .append("- 资料定位和摘录证据两节保持原样，不要改写。\n")
                 .append("- 不要描述你如何检索或组织这次回答。\n\n");
         if (contextApplied(context)) {

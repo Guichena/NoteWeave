@@ -21,8 +21,16 @@ class ResearchAgentSynthesisValidationService {
     private static final Pattern INLINE_CITATION = Pattern.compile("\\[(evidence:[^\\[\\]\\s]+)\\]");
     /** 原文常写 60.6 percent，结论写 60.6%；比对数字前统一成 %，与 Worker 侧核对口径一致。 */
     private static final Pattern PERCENT_WORD = Pattern.compile("(\\d)\\s*(?:per\\s?cent\\b|％)", Pattern.CASE_INSENSITIVE);
+    /** et al. 里的点号不是句号，与 Worker 侧 narrative_report._STATEMENT 一致。 */
     private static final Pattern STATEMENT = Pattern.compile(
-            ".+?(?:[。！？!?]|\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
+            ".+?(?:[。！？!?]|(?<!\\bet al)\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
+    /** 按作者和年份点名研究，与 Worker 侧 _AUTHOR_YEAR 一致：作者姓氏必须出现在所引原文里。 */
+    private static final Pattern AUTHOR_YEAR = Pattern.compile(
+            "(?<![A-Za-z])([A-Z][A-Za-z'\\-]{1,30})(?:\\s+(?:et\\s+al\\.?|and|&)(?:\\s+[A-Z][A-Za-z'\\-]{1,30})?)?"
+                    + "\\s*(?:等人?)?\\s*[（(]\\s*(?:19|20)\\d{2}[a-z]?\\s*[)）]");
+    /** 指回上一句那项研究的说法，与 Worker 侧 _SAME_STUDY 一致：必须和上一句引用同一条证据。 */
+    private static final Pattern SAME_STUDY = Pattern.compile(
+            "同一(?:项)?研究|该研究|这项研究|上述研究|\\bthe same study\\b|\\bthis study\\b", Pattern.CASE_INSENSITIVE);
     /** 与 Worker 成文的标题一致（narrative_report.BACKGROUND_HEADING_*），前端按它们给这一节单独的样式。 */
     static final String BACKGROUND_HEADING_ZH = "## 补充说明（通用知识，未经本次检索核验）";
     static final String BACKGROUND_HEADING_EN = "## Background notes (general knowledge, not verified by this research)";
@@ -256,10 +264,17 @@ class ResearchAgentSynthesisValidationService {
             throw invalid("正文列出的证据与句中实际引用不一致");
         }
         Matcher statements = STATEMENT.matcher(prose);
+        Set<String> previousRefs = new HashSet<>();
         while (statements.find()) {
             String statement = statements.group();
             if (statement.isBlank()) continue;
             Set<String> refs = inline.isEmpty() ? new HashSet<>(declared) : inlineCitations(statement);
+            // 说"同一研究"时要和上一句引用同一条证据，不能把相邻引用的不同研究写成一项
+            if (!inline.isEmpty() && !previousRefs.isEmpty() && !refs.isEmpty()
+                    && SAME_STUDY.matcher(statement).find() && java.util.Collections.disjoint(refs, previousRefs)) {
+                throw invalid("句子说同一研究，但引用的证据与上一句不同");
+            }
+            if (!refs.isEmpty()) previousRefs = refs;
             List<FrozenCell> cited = bound.values().stream()
                     .filter(cell -> cell.evidenceKeys().stream().anyMatch(refs::contains)).toList();
             StringBuilder sources = new StringBuilder();
@@ -271,7 +286,16 @@ class ResearchAgentSynthesisValidationService {
                     sources.append(' ').append(cell.entity());
                 }
             }
-            Set<String> unsupported = new java.util.TreeSet<>(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")));
+            String statementProse = INLINE_CITATION.matcher(statement).replaceAll("");
+            Matcher author = AUTHOR_YEAR.matcher(statementProse);
+            while (author.find()) {
+                String surname = author.group(1);
+                if (!Pattern.compile("(?<![A-Za-z])" + Pattern.quote(surname) + "(?![A-Za-z])")
+                        .matcher(sources).find()) {
+                    throw invalid("句子点名的研究作者没有出现在所引原文里：" + surname);
+                }
+            }
+            Set<String> unsupported = new java.util.TreeSet<>(typedTokens(statementProse));
             unsupported.removeAll(typedTokens(sources.toString()));
             if (!unsupported.isEmpty()) {
                 // 带上句子开头和缺少出处的数字，拒收后可以直接从日志定位是哪一句

@@ -196,6 +196,17 @@ class NarrativeReportPolisher:
                 "whose own quote states that sentence's fact; a sentence that lists several items (types, events, "
                 "options, steps) may name only the items that appear in the quotes it cites, and a fact that no "
                 "quote states is left out even when candidate_value implies it.",
+                "Attribute findings to studies exactly as the quotes do. Name a study's authors and year only when "
+                "the quote you cite names them; otherwise write '一项研究' / 'one study' and its setting. Never write "
+                "'同一研究' or 'the same study' for a quote that names a different study or comes from another part of "
+                "a source; adjacent quotes in one paper or review often describe different studies. When a quote is "
+                "a review, meta-analysis or table summarizing another study (for example 'Bloom et al. (2015) - "
+                "Empirical study: ...'), say the finding is reported by that review rather than presenting it as "
+                "the original study you read.",
+                "Do not place events in time order (before or after launch, 上线前, 此后) unless the quotes give the "
+                "dates or state the order. When the quotes give no time for an arrangement or a metric, say that "
+                "the sources do not state when it happens; never present it as preparation done before an event, "
+                "and never conclude that something did not change when the same metric is not reported at both times.",
                 "State each fact with exactly the scope its quote supports: a statement about one option, operator "
                 "class, version or mode must not be generalized to the whole product or topic.",
                 "When known_limitations is not empty, say briefly in the summary which parts of the question remain "
@@ -699,7 +710,13 @@ def _cited_text_supported(text: str, bound_cells: list[dict[str, object]], evide
 
 
 # 句末之后的引用归于前一句；小数点不作为句号。各句按顺序拼接即为原文
-_STATEMENT = re.compile(r".+?(?:[。！？!?]|\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", re.S)
+# et al. 里的点号不是句号，否则作者名和年份会被拆到两句里
+_STATEMENT = re.compile(r".+?(?:[。！？!?]|(?<!\bet al)\.(?!\d)(?=\s|\[|$)|$)(?:\s*\[evidence:[^\[\]\s]+\])*", re.S)
+# 按作者和年份点名一项研究：Bloom 等（2015）、Gibbs et al. (2022)、Bloom and Han (2023)
+_AUTHOR_YEAR = re.compile(r"(?<![A-Za-z])([A-Z][A-Za-z'\-]{1,30})(?:\s+(?:et\s+al\.?|and|&)(?:\s+[A-Z][A-Za-z'\-]{1,30})?)?"
+                          r"\s*(?:等人?)?\s*[（(]\s*(?:19|20)\d{2}[a-z]?\s*[)）]")
+# 指回上一句那项研究的说法
+_SAME_STUDY = re.compile(r"同一(?:项)?研究|该研究|这项研究|上述研究|\bthe same study\b|\bthis study\b", re.I)
 
 
 def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidence_keys: list[str],
@@ -709,6 +726,7 @@ def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidenc
     不带引用的句子不能有数字，也不能提到研究对象。"""
     has_inline = bool(_INLINE_CITATION.search(text))
     checked: list[tuple[str, bool]] = []
+    previous_refs: set[str] = set()
     for statement in _STATEMENT.findall(text):
         if not statement.strip():
             checked.append((statement, True))
@@ -734,8 +752,23 @@ def _checked_statements(text: str, bound_cells: list[dict[str, object]], evidenc
         mentioned = {_entity_stem(str(cell.get("entity_label") or "")) for cell in all_cells
                      if _mentions_entity(prose, str(cell.get("entity_label") or ""))}
         cited_stems = {_entity_stem(str(cell.get("entity_label") or "")) for cell in cited}
-        checked.append((statement, not (mentioned and not mentioned & cited_stems)))
+        attributed = _attribution_supported(_INLINE_CITATION.sub("", statement), " ".join(sources))
+        # 说"同一研究"时要和上一句引用同一条证据，不能把相邻引用的不同研究写成一项
+        same_study = not (has_inline and previous_refs and refs and _SAME_STUDY.search(statement)
+                          and not refs & previous_refs)
+        checked.append((statement, attributed and same_study and not (mentioned and not mentioned & cited_stems)))
+        if refs:
+            previous_refs = refs
     return checked
+
+
+def _attribution_supported(prose: str, sources: str) -> bool:
+    """句子按作者和年份点名研究时，作者姓氏必须出现在所引原文里，不能把一项研究的结论挂到另一项名下。"""
+    for match in _AUTHOR_YEAR.finditer(prose):
+        surname = match.group(1)
+        if not re.search(r"(?<![A-Za-z])" + re.escape(surname) + r"(?![A-Za-z])", sources):
+            return False
+    return True
 
 
 def _entity_stem(label: str) -> str:

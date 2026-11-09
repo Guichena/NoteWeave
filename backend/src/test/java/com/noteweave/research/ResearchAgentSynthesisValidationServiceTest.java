@@ -29,6 +29,28 @@ class ResearchAgentSynthesisValidationServiceTest {
     }
 
     @Test
+    void namedStudyAuthorMustAppearInTheCitedQuote() {
+        // 开放式研究回放：句子点名 Gibbs et al. (2022)，引用的原文里却没有这位作者
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("Gibbs et al. (2022) found that PostgreSQL 17 uses GIN [evidence:pg].",
+                        List.of("pg"), List.of("evidence:pg")),
+                validParagraphs().get(1)), Map.of())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void sameStudyMustShareACitationWithThePreviousSentence() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                validParagraphs().get(0),
+                paragraph("A source reports GIN [evidence:pg]. The same study indexes virtual columns [evidence:mysql].",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of()))
+                .isInstanceOf(BusinessException.class);
+        validateMultiCellReport("Verified findings.", List.of(
+                validParagraphs().get(0),
+                paragraph("A source reports GIN [evidence:pg]. Another source indexes virtual columns [evidence:mysql].",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of());
+    }
+
+    @Test
     void acceptsComparisonSentenceThatNamesBothSubjectsAndCitesOneOfThem() {
         validateMultiCellReport("Verified findings.", List.of(
                 paragraph("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg"), List.of("evidence:pg")),
