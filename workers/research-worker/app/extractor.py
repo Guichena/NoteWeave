@@ -156,6 +156,10 @@ def _extract_evidence_cards_detailed_with_llm(
                 "2027' as '2027 年 2 月'), but never add a day or month that quote_text does not state",
                 "claim_text is a short direct answer to the column for target_entity, written in the language of question and based only on quote_text, for example 'JDK 21 正式发布（JEP 444）'; do not add facts that quote_text does not state",
                 "keep every identifier from quote_text that the column needs in claim_text, such as JEP, RFC or CVE numbers, version numbers, API or parameter names",
+                "when claim_text names a study by its authors or year, quote_text must contain that author name, so "
+                "choose a quote that starts at the name (for example 'Gibbs et al. (2022) examine ...'); a quote "
+                "that does not name the study supports only an unnamed claim such as '一项研究发现…'. When the window "
+                "is a review or a table summarizing other studies, say in claim_text that the review reports it",
                 "preserve Markdown list markers, newlines, whitespace, capitalization, and punctuation in quote_text; NEVER concatenate separate passages or normalize formatting",
                 "prefer one fact per card so a short exact quote fully supports the claim",
                 "when a column asks for a command, option, parameter, configuration item or condition, prefer a quote "
