@@ -25,7 +25,8 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
     private static final String ERROR_RESPONSE = "RERANK_PROVIDER_RESPONSE_INVALID";
 
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private final java.util.function.Supplier<HttpClient> clientFactory;
+    private volatile HttpClient httpClient;
     private final boolean enabled;
     private final URI endpoint;
     private final String model;
@@ -36,10 +37,19 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
     private final int maxDocumentCharacters;
     private final Duration timeout;
     private final int maxAttempts;
+    /** 交互式回答单次重排的总时长上限（含重试）。 */
+    private Duration interactiveBudget = Duration.ofMillis(6000);
+    /** 交互式重排超时或失败后，在这段时间内直接跳过重排，避免并发回答和同一回答的下一次重排再等一轮。 */
+    private Duration interactiveCooldown = Duration.ofSeconds(30);
+    private static final Duration MIN_RETRY_WINDOW = Duration.ofMillis(1500);
+    private volatile long interactiveSkipUntilNanos;
 
     @Autowired
     public OpenAiCompatibleRerankClient(ObjectMapper objectMapper, NoteWeaveProperties properties) {
-        this(objectMapper, properties, HttpClient.newBuilder()
+        // HTTP/1.1：HTTP/2 下所有请求复用一条连接，这条连接空闲后被网络静默断开时，
+        // JDK 客户端超时也不会丢弃它，之后每次重排都等满超时（线上空闲 44 分钟后每次 60 秒）
+        this(objectMapper, properties, () -> HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(10))
                 .build());
     }
@@ -49,9 +59,18 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
             NoteWeaveProperties properties,
             HttpClient httpClient
     ) {
+        this(objectMapper, properties, () -> httpClient);
+    }
+
+    OpenAiCompatibleRerankClient(
+            ObjectMapper objectMapper,
+            NoteWeaveProperties properties,
+            java.util.function.Supplier<HttpClient> clientFactory
+    ) {
         NoteWeaveProperties.Rerank config = properties.rerank();
         this.objectMapper = objectMapper;
-        this.httpClient = httpClient;
+        this.clientFactory = clientFactory;
+        this.httpClient = clientFactory.get();
         this.enabled = config.enabled()
                 && !text(config.endpoint()).isBlank()
                 && !text(config.model()).isBlank();
@@ -66,6 +85,16 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
         this.maxDocumentCharacters = Math.max(1, config.maxDocumentCharacters());
         this.timeout = Duration.ofSeconds(Math.max(1L, config.timeoutSeconds()));
         this.maxAttempts = Math.max(1, config.maxAttempts());
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${noteweave.rerank.interactive-budget-ms:6000}")
+    void setInteractiveBudgetMillis(long millis) {
+        this.interactiveBudget = Duration.ofMillis(Math.max(500L, millis));
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${noteweave.rerank.interactive-cooldown-ms:30000}")
+    void setInteractiveCooldownMillis(long millis) {
+        this.interactiveCooldown = Duration.ofMillis(Math.max(0L, millis));
     }
 
     @Override
@@ -99,29 +128,52 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
             throw new RetrievalProviderException(ERROR_REQUEST, "Rerank request serialization failed", ex);
         }
 
+        boolean interactive = InteractiveRerankBudget.active();
+        long deadline = interactive ? System.nanoTime() + interactiveBudget.toNanos() : Long.MAX_VALUE;
+        if (interactive && System.nanoTime() < interactiveSkipUntilNanos) {
+            throw new RetrievalProviderException(ERROR_REQUEST, "Rerank provider recently timed out; skipped for interactive answer");
+        }
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            Duration attemptTimeout = timeout;
+            if (interactive) {
+                Duration remaining = Duration.ofNanos(deadline - System.nanoTime());
+                if (attempt > 1 && remaining.compareTo(MIN_RETRY_WINDOW) < 0) {
+                    markInteractiveFailure();
+                    throw new RetrievalProviderException(ERROR_REQUEST, "Rerank interactive budget exhausted");
+                }
+                // 还能重试时给新连接上的重试留出时间：首个请求落在已断开的旧连接上时，重试仍在预算内
+                Duration usable = attempt < maxAttempts && remaining.compareTo(MIN_RETRY_WINDOW.multipliedBy(2)) > 0
+                        ? remaining.minus(MIN_RETRY_WINDOW) : remaining;
+                attemptTimeout = usable.compareTo(timeout) < 0 ? usable : timeout;
+            }
+            HttpClient client = httpClient;
             try {
                 HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                         .uri(endpoint)
-                        .timeout(timeout)
+                        .timeout(attemptTimeout)
                         .header("Content-Type", "application/json")
                         .header("Accept", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8));
                 if (!apiKey.isBlank()) {
                     requestBuilder.header("Authorization", "Bearer " + apiKey);
                 }
-                HttpResponse<String> response = httpClient.send(
+                HttpResponse<String> response = client.send(
                         requestBuilder.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
                 if (response.statusCode() / 100 == 2) {
+                    interactiveSkipUntilNanos = 0L;
                     return parse(response.body(), requestDocuments.size(), effectiveTopN);
                 }
                 if (!retryable(response.statusCode()) || attempt == maxAttempts) {
+                    if (interactive && retryable(response.statusCode())) markInteractiveFailure();
                     throw new RetrievalProviderException(
                             ERROR_REQUEST,
                             "Rerank provider returned HTTP " + response.statusCode());
                 }
             } catch (IOException ex) {
+                // 超时或连接错误后丢弃整个连接池，重试与后续请求都走新连接
+                resetConnections(client);
                 if (attempt == maxAttempts) {
+                    if (interactive) markInteractiveFailure();
                     throw new RetrievalProviderException(ERROR_REQUEST, "Rerank provider call failed", ex);
                 }
             } catch (InterruptedException ex) {
@@ -199,6 +251,19 @@ public class OpenAiCompatibleRerankClient implements RerankClient {
 
     private boolean retryable(int status) {
         return status == 408 || status == 429 || status >= 500;
+    }
+
+    private synchronized void resetConnections(HttpClient failed) {
+        if (httpClient == failed) {
+            HttpClient fresh = clientFactory.get();
+            if (fresh != failed) {
+                httpClient = fresh;
+            }
+        }
+    }
+
+    private void markInteractiveFailure() {
+        interactiveSkipUntilNanos = System.nanoTime() + interactiveCooldown.toNanos();
     }
 
     private void backoff(int attempt) {
