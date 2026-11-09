@@ -315,9 +315,87 @@ class ResearchAgentSynthesisValidationService {
         return quotes;
     }
 
+    private static final String MONTH_NAME = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+            + "Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
+    private static final String DAY = "0?[1-9]|[12]\\d|3[01]";
+    private static final String MONTH = "0?[1-9]|1[0-2]";
+    private static final String YEAR = "(?:19|20)\\d{2}";
+    /**
+     * 日期按整体比对，与 Worker 成文核对（narrative_report._DATE_PATTERNS）一致：原文 December 15, 2026
+     * 与成文 2026 年 12 月 15 日是同一个日期。成文比原文更精确（多写了日或月）时仍然对不上。
+     */
+    private static final List<Pattern> DATE_PATTERNS = List.of(
+            Pattern.compile("(?<![\\w.])(?<day>" + DAY + ")[ \\t]+(?<mname>" + MONTH_NAME + ")\\.?,?[ \\t]+(?<year>"
+                    + YEAR + ")(?!\\w|\\.\\d)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?<![\\w.])(?<mname>" + MONTH_NAME + ")\\.?[ \\t]+(?:(?<day>" + DAY
+                    + ")(?:st|nd|rd|th)?,?[ \\t]+)?(?<year>" + YEAR + ")(?!\\w|\\.\\d)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?<![\\w.])(?<year>" + YEAR + ")[ \\t]*[-/年][ \\t]*(?<month>" + MONTH + ")"
+                    + "(?:[ \\t]*[-/月][ \\t]*(?<day>" + DAY + ")[ \\t]*日?|[ \\t]*月)?(?![\\d.]\\d|\\d)"),
+            Pattern.compile("(?<![\\w.])(?<year>" + YEAR + ")\\.(?<month>" + MONTH + ")\\.(?<day>" + DAY
+                    + ")(?!\\w|\\.\\d)"),
+            Pattern.compile("(?<![\\w.])(?<month>" + MONTH + ")[ \\t]*月(?:[ \\t]*(?<day>" + DAY + ")[ \\t]*[日号])?"));
+    private static final List<String> MONTH_ABBREVIATIONS = List.of(
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec");
+
+    /** 把日期换成按精度分层的标记，返回去掉日期后的文字；规则与 Worker 侧 _date_tokens 相同。 */
+    static String extractDateTokens(String value, Set<String> tokens) {
+        List<int[]> spans = new java.util.ArrayList<>();
+        for (Pattern pattern : DATE_PATTERNS) {
+            Matcher matcher = pattern.matcher(value);
+            while (matcher.find()) {
+                int start = matcher.start();
+                int end = matcher.end();
+                if (spans.stream().anyMatch(span -> span[0] < end && start < span[1])) continue;
+                String year = group(matcher, "year");
+                String monthName = group(matcher, "mname");
+                String monthDigits = group(matcher, "month");
+                int month;
+                if (monthName != null) {
+                    month = MONTH_ABBREVIATIONS.indexOf(monthName.substring(0, 3).toLowerCase(Locale.ROOT)) + 1;
+                } else if (monthDigits != null) {
+                    month = Integer.parseInt(monthDigits);
+                } else {
+                    continue;
+                }
+                String dayText = group(matcher, "day");
+                Integer day = dayText == null ? null : Integer.parseInt(dayText);
+                spans.add(new int[] {start, end});
+                tokens.add("month:" + month);
+                if (day != null) tokens.add("monthday:" + month + "-" + day);
+                if (year != null) {
+                    tokens.add(year);
+                    tokens.add("date:" + year + "-" + month);
+                    if (day != null) tokens.add("date:" + year + "-" + month + "-" + day);
+                }
+            }
+        }
+        if (spans.isEmpty()) return value;
+        spans.sort(java.util.Comparator.comparingInt(span -> span[0]));
+        StringBuilder stripped = new StringBuilder();
+        int last = 0;
+        for (int[] span : spans) {
+            stripped.append(value, last, span[0]).append(' ');
+            last = span[1];
+        }
+        return stripped.append(value.substring(last)).toString();
+    }
+
+    private static String group(Matcher matcher, String name) {
+        try {
+            return matcher.group(name);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    static Set<String> typedTokensForTest(String value) {
+        return new ResearchAgentSynthesisValidationService().typedTokens(value);
+    }
+
     private Set<String> typedTokens(String value) {
         Set<String> tokens = new HashSet<>();
-        Matcher matcher = TYPED_TOKEN.matcher(PERCENT_WORD.matcher(value).replaceAll("$1%"));
+        String remaining = extractDateTokens(value, tokens);
+        Matcher matcher = TYPED_TOKEN.matcher(PERCENT_WORD.matcher(remaining).replaceAll("$1%"));
         while (matcher.find()) tokens.add(matcher.group().replaceAll("\\s+", "").replace(",", "")
                 .toLowerCase(Locale.ROOT).replaceFirst("^v(?=\\d)", ""));
         return tokens;

@@ -255,7 +255,13 @@ def test_missing_comparison_cell_does_not_borrow_another_products_evidence():
         {"cells": ["Indexes", "GIN [evidence:pg]", "-"],
          "cell_keys": ["pg"], "evidence_keys": ["evidence:pg"]}]}
     narrative["comparison_table"] = table
-    assert _normalize_narrative(narrative, _cells(), [])["comparison_table"] == table
+    result = _normalize_narrative(narrative, _cells(), [])["comparison_table"]
+    # 空着的 MySQL 格子只能用 MySQL 自己已核验的结论补上，绝不借用 PostgreSQL 的证据
+    assert len(result["rows"]) == 1
+    row = result["rows"][0]
+    assert row["cells"][:2] == ["Indexes", "GIN [evidence:pg]"]
+    assert "[evidence:pg]" not in row["cells"][2]
+    assert row["cells"][2] == "-" or row["cells"][2].endswith("[evidence:mysql]")
 
 
 @pytest.mark.parametrize("text", ["PostgreSQL有999种索引 [evidence:pg]。", "PostgreSQL在999.2版支持该功能 [evidence:pg]。"])

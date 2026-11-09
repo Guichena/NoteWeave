@@ -21,8 +21,70 @@ _TYPED_TOKEN = re.compile(
 _PERCENT_WORD = re.compile(r"(\d)\s*(?:per\s?cent\b|％)", re.IGNORECASE)
 
 
+_MONTH_NAME = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+               r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?")
+_MONTH_NUMBERS = {name: index for index, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
+_DAY = r"0?[1-9]|[12]\d|3[01]"
+_MONTH = r"0?[1-9]|1[0-2]"
+_YEAR = r"(?:19|20)\d{2}"
+# 日期按整体比对：原文 December 15, 2026 与成文 2026 年 12 月 15 日是同一个日期。只认带年份或带"月"字的写法，
+# 横向空白可以有，不跨换行；年月之间用点号的只认完整的年月日，避免把 2024.3 这类数字当成日期。
+_DATE_PATTERNS = (
+    re.compile(rf"(?<![\w.])(?P<day>{_DAY})[ \t]+(?P<mname>{_MONTH_NAME})\.?,?[ \t]+(?P<year>{_YEAR})(?!\w|\.\d)",
+               re.I | re.ASCII),
+    re.compile(rf"(?<![\w.])(?P<mname>{_MONTH_NAME})\.?[ \t]+(?:(?P<day>{_DAY})(?:st|nd|rd|th)?,?[ \t]+)?"
+               rf"(?P<year>{_YEAR})(?!\w|\.\d)", re.I | re.ASCII),
+    re.compile(rf"(?<![\w.])(?P<year>{_YEAR})[ \t]*[-/年][ \t]*(?P<month>{_MONTH})"
+               rf"(?:[ \t]*[-/月][ \t]*(?P<day>{_DAY})[ \t]*日?|[ \t]*月)?(?![\d.]\d|\d)", re.ASCII),
+    re.compile(rf"(?<![\w.])(?P<year>{_YEAR})\.(?P<month>{_MONTH})\.(?P<day>{_DAY})(?!\w|\.\d)", re.ASCII),
+    re.compile(rf"(?<![\w.])(?P<month>{_MONTH})[ \t]*月(?:[ \t]*(?P<day>{_DAY})[ \t]*[日号])?", re.ASCII),
+)
+
+
+def _date_tokens(text: str) -> tuple[str, set[str]]:
+    """把日期换成按精度分层的标记：年月日给出 年、年-月、年-月-日、月、月-日 各层，只到原文实际写出的精度。
+    成文与原文用同一套规则，所以成文比原文更精确（多写了日或月）时仍然对不上；去掉日期后剩下的文字照常
+    逐个核对数字。"""
+    tokens: set[str] = set()
+    spans: list[tuple[int, int]] = []
+    for pattern in _DATE_PATTERNS:
+        for match in pattern.finditer(text):
+            if any(start < match.end() and match.start() < end for start, end in spans):
+                continue
+            groups = match.groupdict()
+            year = groups.get("year")
+            if groups.get("mname"):
+                month = _MONTH_NUMBERS[groups["mname"][:3].lower()]
+            elif groups.get("month"):
+                month = int(groups["month"])
+            else:
+                continue
+            day = int(groups["day"]) if groups.get("day") else None
+            spans.append((match.start(), match.end()))
+            tokens.add(f"month:{month}")
+            if day is not None:
+                tokens.add(f"monthday:{month}-{day}")
+            if year:
+                tokens.update({year, f"date:{year}-{month}"})
+                if day is not None:
+                    tokens.add(f"date:{year}-{month}-{day}")
+    if not spans:
+        return text, tokens
+    stripped = []
+    last = 0
+    for start, end in sorted(spans):
+        stripped.append(text[last:start])
+        stripped.append(" ")
+        last = end
+    stripped.append(text[last:])
+    return "".join(stripped), tokens
+
+
 def _typed_tokens(text: str) -> set[str]:
-    return {_canonical_token(token) for token in _TYPED_TOKEN.findall(_PERCENT_WORD.sub(r"\1%", text))}
+    remaining, dates = _date_tokens(text)
+    return dates | {_canonical_token(token)
+                    for token in _TYPED_TOKEN.findall(_PERCENT_WORD.sub(r"\1%", remaining))}
 
 
 @dataclass(frozen=True)
@@ -73,6 +135,8 @@ class NarrativeReportPolisher:
                     }],
                 },
                 "limitations": ["known limitations only"],
+                "unstated_details": [{"point": "exact required_points text",
+                                      "missing": "the requested detail that no quote states, without numbers or dates"}],
                 "unanswered_points": ["exact required_points text with no evidence-backed answer"],
                 "background_notes": [{"point": "exact required_points text that no cell answers",
                                       "text": "one or two sentences of well-established general knowledge"}],
@@ -155,6 +219,12 @@ class NarrativeReportPolisher:
                 "does; for a comparison point state the contrast between the subjects in one sentence. Do not number "
                 "or quote the points. A point that no frozen or SOURCED tentative cell answers goes to limitations "
                 "and must not be guessed.",
+                "When research_question asks to mark information the sources do not state, check each required "
+                "point against the quotes: for every detail the point asks for (for example the currency of each "
+                "budget item, or the number of schools in a later phase) that no quote states, add one "
+                "unstated_details item naming that detail in the language of research_question, with the point's "
+                "exact text. Never list a detail that any quote states, and never write numbers or dates there. "
+                "Leave unstated_details empty when the question does not ask for this.",
                 "For every required point not answered by the report, copy its exact text into unanswered_points. "
                 "Required points are research questions, not verified facts; never use them as evidence. "
                 "Preserve all known limitations even when other parts of the same column are answered.",
@@ -393,6 +463,9 @@ def _normalize_narrative(
         # 模型给的对比表整张不可用时，用已核验的单元格和有出处的线索直接排出对比表，不让整篇退回模板
         comparison_table = _cells_table(cells, question_chinese=chinese,
                                         leads=[lead for lead in leads if lead["evidence_level"] == "SOURCED"])
+    elif comparison_table:
+        # 模型的表漏了已核验的结论时按同样的行列补上，补的格子同样逐句核对，通不过的不补
+        comparison_table = _complete_table_coverage(comparison_table, cells, cells_by_key, trusted_context)
     # 已知缺口始终保留；模型只能补充规划里原样存在的未回答要点，不能自行编造局限。
     # 已在通用知识补充里回答的要点不再重复列出：那一节的标题已经说明未经本次检索核验，
     # 规划要点又多是英文，在中文报告的局限里原样列出读起来很突兀。
@@ -406,6 +479,10 @@ def _normalize_narrative(
             limitation = f"尚未找到足够证据回答：{point}" if chinese else f"Insufficient evidence to answer: {point}"
             if limitation not in limitations:
                 limitations.append(limitation)
+    for missing in _unstated_details(payload.get("unstated_details"), allowed_points):
+        limitation = f"资料未说明：{missing}" if chinese else f"Not stated in the sources: {missing}"
+        if limitation not in limitations:
+            limitations.append(limitation)
     return {
         "schema_version": "research-reader-report.v1",
         "title": title,
@@ -415,6 +492,74 @@ def _normalize_narrative(
         "limitations": limitations,
         "background_notes": background_notes,
     }
+
+
+_UNSTATED_DETAIL_CHARS = 80
+
+
+def _unstated_details(raw: object, required_points: set[str]) -> list[str]:
+    """资料没有写到的细节：只能挂在规划里原样存在的要点下，只写缺的是哪一项，不能带数字、日期或引用，
+    这样标注缺口时不会顺带写出新的事实。"""
+    if not isinstance(raw, list):
+        return []
+    details: list[str] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        point = str(item.get("point") or "").strip()
+        missing = " ".join(str(item.get("missing") or "").split()).rstrip("。.；; ")
+        if (point not in required_points or not missing or len(missing) > _UNSTATED_DETAIL_CHARS
+                or "evidence:" in missing or _typed_tokens(missing) or missing in details):
+            continue
+        details.append(missing)
+    return details
+
+
+def _complete_table_coverage(table: dict[str, object], cells: list[dict[str, object]],
+                             cells_by_key: dict[str, dict[str, object]], trusted_context: str) -> dict[str, object]:
+    """表头是 方面 + 各研究对象 时，把表里没有出现的已核验单元格按方面补成行。格子写结论和第一条引用，
+    通不过逐句核对的格子不补；表头不是这种排法时不动，避免把结论填进错的列。"""
+    columns = [str(item) for item in table.get("columns", [])]  # type: ignore[union-attr]
+    entity_columns = {column.strip().casefold(): index for index, column in enumerate(columns) if index > 0}
+    covered = {key for row in table.get("rows", []) for key in row.get("cell_keys", [])}  # type: ignore[union-attr]
+    missing = [cell for cell in cells if cell["cell_key"] not in covered]
+    if not missing or not entity_columns:
+        return table
+    entities = {str(cell.get("entity_label") or "").strip().casefold() for cell in cells}
+    if not entities or not entities.issubset(entity_columns):
+        return table
+    rows = [{"cells": list(row["cells"]), "cell_keys": list(row["cell_keys"]),
+             "evidence_keys": list(row["evidence_keys"])} for row in table.get("rows", [])]  # type: ignore[union-attr]
+    all_cells = list(cells_by_key.values())
+
+    def aspect_of(row: dict[str, object]) -> set[str]:
+        return {str(cells_by_key[key].get("column_label") or "") for key in row["cell_keys"]  # type: ignore[union-attr]
+                if key in cells_by_key}
+
+    def supported_text(cell: dict[str, object], label: str, column: str) -> tuple[str, str] | None:
+        for key in [str(item) for item in cell["evidence_keys"]]:  # type: ignore[union-attr]
+            text = f"{_first_sentence(str(cell['candidate_value']))} [{key}]"
+            if _cited_text_supported(text, [cell], [key], all_cells, trusted_context, label + " " + column):
+                return text, key
+        return None
+
+    for cell in missing:
+        aspect = str(cell.get("column_label") or "")
+        index = entity_columns[str(cell.get("entity_label") or "").strip().casefold()]
+        # 同一方面已有一行、这一对象的格子空着时填进那一行，否则新起一行
+        target = next((row for row in rows if aspect in aspect_of(row) and row["cells"][index] == "-"), None)
+        label = str(target["cells"][0]) if target else (aspect or "-")
+        found = supported_text(cell, label, columns[index])
+        if found is None:
+            continue
+        text, key = found
+        if target is None:
+            target = {"cells": [label, *("-" for _ in columns[1:])], "cell_keys": [], "evidence_keys": []}
+            rows.append(target)
+        target["cells"][index] = text  # type: ignore[index]
+        target["cell_keys"].append(str(cell["cell_key"]))  # type: ignore[union-attr]
+        target["evidence_keys"].append(key)  # type: ignore[union-attr]
+    return {"columns": columns, "rows": rows}
 
 
 _BACKGROUND_NOTE_CHARS = 300
