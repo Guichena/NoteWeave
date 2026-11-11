@@ -309,9 +309,10 @@ public class RunReplayRedactionService {
         List<ResearchProjectionRow> rows = jdbcTemplate.query("""
                 select id, snapshot_json from run_input_snapshot
                 where execution_kind = 'RESEARCH' and replay_availability = 'FULL'
-                  and compiler_version = ? and snapshot_json like ?
+                  and compiler_version like ? and snapshot_json like ?
                 """, (rs, index) -> new ResearchProjectionRow(rs.getString(1), rs.getString(2)),
-                ContextWindowPlannerV2.COMPILER_VERSION, "%" + refId + "%");
+                // 规划器升级后旧版本的快照同样要脱敏：按版本前缀匹配，而不是只认当前版本
+                ContextWindowPlannerV2.COMPILER_VERSION_PREFIX + "%", "%" + refId + "%");
         for (ResearchProjectionRow row : rows) {
             ObjectNode snapshot;
             ContextProjectionV2 projection;

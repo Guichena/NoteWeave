@@ -287,8 +287,13 @@ class ConversationRetrievalContextAssembler {
                         message.messageId(), message.seq(), message.role(), "", 
                         ConversationLedgerEntry.STATUS_CURRENT, message.text(), "", "", ""))
                 .toList();
+        // 冻结时规划器已经按预算选好了原文（回到旧话题时还会带上那个话题末尾的几条），这里全部保留，
+        // 不再按最近 8 条重新截断
+        int frozenRawTokens = rawHistory.stream().mapToInt(message -> ContextView.estimate(message.text())).sum();
         Compressed conversation = compressConversation(
-                projection.conversationId(), projection.cutoffSeq(), ledger, summaryBlocks);
+                projection.conversationId(), projection.cutoffSeq(), ledger, summaryBlocks,
+                Math.max(CONTEXT_RECENT_RAW_MESSAGES, rawHistory.size()),
+                Math.max(CONTEXT_RAW_TARGET_TOKENS, frozenRawTokens));
         List<ConstraintCandidate> constraints = projection.constraints().stream()
                 .filter(rule -> rule.text() != null && !rule.text().isBlank())
                 .map(rule -> new ConstraintCandidate(
@@ -322,6 +327,33 @@ class ConversationRetrievalContextAssembler {
     }
 
     /**
+     * 冻结之前交给查询改写的上下文：最近几条原文和最近话题的摘要。改写模型据此判断本轮问题接的是哪个话题，
+     * 并补全被省略的主题；话题列表另外传给改写，不放进这里。生成提示仍然只用冻结之后的上下文。
+     */
+    Context routing(String currentQuestion,
+                    com.noteweave.conversation.ConversationTopicRoutingService.RoutingContext routing) {
+        String trimmedQuestion = currentQuestion == null ? "" : currentQuestion.trim();
+        List<HistoryMessage> history = routing.recent().stream()
+                .map(message -> new HistoryMessage("", message.seq(), message.role(),
+                        "ASSISTANT".equals(message.role())
+                                ? stripMarkdownForContext(message.text()) : message.text()))
+                .toList();
+        List<ConversationTurn> turns = buildConversationTurns(history);
+        String topicAnchor = turns.isEmpty() ? ""
+                : buildTopicAnchor(trimmedQuestion, buildWorkingTurns(trimmedQuestion, turns));
+        StringBuilder window = new StringBuilder();
+        int userMessages = 0;
+        for (HistoryMessage message : history) {
+            boolean user = "USER".equals(message.role());
+            if (user) userMessages++;
+            window.append(user ? "用户：" : "助手：").append(message.content()).append('\n');
+        }
+        return new Context(trimmedQuestion, window.toString().trim(), routing.hasHistory(), userMessages,
+                topicAnchor, routing.currentTopicSummary(),
+                new ConversationContextProjectionService.Projection(List.of(), List.of()), null);
+    }
+
+    /**
      * 统一预算：检索改写与生成提示共用同一份冻结材料，分两次按各自调用点的层顺序和预算选择。
      * 最近原文优先保留；放不下的条目记录剔除原因，不在渲染阶段偷偷截字。
      */
@@ -335,6 +367,18 @@ class ConversationRetrievalContextAssembler {
             List<ConversationLedgerEntry> ledgerEntries,
             List<ContextCompressor.SummaryBlock> summaries
     ) {
+        return compressConversation(conversationId, cutoffSeq, ledgerEntries, summaries,
+                CONTEXT_RECENT_RAW_MESSAGES, CONTEXT_RAW_TARGET_TOKENS);
+    }
+
+    private Compressed compressConversation(
+            String conversationId,
+            int cutoffSeq,
+            List<ConversationLedgerEntry> ledgerEntries,
+            List<ContextCompressor.SummaryBlock> summaries,
+            int recentRawMessages,
+            int rawTargetTokens
+    ) {
         ConversationLedgerProjection projected = ledgerProjector.project(
                 conversationId, cutoffSeq, ledgerEntries);
         ContextCompressor.Selection selection = compressor.compress(new ContextCompressor.Input(
@@ -342,10 +386,10 @@ class ConversationRetrievalContextAssembler {
                 cutoffSeq,
                 projected.entries(),
                 summaries,
-                CONTEXT_RAW_TARGET_TOKENS,
+                rawTargetTokens,
                 CONTEXT_SUMMARY_TARGET_TOKENS,
                 CONTEXT_HANDLE_TARGET_TOKENS,
-                CONTEXT_RECENT_RAW_MESSAGES,
+                recentRawMessages,
                 CONVERSATION_SUMMARY_VERSION));
         LinkedHashSet<String> degradations = new LinkedHashSet<>(projected.reasons());
         degradations.addAll(selection.degradationReasons());

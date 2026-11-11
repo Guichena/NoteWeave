@@ -109,6 +109,42 @@ class QueryRewriteProgressiveTest {
         assertThat(ChatService.requiresFullRewriteRetrieval(dispatched, fallback, bundle(0L))).isTrue();
     }
 
+    /** 话题编号放在最前面，随提前交出的结果一起给出；话题列表进入改写提示。 */
+    @Test
+    void topicRouteComesWithTheDispatchedResultAndTheTopicListReachesThePrompt() {
+        List<String> routed = new java.util.ArrayList<>(STREAM);
+        routed.set(0, "{\"r\":\"T2\",\"s\":false,\"q\":\"AnchorAlpha 的第二点为什么重要\",");
+        ChatLlmClient llm = streamingClient(routed, -1, null);
+        String topics = "T1（最近在聊）：台南旅行\nT2：缓存一致性方案\n  摘要：讨论了延迟双删与订阅 binlog";
+
+        QueryRewriteService.ProgressiveRewrite progressive = service(llm)
+                .rewriteProgressive(followUp("那第二种呢"), topics, executor);
+        QueryRewrite dispatched = progressive.awaitDispatchable();
+
+        assertThat(progressive.dispatchedRoute()).isEqualTo("T2");
+        assertThat(dispatched.standaloneQuery()).isEqualTo("AnchorAlpha 的第二点为什么重要");
+        org.mockito.ArgumentCaptor<String> prompt = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(llm).streamChat(any(), prompt.capture(), anyInt(), any());
+        assertThat(prompt.getValue()).contains("话题列表：", "T2：缓存一致性方案");
+        // 重复调用返回同一份结果
+        assertThat(progressive.awaitDispatchable()).isSameAs(dispatched);
+    }
+
+    @Test
+    void invalidOrMissingTopicRouteDoesNotFailTheRewrite() {
+        List<String> numeric = new java.util.ArrayList<>(STREAM);
+        numeric.set(0, "{\"r\":2,\"s\":false,\"q\":\"AnchorAlpha 的第二点为什么重要\",");
+        QueryRewriteService.ProgressiveRewrite progressive = service(streamingClient(numeric, -1, null))
+                .rewriteProgressive(followUp("那第二种呢"), "T1（最近在聊）：缓存", executor);
+        assertThat(progressive.awaitDispatchable().method()).isEqualTo("LLM");
+        assertThat(progressive.dispatchedRoute()).isNull();
+
+        QueryRewriteService.ProgressiveRewrite legacy = service(streamingClient(STREAM, -1, null))
+                .rewriteProgressive(followUp("它为什么重要"), executor);
+        assertThat(legacy.awaitDispatchable().method()).isEqualTo("LLM");
+        assertThat(legacy.dispatchedRoute()).isNull();
+    }
+
     private static QueryRewrite rewrite(List<String> alternatives) {
         return new QueryRewrite(false, "AnchorAlpha 的第二点为什么重要", "它为什么重要 AnchorAlpha 第二点",
                 alternatives, "reasoning", List.of("AnchorAlpha"), List.of("证据窗口"), List.of("资料定位"),

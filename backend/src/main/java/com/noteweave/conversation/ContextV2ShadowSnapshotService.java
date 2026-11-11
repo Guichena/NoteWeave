@@ -75,9 +75,21 @@ public class ContextV2ShadowSnapshotService {
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose, boolean includeCurrentQuery) {
+        freezeAnswer(workspaceId, actorId, conversationId, queryMessageId, answerRunId,
+                currentInput, taskPurpose, includeCurrentQuery, null);
+    }
+
+    /**
+     * @param route 查询改写模型对本轮问题的话题判断，决定本轮问题归入哪个话题，进而决定冻结哪些话题摘要；
+     *              为空时按规则与向量切分
+     */
+    public void freezeAnswer(String workspaceId, String actorId, String conversationId,
+                             String queryMessageId, String answerRunId,
+                             String currentInput, String taskPurpose, boolean includeCurrentQuery,
+                             TopicRoute route) {
         if (!rollout.shadowEnabled(workspaceId) || settled(answerRunId)) return;
         int cutoff = answerCutoff(workspaceId, conversationId, queryMessageId, answerRunId);
-        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery);
+        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery, route);
         independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
                 conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
     }
