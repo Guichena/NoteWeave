@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
 /**
  * MinIO 对象存储实现。对接 docker-compose 中的 MinIO 服务。
  * <p>
- * bucket 规范见 {@code docs/资料基础设施详细设计.md} §5.1：
+ * 使用三个 bucket：
  *   - noteweave-source  原始文件
  *   - noteweave-derived  解析正文、结构、索引
  *   - noteweave-export   导出文件
