@@ -214,8 +214,14 @@ public class ChatService {
         TopicRoute topicRoute = null;
         if (freeze.freeze() != null) {
             if (routed != null) {
-                // 话题编号在改写输出的最前面，读到就冻结；检索要的独立查询随后在准备里等
-                topicRoute = routed.routing().resolve(routed.progressive().awaitRoute());
+                // 话题编号在改写输出的最前面，读到就冻结；检索要的独立查询随后在准备里等。
+                // 模型认为要用到早先的原话或细节时，再等独立查询出来，冻结时按它在目标话题里回放原文
+                QueryRewriteService.RouteSignal signal = routed.progressive().awaitRouteSignal();
+                topicRoute = routed.routing().resolve(signal == null ? null : signal.route());
+                if (topicRoute != null && signal.detail()) {
+                    topicRoute = topicRoute.withDetailQuery(
+                            routed.progressive().awaitDispatchable().standaloneQuery());
+                }
                 timer.mark("rewrite");
             }
             freeze.freeze().accept(topicRoute);

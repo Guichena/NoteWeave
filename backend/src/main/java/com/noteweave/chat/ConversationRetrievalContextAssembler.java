@@ -293,7 +293,7 @@ class ConversationRetrievalContextAssembler {
         Compressed conversation = compressConversation(
                 projection.conversationId(), projection.cutoffSeq(), ledger, summaryBlocks,
                 Math.max(CONTEXT_RECENT_RAW_MESSAGES, rawHistory.size()),
-                Math.max(CONTEXT_RAW_TARGET_TOKENS, frozenRawTokens));
+                Math.max(CONTEXT_RAW_TARGET_TOKENS, frozenRawTokens), true);
         List<ConstraintCandidate> constraints = projection.constraints().stream()
                 .filter(rule -> rule.text() != null && !rule.text().isBlank())
                 .map(rule -> new ConstraintCandidate(
@@ -368,7 +368,7 @@ class ConversationRetrievalContextAssembler {
             List<ContextCompressor.SummaryBlock> summaries
     ) {
         return compressConversation(conversationId, cutoffSeq, ledgerEntries, summaries,
-                CONTEXT_RECENT_RAW_MESSAGES, CONTEXT_RAW_TARGET_TOKENS);
+                CONTEXT_RECENT_RAW_MESSAGES, CONTEXT_RAW_TARGET_TOKENS, false);
     }
 
     private Compressed compressConversation(
@@ -377,7 +377,8 @@ class ConversationRetrievalContextAssembler {
             List<ConversationLedgerEntry> ledgerEntries,
             List<ContextCompressor.SummaryBlock> summaries,
             int recentRawMessages,
-            int rawTargetTokens
+            int rawTargetTokens,
+            boolean plannedSummaries
     ) {
         ConversationLedgerProjection projected = ledgerProjector.project(
                 conversationId, cutoffSeq, ledgerEntries);
@@ -398,8 +399,15 @@ class ConversationRetrievalContextAssembler {
         int firstEntrySeq = projected.entries().stream()
                 .mapToInt(ConversationLedgerProjection.Projected::seq)
                 .min().orElse(Integer.MAX_VALUE);
+        Set<String> presentSummaries = new LinkedHashSet<>();
+        for (ContextView.Item item : items) {
+            if (item.refType() == ContextRefType.TOPIC_SUMMARY) presentSummaries.add(item.refId());
+        }
         for (ContextCompressor.SummaryBlock summary : summaries) {
-            if (summary.endSeq() >= firstEntrySeq) {
+            // 冻结规划器已经保证摘要与连续原文尾部不重叠；回到旧话题的段尾和细节回放会让原文不连续，
+            // 这时不能再用最早一条原文的位置判断摘要是否重叠
+            if (presentSummaries.contains(summary.refId())
+                    || (!plannedSummaries && summary.endSeq() >= firstEntrySeq)) {
                 continue;
             }
             ContextLayer layer = summary.kind() == ContextItemForm.TOPIC_SUMMARY
