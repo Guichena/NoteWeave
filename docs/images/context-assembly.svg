@@ -57,7 +57,7 @@
   <text x="904.0" y="396.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">窗口规划与快照</text>
   <text x="904.0" y="420.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">目标话题摘要优先</text>
   <text x="904.0" y="439.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">最近的其他话题带一个</text>
-  <text x="904.0" y="458.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">回到旧话题带段尾原文</text>
+  <text x="904.0" y="458.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">段尾原文，按需回放细节</text>
   <text x="904.0" y="477.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">写入 MySQL 冻结快照</text>
   <text x="904.0" y="498.0" font-size="11" font-weight="400" fill="#4f46e5" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ContextWindowPlannerV2</text>
   <rect x="1142.0" y="372.0" width="214.0" height="128.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
