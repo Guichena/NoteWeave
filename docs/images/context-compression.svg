@@ -108,8 +108,8 @@
   <text x="954.0" y="429.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">目标话题的各段优先，最近的其他话题再带一个</text>
   <text x="954.0" y="448.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">话题归属不确定时不引入同话题其他段</text>
   <text x="954.0" y="467.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">与原文重叠或范围过期的版本排除，超预算记降级</text>
-  <text x="954.0" y="486.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">回到旧话题：上一段摘要没覆盖的段尾原文</text>
-  <text x="954.0" y="505.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">最多带 4 条</text>
+  <text x="954.0" y="486.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">回到旧话题带段尾原文（最多 4 条）</text>
+  <text x="954.0" y="505.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">问到早先细节时按话题回放原文（最多 3 组）</text>
   <rect x="24.0" y="540.0" width="1352.0" height="196.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
   <text x="40.0" y="564.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">增量摘要生成</text>
   <text x="133.0" y="564.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">Kafka 异步执行，生成慢只会让原文补齐的范围变大</text>
