@@ -214,8 +214,8 @@ public class ChatService {
         TopicRoute topicRoute = null;
         if (freeze.freeze() != null) {
             if (routed != null) {
-                routed.progressive().awaitDispatchable();
-                topicRoute = routed.routing().resolve(routed.progressive().dispatchedRoute());
+                // 话题编号在改写输出的最前面，读到就冻结；检索要的独立查询随后在准备里等
+                topicRoute = routed.routing().resolve(routed.progressive().awaitRoute());
                 timer.mark("rewrite");
             }
             freeze.freeze().accept(topicRoute);
@@ -448,7 +448,9 @@ public class ChatService {
 
     /** 检索前提早交出的改写不足以代表最终结果时返回 true。 */
     static boolean requiresFullRewriteRetrieval(QueryRewrite dispatched, QueryRewrite complete, EvidenceBundle bundle) {
-        if (!QueryRewriteService.sameExceptAlternatives(dispatched, complete)) {
+        // 规则判定可独立检索、只为话题判断调用了模型：模型也认为可以独立检索时，检索输入就是原句，不必重来
+        boolean standaloneConfirmed = "RULE_STANDALONE".equals(dispatched.method()) && complete.standalone();
+        if (!standaloneConfirmed && !QueryRewriteService.sameExceptAlternatives(dispatched, complete)) {
             return true;
         }
         if (complete.alternatives().isEmpty() || complete.alternatives().equals(dispatched.alternatives())) {
