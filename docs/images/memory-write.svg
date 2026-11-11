@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="900" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">长期记忆写入：抽取、冲突检测与门控晋升</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">槽位由模型给出，代码只做校验与比对；任一门控不通过就进入待确认，冲突不会自动覆盖旧记忆</text>
+  <rect x="40.0" y="104.0" width="200.0" height="64.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="128.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">用户消息</text>
+  <text x="54.0" y="152.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">回答结束后进入异步任务</text>
+  <rect x="264.0" y="104.0" width="230.0" height="82.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="278.0" y="128.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Kafka 抽取任务</text>
+  <text x="278.0" y="152.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">noteweave.memory</text>
+  <text x="278.0" y="171.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">.extraction</text>
+  <rect x="518.0" y="104.0" width="236.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="532.0" y="128.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">短分类</text>
+  <rect x="710.0" y="113.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="728.0" y="127.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="532.0" y="152.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">是否包含对回答方式的要求，</text>
+  <text x="532.0" y="171.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">或对上一轮回答的反馈</text>
+  <rect x="778.0" y="104.0" width="320.0" height="100.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="792.0" y="128.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">结构化抽取</text>
+  <rect x="1054.0" y="113.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="1072.0" y="127.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="792.0" y="152.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">数据围栏包住用户消息与上一轮回答</text>
+  <text x="792.0" y="171.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">槽位只取模型输出，限 8 个受控槽位</text>
+  <text x="792.0" y="190.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">槽位不合规整批作废，失败重试一次</text>
+  <rect x="1122.0" y="104.0" width="238.0" height="100.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="1136.0" y="128.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">记忆信号</text>
+  <text x="1136.0" y="152.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">显式要求 / 反馈 / 推断</text>
+  <text x="1136.0" y="171.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">按证据档位写入 Beta 先验</text>
+  <text x="1136.0" y="190.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">反馈的方面由模型判断</text>
+  <path d="M240.0,136.0 L264.0,136.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M494.0,145.0 L518.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M754.0,145.0 L778.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1098.0,154.0 L1122.0,154.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="40.0" y="330.0" width="300.0" height="100.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="54.0" y="354.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">候选</text>
+  <text x="54.0" y="378.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">计算边际效用</text>
+  <text x="54.0" y="397.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">常驻与工作台范围有加成</text>
+  <text x="54.0" y="416.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">记录适用的任务邻域</text>
+  <path d="M1241.0,204.0 L1241.0,290.0 L190.0,290.0 L190.0,330.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="672.0" y="271.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="700.0" y="284.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">生成候选</text>
+  <rect x="370.0" y="330.0" width="340.0" height="140.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="384.0" y="354.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">冲突检测</text>
+  <text x="384.0" y="378.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">1. 同槽位：比较取值与极性</text>
+  <text x="384.0" y="397.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">2. 没有同槽位：记忆向量 Top5 + 模型判定</text>
+  <text x="384.0" y="416.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">向量索引不可用：记为未检查</text>
+  <text x="384.0" y="435.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">冲突或未检查都会阻断自动晋升</text>
+  <text x="384.0" y="456.0" font-size="11" font-weight="400" fill="#e11d48" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryConflictService</text>
+  <rect x="740.0" y="330.0" width="330.0" height="140.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="754.0" y="354.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">四项门控</text>
+  <text x="754.0" y="378.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">证据：置信度达标且后验方差足够小</text>
+  <text x="754.0" y="397.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">效用：不低于自动晋升阈值</text>
+  <text x="754.0" y="416.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">风险：禁忌、工作台范围、冲突加分</text>
+  <text x="754.0" y="435.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">范围：工作台、用户、任务邻域齐全</text>
+  <text x="754.0" y="456.0" font-size="11" font-weight="400" fill="#059669" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryCandidateGate</text>
+  <path d="M340.0,380.0 L370.0,380.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M710.0,400.0 L740.0,400.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="1100.0" y="318.0" width="260.0" height="64.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="1114.0" y="342.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">自动晋升</text>
+  <rect x="1306.1" y="327.0" width="45.9" height="20.0" rx="10" fill="#ffffff" stroke="#059669" stroke-width="1"/>
+  <text x="1329.0" y="341.0" font-size="11" font-weight="400" fill="#065f46" text-anchor="middle">READY</text>
+  <text x="1114.0" y="366.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">四项全部通过，风险分低于 0.70</text>
+  <rect x="1100.0" y="430.0" width="260.0" height="82.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="1114.0" y="454.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">待确认</text>
+  <rect x="1261.4" y="439.0" width="90.6" height="20.0" rx="10" fill="#ffffff" stroke="#e11d48" stroke-width="1"/>
+  <text x="1306.7" y="453.0" font-size="11" font-weight="400" fill="#881337" text-anchor="middle">NEEDS_REVIEW</text>
+  <text x="1114.0" y="478.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">对话内的候选卡片</text>
+  <text x="1114.0" y="497.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">或在记忆页确认、拒绝</text>
+  <path d="M1070.0,380.0 L1085.0,380.0 L1085.0,350.0 L1100.0,350.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1070.0,420.0 L1085.0,420.0 L1085.0,471.0 L1100.0,471.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="1016.5" y="481.0" width="67.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="1079.0" y="494.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="end">任一不通过</text>
+  <path d="M1230.0,430.0 L1230.0,382.0" fill="none" stroke="#059669" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-emerald)"/>
+  <rect x="1237.5" y="397.0" width="33.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="1254.0" y="410.0" font-size="11.5" font-weight="600" fill="#059669" text-anchor="middle">确认</text>
+  <rect x="370.0" y="600.0" width="340.0" height="120.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="384.0" y="624.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">版本化写入</text>
+  <text x="384.0" y="648.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">memory_item + 不可变的 revision</text>
+  <text x="384.0" y="667.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">冲突的旧记忆标为已替代</text>
+  <text x="384.0" y="686.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">记下失效时间，历史版本可查</text>
+  <text x="384.0" y="707.0" font-size="11" font-weight="400" fill="#059669" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">CanonicalMemoryReviewService</text>
+  <rect x="740.0" y="600.0" width="330.0" height="120.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="754.0" y="624.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">索引发件箱</text>
+  <text x="754.0" y="648.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">与晋升在同一事务入队</text>
+  <text x="754.0" y="667.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">代次作为 ES external version</text>
+  <text x="754.0" y="686.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">租约认领，投递前重读权威内容</text>
+  <text x="754.0" y="707.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryIndexOutbox</text>
+  <rect x="1100.0" y="600.0" width="260.0" height="82.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="1114.0" y="624.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">记忆向量索引</text>
+  <text x="1114.0" y="648.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">noteweave-memory</text>
+  <text x="1114.0" y="667.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">供冲突检测与按需召回</text>
+  <path d="M1360.0,350.0 L1380.0,350.0 L1380.0,560.0 L540.0,560.0 L540.0,600.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="883.5" y="541.0" width="33.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="900.0" y="554.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">生效</text>
+  <path d="M710.0,660.0 L740.0,660.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1070.0,660.0 L1100.0,660.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1230.0,682.0 L1230.0,760.0 L355.0,760.0 L355.0,490.0 L450.0,490.0 L450.0,470.0" fill="none" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-sky)"/>
+  <rect x="760.5" y="741.0" width="79.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="800.0" y="754.0" font-size="11.5" font-weight="600" fill="#0284c7" text-anchor="middle">冲突检测查询</text>
+  <rect x="40.0" y="600.0" width="300.0" height="100.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="54.0" y="624.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">会话约束与长期记忆分开</text>
+  <text x="54.0" y="648.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">以后用表格这类说法由约束</text>
+  <text x="54.0" y="667.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">抽取处理，在本会话立即生效</text>
+  <text x="54.0" y="686.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">跨会话的长期记忆要经过门控</text>
+  <rect x="40.0" y="796.0" width="1320.0" height="70.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="820.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">设计取舍</text>
+  <text x="54.0" y="844.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">长期记忆只存回答偏好（语言、篇幅、风格、结构、表格、术语、交互方式），事实一律来自资料证据；模型调用全部在异步任务里，不占回答等待时间。</text>
+</svg>

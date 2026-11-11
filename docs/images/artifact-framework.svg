@@ -1,88 +1,108 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 620" width="1200" height="620" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
-    </marker>
-  </defs>
-  <rect width="1200" height="620" fill="#ffffff"/>
-  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">产物框架：Skill 目录声明，Java Host 编排与校验，Python Worker 生成</text>
-  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">新增产物类型只需在目录里声明输入、输出契约与能力需求，不改编排代码</text>
-
-  <!-- catalog -->
-  <rect x="30" y="96" width="250" height="150" rx="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
-  <text x="155" y="124" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">Skill 目录</text>
-  <g font-size="12.5" fill="#334155">
-    <text x="48" y="152">artifact-skill-catalog-v2.json</text>
-    <text x="48" y="176">每种产物：输入、输出契约、</text>
-    <text x="48" y="198">所需能力、导出格式、分组</text>
-    <text x="48" y="226" font-size="11.5" fill="#64748b">同步脚本复制到 Backend 与 Worker</text>
-  </g>
-
-  <!-- java host -->
-  <rect x="320" y="96" width="400" height="180" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
-  <text x="520" y="124" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">Java Host：创建与编排</text>
-  <g font-size="12.5" fill="#3730a3">
-    <text x="338" y="152">按发起人身份创建任务，检查配额与并发上限</text>
-    <text x="338" y="176">冻结输入：资料范围、上下文快照、能力绑定</text>
-    <text x="338" y="200">需要外部素材时先发起采集操作并等待回调</text>
-    <text x="338" y="224">任务写入 Outbox，投递 Kafka 产物主题</text>
-    <text x="338" y="256" font-size="11.5" fill="#6366f1">ArtifactJobService · ArtifactVideoMaterialService</text>
-  </g>
-
-  <!-- worker -->
-  <rect x="760" y="96" width="410" height="180" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
-  <text x="965" y="124" text-anchor="middle" font-size="16" font-weight="700" fill="#7c2d12">Python Worker：生成与导出</text>
-  <g font-size="12.5" fill="#9a3412">
-    <text x="778" y="152">按 Skill 契约组装提示词</text>
-    <text x="778" y="176">OpenAI Python SDK 输出结构化 JSON</text>
-    <text x="778" y="200">结果按内容模型（Pydantic）校验结构</text>
-    <text x="778" y="224">导出：python-pptx、XeLaTeX、reportlab</text>
-    <text x="778" y="256" font-size="11.5" fill="#ea580c">generation_runtime · export_runtime</text>
-  </g>
-
-  <g stroke="#475569" stroke-width="1.5" fill="none">
-    <line x1="280" y1="170" x2="318" y2="170" marker-end="url(#arrow)"/>
-    <line x1="720" y1="170" x2="758" y2="170" marker-end="url(#arrow)"/>
-  </g>
-  <text x="739" y="160" text-anchor="middle" font-size="11" fill="#475569">Kafka</text>
-
-  <!-- MCP -->
-  <rect x="760" y="316" width="410" height="196" rx="12" fill="#fefce8" stroke="#ca8a04" stroke-width="1.6"/>
-  <text x="965" y="344" text-anchor="middle" font-size="16" font-weight="700" fill="#713f12">系统 MCP 服务端（官方 MCP SDK，stdio）</text>
-  <g font-size="12.5" fill="#854d0e">
-    <text x="778" y="372">get_bilibili_subtitle：字幕，必要时下载音轨转写</text>
-    <text x="778" y="396">transcribe_local_audio：faster-whisper 转写</text>
-    <text x="778" y="420">capture_bilibili_frames：按时间点抓帧</text>
-    <text x="778" y="444">analyze_frames：校验摘要后做画面 OCR</text>
-    <text x="778" y="468">render_latex_pdf：编译 PDF 讲义</text>
-  </g>
-  <text x="965" y="496" text-anchor="middle" font-size="11.5" fill="#a16207">参数按 inputSchema 校验，文件只能读写沙箱目录</text>
-  <path d="M965,276 L965,314" stroke="#475569" stroke-width="1.5" fill="none" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
-
-  <!-- callback & versions -->
-  <rect x="320" y="316" width="400" height="196" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-  <text x="520" y="344" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">回调、复核与版本化</text>
-  <g font-size="12.5" fill="#047857">
-    <text x="338" y="372">Worker 通过带令牌和签名的内部接口回调</text>
-    <text x="338" y="396">Host 复核契约、证据覆盖与冻结素材摘要</text>
-    <text x="338" y="420">通过后生成新版本，可重新生成、对比</text>
-    <text x="338" y="444">从 Worker 拉取导出文件存入 MinIO</text>
-    <text x="338" y="468">可下载、存为资料、写入 Note 或 Wiki</text>
-  </g>
-  <path d="M760,404 L722,404" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-  <text x="741" y="394" text-anchor="middle" font-size="11" fill="#475569">回调</text>
-
-  <rect x="30" y="316" width="250" height="196" rx="12" fill="#ffffff" stroke="#4f46e5" stroke-width="1.4"/>
-  <text x="155" y="344" text-anchor="middle" font-size="15" font-weight="700" fill="#312e81">已接入的产物</text>
-  <g font-size="12.5" fill="#3730a3">
-    <text x="48" y="372">基于资料：报告、思维导图、测验、</text>
-    <text x="48" y="394">学习指南、精读摘要、FAQ 等</text>
-    <text x="48" y="420">音视频：音频纪要、课程笔记</text>
-    <text x="48" y="446">视频学习：视频摘要、知识博客、</text>
-    <text x="48" y="468">面试问答、学习 PPTX、PDF 讲义</text>
-  </g>
-  <path d="M320,404 L282,404" stroke="#475569" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
-
-  <text x="600" y="560" text-anchor="middle" font-size="13" fill="#475569">Worker 不直接写 Java 业务表；生成过程、MCP 调用和校验结果记录在产物的生成过程里，可在界面中展开查看</text>
-  <text x="600" y="586" text-anchor="middle" font-size="13" fill="#475569">视频产物共用同一份冻结素材，由后台协调器按发起人身份分别创建任务</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 960" width="1400" height="960" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="960" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">Schema 驱动的产物生成框架：SKILL.md 声明、Java Host 管控、Python Worker 五段流水线</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">新增同形态产物只加一个 SKILL.md；模型输出必须通过 Schema、引用和数字一致性校验</text>
+  <rect x="24.0" y="92.0" width="1352.0" height="150.0" rx="14" fill="#f5f3ff" fill-opacity="0.55" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="116.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">Skill 声明</text>
+  <text x="125.5" y="116.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">Host 与 Worker 读取同一目录</text>
+  <rect x="44.0" y="132.0" width="420.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="58.0" y="156.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">skills/&lt;name&gt;/SKILL.md</text>
+  <text x="58.0" y="180.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">形态、用户可选项、输出契约</text>
+  <text x="58.0" y="199.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">新增同形态产物只需加一个目录</text>
+  <rect x="490.0" y="132.0" width="420.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="504.0" y="156.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">schemas/*.json</text>
+  <text x="504.0" y="180.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">产物内容的 JSON Schema</text>
+  <text x="504.0" y="199.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">校验阶段逐项比对</text>
+  <rect x="936.0" y="132.0" width="420.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="950.0" y="156.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">14 种产物</text>
+  <text x="950.0" y="180.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">报告、简报、测验、闪卡、思维导图、时间线</text>
+  <text x="950.0" y="199.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">课程笔记、演示文稿、视频 PDF 讲义等</text>
+  <rect x="24.0" y="262.0" width="1352.0" height="226.0" rx="14" fill="#eef2ff" fill-opacity="0.55" stroke="#4f46e5" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="286.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">Java Host</text>
+  <rect x="44.0" y="306.0" width="300.0" height="120.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="58.0" y="330.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">请求校验</text>
+  <text x="58.0" y="354.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">选项按 Skill 声明校验</text>
+  <text x="58.0" y="373.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">未给数量时从需求原文推断</text>
+  <text x="58.0" y="392.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">冻结来源资料的版本</text>
+  <text x="58.0" y="413.0" font-size="11" font-weight="400" fill="#4f46e5" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ArtifactSkillCatalogService</text>
+  <rect x="370.0" y="306.0" width="300.0" height="120.0" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.4"/>
+  <text x="384.0" y="330.0" font-size="14.5" font-weight="700" fill="#134e4a" text-anchor="start">并发准入</text>
+  <text x="384.0" y="354.0" font-size="12.5" font-weight="400" fill="#115e59" text-anchor="start">工作台并发租约：Redis ZSET</text>
+  <text x="384.0" y="373.0" font-size="12.5" font-weight="400" fill="#115e59" text-anchor="start">默认每工作台 4 个，租约 300 秒</text>
+  <text x="384.0" y="392.0" font-size="12.5" font-weight="400" fill="#115e59" text-anchor="start">超出时排队并显示位置</text>
+  <text x="384.0" y="413.0" font-size="11" font-weight="400" fill="#0d9488" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">WorkloadQuotaService</text>
+  <rect x="696.0" y="306.0" width="300.0" height="120.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="710.0" y="330.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">发件箱与投递</text>
+  <text x="710.0" y="354.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">任务与发件箱同一事务</text>
+  <text x="710.0" y="373.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">Kafka noteweave.artifact.job</text>
+  <text x="710.0" y="392.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">失败进入死信队列</text>
+  <rect x="1022.0" y="306.0" width="334.0" height="120.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="1036.0" y="330.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">候选验收与版本</text>
+  <text x="1036.0" y="354.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">引用必须属于冻结的来源</text>
+  <text x="1036.0" y="373.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">核对文件清单后入库</text>
+  <text x="1036.0" y="392.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">产物版本化，文件存 MinIO</text>
+  <text x="1036.0" y="411.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">可写回 Note，旧版本可恢复</text>
+  <path d="M344.0,366.0 L370.0,366.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M670.0,366.0 L696.0,366.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M194.0,214.0 L194.0,306.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="206.0" y="251.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="234.0" y="264.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">选项契约</text>
+  <rect x="24.0" y="508.0" width="1352.0" height="250.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="532.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Python Worker 五段流水线</text>
+  <rect x="44.0" y="556.0" width="240.0" height="100.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="58.0" y="580.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">取材</text>
+  <rect x="242.9" y="565.0" width="33.1" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="259.4" y="579.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">20%</text>
+  <text x="58.0" y="604.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">按冻结来源检索证据</text>
+  <text x="58.0" y="623.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">视频读取文字与关键帧</text>
+  <rect x="312.0" y="556.0" width="240.0" height="100.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="326.0" y="580.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">规划</text>
+  <rect x="510.9" y="565.0" width="33.1" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="527.4" y="579.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">35%</text>
+  <text x="326.0" y="604.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">生成大纲与标题</text>
+  <text x="326.0" y="623.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">标题按资料主题命名</text>
+  <rect x="580.0" y="556.0" width="240.0" height="100.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="594.0" y="580.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">写作</text>
+  <rect x="778.9" y="565.0" width="33.1" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="795.4" y="579.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">65%</text>
+  <text x="594.0" y="604.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">按 Schema 生成内容</text>
+  <text x="594.0" y="623.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">每条内容带证据引用</text>
+  <rect x="848.0" y="556.0" width="240.0" height="100.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="862.0" y="580.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">校验</text>
+  <rect x="1046.9" y="565.0" width="33.1" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="1063.4" y="579.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">85%</text>
+  <text x="862.0" y="604.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">Schema、引用、数字一致性</text>
+  <text x="862.0" y="623.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">不通过时修复一次</text>
+  <rect x="1116.0" y="556.0" width="240.0" height="100.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1130.0" y="580.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">渲染</text>
+  <rect x="1308.5" y="565.0" width="39.5" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="1328.2" y="579.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">100%</text>
+  <text x="1130.0" y="604.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">Markdown、CSV、PPTX、PDF</text>
+  <text x="1130.0" y="623.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">XeLaTeX 编译讲义</text>
+  <path d="M284.0,606.0 L312.0,606.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M552.0,606.0 L580.0,606.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M820.0,606.0 L848.0,606.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1088.0,606.0 L1116.0,606.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M846.0,426.0 L846.0,498.0 L254.0,498.0 L254.0,556.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="532.0" y="489.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="560.0" y="502.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">任务消息</text>
+  <path d="M1356.0,586.0 L1366.0,586.0 L1366.0,460.0 L1189.0,460.0 L1189.0,426.0" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+  <rect x="1193.2" y="441.0" width="113.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="1250.0" y="454.0" font-size="11.5" font-weight="600" fill="#059669" text-anchor="middle">候选内容与文件清单</text>
+  <text x="330.0" y="690.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">多条消费通道并行处理任务，每段完成推送进度；校验不通过时把错误项交给模型修复一次，仍不通过则给出用户能看懂的失败原因。</text>
+  <rect x="24.0" y="778.0" width="1352.0" height="162.0" rx="14" fill="#f5f3ff" fill-opacity="0.55" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="802.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">媒体工具（MCP）</text>
+  <rect x="44.0" y="820.0" width="620.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="58.0" y="844.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">media-mcp</text>
+  <text x="58.0" y="868.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">B 站解析、字幕、faster-whisper 转写、抓帧、时间轴、OCR</text>
+  <text x="58.0" y="887.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">Worker 通过 MCP 协议调用，转写与关键帧随资料快照保存</text>
+  <rect x="690.0" y="820.0" width="666.0" height="82.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="704.0" y="844.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">视频产物</text>
+  <text x="704.0" y="868.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">演示文稿每页配视频原画面，并标注时间点与字幕证据</text>
+  <text x="704.0" y="887.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">PDF 讲义插入关键帧；资料没有关键帧时直接说明原因</text>
+  <path d="M664.0,861.0 L690.0,861.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M164.0,656.0 L164.0,820.0" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-violet)"/>
+  <rect x="175.8" y="729.0" width="44.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="198.0" y="742.0" font-size="11.5" font-weight="600" fill="#7c3aed" text-anchor="middle">关键帧</text>
 </svg>
