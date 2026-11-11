@@ -241,66 +241,61 @@ def revocation() -> Diagram:
 # ---------------------------------------------------------------- 模块三：Context 与 Memory
 def context_assembly() -> Diagram:
     d = Diagram("context-assembly", 1400, 960,
-                "一轮回答的上下文拼装：后台增量维护、冻结、改写与提示拼接",
-                "发消息接口立即返回；约束、话题和摘要在后台增量维护，本轮只读取已经落库的结果")
+                "一轮回答的上下文拼装：改写模型判断话题，冻结后拼接提示",
+                "改写在冻结之前完成，同一次调用给出话题编号与独立查询；没有判断时按规则与向量切分")
     d.lane(24, 92, 1352, 222, "后台增量维护", "amber", "上一轮结束后异步执行，不占本轮等待时间")
-    a1 = d.box(44, 132, 310, "约束抽取", [
-        "把用户消息抽成约束操作",
-        "ConstraintOpMerger 纯函数折叠成快照",
-        "失败不推进水位线，下次从该条重抽"], "amber", code="ConversationConstraintProjectionV2Service",
-        tag="模型", h=150)
-    a2 = d.box(380, 132, 310, "话题切分", [
-        "词项 IDF 覆盖度与话题向量余弦各占一半",
-        "显式说法优先：回到、改聊、更正",
-        "已落库的切分作为固定前缀，不回改"], "amber", code="TopicSegmenterV2", tag="规则 + 向量", h=150)
-    a3 = d.box(716, 132, 300, "话题增量摘要", [
+    a4 = d.box(44, 132, 420, "边界复核", [
+        "只处理规则切分时标为不确定的边界",
+        "后台每 30 秒批量交给模型",
+        "模型不可用时保持不确定"], "amber", code="TopicBoundaryReviewService", tag="模型", h=150)
+    a3 = d.box(490, 132, 420, "话题增量摘要", [
         "原文尾部之前的部分写入发件箱",
         "在上一版摘要上只读新增消息",
         "每版不可变，失败退回抽取式摘要"], "amber", code="ConversationTopicSummaryV2Service", tag="Kafka", h=150)
-    a4 = d.box(1042, 132, 314, "边界复核", [
-        "只处理切分时标为不确定的边界",
-        "后台每 30 秒批量交给模型",
-        "模型不可用时保持不确定"], "amber", code="TopicBoundaryReviewService", tag="模型", h=150)
-    d.arrow([a2.right(), a3.left()], "话题段")
-    d.arrow([a2.top(80), (a2.cx + 80, 120), (a4.cx, 120), a4.top()], "不确定的边界", label_at=(880, 120),
-            label_dy=4)
-    d.lane(24, 330, 1352, 316, "本轮准备", "indigo", "后台执行，进度经 SSE 推送")
-    b1 = d.box(44, 372, 200, "冻结截止点", [
-        "以本条用户消息序号为界",
-        "先等上一轮约束抽取完成",
-        "之后的消息不进入本轮"], "indigo", h=120)
-    b2 = d.box(266, 372, 340, "窗口规划", [
-        "原文尾部：最近 2～8 条，按 token 收缩",
-        "当前话题摘要：只覆盖原文之前的部分",
-        "生效约束：按作用域与有效区间过滤",
-        "已批准记忆的版本引用",
-        "每项入选或排除都记下原因"], "indigo", code="ContextWindowPlannerV2", h=170)
-    b3 = d.box(628, 372, 236, "冻结快照", [
-        "规划结果先写入 MySQL",
-        "重试与重新生成用同一快照",
-        "V2 冻结失败退回前缀摘要"], "indigo", code="RunInputSnapshotService", h=120)
-    b4 = d.box(886, 372, 220, "渐进改写", [
-        "话题摘要 + 最近原文",
-        "改写成可独立检索的查询",
-        "主字段先出即开始检索"], "violet", code="QueryRewriteService", tag="模型", h=120)
-    b5 = d.box(1128, 372, 228, "检索与证据", [
-        "QA、Note、Wiki 三条链路",
-        "撤销过滤与 MySQL 复核",
-        "详见模块二"], "sky", h=120)
-    b6 = d.box(886, 520, 220, "记忆控制包", [
+    a1 = d.box(936, 132, 420, "约束抽取", [
+        "把用户消息抽成约束操作",
+        "ConstraintOpMerger 纯函数折叠成快照",
+        "本轮问题的约束在冻结之后补抽"], "amber", code="ConversationConstraintProjectionV2Service",
+        tag="模型", h=150)
+    d.lane(24, 330, 1352, 316, "本轮准备", "indigo")
+    r1 = d.box(44, 372, 230, "判断材料", [
+        "最近 8 条原文",
+        "已有话题列表，T1 为最近",
+        "最近话题的摘要"], "indigo", code="ConversationTopicRoutingService", h=128)
+    r2 = d.box(296, 372, 250, "改写与话题判断", [
+        "先给话题编号：T1 接着、",
+        "Tn 回到旧话题、n 新话题",
+        "再给补全主题的独立查询"], "violet", code="QueryRewriteService", tag="模型", h=128)
+    r3 = d.box(568, 372, 300, "冻结：本轮归入哪个话题", [
+        "有模型判断时以模型为准",
+        "首轮、改写失败或跳过改写时，",
+        "按规则与向量切分",
+        "已落库的划分不回改"], "indigo", code="TopicSegmenterV2", h=140)
+    r4 = d.box(890, 372, 230, "窗口规划与快照", [
+        "目标话题摘要优先",
+        "最近的其他话题带一个",
+        "回到旧话题带段尾原文",
+        "写入 MySQL 冻结快照"], "indigo", code="ContextWindowPlannerV2", h=140)
+    r5 = d.box(1142, 372, 214, "检索与证据", [
+        "用改写结果检索",
+        "撤销过滤与复核",
+        "详见模块二"], "sky", h=128)
+    r6 = d.box(1142, 538, 214, "记忆控制包", [
         "按独立查询编译",
         "Redis 按版本缓存"], "emerald", code="MemoryCompilerService", h=102)
-    for left, right in ((b1, b2), (b2, b3), (b3, b4), (b4, b5)):
-        d.arrow([(left.x + left.w, 412), (right.x, 412)])
-    d.arrow([b4.bottom(), b6.top()])
-    d.arrow([a1.bottom(), (a1.cx, 322), (330, 322), (330, b2.y)], "生效约束", label_at=(265, 322), label_dy=4)
-    d.arrow([a2.bottom(), (a2.cx, b2.y)], "话题段", label_at=(a2.cx, 344), label_dx=0)
-    d.arrow([a3.bottom(), (a3.cx, 322), (580, 322), (580, b2.y)], "READY 摘要", label_at=(720, 322), label_dy=4)
+    for left, right in ((r1, r2), (r2, r3), (r3, r4)):
+        d.arrow([(left.x + left.w, 420), (right.x, 420)])
+    d.arrow([r2.bottom(60), (r2.cx + 60, 524), (1170, 524), (1170, r5.y + r5.h)], "独立查询",
+            label_at=(720, 524))
+    d.arrow([(1150, 524), (1150, r6.y)])
+    d.arrow([a3.bottom(), (a3.cx, 322), (r1.cx, 322), (r1.cx, r1.y)], "话题与摘要", label_at=(400, 322),
+            label_dy=4)
+    d.arrow([a1.bottom(), (a1.cx, r4.y)], "生效约束", label_at=(a1.cx, 344), label_dx=0)
     d.lane(24, 666, 1352, 276, "生成提示拼装", "slate", "按实际拼装顺序从前到后")
     segs = [
         (44, 140, "公共规则", ["回答规范", "引用格式"], "slate"),
         (188, 190, "模式规则", ["问答 / 精读 / Wiki", "按问题追加条件规则", "内部检索边界"], "slate"),
-        (382, 240, "最近对话上下文", ["当前话题摘要", "当前有效的用户约束", "连续的原文尾部"], "indigo"),
+        (382, 240, "最近对话上下文", ["目标话题与最近话题的摘要", "当前有效的用户约束", "原文尾部（可含旧话题段尾）"], "indigo"),
         (626, 170, "资料片段", ["[1] … [n] 编号", "与引用卡片对应"], "sky"),
         (800, 240, "表达控制", ["记忆控制包", "冻结约束（同义去重）", "偏好参数与会话要求"], "emerald"),
         (1044, 110, "当前问题", ["用户消息"], "slate"),
@@ -312,20 +307,20 @@ def context_assembly() -> Diagram:
                   "violet", h=146)
     d.arrow([seg_boxes["当前问题"].right(), model.left()])
     ctx = seg_boxes["最近对话上下文"]
-    d.arrow([b3.bottom(), (b3.cx, 690), (ctx.cx, 690), (ctx.cx, 716)], "冻结快照", label_at=(600, 690))
-    d.arrow([b6.bottom(), (b6.cx, 716)], "控制包", label_at=(b6.cx, 690), label_dx=0)
+    d.arrow([r4.bottom(), (r4.cx, 680), (ctx.cx, 680), (ctx.cx, 716)], "冻结快照", label_at=(640, 680))
+    d.arrow([r6.bottom(), (r6.cx, 700), (960, 700), (960, 716)], "控制包", label_at=(1100, 700))
     ev = seg_boxes["资料片段"]
-    d.arrow([b5.bottom(), (b5.cx, 506), (1366, 506), (1366, 884), (ev.cx, 884), (ev.cx, ev.y + ev.h)],
+    d.arrow([r5.right(), (1366, r5.cy), (1366, 884), (ev.cx, 884), (ev.cx, ev.y + ev.h)],
             "本轮证据", label_at=(1000, 884))
     d.text(44, 924, "事实只来自资料片段；话题摘要、约束和记忆只用于理解追问和决定表达方式。"
-                    "每项的入选与排除原因写入冻结快照，可在上下文检查器中查看。", size=12.5, fill="#475569")
+                    "话题判断与每项的入选、排除原因都写入冻结快照，可在上下文检查器中查看。", size=12.5, fill="#475569")
     return d
 
 
 def context_compression() -> Diagram:
     d = Diagram("context-compression", 1400, 940,
                 "上下文压缩：按话题分段、增量摘要与原文尾部",
-                "更早的消息由所属话题的摘要覆盖，最近的消息保留原文；摘要异步生成，落后时用原文补齐")
+                "更早的消息由所属话题的摘要覆盖，最近的消息保留原文；话题只决定摘要的分组与优先级")
     x0, cw, gap, y = 92, 46, 4, 168
     topic_of = ["A"] * 8 + ["B"] * 6 + ["A"] * 10
     d.text(40, y + 23, "消息", size=13, weight=700, fill="#334155")
@@ -341,7 +336,7 @@ def context_compression() -> Diagram:
         return x0 + (a - 1) * (cw + gap), x0 + (b - 1) * (cw + gap) + cw
 
     for (a, b, label, theme) in [(1, 8, "段 1 · 话题 A", "indigo"), (9, 14, "段 2 · 话题 B", "amber"),
-                                 (15, 24, "段 3 · 回到话题 A（显式说法：回到）", "indigo")]:
+                                 (15, 24, "段 3 · 回到话题 A（改写模型判断：T2）", "indigo")]:
         sx, ex = span(a, b)
         stroke = THEMES[theme][1]
         d.parts.append(f'<path d="M{sx},{y - 8} L{sx},{y - 16} L{ex},{y - 16} L{ex},{y - 8}" fill="none" '
@@ -368,29 +363,30 @@ def context_compression() -> Diagram:
 
     summary_bar(1, 5, 0, "摘要 v1（1-5）", "slate", "被 v2 取代", "slate")
     summary_bar(1, 8, 1, "摘要 v2（1-8，在 v1 上只读 6-8）", "indigo", "入选：同话题旧段", "emerald")
-    summary_bar(9, 14, 0, "摘要（9-14）", "amber", "排除：其他话题", "rose")
+    summary_bar(9, 14, 0, "摘要（9-14）", "amber", "入选：最近的其他话题", "emerald")
     summary_bar(15, 16, 1, "15-16", "indigo", "入选：当前段，落后 2 条", "emerald")
     d.text(40, y + 96, "摘要", size=13, weight=700, fill="#334155")
     d.legend(92, 330, [("indigo", "话题 A"), ("amber", "话题 B"), ("emerald", "进入本轮上下文"), ("rose", "排除")])
-    d.text(560, 330, "例：当前问题在第 24 条之后，上下文 = 段 1 摘要 v2 + 段 3 摘要（15-16）+ 原文 17-24",
+    d.text(500, 330, "例：当前问题在第 24 条之后，上下文 = 段 1 摘要 v2 + 段 2 摘要 + 段 3 摘要（15-16）+ 原文 17-24",
            size=12.5, fill="#334155", weight=600)
     p1 = d.box(40, 362, 420, "原文尾部怎么定", [
         "从最新一条往前数，至少 2 条、最多 8 条",
         "累计超过 6000 token 或总预算一半就停",
         "短消息保留满 8 条，长回答只留最近几轮",
-        "摘要任务用同一规则决定覆盖终点"], "indigo", code="ContextWindowPlannerV2.rawTailSize", h=146)
+        "摘要任务用同一规则决定覆盖终点"], "indigo", code="ContextWindowPlannerV2.rawTailSize", h=166)
     p2 = d.box(490, 362, 420, "当前话题的摘要落后时", [
         "已覆盖到原文尾部之前：直接使用",
         "落后 1～8 条：原文向前补到摘要终点之后",
         "落后更多或还没有摘要：展开本段原文",
         "仍超长：先按 256 条、再按预算裁掉最旧",
-        "至少保留最新一条，只记降级不阻断"], "indigo", h=146)
+        "至少保留最新一条，只记降级不阻断"], "indigo", h=166)
     p3 = d.box(940, 362, 420, "摘要怎么选", [
         "每段取覆盖到原文尾部之前的最新一版",
-        "只选当前话题的段，其他话题排除",
-        "话题归属不确定时不引入其他段",
-        "与原文重叠或范围过期的版本排除",
-        "超出预算的摘要排除并记降级"], "indigo", h=146)
+        "目标话题的各段优先，最近的其他话题再带一个",
+        "话题归属不确定时不引入同话题其他段",
+        "与原文重叠或范围过期的版本排除，超预算记降级",
+        "回到旧话题：上一段摘要没覆盖的段尾原文",
+        "最多带 4 条"], "indigo", h=166)
     d.lane(24, 540, 1352, 196, "增量摘要生成", "amber", "Kafka 异步执行，生成慢只会让原文补齐的范围变大")
     q1 = d.box(44, 584, 220, "发件箱", ["与切分结果同事务写入", "只取原文尾部之前的消息"], "amber", h=82)
     q2 = d.box(290, 584, 230, "Kafka", ["noteweave.conversation", ".summary"], "amber", h=82)
@@ -409,8 +405,8 @@ def context_compression() -> Diagram:
             label_at=(1000, 700))
     d.arrow([q4.right(), q5.left()])
     d.box(40, 770, 1320, "为什么这样切", [
-        "原文尾部固定取最近几条，话题判断出错时只影响摘要分组，不影响最近对话；切分不在回答路径上调用模型，"
-        "不确定的边界交给后台复核。",
+        "话题由查询改写模型在同一次调用里判断，规则与向量兜底；话题只决定摘要的分组与优先级，原文尾部每轮都带，"
+        "最近的其他话题也带一个，判断偶尔出错也不会丢前文。",
         "摘要按版本追加、从不原地修改，冻结快照引用的是具体版本，重新生成时上下文和当时完全一致。"], "slate", h=88)
     return d
 
