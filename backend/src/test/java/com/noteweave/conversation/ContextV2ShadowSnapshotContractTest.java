@@ -196,7 +196,7 @@ class ContextV2ShadowSnapshotContractTest {
                         "conversation_type", "WORKSPACE_CHAT")))).path("conversation_id").asText();
         doThrow(new com.noteweave.common.BusinessException("CONTEXT_BUDGET_EXCEEDED", "test gap"))
                 .when(compiler).compile(anyString(), anyString(), anyString(), anyInt(),
-                        anyString(), anyString(), anyInt());
+                        anyString(), anyString(), anyInt(), org.mockito.ArgumentMatchers.nullable(String.class));
 
         JsonNode receipt = data(post("/api/v2/conversations/{conversationId}/messages", conversationId)
                 .contentType(MediaType.APPLICATION_JSON)

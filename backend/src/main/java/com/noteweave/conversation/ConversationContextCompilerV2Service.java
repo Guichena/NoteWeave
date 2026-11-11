@@ -42,6 +42,15 @@ public class ConversationContextCompilerV2Service {
     public ContextProjectionV2 compile(String workspaceId, String actorId, String conversationId,
                                        int cutoffSeq, String currentInput, String taskPurpose,
                                        int tokenBudget) {
+        return compile(workspaceId, actorId, conversationId, cutoffSeq, currentInput, taskPurpose,
+                tokenBudget, null);
+    }
+
+    /** @param detailQuery 不为空时，按它在目标话题的历史原文里回放几组问答 */
+    @Transactional(readOnly = true)
+    public ContextProjectionV2 compile(String workspaceId, String actorId, String conversationId,
+                                       int cutoffSeq, String currentInput, String taskPurpose,
+                                       int tokenBudget, String detailQuery) {
         access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
         if (!users.requireUserId().equals(actorId)) {
             throw new BusinessException("CONTEXT_ACTOR_MISMATCH",
@@ -118,7 +127,7 @@ public class ConversationContextCompilerV2Service {
         return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, conversationId,
                 cutoffSeq, currentInput, taskPurpose, tokenBudget, messages, segments,
                 summaries.ready(workspaceId, conversationId, cutoffSeq), constraints,
-                memoryReferences(workspaceId, actorId)));
+                memoryReferences(workspaceId, actorId), detailQuery));
     }
 
     /**

@@ -90,8 +90,10 @@ public class ContextV2ShadowSnapshotService {
         if (!rollout.shadowEnabled(workspaceId) || settled(answerRunId)) return;
         int cutoff = answerCutoff(workspaceId, conversationId, queryMessageId, answerRunId);
         var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery, route);
+        String detailQuery = route == null ? null : route.detailQuery();
         independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
-                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed,
+                detailQuery));
     }
 
     /**
@@ -141,7 +143,8 @@ public class ContextV2ShadowSnapshotService {
     private void persistSnapshot(String workspaceId, String actorId, String conversationId,
                                  String queryMessageId, String answerRunId, int cutoff,
                                  String currentInput, String taskPurpose,
-                                 ConversationTopicProjectionV2Service.ConstraintRefresh refreshed) {
+                                 ConversationTopicProjectionV2Service.ConstraintRefresh refreshed,
+                                 String detailQuery) {
         // 与消息删除同一把锁：删除的 redaction 扫描必须能看到这份快照，插入也不能落在删除之后。
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
@@ -153,7 +156,7 @@ public class ContextV2ShadowSnapshotService {
         if (settled(answerRunId)) return;
         topics.requireAnswerConstraints(workspaceId, conversationId, refreshed);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
-                cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
+                cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS, detailQuery);
         requireCurrentMemories(workspaceId, projection);
         String snapshotId = Ids.newId();
         String json = write(projection);

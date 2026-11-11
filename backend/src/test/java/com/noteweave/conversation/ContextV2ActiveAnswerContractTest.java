@@ -86,7 +86,7 @@ class ContextV2ActiveAnswerContractTest {
         String conversation = conversation(workspace, "fallback");
         doThrow(new BusinessException("CONTEXT_BUDGET_EXCEEDED", "fixed test failure"))
                 .when(compiler).compile(anyString(), anyString(), anyString(), anyInt(),
-                        anyString(), anyString(), anyInt());
+                        anyString(), anyString(), anyInt(), org.mockito.ArgumentMatchers.nullable(String.class));
         JsonNode receipt = submit(conversation, "当前问题", "QA");
         var snapshot = jdbc.queryForMap("""
                 select compiler_version, snapshot_json from run_input_snapshot where answer_run_id = ?
