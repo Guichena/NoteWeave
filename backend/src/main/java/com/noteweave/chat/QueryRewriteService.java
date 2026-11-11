@@ -39,9 +39,14 @@ public class QueryRewriteService {
             6. question_type 只能是 comparison、summary、source_lookup、reasoning、definition 之一。
             7. must_terms 是需要加重的专名或标识符。low_level_keywords 是具体实体，high_level_keywords 是主题词。
             8. language 只能是 zh 或 en。
-            使用短字段名输出，含义和上述规则完全相同：s=is_standalone, q=standalone_query, k=keyword_query,
-            t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords, lang=language, a=alternatives。
-            按 s、q、k、t、m、l、h、lang、a 的顺序输出，a 放在最后。
+            9. topic_route 判断当前问题接的是哪个话题。话题列表按最近活跃排序，T1 是最近在聊的话题：
+               接着 T1 输出 "T1"；回到列表里较早的话题时输出那个话题的编号；与列表里的话题都无关时输出 "n"。
+               追问常省略主语，也可能隔了几轮才回到旧话题，要结合话题列表和最近原文判断指代对象；
+               回到较早的话题时，standalone_query 与 keyword_query 要补上那个话题的主题。话题列表为空时输出 "n"。
+            使用短字段名输出，含义和上述规则完全相同：r=topic_route, s=is_standalone, q=standalone_query,
+            k=keyword_query, t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords,
+            lang=language, a=alternatives。
+            按 r、s、q、k、t、m、l、h、lang、a 的顺序输出，r 放在最前，a 放在最后。
             输出紧凑 JSON，不缩减查询或遗漏指代、否定、比较对象与版本等限定。
             """;
     /** 流式输出里 alternatives 键的开始位置；它之前的字段已经足够发起检索。 */
@@ -129,7 +134,7 @@ public class QueryRewriteService {
         if (llmClient == null || !llmClient.isEnabled()) {
             return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_UNAVAILABLE"));
         }
-        return llmRewrite(current, context, null);
+        return llmRewrite(current, context, "", null).rewrite();
     }
 
     /** 本轮是否会调用模型改写；只有这种情况才值得边输出边发起检索。 */
@@ -150,20 +155,41 @@ public class QueryRewriteService {
             ConversationRetrievalContextAssembler.Context context,
             java.util.concurrent.Executor executor
     ) {
-        if (executor == null || !usesModel(context)) {
-            return ProgressiveRewrite.complete(rewrite(context));
+        return rewriteProgressive(context, "", executor);
+    }
+
+    /**
+     * @param topicList 本会话已有话题的列表（见 ConversationTopicRoutingService），模型据此给出 topic_route；
+     *                  为空时模型照常改写，话题判断留给规则
+     */
+    public ProgressiveRewrite rewriteProgressive(
+            ConversationRetrievalContextAssembler.Context context,
+            String topicList,
+            java.util.concurrent.Executor executor
+    ) {
+        String topics = topicList == null ? "" : topicList;
+        if (!usesModel(context)) {
+            return ProgressiveRewrite.complete(new Outcome(rewrite(context), null));
         }
         String current = context.currentQuestion() == null ? "" : context.currentQuestion().trim();
-        java.util.concurrent.CompletableFuture<QueryRewrite> early = new java.util.concurrent.CompletableFuture<>();
-        java.util.concurrent.CompletableFuture<QueryRewrite> full;
+        if (executor == null) {
+            return ProgressiveRewrite.complete(llmRewrite(current, context, topics, null));
+        }
+        java.util.concurrent.CompletableFuture<Outcome> early = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<Outcome> full;
         try {
             full = java.util.concurrent.CompletableFuture.supplyAsync(
-                    () -> llmRewrite(current, context, draft -> early.complete(accept(current, draft))), executor);
+                    () -> llmRewrite(current, context, topics,
+                            draft -> early.complete(new Outcome(accept(current, draft), draft.route()))), executor);
         } catch (java.util.concurrent.RejectedExecutionException ex) {
-            return ProgressiveRewrite.complete(rewrite(context));
+            return ProgressiveRewrite.complete(llmRewrite(current, context, topics, null));
         }
-        return new ProgressiveRewrite(early, full, () -> rule(current, context.topicAnchor(),
-                List.of("QUERY_REWRITE_LLM_CALL_FAILED")));
+        return new ProgressiveRewrite(early, full, () -> new Outcome(rule(current, context.topicAnchor(),
+                List.of("QUERY_REWRITE_LLM_CALL_FAILED")), null));
+    }
+
+    /** 一次改写的结果，以及模型给出的话题编号（没有时为 null）。 */
+    record Outcome(QueryRewrite rewrite, String route) {
     }
 
     /** 两次改写除 alternatives 外是否完全相同；相同则早先发起的检索与完整结果的检索输入一致。 */
@@ -185,15 +211,15 @@ public class QueryRewriteService {
 
     /** 渐进改写的两个阶段。 */
     public static final class ProgressiveRewrite {
-        private final java.util.concurrent.CompletableFuture<QueryRewrite> early;
-        private final java.util.concurrent.CompletableFuture<QueryRewrite> full;
-        private final java.util.function.Supplier<QueryRewrite> failure;
-        private QueryRewrite dispatched;
+        private final java.util.concurrent.CompletableFuture<Outcome> early;
+        private final java.util.concurrent.CompletableFuture<Outcome> full;
+        private final java.util.function.Supplier<Outcome> failure;
+        private Outcome dispatched;
 
         private ProgressiveRewrite(
-                java.util.concurrent.CompletableFuture<QueryRewrite> early,
-                java.util.concurrent.CompletableFuture<QueryRewrite> full,
-                java.util.function.Supplier<QueryRewrite> failure
+                java.util.concurrent.CompletableFuture<Outcome> early,
+                java.util.concurrent.CompletableFuture<Outcome> full,
+                java.util.function.Supplier<Outcome> failure
         ) {
             this.early = early;
             this.full = full;
@@ -201,48 +227,61 @@ public class QueryRewriteService {
         }
 
         static ProgressiveRewrite complete(QueryRewrite rewrite) {
-            var done = java.util.concurrent.CompletableFuture.completedFuture(rewrite);
-            return new ProgressiveRewrite(done, done, () -> rewrite);
+            return complete(new Outcome(rewrite, null));
         }
 
-        /** 等到可以发起检索：早先结果或完整结果，谁先到用谁。 */
-        public QueryRewrite awaitDispatchable() {
+        static ProgressiveRewrite complete(Outcome outcome) {
+            var done = java.util.concurrent.CompletableFuture.completedFuture(outcome);
+            return new ProgressiveRewrite(done, done, () -> outcome);
+        }
+
+        /** 等到可以发起检索：早先结果或完整结果，谁先到用谁。重复调用返回第一次的结果。 */
+        public synchronized QueryRewrite awaitDispatchable() {
+            if (dispatched != null) {
+                return dispatched.rewrite();
+            }
             try {
                 Object first = java.util.concurrent.CompletableFuture.anyOf(early, full).get();
-                dispatched = (QueryRewrite) first;
+                dispatched = (Outcome) first;
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
                 dispatched = failure.get();
             } catch (java.util.concurrent.ExecutionException ex) {
                 dispatched = failure.get();
             }
-            return dispatched;
+            return dispatched.rewrite();
+        }
+
+        /** 交给检索的那份结果里模型给出的话题编号；模型没有给出或没有调用模型时为 null。 */
+        public synchronized String dispatchedRoute() {
+            return dispatched == null ? null : dispatched.route();
         }
 
         /** 交给检索的是不是不含 alternatives 的早先结果。 */
-        public boolean dispatchedPartial() {
+        public synchronized boolean dispatchedPartial() {
             return early != full && dispatched != null && early.isDone() && early.getNow(null) == dispatched;
         }
 
         /** 完整改写结果；后台失败时退回规则改写。 */
         public QueryRewrite awaitComplete() {
             try {
-                return full.get();
+                return full.get().rewrite();
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
-                return failure.get();
+                return failure.get().rewrite();
             } catch (java.util.concurrent.ExecutionException ex) {
-                return failure.get();
+                return failure.get().rewrite();
             }
         }
     }
 
-    private QueryRewrite llmRewrite(
+    private Outcome llmRewrite(
             String current,
             ConversationRetrievalContextAssembler.Context context,
+            String topicList,
             java.util.function.Consumer<Draft> onEarlyDraft
     ) {
-        String prompt = userPrompt(current, context);
+        String prompt = userPrompt(current, context, topicList);
         try {
             StringBuilder streamed = new StringBuilder();
             boolean[] earlyTried = {onEarlyDraft == null};
@@ -268,7 +307,7 @@ public class QueryRewriteService {
             });
             Parsed parsed = parse(first);
             if (parsed.draft() != null) {
-                return accept(current, parsed.draft());
+                return new Outcome(accept(current, parsed.draft()), parsed.draft().route());
             }
             String retryPrompt = prompt
                     + "\n\n上一次输出没有通过结构校验：" + parsed.error()
@@ -276,12 +315,12 @@ public class QueryRewriteService {
             String second = llmClient.streamChat(SYSTEM_PROMPT, retryPrompt, OUTPUT_TOKENS, token -> { });
             parsed = parse(second);
             if (parsed.draft() != null) {
-                return accept(current, parsed.draft());
+                return new Outcome(accept(current, parsed.draft()), parsed.draft().route());
             }
-            return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_OUTPUT_INVALID"));
+            return new Outcome(rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_OUTPUT_INVALID")), null);
         } catch (RuntimeException ex) {
             log.warn("查询改写调用失败，退回规则：{}", ex.getMessage());
-            return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_CALL_FAILED"));
+            return new Outcome(rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_CALL_FAILED")), null);
         }
     }
 
@@ -347,10 +386,12 @@ public class QueryRewriteService {
         );
     }
 
-    private String userPrompt(String current, ConversationRetrievalContextAssembler.Context context) {
+    private String userPrompt(String current, ConversationRetrievalContextAssembler.Context context,
+                              String topicList) {
         return "当前问题：\n" + current
                 + "\n\n话题锚点：\n" + text(context.topicAnchor())
-                + "\n\n话题摘要：\n" + text(context.topicSummary())
+                + "\n\n话题列表：\n" + text(topicList)
+                + "\n\n最近话题的摘要：\n" + text(context.topicSummary())
                 + "\n\n最近原文窗口：\n" + text(context.retrievalQuestion());
     }
 
@@ -372,7 +413,7 @@ public class QueryRewriteService {
             var object = (com.fasterxml.jackson.databind.node.ObjectNode) root;
             var aliases = java.util.Map.of("s", "is_standalone", "q", "standalone_query", "k", "keyword_query",
                     "a", "alternatives", "t", "question_type", "m", "must_terms", "l", "low_level_keywords",
-                    "h", "high_level_keywords", "lang", "language");
+                    "h", "high_level_keywords", "lang", "language", "r", "topic_route");
             for (var alias : aliases.entrySet()) {
                 JsonNode compact = root.get(alias.getKey());
                 if (compact == null) continue;
@@ -404,6 +445,9 @@ public class QueryRewriteService {
             if (alternatives.size() > MAX_ALTERNATIVES) {
                 alternatives = alternatives.subList(0, MAX_ALTERNATIVES);
             }
+            // 话题编号只影响冻结哪些话题摘要，不合规时当作没有给出、交给规则判断，不让整次改写作废
+            JsonNode routeNode = root.path("topic_route");
+            String route = routeNode.isTextual() && !routeNode.asText().isBlank() ? routeNode.asText().trim() : null;
             return Parsed.ok(new Draft(
                     standalone,
                     bound(standaloneQuery, MAX_QUERY_CHARS),
@@ -413,7 +457,8 @@ public class QueryRewriteService {
                     boundTerms(mustTerms),
                     boundTerms(lowLevel),
                     boundTerms(highLevel),
-                    language
+                    language,
+                    route
             ));
         } catch (IllegalArgumentException ex) {
             return Parsed.invalid(ex.getMessage());
@@ -505,7 +550,8 @@ public class QueryRewriteService {
             List<String> mustTerms,
             List<String> lowLevelKeywords,
             List<String> highLevelKeywords,
-            String language
+            String language,
+            String route
     ) {
     }
 

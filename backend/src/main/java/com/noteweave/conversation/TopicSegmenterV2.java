@@ -27,10 +27,16 @@ import java.util.regex.Pattern;
  * <p>
  * 已经持久化的切分结果作为固定前缀传入：前缀覆盖的消息沿用原来的话题，只用来更新画像；新规则只作用于之后的消息，
  * 规则升级不会改写已有会话的话题划分。
+ * <p>
+ * 回答冻结时可以为本轮用户消息传入查询改写模型给出的话题判断（{@link TopicRoute}）。省略指代的短追问、
+ * 隔了几轮又回到旧话题这类情况，规则和向量都很难判断准，模型在改写查询时本来就要弄清问题接的是哪个话题，
+ * 所以有判断时以模型为准；没有判断或判断引用了不存在的话题时，照常按规则与向量判断。
  */
 public final class TopicSegmenterV2 {
     public static final String RULE_VERSION = "topic-segmenter-v2-a2";
     public static final String SEMANTIC_RULE_VERSION = "topic-segmenter-v2-a3";
+    /** 由查询改写模型判断话题归属时，新话题段记录的规则版本。 */
+    public static final String MODEL_ROUTE_VERSION = "topic-route-rewrite-a1";
     public static final String VECTOR_UNAVAILABLE = "TOPIC_SEGMENT_VECTOR_UNAVAILABLE";
     private static final Pattern RETURN = Pattern.compile("^(回到|再谈|接着谈|继续讨论)");
     private static final Pattern SWITCH = Pattern.compile("^(改聊|换个话题|另外聊|现在解释|现在谈)");
@@ -72,7 +78,12 @@ public final class TopicSegmenterV2 {
      * @param fixedPrefix 已经持久化的切分结果，按起始位置排序；覆盖范围内的消息沿用原话题
      */
     public Projection segment(List<Message> messages, List<Segment> fixedPrefix) {
-        return run(messages, fixedPrefix, false);
+        return run(messages, fixedPrefix, false, Map.of());
+    }
+
+    /** @param routes 按消息序号给出的模型话题判断，只对固定前缀之后的用户消息生效 */
+    public Projection segment(List<Message> messages, List<Segment> fixedPrefix, Map<Integer, TopicRoute> routes) {
+        return run(messages, fixedPrefix, false, routes);
     }
 
     /** 用消息上的向量做语义切分。非空用户消息缺少向量时退回词项路径，并记下降级原因。 */
@@ -81,14 +92,21 @@ public final class TopicSegmenterV2 {
     }
 
     public Projection segmentSemantic(List<Message> messages, List<Segment> fixedPrefix) {
-        if (vectorsMissing(messages)) {
-            Projection lexical = run(messages, fixedPrefix, false);
-            return new Projection(lexical.segments(), List.of(VECTOR_UNAVAILABLE));
-        }
-        return run(messages, fixedPrefix, true);
+        return segmentSemantic(messages, fixedPrefix, Map.of());
     }
 
-    private Projection run(List<Message> messages, List<Segment> fixedPrefix, boolean semantic) {
+    public Projection segmentSemantic(List<Message> messages, List<Segment> fixedPrefix,
+                                      Map<Integer, TopicRoute> routes) {
+        if (vectorsMissing(messages)) {
+            Projection lexical = run(messages, fixedPrefix, false, routes);
+            return new Projection(lexical.segments(), List.of(VECTOR_UNAVAILABLE));
+        }
+        return run(messages, fixedPrefix, true, routes);
+    }
+
+    private Projection run(List<Message> messages, List<Segment> fixedPrefix, boolean semantic,
+                           Map<Integer, TopicRoute> routes) {
+        Map<Integer, TopicRoute> routeBySeq = routes == null ? Map.of() : routes;
         List<Segment> segments = new ArrayList<>();
         Profiles profiles = new Profiles();
         SemanticState vectors = semantic ? new SemanticState() : null;
@@ -120,9 +138,12 @@ public final class TopicSegmenterV2 {
             if (semanticUser) {
                 vectors.noteGap(message.vector());
             }
-            Choice choice = semanticUser
-                    ? chooseSemantic(message, terms, active, profiles, vectors)
-                    : choose(message, terms, active, profiles);
+            Choice choice = routed(routeBySeq.get(message.seq()), message, active, segments);
+            if (choice == null) {
+                choice = semanticUser
+                        ? chooseSemantic(message, terms, active, profiles, vectors)
+                        : choose(message, terms, active, profiles);
+            }
             if (active != null && active.topicId().equals(choice.topicId())) {
                 segments.set(segments.size() - 1, new Segment(active.segmentId(), active.topicId(),
                         active.startSeq(), message.seq(),
@@ -132,7 +153,8 @@ public final class TopicSegmenterV2 {
                 String segmentId = "segment-" + digest(choice.topicId() + ":" + message.seq()).substring(0, 24);
                 segments.add(new Segment(segmentId, choice.topicId(), message.seq(), message.seq(),
                         choice.status(), choice.reason(),
-                        semantic ? SEMANTIC_RULE_VERSION : RULE_VERSION));
+                        choice.reason().startsWith("MODEL_") ? MODEL_ROUTE_VERSION
+                                : semantic ? SEMANTIC_RULE_VERSION : RULE_VERSION));
             }
             if (semanticUser) {
                 vectors.commit(choice.topicId(), message.vector());
@@ -164,6 +186,25 @@ public final class TopicSegmenterV2 {
             segments.add(new Segment(fixed.segmentId(), fixed.topicId(), seq, seq,
                     fixed.status(), fixed.reason(), fixed.ruleVersion()));
         }
+    }
+
+    /**
+     * 模型给出的话题判断。只作用于有正文的用户消息、且之前已经有话题；回到的话题必须在本会话里出现过，
+     * 否则返回 null，交给规则判断。
+     */
+    private Choice routed(TopicRoute route, Message message, Segment active, List<Segment> segments) {
+        if (route == null || active == null || !userContent(message)) return null;
+        return switch (route.kind()) {
+            case CONTINUE -> new Choice(active.topicId(), "MODEL_CONTINUATION", "CONFIDENT");
+            case NEW -> fresh(message, "MODEL_NEW_TOPIC", "CONFIDENT");
+            case RETURN -> {
+                if (route.topicId().equals(active.topicId())) {
+                    yield new Choice(active.topicId(), "MODEL_CONTINUATION", "CONFIDENT");
+                }
+                boolean known = segments.stream().anyMatch(segment -> segment.topicId().equals(route.topicId()));
+                yield known ? new Choice(route.topicId(), "MODEL_TOPIC_RETURN", "CONFIDENT") : null;
+            }
+        };
     }
 
     private Choice choose(Message message, Map<String, Integer> terms, Segment active, Profiles profiles) {
