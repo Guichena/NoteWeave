@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="900" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">记忆读取与效果反馈：按价值密度装入预算，效果变差就退回复核</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">记忆只决定怎么说，不提供事实；每次回答记下实际注入的记忆版本，反馈记到这些记忆上</text>
+  <rect x="40.0" y="104.0" width="250.0" height="82.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="54.0" y="128.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">生效记忆</text>
+  <text x="54.0" y="152.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">当前版本为 ACTIVE</text>
+  <text x="54.0" y="171.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">按工作台与任务邻域读取</text>
+  <rect x="314.0" y="104.0" width="280.0" height="82.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="328.0" y="128.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">读路径过滤</text>
+  <text x="328.0" y="152.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">来源未就绪或不可用的记忆排除</text>
+  <text x="328.0" y="171.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">排除原因写入编译记录</text>
+  <rect x="618.0" y="104.0" width="340.0" height="120.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="632.0" y="128.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">分类与相关度</text>
+  <text x="632.0" y="152.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">常驻：风格、结构、禁忌、交互</text>
+  <text x="632.0" y="171.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">按需：术语类，按问题相关度选入</text>
+  <text x="632.0" y="190.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">向量与 BM25 各排一次，RRF 融合</text>
+  <text x="632.0" y="209.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">相关度为 0 的按需记忆直接排除</text>
+  <rect x="982.0" y="104.0" width="378.0" height="160.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="996.0" y="128.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">价值与预算</text>
+  <text x="996.0" y="152.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">价值 = 置信度 × 效用 × 相关度 × 新近度</text>
+  <text x="996.0" y="171.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">置信度取 Beta 后验 α / (α + β)</text>
+  <text x="996.0" y="190.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">新近度按上次强化时间的半衰期衰减</text>
+  <text x="996.0" y="209.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">按价值除以篇幅从高到低装入预算</text>
+  <text x="996.0" y="228.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">装不下的记为超出预算</text>
+  <text x="996.0" y="249.0" font-size="11" font-weight="400" fill="#059669" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryCompilerService</text>
+  <path d="M290.0,145.0 L314.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M594.0,145.0 L618.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M958.0,164.0 L982.0,164.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="40.0" y="330.0" width="430.0" height="140.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="54.0" y="354.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">Redis 编译缓存</text>
+  <text x="54.0" y="378.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">键：工作台、身份指纹、包类型、请求指纹、</text>
+  <text x="54.0" y="397.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">策略版本、记忆状态指纹</text>
+  <text x="54.0" y="416.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">记忆变化后状态指纹改变，旧缓存不再命中</text>
+  <text x="54.0" y="435.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">TTL 180 秒加随机抖动</text>
+  <text x="54.0" y="456.0" font-size="11" font-weight="400" fill="#0284c7" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryCompiledPackCache</text>
+  <rect x="500.0" y="330.0" width="420.0" height="120.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="514.0" y="354.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">控制包</text>
+  <text x="514.0" y="378.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">风格、结构、术语、禁用写法</text>
+  <text x="514.0" y="397.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">证据口径、交互策略、复核清单</text>
+  <text x="514.0" y="416.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">与冻结的会话约束按归一化文本去重</text>
+  <text x="514.0" y="435.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">写入生成提示的表达控制一节</text>
+  <rect x="950.0" y="330.0" width="410.0" height="100.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="964.0" y="354.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">资料证据走另一条通道</text>
+  <text x="964.0" y="378.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">事实与引用只来自资料检索</text>
+  <text x="964.0" y="397.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">记忆不提供事实，只控制表达</text>
+  <text x="964.0" y="416.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">回答记录实际注入的记忆版本</text>
+  <path d="M1071.0,264.0 L1071.0,300.0 L770.0,300.0 L770.0,330.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="892.5" y="281.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="920.5" y="294.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">编译结果</text>
+  <path d="M470.0,400.0 L500.0,390.0" fill="none" stroke="#0284c7" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-sky)"/>
+  <rect x="445.5" y="309.0" width="79.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="485.0" y="322.0" font-size="11.5" font-weight="600" fill="#0284c7" text-anchor="middle">命中直接返回</text>
+  <rect x="24.0" y="500.0" width="1352.0" height="260.0" rx="14" fill="#fff1f2" fill-opacity="0.55" stroke="#e11d48" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="524.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">效果反馈闭环</text>
+  <rect x="44.0" y="548.0" width="300.0" height="120.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="58.0" y="572.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">反馈来源</text>
+  <text x="58.0" y="596.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">点赞、点踩</text>
+  <text x="58.0" y="615.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">重新生成</text>
+  <text x="58.0" y="634.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">下一轮追问：模型判断正负与方面</text>
+  <text x="58.0" y="653.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">产物编辑幅度</text>
+  <rect x="370.0" y="548.0" width="340.0" height="120.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="384.0" y="572.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">记到实际注入的记忆</text>
+  <text x="384.0" y="596.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">同一回答的点赞点踩以最后一次为准</text>
+  <text x="384.0" y="615.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">效用 = 0.75 × 旧值 + 0.25 × 本次</text>
+  <text x="384.0" y="634.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">新会话的正向证据累加到 Beta 后验</text>
+  <text x="384.0" y="655.0" font-size="11" font-weight="400" fill="#059669" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryOutcomePolicy</text>
+  <rect x="736.0" y="548.0" width="300.0" height="120.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="750.0" y="572.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">退回复核</text>
+  <text x="750.0" y="596.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">单次负反馈，或累计 2 次不良</text>
+  <text x="750.0" y="615.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">使用不少于 3 次且效用 ≤ 0.40</text>
+  <text x="750.0" y="634.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">或不良比例 ≥ 0.67 时标为 STALE</text>
+  <rect x="1062.0" y="548.0" width="294.0" height="120.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="1076.0" y="572.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">后台整理</text>
+  <rect x="1312.0" y="557.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="1330.0" y="571.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="1076.0" y="596.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">模型合并近似重复的记忆</text>
+  <text x="1076.0" y="615.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">长期没有强化的新记忆送回复核</text>
+  <text x="1076.0" y="634.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">模型不可用时不合并</text>
+  <text x="1076.0" y="655.0" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryConsolidationService</text>
+  <path d="M344.0,608.0 L370.0,608.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M710.0,608.0 L736.0,608.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M710.0,450.0 L710.0,520.0 L194.0,520.0 L194.0,548.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="412.0" y="501.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="440.0" y="514.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">回答注入</text>
+  <path d="M886.0,668.0 L886.0,730.0 L32.0,730.0 L32.0,145.0 L40.0,145.0" fill="none" stroke="#e11d48" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-rose)"/>
+  <rect x="437.5" y="711.0" width="125.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="500.0" y="724.0" font-size="11.5" font-weight="600" fill="#e11d48" text-anchor="middle">复核通过后才重新生效</text>
+  <rect x="40.0" y="790.0" width="1320.0" height="70.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="814.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">为什么这样设计</text>
+  <text x="54.0" y="838.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">常驻记忆每轮都带，按需记忆只在相关时带，避免把无关偏好塞进提示；编译结果按状态指纹缓存，记忆一变缓存自然失效，不需要主动清理。</text>
+</svg>

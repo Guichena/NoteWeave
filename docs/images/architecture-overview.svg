@@ -1,137 +1,93 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="1200" height="860" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
-    </marker>
-  </defs>
-  <rect width="1200" height="860" fill="#ffffff"/>
-  <text x="600" y="42" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">NoteWeave 系统架构</text>
-
-  <!-- 前端 -->
-  <rect x="360" y="66" width="480" height="84" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
-  <text x="600" y="98" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">前端工作台 · React 19 + TypeScript + Vite</text>
-  <text x="600" y="124" text-anchor="middle" font-size="13" fill="#3730a3">资料库 · 问答 / 精读 / Wiki · 深度研究 · 产物工作室 · 视频学习 · 记忆</text>
-  <line x1="600" y1="150" x2="600" y2="188" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <text x="612" y="175" font-size="12" fill="#475569">HTTPS /api · SSE 任务事件</text>
-
-  <!-- Backend -->
-  <rect x="60" y="192" width="1080" height="210" rx="14" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-  <text x="80" y="220" font-size="16" font-weight="700" fill="#065f46">Backend · Java 17 · Spring Boot 3.3 · 业务真源与协调面</text>
-  <g font-size="12">
-    <g>
-      <rect x="80" y="236" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="96" y="262" font-size="14" font-weight="700" fill="#064e3b">资料接入</text>
-      <text x="96" y="286" fill="#047857">分片上传 · 四段流水线 · 音视频转写</text>
-    </g>
-    <g>
-      <rect x="343" y="236" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="359" y="262" font-size="14" font-weight="700" fill="#064e3b">问答 QA</text>
-      <text x="359" y="286" fill="#047857">BM25 + 向量 + RRF + Rerank</text>
-    </g>
-    <g>
-      <rect x="606" y="236" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="622" y="262" font-size="14" font-weight="700" fill="#064e3b">精读 Note</text>
-      <text x="622" y="286" fill="#047857">资料级召回 · 连续原文窗口</text>
-    </g>
-    <g>
-      <rect x="869" y="236" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="885" y="262" font-size="14" font-weight="700" fill="#064e3b">Wiki 知识页</text>
-      <text x="885" y="286" fill="#047857">页面关系 · 来源回链 · 版本</text>
-    </g>
-    <g>
-      <rect x="80" y="316" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="96" y="342" font-size="14" font-weight="700" fill="#064e3b">深度研究协调</text>
-      <text x="96" y="366" fill="#047857">Table-as-State · 校验 · 检查点</text>
-    </g>
-    <g>
-      <rect x="343" y="316" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="359" y="342" font-size="14" font-weight="700" fill="#064e3b">产物宿主</text>
-      <text x="359" y="366" fill="#047857">Skill 目录 · 版本 · 文件校验</text>
-    </g>
-    <g>
-      <rect x="606" y="316" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="622" y="342" font-size="14" font-weight="700" fill="#064e3b">Context 与 Memory</text>
-      <text x="622" y="366" fill="#047857">话题窗口 · 增量摘要 · 门控晋升</text>
-    </g>
-    <g>
-      <rect x="869" y="316" width="245" height="66" rx="9" fill="#ffffff" stroke="#6ee7b7"/>
-      <text x="885" y="342" font-size="14" font-weight="700" fill="#064e3b">任务与 Outbox</text>
-      <text x="885" y="366" fill="#047857">可靠投递 · 幂等 · 失败恢复</text>
-    </g>
-  </g>
-
-  <!-- 基础设施 -->
-  <g stroke="#475569" stroke-width="1.4">
-    <line x1="156" y1="402" x2="156" y2="444"/>
-    <line x1="378" y1="402" x2="378" y2="444"/>
-    <line x1="600" y1="402" x2="600" y2="444" marker-end="url(#arrow)"/>
-    <line x1="822" y1="402" x2="822" y2="444"/>
-    <line x1="1044" y1="402" x2="1044" y2="444"/>
-  </g>
-  <g font-size="12">
-    <rect x="60" y="446" width="192" height="72" rx="10" fill="#f1f5f9" stroke="#64748b"/>
-    <text x="156" y="474" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">MySQL 8.4</text>
-    <text x="156" y="498" text-anchor="middle" fill="#475569">业务真源 · Flyway 迁移</text>
-
-    <rect x="282" y="446" width="192" height="72" rx="10" fill="#f1f5f9" stroke="#64748b"/>
-    <text x="378" y="474" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">Redis 7.2</text>
-    <text x="378" y="498" text-anchor="middle" fill="#475569">缓存 · 限流 · 租约</text>
-
-    <rect x="504" y="446" width="192" height="72" rx="10" fill="#fef9c3" stroke="#ca8a04"/>
-    <text x="600" y="474" text-anchor="middle" font-size="14" font-weight="700" fill="#713f12">Kafka</text>
-    <text x="600" y="498" text-anchor="middle" fill="#854d0e">资料四段 · 研究 · 产物 · 摘要</text>
-
-    <rect x="726" y="446" width="192" height="72" rx="10" fill="#f1f5f9" stroke="#64748b"/>
-    <text x="822" y="474" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">Elasticsearch 8.15</text>
-    <text x="822" y="498" text-anchor="middle" fill="#475569">BM25 + kNN 检索索引</text>
-
-    <rect x="948" y="446" width="192" height="72" rx="10" fill="#f1f5f9" stroke="#64748b"/>
-    <text x="1044" y="474" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">MinIO</text>
-    <text x="1044" y="498" text-anchor="middle" fill="#475569">原件 · 快照 · 产物文件</text>
-  </g>
-
-  <!-- Kafka 到 Worker -->
-  <g stroke="#ca8a04" stroke-width="1.6" fill="none">
-    <line x1="560" y1="518" x2="300" y2="578" marker-end="url(#arrow)"/>
-    <line x1="640" y1="518" x2="900" y2="578" marker-end="url(#arrow)"/>
-  </g>
-  <text x="380" y="540" font-size="12" fill="#854d0e">研究子任务（3 分区）</text>
-  <text x="742" y="540" font-size="12" fill="#854d0e">产物任务 · 视频素材采集</text>
-
-  <!-- Workers -->
-  <rect x="60" y="580" width="460" height="150" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
-  <text x="80" y="610" font-size="16" font-weight="700" fill="#7c2d12">Research Worker · Python 3.12</text>
-  <g font-size="13" fill="#9a3412">
-    <text x="80" y="638">3 个消费进程并行处理研究子任务</text>
-    <text x="80" y="662">检索 → 抽取 → 本地验证 → 受限反证 → 合成报告</text>
-    <text x="80" y="686">联网检索与网页快照归档，证据逐条可回溯</text>
-    <text x="80" y="710">执行预算、租约与心跳由 Backend 统一裁决</text>
-  </g>
-
-  <rect x="680" y="580" width="460" height="150" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
-  <text x="700" y="610" font-size="16" font-weight="700" fill="#7c2d12">Artifact Worker · Python 3.12 · FastAPI</text>
-  <g font-size="13" fill="#9a3412">
-    <text x="700" y="638">Skill Graph 生成 · 输出契约校验与修复</text>
-    <text x="700" y="662">导出 Markdown / PDF / PPTX，提交版本候选</text>
-    <text x="700" y="686">系统 MCP：B站字幕、抓帧、画面 OCR</text>
-    <text x="700" y="710">faster-whisper 转写 + 大模型逐批纠错</text>
-  </g>
-
-  <!-- 回调 -->
-  <g stroke="#475569" stroke-width="1.4" stroke-dasharray="6 5" fill="none">
-    <path d="M60,655 L32,655 L32,300 L58,300" marker-end="url(#arrow)"/>
-    <path d="M1140,655 L1168,655 L1168,300 L1142,300" marker-end="url(#arrow)"/>
-  </g>
-  <text x="22" y="560" font-size="12" fill="#475569" transform="rotate(-90 22 560)">内部 HTTP 回调（令牌 + 签名）</text>
-  <text x="1178" y="400" font-size="12" fill="#475569" transform="rotate(90 1178 400)">内部 HTTP 回调与转写请求</text>
-
-  <!-- 外部服务 -->
-  <g stroke="#475569" stroke-width="1.4">
-    <line x1="290" y1="730" x2="290" y2="770" marker-end="url(#arrow)"/>
-    <line x1="910" y1="730" x2="910" y2="770" marker-end="url(#arrow)"/>
-  </g>
-  <rect x="60" y="772" width="1080" height="64" rx="12" fill="#fdf2f8" stroke="#db2777" stroke-width="1.4"/>
-  <text x="80" y="800" font-size="14" font-weight="700" fill="#831843">外部服务</text>
-  <text x="80" y="824" font-size="13" fill="#9d174d">OpenAI 兼容大模型 · Embedding · Rerank · Serper 联网检索 · Bilibili（yt-dlp）· HuggingFace 模型</text>
-  <text x="1120" y="824" text-anchor="end" font-size="12" fill="#9d174d">Backend 与两个 Worker 各自独立配置 Provider</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 830" width="1400" height="830" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="830" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">NoteWeave 系统架构</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">Backend 是唯一的业务真源；Worker 无状态，只执行并提交候选；Redis、ES、SSE 都是可重建的投影或传输面</text>
+  <rect x="40.0" y="92.0" width="1320.0" height="64.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="700.0" y="116.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle">前端工作台 · React 19 + TypeScript + Vite</text>
+  <text x="700.0" y="140.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle">资料库、问答 / 精读 / Wiki、深度研究、产物工作室、记忆与上下文检查器；HTTPS /api 请求，SSE 接收回答流与任务事件</text>
+  <rect x="24.0" y="180.0" width="1352.0" height="254.0" rx="14" fill="#eef2ff" fill-opacity="0.55" stroke="#4f46e5" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="204.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">Backend · Java 17 · Spring Boot 3.3</text>
+  <text x="340.4" y="204.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">业务真源与协调面</text>
+  <rect x="44.0" y="220.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="58.0" y="244.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">资料接入</text>
+  <text x="58.0" y="268.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">分片上传、阶段任务</text>
+  <text x="58.0" y="287.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">撤销墓碑与异步清理</text>
+  <rect x="374.0" y="220.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="388.0" y="244.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">问答与精读</text>
+  <text x="388.0" y="268.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">BM25 + kNN + RRF + Rerank</text>
+  <text x="388.0" y="287.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">资料级召回、连续原文窗口</text>
+  <rect x="704.0" y="220.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="718.0" y="244.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">Wiki 知识库</text>
+  <text x="718.0" y="268.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">BM25F、链接传播</text>
+  <text x="718.0" y="287.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">页面关系与来源回链</text>
+  <rect x="1034.0" y="220.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="1048.0" y="244.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">深度研究协调</text>
+  <text x="1048.0" y="268.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">研究表、分层 Verifier</text>
+  <text x="1048.0" y="287.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">局部重规划、检查点</text>
+  <rect x="44.0" y="324.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="58.0" y="348.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">Context 与 Memory</text>
+  <text x="58.0" y="372.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">话题窗口、增量摘要</text>
+  <text x="58.0" y="391.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">门控晋升、控制包编译</text>
+  <rect x="374.0" y="324.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="388.0" y="348.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">流式回答</text>
+  <text x="388.0" y="372.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">回合提交、渐进改写</text>
+  <text x="388.0" y="391.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">Redis Stream、SSE 续读</text>
+  <rect x="704.0" y="324.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="718.0" y="348.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">产物宿主</text>
+  <text x="718.0" y="372.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">Skill 目录、并发准入</text>
+  <text x="718.0" y="391.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">候选验收与版本</text>
+  <rect x="1034.0" y="324.0" width="312.0" height="88.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="1048.0" y="348.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">任务与发件箱</text>
+  <text x="1048.0" y="372.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">可靠投递、幂等去重</text>
+  <text x="1048.0" y="391.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">配额、限流与租约</text>
+  <path d="M700.0,156.0 L700.0,180.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="708.3" y="169.0" width="83.4" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="750.0" y="182.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">HTTPS / SSE</text>
+  <rect x="40.0" y="458.0" width="248.0" height="86.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="482.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">MySQL 8.4</text>
+  <text x="54.0" y="506.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">业务真源、审计账本</text>
+  <text x="54.0" y="525.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">Flyway 迁移</text>
+  <rect x="308.0" y="458.0" width="248.0" height="86.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="322.0" y="482.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">Redis 7.2</text>
+  <text x="322.0" y="506.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">缓存、限流、ZSET 租约</text>
+  <text x="322.0" y="525.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">撤销墓碑、回答 Stream</text>
+  <rect x="576.0" y="458.0" width="248.0" height="86.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="590.0" y="482.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Kafka</text>
+  <text x="590.0" y="506.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">资料阶段、研究、产物</text>
+  <text x="590.0" y="525.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">摘要与记忆抽取</text>
+  <rect x="844.0" y="458.0" width="248.0" height="86.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="858.0" y="482.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">Elasticsearch 8.15</text>
+  <text x="858.0" y="506.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">BM25 + kNN 检索索引</text>
+  <text x="858.0" y="525.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">记忆向量索引</text>
+  <rect x="1112.0" y="458.0" width="248.0" height="86.0" rx="10" fill="#f0fdfa" stroke="#0d9488" stroke-width="1.4"/>
+  <text x="1126.0" y="482.0" font-size="14.5" font-weight="700" fill="#134e4a" text-anchor="start">MinIO</text>
+  <text x="1126.0" y="506.0" font-size="12.5" font-weight="400" fill="#115e59" text-anchor="start">原件、快照</text>
+  <text x="1126.0" y="525.0" font-size="12.5" font-weight="400" fill="#115e59" text-anchor="start">产物文件</text>
+  <path d="M700.0,434.0 L700.0,458.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="24.0" y="568.0" width="1352.0" height="150.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="592.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Python Worker 与 MCP 服务</text>
+  <text x="249.3" y="592.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">无状态执行面，结果以候选形式交回 Backend</text>
+  <rect x="44.0" y="608.0" width="312.0" height="88.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="58.0" y="632.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Research Worker</text>
+  <text x="58.0" y="656.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">按角色执行研究子任务</text>
+  <text x="58.0" y="675.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">检索、抓取、抽取、本地校验</text>
+  <rect x="374.0" y="608.0" width="312.0" height="88.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="388.0" y="632.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Artifact Worker</text>
+  <text x="388.0" y="656.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">取材、规划、写作、校验、渲染</text>
+  <text x="388.0" y="675.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">导出 Markdown / PPTX / PDF</text>
+  <rect x="704.0" y="608.0" width="312.0" height="88.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="718.0" y="632.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Parse Worker</text>
+  <text x="718.0" y="656.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">Docling 文档转换</text>
+  <text x="718.0" y="675.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">扫描页按需 OCR</text>
+  <rect x="1034.0" y="608.0" width="312.0" height="88.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1048.0" y="632.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">media-mcp</text>
+  <text x="1048.0" y="656.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">B 站解析、字幕、转写</text>
+  <text x="1048.0" y="675.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">抓帧、时间轴、OCR</text>
+  <path d="M700.0,544.0 L700.0,568.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="718.0" y="557.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="746.0" y="570.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">命令消息</text>
+  <rect x="40.0" y="742.0" width="1320.0" height="64.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="700.0" y="766.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle">外部服务</text>
+  <text x="700.0" y="790.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle">OpenAI 兼容大模型（聊天、研究、产物各自配置）、Embedding、Rerank、Serper 联网检索、Bilibili（yt-dlp）</text>
 </svg>

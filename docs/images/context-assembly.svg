@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 960" width="1400" height="960" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="960" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">一轮回答的上下文拼装：后台增量维护、冻结、改写与提示拼接</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">发消息接口立即返回；约束、话题和摘要在后台增量维护，本轮只读取已经落库的结果</text>
+  <rect x="24.0" y="92.0" width="1352.0" height="222.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="116.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">后台增量维护</text>
+  <text x="133.0" y="116.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">上一轮结束后异步执行，不占本轮等待时间</text>
+  <rect x="44.0" y="132.0" width="310.0" height="150.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="58.0" y="156.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">约束抽取</text>
+  <rect x="310.0" y="141.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="328.0" y="155.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">模型</text>
+  <text x="58.0" y="180.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">把用户消息抽成约束操作</text>
+  <text x="58.0" y="199.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">ConstraintOpMerger 纯函数折叠成快照</text>
+  <text x="58.0" y="218.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">失败不推进水位线，下次从该条重抽</text>
+  <text x="58.0" y="239.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ConversationConstraintProjectionV2Service</text>
+  <rect x="380.0" y="132.0" width="310.0" height="150.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="394.0" y="156.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">话题切分</text>
+  <rect x="604.9" y="141.0" width="77.1" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="643.4" y="155.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">规则 + 向量</text>
+  <text x="394.0" y="180.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">词项 IDF 覆盖度与话题向量余弦各占一半</text>
+  <text x="394.0" y="199.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">显式说法优先：回到、改聊、更正</text>
+  <text x="394.0" y="218.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">已落库的切分作为固定前缀，不回改</text>
+  <text x="394.0" y="239.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">TopicSegmenterV2</text>
+  <rect x="716.0" y="132.0" width="300.0" height="150.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="730.0" y="156.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">话题增量摘要</text>
+  <rect x="962.1" y="141.0" width="45.9" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="985.0" y="155.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">Kafka</text>
+  <text x="730.0" y="180.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">原文尾部之前的部分写入发件箱</text>
+  <text x="730.0" y="199.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">在上一版摘要上只读新增消息</text>
+  <text x="730.0" y="218.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">每版不可变，失败退回抽取式摘要</text>
+  <text x="730.0" y="239.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ConversationTopicSummaryV2Service</text>
+  <rect x="1042.0" y="132.0" width="314.0" height="150.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1056.0" y="156.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">边界复核</text>
+  <rect x="1312.0" y="141.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#d97706" stroke-width="1"/>
+  <text x="1330.0" y="155.0" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">模型</text>
+  <text x="1056.0" y="180.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">只处理切分时标为不确定的边界</text>
+  <text x="1056.0" y="199.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">后台每 30 秒批量交给模型</text>
+  <text x="1056.0" y="218.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">模型不可用时保持不确定</text>
+  <text x="1056.0" y="239.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">TopicBoundaryReviewService</text>
+  <path d="M690.0,207.0 L716.0,207.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="680.8" y="188.0" width="44.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="703.0" y="201.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">话题段</text>
+  <path d="M615.0,132.0 L615.0,120.0 L1199.0,120.0 L1199.0,132.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="840.5" y="111.0" width="79.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="880.0" y="124.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">不确定的边界</text>
+  <rect x="24.0" y="330.0" width="1352.0" height="316.0" rx="14" fill="#eef2ff" fill-opacity="0.55" stroke="#4f46e5" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="354.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">本轮准备</text>
+  <text x="104.0" y="354.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">后台执行，进度经 SSE 推送</text>
+  <rect x="44.0" y="372.0" width="200.0" height="120.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="58.0" y="396.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">冻结截止点</text>
+  <text x="58.0" y="420.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">以本条用户消息序号为界</text>
+  <text x="58.0" y="439.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">先等上一轮约束抽取完成</text>
+  <text x="58.0" y="458.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">之后的消息不进入本轮</text>
+  <rect x="266.0" y="372.0" width="340.0" height="170.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="280.0" y="396.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">窗口规划</text>
+  <text x="280.0" y="420.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">原文尾部：最近 2～8 条，按 token 收缩</text>
+  <text x="280.0" y="439.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">当前话题摘要：只覆盖原文之前的部分</text>
+  <text x="280.0" y="458.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">生效约束：按作用域与有效区间过滤</text>
+  <text x="280.0" y="477.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">已批准记忆的版本引用</text>
+  <text x="280.0" y="496.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">每项入选或排除都记下原因</text>
+  <text x="280.0" y="517.0" font-size="11" font-weight="400" fill="#4f46e5" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ContextWindowPlannerV2</text>
+  <rect x="628.0" y="372.0" width="236.0" height="120.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="642.0" y="396.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">冻结快照</text>
+  <text x="642.0" y="420.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">规划结果先写入 MySQL</text>
+  <text x="642.0" y="439.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">重试与重新生成用同一快照</text>
+  <text x="642.0" y="458.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">V2 冻结失败退回前缀摘要</text>
+  <text x="642.0" y="479.0" font-size="11" font-weight="400" fill="#4f46e5" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">RunInputSnapshotService</text>
+  <rect x="886.0" y="372.0" width="220.0" height="120.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="900.0" y="396.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">渐进改写</text>
+  <rect x="1062.0" y="381.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="1080.0" y="395.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="900.0" y="420.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">话题摘要 + 最近原文</text>
+  <text x="900.0" y="439.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">改写成可独立检索的查询</text>
+  <text x="900.0" y="458.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">主字段先出即开始检索</text>
+  <text x="900.0" y="479.0" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">QueryRewriteService</text>
+  <rect x="1128.0" y="372.0" width="228.0" height="120.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="1142.0" y="396.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">检索与证据</text>
+  <text x="1142.0" y="420.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">QA、Note、Wiki 三条链路</text>
+  <text x="1142.0" y="439.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">撤销过滤与 MySQL 复核</text>
+  <text x="1142.0" y="458.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">详见模块二</text>
+  <rect x="886.0" y="520.0" width="220.0" height="102.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="900.0" y="544.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">记忆控制包</text>
+  <text x="900.0" y="568.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">按独立查询编译</text>
+  <text x="900.0" y="587.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">Redis 按版本缓存</text>
+  <text x="900.0" y="608.0" font-size="11" font-weight="400" fill="#059669" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">MemoryCompilerService</text>
+  <path d="M244.0,412.0 L266.0,412.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M606.0,412.0 L628.0,412.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M864.0,412.0 L886.0,412.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1106.0,412.0 L1128.0,412.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M996.0,492.0 L996.0,520.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M199.0,282.0 L199.0,322.0 L330.0,322.0 L330.0,372.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="237.0" y="313.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="265.0" y="326.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">生效约束</text>
+  <path d="M535.0,282.0 L535.0,372.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="512.8" y="325.0" width="44.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="535.0" y="338.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">话题段</text>
+  <path d="M866.0,282.0 L866.0,322.0 L580.0,322.0 L580.0,372.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="683.5" y="313.0" width="73.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="720.0" y="326.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">READY 摘要</text>
+  <rect x="24.0" y="666.0" width="1352.0" height="276.0" rx="14" fill="#f8fafc" fill-opacity="0.55" stroke="#64748b" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="690.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">生成提示拼装</text>
+  <text x="133.0" y="690.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">按实际拼装顺序从前到后</text>
+  <rect x="44.0" y="716.0" width="140.0" height="146.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="58.0" y="740.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">公共规则</text>
+  <text x="58.0" y="764.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">回答规范</text>
+  <text x="58.0" y="783.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">引用格式</text>
+  <rect x="188.0" y="716.0" width="190.0" height="146.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="202.0" y="740.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">模式规则</text>
+  <text x="202.0" y="764.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">问答 / 精读 / Wiki</text>
+  <text x="202.0" y="783.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">按问题追加条件规则</text>
+  <text x="202.0" y="802.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">内部检索边界</text>
+  <rect x="382.0" y="716.0" width="240.0" height="146.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="396.0" y="740.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">最近对话上下文</text>
+  <text x="396.0" y="764.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">当前话题摘要</text>
+  <text x="396.0" y="783.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">当前有效的用户约束</text>
+  <text x="396.0" y="802.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">连续的原文尾部</text>
+  <rect x="626.0" y="716.0" width="170.0" height="146.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="640.0" y="740.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">资料片段</text>
+  <text x="640.0" y="764.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">[1] … [n] 编号</text>
+  <text x="640.0" y="783.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">与引用卡片对应</text>
+  <rect x="800.0" y="716.0" width="240.0" height="146.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="814.0" y="740.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">表达控制</text>
+  <text x="814.0" y="764.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">记忆控制包</text>
+  <text x="814.0" y="783.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">冻结约束（同义去重）</text>
+  <text x="814.0" y="802.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">偏好参数与会话要求</text>
+  <rect x="1044.0" y="716.0" width="110.0" height="146.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="1058.0" y="740.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">当前问题</text>
+  <text x="1058.0" y="764.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">用户消息</text>
+  <rect x="1186.0" y="716.0" width="170.0" height="146.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="1200.0" y="740.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">模型流式生成</text>
+  <text x="1200.0" y="764.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">token 写入 Redis</text>
+  <text x="1200.0" y="783.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">Stream，经 SSE</text>
+  <text x="1200.0" y="802.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">推送到浏览器</text>
+  <path d="M1154.0,789.0 L1186.0,789.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M746.0,492.0 L746.0,690.0 L502.0,690.0 L502.0,716.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="572.0" y="671.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="600.0" y="684.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">冻结快照</text>
+  <path d="M996.0,622.0 L996.0,716.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="973.8" y="671.0" width="44.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="996.0" y="684.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">控制包</text>
+  <path d="M1242.0,492.0 L1242.0,506.0 L1366.0,506.0 L1366.0,884.0 L711.0,884.0 L711.0,862.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="972.0" y="865.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="1000.0" y="878.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">本轮证据</text>
+  <text x="44.0" y="924.0" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start">事实只来自资料片段；话题摘要、约束和记忆只用于理解追问和决定表达方式。每项的入选与排除原因写入冻结快照，可在上下文检查器中查看。</text>
+</svg>
