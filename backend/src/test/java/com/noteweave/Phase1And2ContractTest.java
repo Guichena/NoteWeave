@@ -394,10 +394,11 @@ class Phase1And2ContractTest {
         assertThat(retrievalSummary.path("execution_trace").path("selected_evidence").toString())
                 .doesNotContain("excerpt");
 
+        // 首次订阅可能仍在生成，初始事件始终为 run.snapshot；终态正文回放在下方单独验证。
         ChatStreamTestSupport.performAnswerRun(mockMvc, workspaceId, answerRunId)
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:answer.snapshot")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event:run.snapshot")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("phase2.md")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("Deep Research"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event:citation.upsert")))
