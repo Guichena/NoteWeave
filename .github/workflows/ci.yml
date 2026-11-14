@@ -90,7 +90,22 @@ jobs:
           cache: pip
       # PDF 讲义的便携渲染需要中文字体；XeLaTeX 不在 CI 安装，测试走便携渲染路径。
       - name: Install CJK font for PDF rendering
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-arphic-gbsn00lp
+        shell: bash
+        run: |
+          # 只为字体安装使用官方源，避免运行器的 Azure 镜像 DNS 故障阻断测试。
+          font_sources="$(mktemp)"
+          trap 'rm -f "$font_sources"' EXIT
+          . /etc/os-release
+          printf 'deb [signed-by=/usr/share/keyrings/ubuntu-archive-keyring.gpg] https://archive.ubuntu.com/ubuntu %s main universe\n' "$VERSION_CODENAME" > "$font_sources"
+          apt_options=(
+            -o "Dir::Etc::sourcelist=$font_sources"
+            -o "Dir::Etc::sourceparts=-"
+            -o "Acquire::Retries=3"
+            -o "Acquire::http::Timeout=20"
+            -o "Acquire::https::Timeout=20"
+          )
+          sudo apt-get "${apt_options[@]}" -o APT::Update::Error-Mode=any update
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends fonts-arphic-gbsn00lp
       - name: Install test dependencies without optional transcription runtime
         run: |
           python -m pip install -e . --no-deps

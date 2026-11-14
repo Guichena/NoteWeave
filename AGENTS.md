@@ -6,6 +6,11 @@
 * 代码、命令、变量名、技术术语保持英文原文，不要翻译。
 * 代码注释默认用简体中文。
 
+## Git 提交身份
+
+* 本仓库维护者的提交身份使用 `Guichena <102907545+Guichena@users.noreply.github.com>`，提交前检查有效的 `user.name` 和 `user.email`。
+* 不要将维护者邮箱写成 `guichen@users.noreply.github.com`，该地址会将提交关联到另一个 GitHub 账号。
+
 ## 输出风格
 
 * 覆盖范围：问答、代码注释、文档编写等任务。
