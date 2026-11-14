@@ -1,11 +1,15 @@
 package com.noteweave.conversation;
 
+import com.noteweave.common.RequestContext;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -25,6 +29,17 @@ class ActualUsageRecorderTest {
             new ActualUsage("glm-5", 90L, 30L, true, ActualUsage.Completeness.PARTIAL);
     private static final ActualUsage UNKNOWN =
             ActualUsage.unreported("glm-5", ActualUsage.Completeness.UNKNOWN);
+
+    @BeforeEach
+    void clearRequestContextBeforeTest() {
+        // 整套测试复用线程，不能把前一个测试的工作区当成本用例的请求上下文。
+        MDC.clear();
+    }
+
+    @AfterEach
+    void clearRequestContextAfterTest() {
+        MDC.clear();
+    }
 
     @Test
     void duplicateCompleteIsIgnored() {
@@ -88,6 +103,26 @@ class ActualUsageRecorderTest {
     }
 
     @Test
+    void missingWorkspaceUsesCurrentRequestContext() {
+        CountingStore store = new CountingStore();
+        ActualUsageRecorder recorder = new ActualUsageRecorder(null, store);
+        MDC.put(RequestContext.WORKSPACE_ID, "ws-from-context");
+
+        org.junit.jupiter.api.Assertions.assertTrue(recorder.record("attempt-1", null, COMPLETE));
+        org.junit.jupiter.api.Assertions.assertEquals("ws-from-context", store.workspaces.get("attempt-1"));
+    }
+
+    @Test
+    void explicitWorkspaceTakesPrecedenceOverRequestContext() {
+        CountingStore store = new CountingStore();
+        ActualUsageRecorder recorder = new ActualUsageRecorder(null, store);
+        MDC.put(RequestContext.WORKSPACE_ID, "ws-from-context");
+
+        org.junit.jupiter.api.Assertions.assertTrue(recorder.record("attempt-1", "ws-explicit", COMPLETE));
+        org.junit.jupiter.api.Assertions.assertEquals("ws-explicit", store.workspaces.get("attempt-1"));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void inMemoryFallbackDedupesWithoutClearingAll() {
         ObjectProvider<ActualUsageStore> provider = mock(ObjectProvider.class);
@@ -106,6 +141,7 @@ class ActualUsageRecorderTest {
     /** 简单计数存储桩：模拟 B 侧 JDBC 实现的幂等与升级语义。 */
     private static final class CountingStore implements ActualUsageStore {
         final Map<String, ActualUsage> saved = new HashMap<>();
+        final Map<String, String> workspaces = new HashMap<>();
         final AtomicInteger inserts = new AtomicInteger();
         final AtomicInteger upgrades = new AtomicInteger();
 
@@ -116,6 +152,7 @@ class ActualUsageRecorderTest {
                 return false;
             }
             saved.put(attemptId, usage);
+            workspaces.put(attemptId, workspaceId);
             inserts.incrementAndGet();
             return true;
         }
