@@ -43,6 +43,28 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
         this.embeddingVersions = embeddingVersions;
     }
 
+    /** 撤销墓碑：ES 删除完成之前，已撤销资料在查询里直接排除，不占召回名额。 */
+    private com.noteweave.retrieval.RevokedSourceFilter revokedSources =
+            com.noteweave.retrieval.RevokedSourceFilter.NONE;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setRevokedSources(com.noteweave.retrieval.RevokedSourceFilter revokedSources) {
+        this.revokedSources = revokedSources == null ? com.noteweave.retrieval.RevokedSourceFilter.NONE : revokedSources;
+    }
+
+    private void excludeRevoked(BoolQuery.Builder bool, String workspaceId) {
+        Set<String> revoked = revokedSources.revokedSourceIds(workspaceId);
+        if (revoked == null || revoked.isEmpty()) {
+            return;
+        }
+        bool.mustNot(mustNot -> mustNot.terms(terms -> terms
+                .field("source_id")
+                .terms(values -> values.value(revoked.stream()
+                        .sorted()
+                        .map(co.elastic.clients.elasticsearch._types.FieldValue::of)
+                        .toList()))));
+    }
+
     @Override
     public List<QaSearchHit> vectorRetrieve(QaVectorQuery query) {
         if (query.topK() <= 0 || query.queryEmbedding().isEmpty()) {
@@ -134,6 +156,7 @@ public class ElasticsearchQaHybridSearchAdapter implements QaHybridSearchPort {
                             .map(co.elastic.clients.elasticsearch._types.FieldValue::of)
                             .toList()))));
         }
+        excludeRevoked(bool, workspaceId);
         return Query.of(query -> query.bool(bool.build()));
     }
 

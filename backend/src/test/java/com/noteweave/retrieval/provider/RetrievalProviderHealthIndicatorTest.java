@@ -10,6 +10,21 @@ import org.springframework.boot.actuate.health.Status;
 class RetrievalProviderHealthIndicatorTest {
 
     @Test
+    void probeExplicitlyBypassesQueryReuse() {
+        EmbeddingClient client = new EmbeddingClient() {
+            public boolean isEnabled() { return true; }
+            public EmbeddingResult embedQuery(String text) {
+                throw new AssertionError("健康检查不得读取普通查询缓存");
+            }
+            public EmbeddingResult embedQueryFresh(String text) {
+                return new EmbeddingResult(List.of(List.of(1.0f)), "embedding", 1, 7);
+            }
+            public EmbeddingResult embedDocuments(List<String> texts) { throw new UnsupportedOperationException(); }
+        };
+        assertThat(new RetrievalProviderHealthIndicator(client, rerank(true)).health().getStatus()).isEqualTo(Status.UP);
+    }
+
+    @Test
     void isReadyWhenPrimaryProvidersAreHealthy() {
         RetrievalProviderHealthIndicator healthy = new RetrievalProviderHealthIndicator(
                 embedding(true), rerank(true));

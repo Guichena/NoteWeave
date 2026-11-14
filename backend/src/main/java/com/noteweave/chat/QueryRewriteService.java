@@ -39,8 +39,30 @@ public class QueryRewriteService {
             6. question_type 只能是 comparison、summary、source_lookup、reasoning、definition 之一。
             7. must_terms 是需要加重的专名或标识符。low_level_keywords 是具体实体，high_level_keywords 是主题词。
             8. language 只能是 zh 或 en。
-            字段：is_standalone, standalone_query, keyword_query, alternatives, question_type, must_terms, low_level_keywords, high_level_keywords, language。
+            9. topic_route 判断当前问题接的是哪个话题。话题按讨论对象划分：同一个项目、资料、产品、技术或事件的
+               不同方面（负责人、预算、时间、风险、方案、细节）都算同一个话题，只有讨论对象换了才算新话题。
+               话题列表按最近活跃排序，T1 是最近在聊的话题；列表里的标题可能只是那个话题的第一个问题，要按讨论对象理解。
+               当前问题讨论的对象与 T1 相同时输出 "T1"；与列表里较早的某个话题相同时输出那个话题的编号；
+               对象与列表里的话题都不同时才输出 "n"。追问常省略主语，也可能隔了几轮才回到旧话题，
+               要结合话题列表和最近原文判断指代对象；回到较早的话题时，standalone_query 与 keyword_query 要补上那个话题的主题。
+               话题列表为空时输出 "n"。
+            10. needs_detail 判断当前问题是否要用到之前对话里的具体原话或细节：引用之前给出的数字、清单里的第几项、
+               原来的说法、步骤或代码时为 true；只是接着话题继续问、不依赖原话时为 false。
+            使用短字段名输出，含义和上述规则完全相同：r=topic_route, d=needs_detail, s=is_standalone, q=standalone_query,
+            k=keyword_query, t=question_type, m=must_terms, l=low_level_keywords, h=high_level_keywords,
+            lang=language, a=alternatives。
+            按 r、d、s、q、k、t、m、l、h、lang、a 的顺序输出，r 和 d 放在最前，a 放在最后。
+            输出紧凑 JSON，不缩减查询或遗漏指代、否定、比较对象与版本等限定。
             """;
+    /** 流式输出最前面的话题编号；读到它就可以冻结上下文，不必等整个改写完成。 */
+    private static final java.util.regex.Pattern ROUTE_KEY =
+            java.util.regex.Pattern.compile("\"(?:r|topic_route)\"\\s*:\\s*\"([^\"]{1,16})\"");
+    /** 紧跟在话题编号后面的细节标记。 */
+    private static final java.util.regex.Pattern DETAIL_KEY =
+            java.util.regex.Pattern.compile("\"(?:d|needs_detail)\"\\s*:\\s*(true|false)");
+    /** 流式输出里 alternatives 键的开始位置；它之前的字段已经足够发起检索。 */
+    private static final java.util.regex.Pattern ALTERNATIVES_KEY =
+            java.util.regex.Pattern.compile(",\\s*\"(?:a|alternatives)\"\\s*:");
 
     private final ChatLlmClient llmClient;
     private final ObjectMapper objectMapper;
@@ -114,21 +136,263 @@ public class QueryRewriteService {
         }
         if (skipStandalone && looksStandalone(current)) {
             // 与首轮相同：检索直接用原句，省掉一次模型调用（实测约 2.5 秒）
-            QueryRewrite standalone = firstTurn(current);
-            return new QueryRewrite(standalone.standalone(), standalone.standaloneQuery(),
-                    standalone.keywordQuery(), standalone.alternatives(), standalone.questionType(),
-                    standalone.mustTerms(), standalone.lowLevelKeywords(), standalone.highLevelKeywords(),
-                    standalone.language(), "RULE_STANDALONE", List.of());
+            return standaloneRule(current);
         }
         if (llmClient == null || !llmClient.isEnabled()) {
             return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_UNAVAILABLE"));
         }
-        String prompt = userPrompt(current, context);
+        return llmRewrite(current, context, "", null, null).rewrite();
+    }
+
+    /** 本轮是否会调用模型改写；只有这种情况才值得边输出边发起检索。 */
+    boolean usesModel(ConversationRetrievalContextAssembler.Context context) {
+        String current = context.currentQuestion() == null ? "" : context.currentQuestion().trim();
+        return context.contextApplied() && enabled
+                && !(skipStandalone && looksStandalone(current))
+                && llmClient != null && llmClient.isEnabled();
+    }
+
+    /**
+     * 渐进改写：模型输出到 alternatives 之前的字段都已完整时，先交出不含 alternatives 的结果供检索；
+     * 完整结果在后台继续生成。调用方检索结束后用 {@link ProgressiveRewrite#awaitComplete()} 取完整结果，
+     * 两者除 alternatives 外不一致、或召回不足需要 alternatives 时，必须用完整结果重新检索。
+     * 线程池为空、被拒绝或本轮不调用模型时退回同步改写，结果与 {@link #rewrite} 完全相同。
+     */
+    public ProgressiveRewrite rewriteProgressive(
+            ConversationRetrievalContextAssembler.Context context,
+            java.util.concurrent.Executor executor
+    ) {
+        return rewriteProgressive(context, "", executor);
+    }
+
+    /**
+     * @param topicList 本会话已有话题的列表（见 ConversationTopicRoutingService），模型据此给出 topic_route；
+     *                  为空时模型照常改写，话题判断留给规则
+     */
+    public ProgressiveRewrite rewriteProgressive(
+            ConversationRetrievalContextAssembler.Context context,
+            String topicList,
+            java.util.concurrent.Executor executor
+    ) {
+        String topics = topicList == null ? "" : topicList;
+        String current = context.currentQuestion() == null ? "" : context.currentQuestion().trim();
+        // 需要话题判断时，看起来可以独立检索的问题也调用模型：检索直接用原句先行，
+        // 模型只用来给出话题编号；规则判断可独立检索有误时，完整结果会触发按改写重新检索
+        boolean routing = !topics.isBlank() && context.contextApplied() && enabled
+                && llmClient != null && llmClient.isEnabled();
+        boolean standaloneShortcut = routing && skipStandalone && looksStandalone(current);
+        if (!routing && !usesModel(context)) {
+            return ProgressiveRewrite.complete(new Outcome(rewrite(context), null));
+        }
+        if (executor == null) {
+            return ProgressiveRewrite.complete(llmRewrite(current, context, topics, null, null));
+        }
+        java.util.concurrent.CompletableFuture<Outcome> early = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<RouteSignal> route = new java.util.concurrent.CompletableFuture<>();
+        if (standaloneShortcut) {
+            early.complete(new Outcome(standaloneRule(current), null));
+        }
+        java.util.concurrent.CompletableFuture<Outcome> full;
         try {
-            String first = llmClient.streamChat(SYSTEM_PROMPT, prompt, OUTPUT_TOKENS, token -> { });
+            full = java.util.concurrent.CompletableFuture.supplyAsync(
+                    () -> llmRewrite(current, context, topics,
+                            standaloneShortcut ? null
+                                    : draft -> early.complete(new Outcome(accept(current, draft), draft.route(),
+                                    draft.detail())),
+                            route::complete), executor);
+        } catch (java.util.concurrent.RejectedExecutionException ex) {
+            return ProgressiveRewrite.complete(llmRewrite(current, context, topics, null, null));
+        }
+        full.whenComplete((outcome, failure) -> route.complete(outcome == null ? null
+                : new RouteSignal(outcome.route(), outcome.detail())));
+        return new ProgressiveRewrite(early, full, route, () -> new Outcome(rule(current, context.topicAnchor(),
+                List.of("QUERY_REWRITE_LLM_CALL_FAILED")), null));
+    }
+
+    private QueryRewrite standaloneRule(String current) {
+        QueryRewrite standalone = firstTurn(current);
+        return new QueryRewrite(standalone.standalone(), standalone.standaloneQuery(),
+                standalone.keywordQuery(), standalone.alternatives(), standalone.questionType(),
+                standalone.mustTerms(), standalone.lowLevelKeywords(), standalone.highLevelKeywords(),
+                standalone.language(), "RULE_STANDALONE", List.of());
+    }
+
+    /** 一次改写的结果，以及模型给出的话题编号（没有时为 null）和是否需要早先的原文细节。 */
+    record Outcome(QueryRewrite rewrite, String route, boolean detail) {
+        Outcome(QueryRewrite rewrite, String route) {
+            this(rewrite, route, false);
+        }
+    }
+
+    /** 冻结上下文需要的两项：话题编号（可能为 null）与是否需要回放早先原文。 */
+    public record RouteSignal(String route, boolean detail) {
+    }
+
+    /** 两次改写除 alternatives 外是否完全相同；相同则早先发起的检索与完整结果的检索输入一致。 */
+    public static boolean sameExceptAlternatives(QueryRewrite left, QueryRewrite right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return left.standalone() == right.standalone()
+                && java.util.Objects.equals(left.standaloneQuery(), right.standaloneQuery())
+                && java.util.Objects.equals(left.keywordQuery(), right.keywordQuery())
+                && java.util.Objects.equals(left.questionType(), right.questionType())
+                && java.util.Objects.equals(left.mustTerms(), right.mustTerms())
+                && java.util.Objects.equals(left.lowLevelKeywords(), right.lowLevelKeywords())
+                && java.util.Objects.equals(left.highLevelKeywords(), right.highLevelKeywords())
+                && java.util.Objects.equals(left.language(), right.language())
+                && java.util.Objects.equals(left.method(), right.method())
+                && java.util.Objects.equals(left.degradationReasons(), right.degradationReasons());
+    }
+
+    /** 渐进改写的两个阶段。 */
+    public static final class ProgressiveRewrite {
+        private final java.util.concurrent.CompletableFuture<Outcome> early;
+        private final java.util.concurrent.CompletableFuture<Outcome> full;
+        private final java.util.concurrent.CompletableFuture<RouteSignal> route;
+        private final java.util.function.Supplier<Outcome> failure;
+        private Outcome dispatched;
+
+        private ProgressiveRewrite(
+                java.util.concurrent.CompletableFuture<Outcome> early,
+                java.util.concurrent.CompletableFuture<Outcome> full,
+                java.util.concurrent.CompletableFuture<RouteSignal> route,
+                java.util.function.Supplier<Outcome> failure
+        ) {
+            this.early = early;
+            this.full = full;
+            this.route = route;
+            this.failure = failure;
+        }
+
+        static ProgressiveRewrite complete(QueryRewrite rewrite) {
+            return complete(new Outcome(rewrite, null));
+        }
+
+        static ProgressiveRewrite complete(Outcome outcome) {
+            var done = java.util.concurrent.CompletableFuture.completedFuture(outcome);
+            return new ProgressiveRewrite(done, done,
+                    java.util.concurrent.CompletableFuture.completedFuture(
+                            new RouteSignal(outcome.route(), outcome.detail())), () -> outcome);
+        }
+
+        /**
+         * 等到模型给出话题编号：它在输出的最前面，通常在模型开始输出后立刻就能读到；
+         * 模型没有给出时等完整结果结束，返回 null。
+         */
+        public String awaitRoute() {
+            RouteSignal signal = awaitRouteSignal();
+            return signal == null ? null : signal.route();
+        }
+
+        /** 与 {@link #awaitRoute()} 相同，同时给出是否需要回放早先原文。 */
+        public RouteSignal awaitRouteSignal() {
+            try {
+                return route.get();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return null;
+            } catch (java.util.concurrent.ExecutionException ex) {
+                return null;
+            }
+        }
+
+        /** 等到可以发起检索：早先结果或完整结果，谁先到用谁。重复调用返回第一次的结果。 */
+        public synchronized QueryRewrite awaitDispatchable() {
+            if (dispatched != null) {
+                return dispatched.rewrite();
+            }
+            try {
+                Object first = java.util.concurrent.CompletableFuture.anyOf(early, full).get();
+                dispatched = (Outcome) first;
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                dispatched = failure.get();
+            } catch (java.util.concurrent.ExecutionException ex) {
+                dispatched = failure.get();
+            }
+            return dispatched.rewrite();
+        }
+
+        /** 交给检索的那份结果里模型给出的话题编号；模型没有给出或没有调用模型时为 null。 */
+        public synchronized String dispatchedRoute() {
+            return dispatched == null ? null : dispatched.route();
+        }
+
+        /** 交给检索的是不是不含 alternatives 的早先结果。 */
+        public synchronized boolean dispatchedPartial() {
+            return early != full && dispatched != null && early.isDone() && early.getNow(null) == dispatched;
+        }
+
+        /** 完整改写结果；后台失败时退回规则改写。 */
+        public QueryRewrite awaitComplete() {
+            try {
+                return full.get().rewrite();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return failure.get().rewrite();
+            } catch (java.util.concurrent.ExecutionException ex) {
+                return failure.get().rewrite();
+            }
+        }
+    }
+
+    private Outcome llmRewrite(
+            String current,
+            ConversationRetrievalContextAssembler.Context context,
+            String topicList,
+            java.util.function.Consumer<Draft> onEarlyDraft,
+            java.util.function.Consumer<RouteSignal> onRoute
+    ) {
+        String prompt = userPrompt(current, context, topicList);
+        try {
+            StringBuilder streamed = new StringBuilder();
+            boolean[] earlyTried = {onEarlyDraft == null};
+            boolean[] routeTried = {onRoute == null};
+            String first = llmClient.streamChat(SYSTEM_PROMPT, prompt, OUTPUT_TOKENS, token -> {
+                if ((earlyTried[0] && routeTried[0]) || token == null) {
+                    return;
+                }
+                streamed.append(token);
+                if (!routeTried[0]) {
+                    java.util.regex.Matcher routeMatch = ROUTE_KEY.matcher(streamed);
+                    if (routeMatch.find()) {
+                        java.util.regex.Matcher detailMatch = DETAIL_KEY.matcher(streamed);
+                        if (detailMatch.find()) {
+                            routeTried[0] = true;
+                            onRoute.accept(new RouteSignal(routeMatch.group(1).trim(),
+                                    Boolean.parseBoolean(detailMatch.group(1))));
+                        } else if (streamed.length() > routeMatch.end() + 40) {
+                            // 编号之后没有紧跟细节标记：按不需要细节处理，不再等
+                            routeTried[0] = true;
+                            onRoute.accept(new RouteSignal(routeMatch.group(1).trim(), false));
+                        }
+                    } else if (streamed.length() > 80) {
+                        // 前 80 个字符里没有话题编号，说明模型没按顺序输出，等完整结果
+                        routeTried[0] = true;
+                    }
+                }
+                if (earlyTried[0]) {
+                    return;
+                }
+                java.util.regex.Matcher marker = ALTERNATIVES_KEY.matcher(streamed);
+                if (!marker.find()) {
+                    return;
+                }
+                // alternatives 之前的字段已经完整：补上右括号按同一套规则校验，通过才提前交出
+                earlyTried[0] = true;
+                Parsed prefix = parse(streamed.substring(0, marker.start()) + "}");
+                if (prefix.draft() != null && prefix.draft().alternatives().isEmpty()) {
+                    try {
+                        onEarlyDraft.accept(prefix.draft());
+                    } catch (RuntimeException ex) {
+                        log.debug("提前交出改写结果失败：{}", ex.getMessage());
+                    }
+                }
+            });
             Parsed parsed = parse(first);
             if (parsed.draft() != null) {
-                return accept(current, parsed.draft());
+                return new Outcome(accept(current, parsed.draft()), parsed.draft().route(), parsed.draft().detail());
             }
             String retryPrompt = prompt
                     + "\n\n上一次输出没有通过结构校验：" + parsed.error()
@@ -136,12 +400,12 @@ public class QueryRewriteService {
             String second = llmClient.streamChat(SYSTEM_PROMPT, retryPrompt, OUTPUT_TOKENS, token -> { });
             parsed = parse(second);
             if (parsed.draft() != null) {
-                return accept(current, parsed.draft());
+                return new Outcome(accept(current, parsed.draft()), parsed.draft().route(), parsed.draft().detail());
             }
-            return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_OUTPUT_INVALID"));
+            return new Outcome(rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_OUTPUT_INVALID")), null);
         } catch (RuntimeException ex) {
             log.warn("查询改写调用失败，退回规则：{}", ex.getMessage());
-            return rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_CALL_FAILED"));
+            return new Outcome(rule(current, context.topicAnchor(), List.of("QUERY_REWRITE_LLM_CALL_FAILED")), null);
         }
     }
 
@@ -207,10 +471,12 @@ public class QueryRewriteService {
         );
     }
 
-    private String userPrompt(String current, ConversationRetrievalContextAssembler.Context context) {
+    private String userPrompt(String current, ConversationRetrievalContextAssembler.Context context,
+                              String topicList) {
         return "当前问题：\n" + current
                 + "\n\n话题锚点：\n" + text(context.topicAnchor())
-                + "\n\n话题摘要：\n" + text(context.topicSummary())
+                + "\n\n话题列表：\n" + text(topicList)
+                + "\n\n最近话题的摘要：\n" + text(context.topicSummary())
                 + "\n\n最近原文窗口：\n" + text(context.retrievalQuestion());
     }
 
@@ -227,6 +493,19 @@ public class QueryRewriteService {
             JsonNode root = objectMapper.readTree(output.substring(start, end + 1));
             if (!root.isObject()) {
                 return Parsed.invalid("根节点不是 JSON 对象");
+            }
+            // 紧凑输出减少模型生成的结构字符；下游契约与旧字段保持兼容。
+            var object = (com.fasterxml.jackson.databind.node.ObjectNode) root;
+            var aliases = java.util.Map.of("s", "is_standalone", "q", "standalone_query", "k", "keyword_query",
+                    "a", "alternatives", "t", "question_type", "m", "must_terms", "l", "low_level_keywords",
+                    "h", "high_level_keywords", "lang", "language", "r", "topic_route");
+            JsonNode detailNode = root.has("d") ? root.get("d") : root.path("needs_detail");
+            for (var alias : aliases.entrySet()) {
+                JsonNode compact = root.get(alias.getKey());
+                if (compact == null) continue;
+                JsonNode legacy = root.get(alias.getValue());
+                if (legacy != null && !legacy.equals(compact)) return Parsed.invalid("长短字段值冲突");
+                object.set(alias.getValue(), compact);
             }
             if (!root.path("is_standalone").isBoolean()) {
                 return Parsed.invalid("is_standalone 必须是布尔值");
@@ -252,6 +531,9 @@ public class QueryRewriteService {
             if (alternatives.size() > MAX_ALTERNATIVES) {
                 alternatives = alternatives.subList(0, MAX_ALTERNATIVES);
             }
+            // 话题编号只影响冻结哪些话题摘要，不合规时当作没有给出、交给规则判断，不让整次改写作废
+            JsonNode routeNode = root.path("topic_route");
+            String route = routeNode.isTextual() && !routeNode.asText().isBlank() ? routeNode.asText().trim() : null;
             return Parsed.ok(new Draft(
                     standalone,
                     bound(standaloneQuery, MAX_QUERY_CHARS),
@@ -261,7 +543,9 @@ public class QueryRewriteService {
                     boundTerms(mustTerms),
                     boundTerms(lowLevel),
                     boundTerms(highLevel),
-                    language
+                    language,
+                    route,
+                    detailNode.isBoolean() && detailNode.asBoolean()
             ));
         } catch (IllegalArgumentException ex) {
             return Parsed.invalid(ex.getMessage());
@@ -353,7 +637,9 @@ public class QueryRewriteService {
             List<String> mustTerms,
             List<String> lowLevelKeywords,
             List<String> highLevelKeywords,
-            String language
+            String language,
+            String route,
+            boolean detail
     ) {
     }
 

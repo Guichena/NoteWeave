@@ -98,7 +98,8 @@ def plan_cell_queries(context: CellQueryContext, llm_client: LlmClient | None) -
         rejected.extend(attempt_rejected)
         missing = {column.key for column in context.columns} - {key for spec in specs for key in spec.column_keys}
         if specs and not missing:
-            return CellQueryPlan(specs=ensure_authoritative_query(specs, context), method="LLM", rejected=rejected)
+            return CellQueryPlan(specs=ensure_introduction_query(ensure_authoritative_query(specs, context), context),
+                                 method="LLM", rejected=rejected)
         if missing:
             rejected.append({"query": "", "reason": "missing column coverage: " + ", ".join(sorted(missing))})
     return _rule_plan(context, ["CELL_QUERY_LLM_OUTPUT_INVALID"], rejected)
@@ -128,6 +129,10 @@ def _call_model(
             "or an exact product version), put it in a query; this reaches the specification page directly.",
             "When the entity names a version (for example MySQL 8.4), keep that version in the queries so the "
             "matching version of the documentation is found.",
+            "Exception for whether a release provides a feature: use one query to find the feature's official "
+            "first-introduction release, without pinning that query to the target version. An explicit later "
+            "introduction can prove a negative earlier-version finding. This is still about the same product, "
+            "not a comparison article; never use a later release's capability as earlier support.",
             "For empirical questions (whether X improves Y, results of studies or organizations), include queries "
             "that target studies and data, such as 'empirical study', 'paper', 'case study' or 'survey results'. "
             "For a column asking for opposing or inconclusive evidence, search for null or negative results, "
@@ -318,7 +323,7 @@ def _rule_plan(
     if not specs:
         fallback = normalize_query(context.question)[:MAX_QUERY_CHARS].strip() or "research"
         specs.append(_spec(fallback, "direct", [], rationale="rule fallback"))
-    specs = ensure_authoritative_query(specs, context)
+    specs = ensure_introduction_query(ensure_authoritative_query(specs, context), context)
     return CellQueryPlan(specs=specs, method="RULE", degradation_reasons=reasons, rejected=list(rejected or []))
 
 
@@ -362,6 +367,63 @@ def _without_blocked_scope(spec: ResearchQuerySpec) -> ResearchQuerySpec:
     query = normalize_query(re.sub(r"\bsite:(\S+)", lambda match: "" if fetch_blocked(match.group(1)) else match.group(0),
                                    spec.query, flags=re.I))
     return spec.model_copy(update={"query": query}) if query else spec
+
+
+# 问某个发布版是否提供某功能、或默认行为的列；这类列可以用明确的较晚引入边界回答旧版的否定结论
+_AVAILABILITY_COLUMN = re.compile(
+    r"(?i)是否(?:提供|支持|可用|引入|内置|包含)|默认|\bwhether\b.*\b(?:provides?|supports?|offers?|ships?|"
+    r"includes?|available)\b|\bdefault\b|\bavailab(?:le|ility)\b")
+_INTRODUCTION_TERMS = re.compile(
+    r"(?i)\b(?:introduced|introduction|starting\s+with|since|new\s+in|added\s+in|first\s+(?:release|version|added))\b"
+    r"|首次|引入|从.*开始|起提供")
+
+
+def ensure_introduction_query(specs: list[ResearchQuerySpec], context: CellQueryContext) -> list[ResearchQuerySpec]:
+    """研究对象带版本号、列在问是否提供某功能或默认行为时，保证有一条不钉住目标版本、查功能首次引入版本的查询。
+
+    3.12 这类旧版的否定结论只能靠官方写明的较晚引入边界（如 Starting with the 3.13 release）证明；
+    所有查询都带着 3.12 时，只会反复读到 3.12 页面里沾边的片段。这条查询只负责把引入边界的原文找回来，
+    能否用于结论仍由版本适用性检查决定。"""
+    from app.version_scope import entity_versions
+
+    versions = entity_versions(context.entity_label)
+    if not versions or not specs:
+        return specs
+    columns = [column for column in context.columns if _AVAILABILITY_COLUMN.search(
+        " ".join([column.label, column.description, *column.requirements]))]
+    if not columns:
+        return specs
+    version_pattern = re.compile(r"(?<![\w.])v?(?:" + "|".join(re.escape(v) for v in sorted(versions, key=len, reverse=True))
+                                 + r")(?![\w.]|\.\d)", re.I)
+    if any(_INTRODUCTION_TERMS.search(spec.query) and not version_pattern.search(spec.query) for spec in specs):
+        return specs
+    column_keys = {column.key for column in columns}
+    # 以覆盖这些列的第一条查询为底，去掉目标版本号和 site: 限定，再加上首次引入的说法
+    # 补查的检索词不带列绑定，而且往往已经收窄到某个沾边片段，这时用最早试过的宽查询作底
+    base = next((spec for spec in specs if column_keys & set(spec.column_keys)), specs[0])
+    base_query = (base.query if column_keys & set(base.column_keys) or not context.tried_queries
+                  else context.tried_queries[0])
+    topic = normalize_query(version_pattern.sub(" ", re.sub(r"\bsite:\S+", " ", base_query, flags=re.I)))
+    if not topic:
+        return specs
+    query = normalize_query(f"{topic} introduced in version")[:MAX_QUERY_CHARS].rstrip()
+    others = [spec for spec in specs]
+    if query_rejection_reason(query, others, context.tried_queries):
+        return specs
+    spec = _spec(query, "verify", sorted(column_keys & {key for key in base.column_keys} or column_keys),
+                 rationale="first-introduction boundary for an earlier-version availability finding")
+    if len(specs) < max(1, context.max_queries):
+        return [*specs, spec]
+    # 预算已满：替换最后一条列覆盖可由其他查询代替、且不是 site: 定向的查询，不让任何一列失去查询
+    for index in range(len(specs) - 1, 0, -1):
+        candidate = specs[index]
+        if re.search(r"\bsite:", candidate.query, re.I):
+            continue
+        rest = [item for position, item in enumerate(specs) if position != index]
+        covered = {key for item in rest for key in item.column_keys} | set(spec.column_keys)
+        if set(candidate.column_keys) <= covered:
+            return [*rest[:index], spec, *rest[index:]]
+    return specs
 
 
 def ensure_unrestricted_query(specs: list[ResearchQuerySpec]) -> list[ResearchQuerySpec]:

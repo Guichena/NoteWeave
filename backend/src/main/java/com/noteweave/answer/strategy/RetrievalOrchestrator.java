@@ -139,6 +139,7 @@ public class RetrievalOrchestrator {
             recordStepMetrics(
                     plan.version(), step.channel(), latencyNanos,
                     rawCount, admittedCount, result.degraded());
+            logStepTiming(plan, step.channel(), latencyNanos, result.measurements());
         }
         List<EvidenceBundle.Evidence> selected = evidenceBudgeter.select(collected, plan.budget());
         int selectedCharacters = selected.stream()
@@ -211,6 +212,33 @@ public class RetrievalOrchestrator {
                     + "|" + passage;
         }
         return evidence.evidenceId();
+    }
+
+    private static final org.slf4j.Logger TIMING_LOG =
+            org.slf4j.LoggerFactory.getLogger("com.noteweave.chat.AnswerPreparationTiming");
+
+    /** 每个检索步骤的分阶段耗时，只取以 _ms 结尾的测量值，便于把检索耗时拆到向量化、检索与重排。 */
+    private static void logStepTiming(
+            RetrievalPlan plan,
+            String channel,
+            long latencyNanos,
+            Map<String, Long> measurements
+    ) {
+        if (!TIMING_LOG.isInfoEnabled()) {
+            return;
+        }
+        StringBuilder stages = new StringBuilder();
+        if (measurements != null) {
+            measurements.forEach((key, value) -> {
+                // 召回后被复核拒绝的条数一并输出：撤销墓碑生效时它应接近 0
+                if (key != null && (key.endsWith("_ms") || key.equals("ownership_rejected_count")) && value != null) {
+                    stages.append(' ').append(key).append('=').append(value);
+                }
+            });
+        }
+        TIMING_LOG.info("retrieval step timing mode={} channel={} step_ms={}{}",
+                plan.mode() == null ? "unknown" : plan.mode().name(), channel,
+                latencyNanos / 1_000_000L, stages);
     }
 
     private void recordStepMetrics(

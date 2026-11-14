@@ -100,6 +100,11 @@ class PlanningExecutor:
                 reasons.append("PLANNING_LLM_CALL_FAILED")
                 draft = PlanDraft(None, ["Previous call returned no plan; return the complete plan object."])
                 continue
+            # 复核仍调用模型；认可原方案时只返回批准标记，不重复生成已经校验的整张表。
+            if (accepted_plan is not None and isinstance(raw, dict)
+                    and set(raw) == {"approved"} and raw["approved"] is True):
+                attempts.append(_planning_attempt(attempt + 1, accepted_plan, PlanDraft(accepted_plan)))
+                break
             # 第一次规划与复核已采用的方案时检查研究对象是否该合成一个主题；修复时不再检查，避免整张表退回模板
             draft = validate_plan(raw, planning_input, final_attempt=attempt >= 1,
                                   topic_entity_check=attempt == 0 or accepted_plan is not None)
@@ -180,40 +185,30 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "Entities are concrete things such as products, versions, standards or systems, never sub-questions. "
             "When the question asks several facts about one subject, use that subject as the single entity and "
             "make each asked fact a dimension.",
-            "Keep only dimensions needed to answer the question, including the expert-expected ones described "
-            "next; perspectives help choose them but must not add other dimensions. Prefer the smallest table that "
-            "fully answers the question.",
-            "Start with required_points: the 3 to 5 points an expert reviewer would check in a complete answer, "
-            "covering every part of the question plus what a complete answer obviously needs (the identifier the "
-            "question asks to cite, the release that made a change effective, the production build when comparing "
-            "development servers or tooling, the cause of a fixed problem, or for an API comparison whether calls can "
-            "run in parallel); use only the examples that fit this question. For a comparison, first list the "
-            "defining design choices an expert would contrast in one sentence each, written in the domain's own "
-            "terms (for example 'whether the dev server bundles', 'consumer group ordering per partition'). Kinds "
-            "of choices that often distinguish subjects: where or when the work happens (or whether a step happens "
-            "at all), which side initiates data transfer, how values or state are represented over time, what "
-            "guarantees hold and when they break. These kinds are hints, not a checklist: never add a point or "
-            "dimension only because a kind is listed here, and describe each subject by its mainstream default "
-            "behaviour before newer or optional modes. Naming conventions, default "
-            "values, configuration options and API names come only after those, and only when the question asks. "
-            "When the question asks which changes a new version, edition or standard brings, put the changes "
-            "into one or two LIST dimensions instead of one dimension per change, and use the remaining points "
-            "for how users migrate or adopt it (tools, automatic fixes, opt-in steps) and the release in which "
-            "it became effective. Each point "
-            "names the dimension label that answers it. Every point must map to one of your dimensions; drop "
-            "dimensions that answer none of the points before dropping a point. Points are about the subject "
-            "matter only: citing official docs, RFCs, URLs or original text is already done by every cell and is "
-            "never a point.",
+            "The user's question defines the scope. Keep the smallest table that fully answers it. "
+            "Perspectives may clarify the requested decision, but never create additional deliverables.",
+            "If the user explicitly limits the investigation to named aspects, that boundary takes priority "
+            "over expert-expected additions and the suggested 3-to-5 points below. Do not expand a yes/no "
+            "availability check into installation commands or prerequisites unless asked. Keep all requested "
+            "qualifiers and the evidence needed to distinguish the answers.",
+            "Start with required_points: the questions that must be answered to satisfy the original request. "
+            "There is no minimum count; a narrowly scoped question may need only one or two points. "
+            "For an open research or decision question, include the essential mechanisms, contrasting evidence "
+            "and conditions needed to explain the findings. Preserve explicitly requested identifiers and qualifiers. "
+            "Do not turn useful background into an extra acceptance requirement. In particular, whether a feature "
+            "exists does not require instructions to install, enable, detect or benchmark it unless asked. "
+            "Likewise, asking for official sources does not ask for a PEP/RFC number or other technical identifier; "
+            "unrequested identifiers may help retrieval but must not become mandatory answer requirements. "
+            "Each point maps to a dimension. Citing sources is an output requirement, not a research dimension.",
             "Write required_points as questions or evidence requirements, never as answers from memory. "
             "For each dimension put every mapped point in its description, and use separate search_intents "
             "for distinct aspects such as normal operation, failure, prerequisites and exact commands. "
             "A comparison must cover both subjects for each aspect. Do not let examples or a new optional mode "
             "replace the mainstream behaviour the question asks about.",
-            "Every part of the question must map to at least one dimension. Also cover what an expert reviewer "
-            "would expect in a complete answer to each part, such as behaviour on failure or rebalance when "
-            "asking about ordering, each product's locking when asking about concurrency, the production "
-            "counterpart when asking about development tooling, the cause when asking when a problem was "
-            "fixed, or the release that made it effective when asking what a change brings. Keep the table at most 6 dimensions.",
+            "Every requested part must map to a dimension. Essential explanations must stay within that part, "
+            "not introduce a new task. Apply this boundary to required_points, dimension descriptions, brief.scope "
+            "and perspectives as well as column labels; keeping two labels while adding unrequested checks "
+            "inside their descriptions is still scope expansion. Keep the table at most 6 dimensions.",
             "When the question compares organizations, studies, vendors or implementations without naming them "
             "(and is not a whether-X-improves-Y question, which the supporting/opposing rule below covers), "
             "name 2 to 4 specific ones as entities (for example a published study with its organization and year), "
@@ -232,11 +227,19 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "Requests about the report itself, such as citing the original text or giving sources, are output "
             "requirements, never dimensions; but identifiers the question asks to name (for example the JEP or "
             "RFC number) belong in the description of the matching dimension.",
+            "An instruction to mark missing, unstated or uncertain information is handled by coverage and report "
+            "limitations. It is not an extra factual dimension, nor an obligation to prove absence in each "
+            "fact cell. Only make missing information a research dimension when auditing such gaps is itself "
+            "the user's research subject.",
             "For a question that asks whether X improves or causes Y and wants supporting and opposing evidence "
             "(or results from different studies or organizations), use one entity for the topic and the "
             "dimensions: supporting evidence with its source, opposing or inconclusive evidence with its source, "
             "and the conditions, methods or confounders that explain the difference. This rule wins over the rule "
             "about naming organizations or studies as entities: name the studies inside the evidence cells instead.",
+            "Use exactly those three dimensions unless the user explicitly requests another distinct aspect. "
+            "A study design or source type, including a meta-analysis, belongs within those dimensions, not in "
+            "an extra deliverable. Do not require a pooled effect size or a meta-analytic conclusion unless asked. "
+            "Keep useful findings from such sources in the requested evidence and methods dimensions.",
             "Never add meta dimensions such as source, official link, citation, evidence strength or confidence; "
             "every cell already carries its quoted evidence and source.",
             "Cell limits by effort_tier: SIMPLE at most 2 entities and 6 cells, STANDARD at most 12 cells, "
@@ -285,7 +288,18 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
     if candidate_plan is not None:
         payload["candidate_plan_for_review"] = candidate_plan
         payload["review_policy"] = (
-            "Review the candidate table against the original question using domain expertise. Check whether "
+            "First audit scope against the ORIGINAL planning_input.question, not the candidate's expanded brief. "
+            "Inspect every required point, dimension description, requirement, brief.scope and perspective. "
+            "Remove checks that do not answer the user's requested aspects, even when hidden inside a requested "
+            "dimension. A yes/no availability question does not require installation, activation or runtime "
+            "inspection procedures unless the user asks for them. An official-source constraint does not require "
+            "naming an unrequested technical identifier. Keep needed release boundaries, without making "
+            "incidental identifiers mandatory. Do not approve a plan with such additions. "
+            "For a supporting/opposing/conditions question, merge an unrequested extra synthesis or study-type "
+            "column into the corresponding requested aspects and remove its extra obligations. "
+            "Keep instructions to flag missing or uncertain information in report output requirements, not "
+            "in an extra factual column or as an absence-proof requirement inside other dimensions. "
+            "Then check whether "
             "its rows and columns would let a reader answer the whole question and make the requested decision. "
             "Look for missing core concepts or stages, not just details of the existing columns. Replace "
             "lower-priority implementation details with essential missing aspects where needed. Do not add "
@@ -294,7 +308,8 @@ def _call_model(llm_client, snapshot, planning_input, probe_hits, problems, *, c
             "not establish support for another. Prefer those distinctions over duplicate setup descriptions. Do not add "
             "unrequested benchmarks, history or a wish list. Preserve explicit subjects and the cell budget. "
             "Return a COMPLETE corrected plan in output_schema, including required_points with dimension mappings. "
-            "If the candidate is already complete, return it in that schema. Never output facts as answers.")
+            'If the candidate is already complete, return only {"approved": true}; do not regenerate it. '
+            "Approval still requires checking every criterion above. Never output facts as answers.")
     try:
         response = llm_client.complete_json(PURPOSE, payload)
     except Exception:

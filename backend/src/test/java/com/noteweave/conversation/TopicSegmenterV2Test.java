@@ -232,6 +232,61 @@ class TopicSegmenterV2Test {
         assertThat(projection.segments().get(0).reason()).isEqualTo("CONTINUATION_WITH_SEMANTICS");
     }
 
+    /** 先聊 A，岔开聊 B，再用省略主语的短句切回 A：规则判断不出来，按模型给出的话题判断归回 A。 */
+    @Test
+    void modelRouteReturnsAShortFollowUpToTheEarlierTopic() {
+        List<TopicSegmenterV2.Message> messages = List.of(
+                new TopicSegmenterV2.Message("a1", 1, "USER", "解释缓存一致性的几种方案。"),
+                new TopicSegmenterV2.Message("a2", 2, "ASSISTANT", "常见的有延迟双删、订阅 binlog 等。"),
+                new TopicSegmenterV2.Message("b3", 3, "USER", "改聊台南旅行，推荐几个景点。"),
+                new TopicSegmenterV2.Message("b4", 4, "ASSISTANT", "可以去安平古堡。"),
+                new TopicSegmenterV2.Message("u5", 5, "USER", "那第二种怎么保证顺序？"));
+        TopicSegmenterV2.Projection rules = segmenter.segment(messages);
+        String topicA = rules.segments().get(0).topicId();
+        assertThat(rules.segments().get(rules.segments().size() - 1).topicId()).isNotEqualTo(topicA);
+
+        TopicSegmenterV2.Projection routed = segmenter.segment(messages, List.of(),
+                java.util.Map.of(5, TopicRoute.returnTo(topicA)));
+        TopicSegmenterV2.Segment last = routed.segments().get(routed.segments().size() - 1);
+        assertThat(last.topicId()).isEqualTo(topicA);
+        assertThat(last.startSeq()).isEqualTo(5);
+        assertThat(last.reason()).isEqualTo("MODEL_TOPIC_RETURN");
+        assertThat(last.status()).isEqualTo("CONFIDENT");
+        assertThat(last.ruleVersion()).isEqualTo(TopicSegmenterV2.MODEL_ROUTE_VERSION);
+    }
+
+    @Test
+    void modelRouteCanKeepOrSplitTheCurrentTopicAndUnknownTopicsFallBackToRules() {
+        List<TopicSegmenterV2.Message> messages = List.of(
+                new TopicSegmenterV2.Message("a1", 1, "USER", "解释缓存一致性的几种方案。"),
+                new TopicSegmenterV2.Message("a2", 2, "ASSISTANT", "常见的有延迟双删。"),
+                new TopicSegmenterV2.Message("u3", 3, "USER", "台南有什么好吃的？"));
+        TopicSegmenterV2.Projection kept = segmenter.segment(messages, List.of(),
+                java.util.Map.of(3, TopicRoute.continueCurrent()));
+        assertThat(kept.segments()).hasSize(1);
+        assertThat(kept.segments().get(0).endSeq()).isEqualTo(3);
+
+        TopicSegmenterV2.Projection split = segmenter.segment(messages, List.of(),
+                java.util.Map.of(3, TopicRoute.newTopic()));
+        assertThat(split.segments()).hasSize(2);
+        assertThat(split.segments().get(1).reason()).isEqualTo("MODEL_NEW_TOPIC");
+
+        TopicSegmenterV2.Projection unknown = segmenter.segment(messages, List.of(),
+                java.util.Map.of(3, TopicRoute.returnTo("topic-missing")));
+        assertThat(unknown.segments()).isEqualTo(segmenter.segment(messages).segments());
+    }
+
+    @Test
+    void modelRouteDoesNotRewriteTheFixedPrefix() {
+        List<TopicSegmenterV2.Message> messages = List.of(
+                new TopicSegmenterV2.Message("a1", 1, "USER", "解释缓存一致性的几种方案。"),
+                new TopicSegmenterV2.Message("b2", 2, "USER", "改聊台南旅行。"));
+        TopicSegmenterV2.Projection first = segmenter.segment(messages);
+        TopicSegmenterV2.Projection again = segmenter.segment(messages, first.segments(),
+                java.util.Map.of(2, TopicRoute.continueCurrent()));
+        assertThat(again.segments()).isEqualTo(first.segments());
+    }
+
     @Test
     void duplicateOrOutOfOrderSequenceIsRejected() {
         assertThatThrownBy(() -> segmenter.segment(List.of(

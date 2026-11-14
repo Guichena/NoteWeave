@@ -41,6 +41,27 @@ class ArtifactSkillDirectoryTest {
     }
 
     @Test
+    void missingCountFollowsTheQuantityWrittenInTheRequirement() {
+        ArtifactSkillCatalogService service = new ArtifactSkillCatalogService("../skills", "../schemas");
+        var quiz = service.resolveSkill("quiz");
+        // 实测：需求写 5 道、调用方未传 count，此前按默认 10 道生成
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of(), "根据青禾计划简报出 5 道选择题"))
+                .containsEntry("count", "5");
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of(), "出十五道题")).containsEntry("count", "15");
+        // 调用方显式传入的选项原样使用
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of("count", "10"), "出 5 道题"))
+                .containsEntry("count", "10");
+        // 不在可选值里、出现多个不同数量、或没有数量单位时仍用默认值
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of(), "出 7 道题")).containsEntry("count", "10");
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of(), "根据第 3 页出 5 道题"))
+                .containsEntry("count", "10");
+        assertThat(service.validateAndNormalizeInputs(quiz, Map.of(), "覆盖 720 名学生的项目出题"))
+                .containsEntry("count", "10");
+        assertThat(ArtifactSkillCatalogService.requestedQuantity("出二十道题")).isEqualTo("20");
+        assertThat(ArtifactSkillCatalogService.requestedQuantity("五张卡片")).isEqualTo("5");
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void hostAndPythonWorkerUseTheSameDirectoryDigest() throws Exception {
         Map<String, Object> payload = new ObjectMapper().readValue(Files.readAllBytes(root.resolve(

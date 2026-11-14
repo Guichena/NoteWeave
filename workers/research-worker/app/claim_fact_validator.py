@@ -30,14 +30,22 @@ class TypedClaimValidation(BaseModel):
 
 
 _NUMBER_RE = re.compile(
-    r"(?<![A-Za-z0-9_.])(?P<number>[+-]?\d{1,3}(?:,\d{3})*(?:\.\d+)?|[+-]?\d+(?:\.\d+)?)"
+    r"(?<![A-Za-z0-9_.])(?P<number>[+-]?\d+(?:,\d{3})*(?:\.\d+)?)"
     r"\s*(?P<unit>%|percent(?:age)?|百分比|个百分点|mb|gb|kb|tb|ms|毫秒|秒|分钟|小时|s\b)?",
     re.IGNORECASE,
 )
 _DATE_RE = re.compile(
-    r"(?<!\d)(?P<year>(?:19|20)\d{2})(?:[-/.年](?P<month>0?[1-9]|1[0-2])"
-    r"(?:[-/.月](?P<day>0?[1-9]|[12]\d|3[01])日?)?)?(?!\d)"
+    r"(?<!\d)(?P<year>(?:19|20)\d{2})(?:[ \t]*[-/.年][ \t]*(?P<month>0?[1-9]|1[0-2])"
+    r"(?:[ \t]*[-/.月][ \t]*(?P<day>0?[1-9]|[12]\d|3[01])[ \t]*日?)?)?(?!\d)"
 )
+_MONTH_NAME = (r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+               r"Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?")
+_NAMED_DATE_RES = (
+    re.compile(r"\b(?P<day>0?[1-9]|[12]\d|3[01])\s+(?P<month>" + _MONTH_NAME + r")\.?\s+(?P<year>(?:19|20)\d{2})\b", re.I),
+    re.compile(r"\b(?P<month>" + _MONTH_NAME + r")\.?\s+(?:(?P<day>0?[1-9]|[12]\d|3[01]),?\s+)?(?P<year>(?:19|20)\d{2})\b", re.I),
+)
+_MONTHS = {name: index for index, name in enumerate(
+    ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"), 1)}
 _COMPARISONS = (
     (re.compile(r"至少|不低于|at\s+least|no\s+less\s+than", re.IGNORECASE), "AT_LEAST"),
     (re.compile(r"至多|不高于|at\s+most|no\s+more\s+than", re.IGNORECASE), "AT_MOST"),
@@ -152,16 +160,31 @@ def extract_fact_atoms(text: str) -> list[FactAtom]:
     value = str(text or "")
     atoms: list[FactAtom] = []
     date_spans: set[tuple[int, int]] = set()
+    quantity_spans = [(m.start("number"), m.end("number")) for m in _NUMBER_RE.finditer(value) if m.group("unit")]
+    for pattern in _NAMED_DATE_RES:
+        for match in pattern.finditer(value):
+            if any(start <= match.start() and match.end() <= end for start, end in date_spans):
+                continue
+            rendered = f"{match.group('year')}-{_MONTHS[match.group('month')[:3].lower()]:02d}"
+            if match.group("day"):
+                rendered += f"-{int(match.group('day')):02d}"
+            atoms.append(FactAtom(kind="DATE", value=rendered, start=match.start(), end=match.end()))
+            date_spans.add((match.start(), match.end()))
     for match in _DATE_RE.finditer(value):
+        # 带单位的小数优先作为数量，避免把 2027.2 GB 当成月份并漏掉单位冲突。
+        if any(start < match.end() and match.start() < end for start, end in quantity_spans):
+            continue
+        if any(start <= match.start() and match.end() <= end for start, end in date_spans):
+            continue
         rendered = match.group("year")
         if match.group("month"):
             rendered += f"-{int(match.group('month')):02d}"
         if match.group("day"):
             rendered += f"-{int(match.group('day')):02d}"
         atoms.append(FactAtom(kind="DATE", value=rendered, start=match.start(), end=match.end()))
-        date_spans.add((match.start("year"), match.end("year")))
+        date_spans.add((match.start(), match.end()))
     for match in _NUMBER_RE.finditer(value):
-        if (match.start("number"), match.end("number")) in date_spans:
+        if any(start <= match.start("number") and match.end("number") <= end for start, end in date_spans):
             continue
         normalized_number = _normalize_number(match.group("number"))
         if normalized_number is None:

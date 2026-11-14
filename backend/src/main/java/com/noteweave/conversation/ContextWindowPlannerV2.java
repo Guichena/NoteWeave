@@ -10,7 +10,8 @@ import org.springframework.http.HttpStatus;
 
 /** C2 selection over already authorized references at a frozen input cutoff. */
 public final class ContextWindowPlannerV2 {
-    public static final String COMPILER_VERSION = "context-window-v2-a3";
+    public static final String COMPILER_VERSION_PREFIX = "context-window-v2-";
+    public static final String COMPILER_VERSION = COMPILER_VERSION_PREFIX + "a5";
     /** 原文窗口最多保留的消息条数。 */
     static final int MAX_RAW_TAIL_MESSAGES = 8;
     /** 原文窗口至少保留的消息条数（最近一问一答），再长也不裁掉。 */
@@ -22,6 +23,13 @@ public final class ContextWindowPlannerV2 {
     static final int MAX_UNSUMMARIZED_MESSAGES = 256;
     /** 摘要异步生成，通常比原文窗口落后一两轮；落后不超过这个条数时用原文补齐，不整段展开。 */
     private static final int MAX_SUMMARY_LAG_MESSAGES = 8;
+    /** 当前话题之外，按新近程度再带几个其他话题的摘要：话题判断偶尔出错时，最近的前文仍在上下文里。 */
+    static final int MAX_OTHER_TOPIC_SUMMARIES = 1;
+    /** 回到较早的话题时，带上该话题上一段末尾的原文条数上限（摘要还没覆盖到的部分）。 */
+    static final int MAX_RETURNED_TOPIC_TAIL_MESSAGES = 4;
+    /** 问题要用到早先的原话或细节时，从目标话题的历史原文里回放的问答组数与 token 上限。 */
+    static final int MAX_DETAIL_REPLAY_GROUPS = 3;
+    static final int MAX_DETAIL_REPLAY_TOKENS = 1_500;
 
     public ContextProjectionV2 compile(Input input) {
         if (input == null || input.workspaceId().isBlank() || input.actorId().isBlank()
@@ -149,35 +157,200 @@ public final class ContextWindowPlannerV2 {
                 bySegment.put(summary.segmentId(), summary);
             }
         }
-        ArrayList<ContextProjectionV2.TopicSummary> selected = new ArrayList<>();
+        // 摘要分两档：当前话题的各段优先，其他话题按新近程度再带 MAX_OTHER_TOPIC_SUMMARIES 个。
+        // 话题判断只决定优先级，判断偶尔出错时，最近的其他话题仍有机会进入上下文。
+        List<Candidate> sameTopic = new ArrayList<>();
+        List<Candidate> otherTopics = new ArrayList<>();
         for (TopicSegmenterV2.Segment segment : input.segments()) {
             ContextProjectionV2.TopicSummary summary = bySegment.get(segment.segmentId());
             if (summary == null) continue;
-            String reason;
-            if (active == null || !active.topicId().equals(segment.topicId())) {
-                reason = "OTHER_TOPIC";
-            } else if (!segment.segmentId().equals(active.segmentId())
+            boolean same = active != null && active.topicId().equals(segment.topicId());
+            String exclusion = null;
+            if (same && !segment.segmentId().equals(active.segmentId())
                     && ("UNCERTAIN".equals(active.status()) || "UNCERTAIN".equals(segment.status()))) {
-                // 话题归属不确定时不引入其他段的摘要；当前段自身的摘要只覆盖本段更早的消息，可以使用
-                reason = "UNCERTAIN_TOPIC";
+                // 话题归属不确定时不引入同话题其他段的摘要；当前段自身的摘要只覆盖本段更早的消息，可以使用
+                exclusion = "UNCERTAIN_TOPIC";
             } else if (summary.startSeq() != segment.startSeq()
                     || summary.endSeq() > segment.endSeq() || summary.endSeq() >= rawStart) {
-                reason = "OVERLAPS_RAW_OR_STALE_RANGE";
-            } else if (used + tokens(summary.text()) > input.tokenBudget()) {
-                reason = "SUMMARY_BUDGET_EXCEEDED";
-                degradation.add(reason);
-            } else {
-                selected.add(summary);
-                used += tokens(summary.text());
-                reason = "MATCHED_ACTIVE_TOPIC";
+                exclusion = "OVERLAPS_RAW_OR_STALE_RANGE";
             }
-            decisions.add(new ContextProjectionV2.Decision("TOPIC_SUMMARY", summary.revisionId(),
-                    "MATCHED_ACTIVE_TOPIC".equals(reason) ? "INCLUDE" : "EXCLUDE", reason));
+            if (exclusion != null) {
+                decisions.add(new ContextProjectionV2.Decision("TOPIC_SUMMARY", summary.revisionId(),
+                        "EXCLUDE", exclusion));
+                continue;
+            }
+            (same ? sameTopic : otherTopics).add(new Candidate(segment, summary));
+        }
+        otherTopics.sort(Comparator.comparingInt((Candidate candidate) -> candidate.segment().endSeq()).reversed());
+        ArrayList<ContextProjectionV2.TopicSummary> selected = new ArrayList<>();
+        for (Candidate candidate : sameTopic) {
+            used = select(candidate, "MATCHED_ACTIVE_TOPIC", used, input.tokenBudget(),
+                    selected, decisions, degradation);
+        }
+        int othersSelected = 0;
+        for (Candidate candidate : otherTopics) {
+            if (othersSelected >= MAX_OTHER_TOPIC_SUMMARIES) {
+                decisions.add(new ContextProjectionV2.Decision("TOPIC_SUMMARY", candidate.summary().revisionId(),
+                        "EXCLUDE", "OTHER_TOPIC"));
+                continue;
+            }
+            int before = selected.size();
+            used = select(candidate, "RECENT_OTHER_TOPIC", used, input.tokenBudget(),
+                    selected, decisions, degradation);
+            if (selected.size() > before) othersSelected++;
+        }
+        selected.sort(Comparator.comparingInt(ContextProjectionV2.TopicSummary::startSeq));
+        // 回到较早的话题：该话题上一段如果整段都在原文窗口之前，摘要又还没覆盖到段尾，
+        // 把段尾几条原文带上。用户切回来时接的通常就是那几句，摘要可能还没生成或丢了细节。
+        TopicSegmenterV2.Segment returnedFrom = active == null ? null : input.segments().stream()
+                .filter(segment -> segment.topicId().equals(active.topicId())
+                        && !segment.segmentId().equals(active.segmentId())
+                        && segment.endSeq() < rawStart)
+                .max(Comparator.comparingInt(TopicSegmenterV2.Segment::endSeq)).orElse(null);
+        if (returnedFrom != null) {
+            int covered = selected.stream()
+                    .filter(summary -> summary.segmentId().equals(returnedFrom.segmentId()))
+                    .mapToInt(ContextProjectionV2.TopicSummary::endSeq)
+                    .max().orElse(returnedFrom.startSeq() - 1);
+            List<ContextProjectionV2.RawMessage> tail = new ArrayList<>();
+            for (int index = messages.size() - 1; index >= 0
+                    && tail.size() < MAX_RETURNED_TOPIC_TAIL_MESSAGES; index--) {
+                ContextProjectionV2.RawMessage message = messages.get(index);
+                if (message.seq() > returnedFrom.endSeq()) continue;
+                if (message.seq() <= covered) break;
+                if (used + tokens(message.text()) > input.tokenBudget()) {
+                    degradation.add("RETURNED_TOPIC_TAIL_TRIMMED_BY_BUDGET");
+                    break;
+                }
+                used += tokens(message.text());
+                tail.add(0, message);
+            }
+            for (ContextProjectionV2.RawMessage message : tail) {
+                decisions.removeIf(decision -> "MESSAGE".equals(decision.refType())
+                        && decision.refId().equals(message.messageId()));
+                decisions.add(new ContextProjectionV2.Decision("MESSAGE", message.messageId(),
+                        "INCLUDE", "RETURNED_TOPIC_TAIL"));
+            }
+            if (!tail.isEmpty()) {
+                List<ContextProjectionV2.RawMessage> merged = new ArrayList<>(tail);
+                merged.addAll(raw);
+                raw = merged;
+            }
+        }
+        if (active != null && input.detailQuery() != null && !input.detailQuery().isBlank()) {
+            List<ContextProjectionV2.RawMessage> replay = detailReplay(input, active, raw);
+            int replayTokens = 0;
+            List<ContextProjectionV2.RawMessage> accepted = new ArrayList<>();
+            for (ContextProjectionV2.RawMessage message : replay) {
+                int cost = tokens(message.text());
+                if (replayTokens + cost > MAX_DETAIL_REPLAY_TOKENS || used + cost > input.tokenBudget()) {
+                    degradation.add("DETAIL_REPLAY_TRIMMED_BY_BUDGET");
+                    break;
+                }
+                replayTokens += cost;
+                used += cost;
+                accepted.add(message);
+            }
+            for (ContextProjectionV2.RawMessage message : accepted) {
+                decisions.removeIf(decision -> "MESSAGE".equals(decision.refType())
+                        && decision.refId().equals(message.messageId()));
+                decisions.add(new ContextProjectionV2.Decision("MESSAGE", message.messageId(),
+                        "INCLUDE", "TOPIC_DETAIL_REPLAY"));
+            }
+            if (!accepted.isEmpty()) {
+                List<ContextProjectionV2.RawMessage> merged = new ArrayList<>(raw);
+                merged.addAll(accepted);
+                merged.sort(Comparator.comparingInt(ContextProjectionV2.RawMessage::seq));
+                raw = merged;
+            }
         }
         return new ContextProjectionV2("context-projection-v2", COMPILER_VERSION,
                 input.workspaceId(), input.actorId(), input.conversationId(), input.cutoffSeq(),
                 input.currentInput(), raw, selected, constraints, memories, decisions,
                 input.tokenBudget(), used, degradation, "FULL");
+    }
+
+    /**
+     * 在目标话题已经不在原文里的历史消息中，按与查询的词项重合度选几组问答（用户消息加紧随其后的回答）。
+     * 词项按中文两字切分，权重用这些问答组内的 IDF；没有任何词重合的组不选。返回的消息按得分从高到低成组排列。
+     */
+    private static List<ContextProjectionV2.RawMessage> detailReplay(
+            Input input, TopicSegmenterV2.Segment active, List<ContextProjectionV2.RawMessage> raw) {
+        java.util.Set<Integer> present = new java.util.HashSet<>();
+        raw.forEach(message -> present.add(message.seq()));
+        List<TopicSegmenterV2.Segment> topicSegments = input.segments().stream()
+                .filter(segment -> segment.topicId().equals(active.topicId())).toList();
+        List<List<ContextProjectionV2.RawMessage>> groups = new ArrayList<>();
+        List<ContextProjectionV2.RawMessage> current = null;
+        TopicSegmenterV2.Segment currentSegment = null;
+        for (ContextProjectionV2.RawMessage message : input.messages()) {
+            if (message.seq() > input.cutoffSeq() || present.contains(message.seq())) {
+                current = null;
+                continue;
+            }
+            TopicSegmenterV2.Segment segment = topicSegments.stream()
+                    .filter(item -> item.startSeq() <= message.seq() && message.seq() <= item.endSeq())
+                    .findFirst().orElse(null);
+            if (segment == null) {
+                current = null;
+                continue;
+            }
+            boolean startsGroup = "USER".equals(message.role()) || current == null || segment != currentSegment;
+            if (startsGroup) {
+                current = new ArrayList<>();
+                groups.add(current);
+                currentSegment = segment;
+            }
+            current.add(message);
+        }
+        java.util.Set<String> queryTerms = com.noteweave.common.text.LexicalTerms.queryTerms(input.detailQuery());
+        if (queryTerms.isEmpty() || groups.isEmpty()) return List.of();
+        List<java.util.Set<String>> groupTerms = new ArrayList<>();
+        Map<String, Integer> documentFrequency = new HashMap<>();
+        for (List<ContextProjectionV2.RawMessage> group : groups) {
+            java.util.Set<String> terms = new java.util.HashSet<>();
+            group.forEach(message -> terms.addAll(com.noteweave.common.text.LexicalTerms.queryTerms(message.text())));
+            groupTerms.add(terms);
+            terms.forEach(term -> documentFrequency.merge(term, 1, Integer::sum));
+        }
+        List<Integer> order = new ArrayList<>();
+        double[] scores = new double[groups.size()];
+        for (int index = 0; index < groups.size(); index++) {
+            double score = 0d;
+            for (String term : queryTerms) {
+                if (groupTerms.get(index).contains(term)) {
+                    score += Math.log(1d + (groups.size() + 1d) / (documentFrequency.getOrDefault(term, 0) + 1d));
+                }
+            }
+            scores[index] = score;
+            if (score > 0d) order.add(index);
+        }
+        order.sort((left, right) -> scores[right] != scores[left]
+                ? Double.compare(scores[right], scores[left])
+                : Integer.compare(groups.get(right).get(0).seq(), groups.get(left).get(0).seq()));
+        List<ContextProjectionV2.RawMessage> selected = new ArrayList<>();
+        for (int index = 0; index < Math.min(MAX_DETAIL_REPLAY_GROUPS, order.size()); index++) {
+            selected.addAll(groups.get(order.get(index)));
+        }
+        return selected;
+    }
+
+    private static int select(Candidate candidate, String reason, int used, int budget,
+                              List<ContextProjectionV2.TopicSummary> selected,
+                              List<ContextProjectionV2.Decision> decisions, List<String> degradation) {
+        ContextProjectionV2.TopicSummary summary = candidate.summary();
+        if (used + tokens(summary.text()) > budget) {
+            degradation.add("SUMMARY_BUDGET_EXCEEDED");
+            decisions.add(new ContextProjectionV2.Decision("TOPIC_SUMMARY", summary.revisionId(),
+                    "EXCLUDE", "SUMMARY_BUDGET_EXCEEDED"));
+            return used;
+        }
+        selected.add(summary);
+        decisions.add(new ContextProjectionV2.Decision("TOPIC_SUMMARY", summary.revisionId(), "INCLUDE", reason));
+        return used + tokens(summary.text());
+    }
+
+    private record Candidate(TopicSegmenterV2.Segment segment, ContextProjectionV2.TopicSummary summary) {
     }
 
     /**
@@ -234,5 +407,17 @@ public final class ContextWindowPlannerV2 {
                         List<TopicSegmenterV2.Segment> segments,
                         List<ContextProjectionV2.TopicSummary> readySummaries,
                         List<ContextProjectionV2.UserConstraint> constraints,
-                        List<ContextProjectionV2.MemoryRevision> memoryRevisions) {}
+                        List<ContextProjectionV2.MemoryRevision> memoryRevisions,
+                        String detailQuery) {
+        public Input(String workspaceId, String actorId, String conversationId, int cutoffSeq,
+                     String currentInput, String taskPurpose, int tokenBudget,
+                     List<ContextProjectionV2.RawMessage> messages,
+                     List<TopicSegmenterV2.Segment> segments,
+                     List<ContextProjectionV2.TopicSummary> readySummaries,
+                     List<ContextProjectionV2.UserConstraint> constraints,
+                     List<ContextProjectionV2.MemoryRevision> memoryRevisions) {
+            this(workspaceId, actorId, conversationId, cutoffSeq, currentInput, taskPurpose, tokenBudget,
+                    messages, segments, readySummaries, constraints, memoryRevisions, null);
+        }
+    }
 }

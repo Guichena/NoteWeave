@@ -26,6 +26,8 @@ import com.noteweave.conversation.EffectiveRetrievalConfig;
 import com.noteweave.conversation.ConversationContextProjectionService;
 import com.noteweave.conversation.ContextV2RolloutService;
 import com.noteweave.conversation.ContextV2ShadowSnapshotService;
+import com.noteweave.conversation.ConversationTopicRoutingService;
+import com.noteweave.conversation.TopicRoute;
 import com.noteweave.conversation.constraint.ConstraintPolarity;
 import com.noteweave.memory.MemoryCompilerService;
 import com.noteweave.memory.MemoryControlPackResponse;
@@ -202,11 +204,27 @@ public class ChatService {
         AnswerPreparationListener stages = safe(listener);
         PreparationTimer timer = new PreparationTimer();
         stages.stage(AnswerPreparationListener.STAGE_UNDERSTANDING, Map.of());
+        // 话题由查询改写模型判断：改写在冻结之前发起，与等待上一轮后台抽取同时进行，
+        // 改写给出的话题编号决定本轮问题归入哪个话题，冻结时据此选择话题摘要
+        RoutedRewrite routed = freeze.freeze() == null ? null
+                : startRoutedRewrite(workspaceId, conversationId, userMessageId, request.content());
         // 上一轮的前提抽取在后台执行，这里最多等一小会儿，让本轮上下文尽量看到上一轮的前提
         awaitPendingPremises(conversationId);
         timer.mark("premise_wait");
+        TopicRoute topicRoute = null;
         if (freeze.freeze() != null) {
-            freeze.freeze().run();
+            if (routed != null) {
+                // 话题编号在改写输出的最前面，读到就冻结；检索要的独立查询随后在准备里等。
+                // 模型认为要用到早先的原话或细节时，再等独立查询出来，冻结时按它在目标话题里回放原文
+                QueryRewriteService.RouteSignal signal = routed.progressive().awaitRouteSignal();
+                topicRoute = routed.routing().resolve(signal == null ? null : signal.route());
+                if (topicRoute != null && signal.detail()) {
+                    topicRoute = topicRoute.withDetailQuery(
+                            routed.progressive().awaitDispatchable().standaloneQuery());
+                }
+                timer.mark("rewrite");
+            }
+            freeze.freeze().accept(topicRoute);
             timer.mark("context_freeze");
         }
         // 本轮消息的前提抽取不进入关键路径：本轮问题原文已经在提示里，抽取结果服务于后续追问
@@ -214,12 +232,14 @@ public class ChatService {
         if (freeze.catchUp() != null) {
             scheduleConversationBackground(CONSTRAINT_CHAIN_PREFIX + conversationId, freeze.catchUp());
         }
-        AnswerDraft draft = buildAnswerDraft(
-                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages);
+        // 交互式回答的重排限时：重排服务卡住时按已有降级继续，不让用户等满重试预算
+        AnswerDraft draft = com.noteweave.retrieval.provider.InteractiveRerankBudget.run(() -> buildAnswerDraft(
+                conversationId, userMessageId, workspaceId, request, retrievalConfig, timer, stages, routed));
         // 分阶段耗时：发消息后到开始生成之间的等待都在这里，后续提速以这些数字为准
-        PREPARATION_LOG.info("answer preparation timing workspace={} mode={} {} total_ms={} "
+        PREPARATION_LOG.info("answer preparation timing workspace={} mode={} topic_route={} {} total_ms={} "
                         + "evidence={} sufficiency={} retrieval_degraded={}",
-                workspaceId, request.answerMode(), timer.render(), timer.totalMillis(),
+                workspaceId, request.answerMode(), topicRoute == null ? "RULE" : topicRoute.wire(),
+                timer.render(), timer.totalMillis(),
                 draft.evidenceBundle().evidence().size(), draft.evidenceSufficiency(),
                 String.join(",", draft.evidenceBundle().degradationReasons()));
         return new PreparedAnswerMaterial(
@@ -391,11 +411,131 @@ public class ChatService {
             PreparationTimer timer,
             AnswerPreparationListener stages
     ) {
+        return buildAnswerDraft(conversationId, currentUserMessageId, workspaceId, request, retrievalConfig,
+                timer, stages, null);
+    }
+
+    private AnswerDraft buildAnswerDraft(
+            String conversationId,
+            String currentUserMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            EffectiveRetrievalConfig retrievalConfig,
+            PreparationTimer timer,
+            AnswerPreparationListener stages,
+            RoutedRewrite routed
+    ) {
         ConversationRetrievalContextAssembler.Context conversationContext = buildConversationContext(
                 workspaceId, conversationId, currentUserMessageId, request.content());
         timer.mark("context");
-        QueryRewrite rewrite = queryRewriteService.rewrite(conversationContext);
+        // 渐进改写：alternatives 之前的字段齐全就先检索，alternatives 在后台继续生成。
+        // 冻结之前已经发起改写（用于判断话题）时直接沿用，不再调用第二次
+        QueryRewriteService.ProgressiveRewrite progressive = routed != null
+                ? routed.progressive()
+                : queryRewriteService.rewriteProgressive(conversationContext, rewriteExecutor);
+        QueryRewrite dispatched = progressive.awaitDispatchable();
         timer.mark("rewrite");
+        AnswerDraft draft = draftWithRewrite(conversationContext, dispatched, conversationId,
+                currentUserMessageId, workspaceId, request, retrievalConfig, timer, stages);
+        if (progressive.dispatchedPartial()) {
+            QueryRewrite complete = progressive.awaitComplete();
+            timer.mark("rewrite_tail");
+            if (requiresFullRewriteRetrieval(dispatched, complete, draft.evidenceBundle())) {
+                // 完整改写与提前检索的输入不一致，或召回不足需要 alternatives 扩展：按完整结果重新检索
+                PREPARATION_LOG.info("answer preparation rerun with complete rewrite workspace={} sameFields={}",
+                        workspaceId, QueryRewriteService.sameExceptAlternatives(dispatched, complete));
+                draft = draftWithRewrite(conversationContext, complete, conversationId,
+                        currentUserMessageId, workspaceId, request, retrievalConfig, timer, stages);
+                timer.mark("rewrite_rerun");
+            }
+        }
+        return draft;
+    }
+
+    /** 检索前提早交出的改写不足以代表最终结果时返回 true。 */
+    static boolean requiresFullRewriteRetrieval(QueryRewrite dispatched, QueryRewrite complete, EvidenceBundle bundle) {
+        // 规则判定可独立检索、只为话题判断调用了模型：模型也认为可以独立检索时，检索输入就是原句，不必重来
+        boolean standaloneConfirmed = "RULE_STANDALONE".equals(dispatched.method()) && complete.standalone();
+        if (!standaloneConfirmed && !QueryRewriteService.sameExceptAlternatives(dispatched, complete)) {
+            return true;
+        }
+        if (complete.alternatives().isEmpty() || complete.alternatives().equals(dispatched.alternatives())) {
+            return false;
+        }
+        // 只有召回不足时检索才会用到 alternatives；检索步骤会记下是否满足扩展条件
+        return bundle != null && bundle.trace() != null && bundle.trace().steps().stream()
+                .anyMatch(step -> step.measurements() != null
+                        && Long.valueOf(1L).equals(step.measurements().get(QaHybridRetriever.LOW_RECALL_EXPANSION_ELIGIBLE)));
+    }
+
+    /**
+     * 冻结之前发起的查询改写。只在会话上下文推迟到后台冻结、工作区使用 Context v2、并且已有历史消息时发起；
+     * 首轮问题、规则判定可独立检索的问题不调用模型，这时没有话题编号，冻结照常按规则切分。
+     */
+    private RoutedRewrite startRoutedRewrite(String workspaceId, String conversationId,
+                                             String userMessageId, String question) {
+        if (!topicRoutingEnabled || topicRouting == null || !contextV2Rollout.activeEnabled(workspaceId)) {
+            return null;
+        }
+        ConversationTopicRoutingService.RoutingContext routing;
+        try {
+            routing = topicRouting.load(workspaceId, conversationId, userMessageId);
+        } catch (RuntimeException ex) {
+            PREPARATION_LOG.info("topic routing context unavailable workspace={} type={}",
+                    workspaceId, ex.getClass().getSimpleName());
+            return null;
+        }
+        if (!routing.hasHistory()) {
+            return null;
+        }
+        ConversationRetrievalContextAssembler.Context routingContext =
+                conversationContextAssembler.routing(question, routing);
+        return new RoutedRewrite(routing, queryRewriteService.rewriteProgressive(
+                routingContext, routing.renderTopics(), rewriteExecutor));
+    }
+
+    /** 冻结之前发起的改写，以及判断话题用的材料。 */
+    private record RoutedRewrite(ConversationTopicRoutingService.RoutingContext routing,
+                                 QueryRewriteService.ProgressiveRewrite progressive) {
+    }
+
+    private ConversationTopicRoutingService topicRouting;
+    private boolean topicRoutingEnabled = true;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTopicRouting(ConversationTopicRoutingService topicRouting) {
+        this.topicRouting = topicRouting;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setTopicRoutingEnabled(
+            @org.springframework.beans.factory.annotation.Value(
+                    "${noteweave.conversation.topic-routing.enabled:true}") boolean enabled) {
+        this.topicRoutingEnabled = enabled;
+    }
+
+    /** 渐进改写使用的线程池；未注入时（例如单元测试）退回同步改写。 */
+    private java.util.concurrent.Executor rewriteExecutor;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setRewriteExecutor(
+            @org.springframework.beans.factory.annotation.Qualifier("retrievalBranchExecutor")
+            java.util.concurrent.Executor rewriteExecutor
+    ) {
+        this.rewriteExecutor = rewriteExecutor;
+    }
+
+    private AnswerDraft draftWithRewrite(
+            ConversationRetrievalContextAssembler.Context conversationContext,
+            QueryRewrite rewrite,
+            String conversationId,
+            String currentUserMessageId,
+            String workspaceId,
+            SendMessageRequest request,
+            EffectiveRetrievalConfig retrievalConfig,
+            PreparationTimer timer,
+            AnswerPreparationListener stages
+    ) {
         stages.stage(AnswerPreparationListener.STAGE_RETRIEVING, Map.of());
         MemoryControlPackResponse chatControlPack = memoryCompilerService.compileChatControlPack(
                 workspaceId, request.answerMode(), rewrite.standaloneQuery());
@@ -697,7 +837,7 @@ public class ChatService {
      * 推迟到后台准备的会话上下文冻结。freeze 在等待上一轮后台抽取之后、整理上下文之前执行；
      * catchUp 排到后台，补抽本轮问题的约束。两者为空表示上下文已在请求线程里冻结。
      */
-    public record ContextFreeze(Runnable freeze, Runnable catchUp) {
+    public record ContextFreeze(java.util.function.Consumer<TopicRoute> freeze, Runnable catchUp) {
         public static final ContextFreeze NONE = new ContextFreeze(null, null);
     }
 

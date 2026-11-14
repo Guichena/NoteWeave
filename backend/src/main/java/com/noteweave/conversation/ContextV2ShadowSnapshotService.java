@@ -75,11 +75,25 @@ public class ContextV2ShadowSnapshotService {
     public void freezeAnswer(String workspaceId, String actorId, String conversationId,
                              String queryMessageId, String answerRunId,
                              String currentInput, String taskPurpose, boolean includeCurrentQuery) {
+        freezeAnswer(workspaceId, actorId, conversationId, queryMessageId, answerRunId,
+                currentInput, taskPurpose, includeCurrentQuery, null);
+    }
+
+    /**
+     * @param route 查询改写模型对本轮问题的话题判断，决定本轮问题归入哪个话题，进而决定冻结哪些话题摘要；
+     *              为空时按规则与向量切分
+     */
+    public void freezeAnswer(String workspaceId, String actorId, String conversationId,
+                             String queryMessageId, String answerRunId,
+                             String currentInput, String taskPurpose, boolean includeCurrentQuery,
+                             TopicRoute route) {
         if (!rollout.shadowEnabled(workspaceId) || settled(answerRunId)) return;
         int cutoff = answerCutoff(workspaceId, conversationId, queryMessageId, answerRunId);
-        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery);
+        var refreshed = topics.refreshForAnswer(workspaceId, conversationId, cutoff, includeCurrentQuery, route);
+        String detailQuery = route == null ? null : route.detailQuery();
         independentTransaction(conversationId, () -> persistSnapshot(workspaceId, actorId,
-                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed));
+                conversationId, queryMessageId, answerRunId, cutoff, currentInput, taskPurpose, refreshed,
+                detailQuery));
     }
 
     /**
@@ -129,7 +143,8 @@ public class ContextV2ShadowSnapshotService {
     private void persistSnapshot(String workspaceId, String actorId, String conversationId,
                                  String queryMessageId, String answerRunId, int cutoff,
                                  String currentInput, String taskPurpose,
-                                 ConversationTopicProjectionV2Service.ConstraintRefresh refreshed) {
+                                 ConversationTopicProjectionV2Service.ConstraintRefresh refreshed,
+                                 String detailQuery) {
         // 与消息删除同一把锁：删除的 redaction 扫描必须能看到这份快照，插入也不能落在删除之后。
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
@@ -141,7 +156,7 @@ public class ContextV2ShadowSnapshotService {
         if (settled(answerRunId)) return;
         topics.requireAnswerConstraints(workspaceId, conversationId, refreshed);
         ContextProjectionV2 projection = compiler.compile(workspaceId, actorId, conversationId,
-                cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS);
+                cutoff, currentInput, taskPurpose, CONTEXT_BUDGET_TOKENS, detailQuery);
         requireCurrentMemories(workspaceId, projection);
         String snapshotId = Ids.newId();
         String json = write(projection);

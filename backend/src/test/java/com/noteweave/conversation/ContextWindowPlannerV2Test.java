@@ -34,10 +34,11 @@ class ContextWindowPlannerV2Test {
                 .containsExactly(3, 4, 5, 6, 7, 8, 9, 10);
         assertThat(result.topicSummaries()).containsExactly(a);
         assertThat(result.constraints()).containsExactly(negative);
+        // B 的摘要与原文窗口重叠（3-8 都在原文里），不能再进摘要
         assertThat(result.decisions()).anySatisfy(decision -> {
             assertThat(decision.refId()).isEqualTo("revision-B1");
             assertThat(decision.action()).isEqualTo("EXCLUDE");
-            assertThat(decision.reason()).isEqualTo("OTHER_TOPIC");
+            assertThat(decision.reason()).isEqualTo("OVERLAPS_RAW_OR_STALE_RANGE");
         });
         assertThat(result.selectedTokens()).isLessThanOrEqualTo(result.tokenBudget());
     }
@@ -203,9 +204,84 @@ class ContextWindowPlannerV2Test {
 
         assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
                 .containsExactly(13, 14, 15, 16, 17, 18, 19, 20);
-        assertThat(result.topicSummaries()).containsExactly(own);
+        // 当前段自己的摘要照常使用；最近的其他话题按新近程度带上一个，按时间顺序排列
+        assertThat(result.topicSummaries()).extracting(ContextProjectionV2.TopicSummary::revisionId)
+                .containsExactly("revision-A1", "revision-B1");
         assertThat(result.decisions()).anySatisfy(decision -> {
             assertThat(decision.refId()).isEqualTo("revision-A1");
+            assertThat(decision.action()).isEqualTo("INCLUDE");
+            assertThat(decision.reason()).isEqualTo("RECENT_OTHER_TOPIC");
+        });
+    }
+
+    /** 聊了很久的 A，中途岔开到 B，再用短句切回 A：A 的摘要入选，摘要没覆盖到的 A 段尾原文也带上。 */
+    @Test
+    void returningToAnEarlierTopicBringsItsSummaryAndUncoveredTail() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 20)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var a1 = segment("A1", "A", 1, 12, "CONFIDENT");
+        var b1 = segment("B1", "B", 13, 18, "CONFIDENT");
+        var a2 = segment("A2", "A", 19, 20, "CONFIDENT");
+        var aSummary = summary("A1", "A", 1, 8, "A first eight");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 20, "那第二种方案呢？", "QA", 2_000,
+                messages, List.of(a1, b1, a2), List.of(aSummary), List.of(), List.of()));
+
+        assertThat(result.topicSummaries()).containsExactly(aSummary);
+        assertThat(result.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
+        assertThat(result.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("message-12");
+            assertThat(decision.reason()).isEqualTo("RETURNED_TOPIC_TAIL");
+        });
+        assertThat(result.decisions()).noneSatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("message-9");
+            assertThat(decision.action()).isEqualTo("EXCLUDE");
+        });
+        assertThat(result.selectedTokens()).isLessThanOrEqualTo(result.tokenBudget());
+    }
+
+    @Test
+    void returnedTopicTailIsCappedAndSkippedWhenTheSummaryCoversTheSegment() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 30)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var a1 = segment("A1", "A", 1, 14, "CONFIDENT");
+        var b1 = segment("B1", "B", 15, 22, "CONFIDENT");
+        var a2 = segment("A2", "A", 23, 30, "CONFIDENT");
+        // 没有摘要：段尾最多带 4 条
+        ContextProjectionV2 noSummary = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 30, "question", "QA", 2_000,
+                messages, List.of(a1, b1, a2), List.of(), List.of(), List.of()));
+        assertThat(noSummary.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .startsWith(11, 12, 13, 14, 23);
+        // 摘要已经覆盖整段：不再带原文
+        var full = summary("A1", "A", 1, 14, "A complete");
+        ContextProjectionV2 covered = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 30, "question", "QA", 2_000,
+                messages, List.of(a1, b1, a2), List.of(full), List.of(), List.of()));
+        assertThat(covered.rawTail()).extracting(ContextProjectionV2.RawMessage::seq)
+                .containsExactly(23, 24, 25, 26, 27, 28, 29, 30);
+        assertThat(covered.topicSummaries()).containsExactly(full);
+    }
+
+    @Test
+    void onlyTheMostRecentOtherTopicSummaryIsKept() {
+        List<ContextProjectionV2.RawMessage> messages = java.util.stream.IntStream.rangeClosed(1, 30)
+                .mapToObj(seq -> message(seq, "message " + seq)).toList();
+        var c1 = segment("C1", "C", 1, 6, "CONFIDENT");
+        var b1 = segment("B1", "B", 7, 12, "CONFIDENT");
+        var a1 = segment("A1", "A", 13, 30, "CONFIDENT");
+        var cSummary = summary("C1", "C", 1, 6, "C facts");
+        var bSummary = summary("B1", "B", 7, 12, "B facts");
+        var aSummary = summary("A1", "A", 13, 22, "A facts");
+        ContextProjectionV2 result = planner.compile(new ContextWindowPlannerV2.Input(
+                "workspace", "actor", "conversation", 30, "question", "QA", 2_000,
+                messages, List.of(c1, b1, a1), List.of(cSummary, bSummary, aSummary), List.of(), List.of()));
+
+        assertThat(result.topicSummaries()).containsExactly(bSummary, aSummary);
+        assertThat(result.decisions()).anySatisfy(decision -> {
+            assertThat(decision.refId()).isEqualTo("revision-C1");
+            assertThat(decision.action()).isEqualTo("EXCLUDE");
             assertThat(decision.reason()).isEqualTo("OTHER_TOPIC");
         });
     }

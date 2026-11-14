@@ -23,11 +23,6 @@
 
 ## 设计与壳层
 
-- 设计规范（风格源 NoteWeave v1，产品源 v2，非协作）：[NoteWeave 工作台设计规范（风格源 v1、产品源 v2）](../docs/frontend/NoteWeave工作台设计规范-风格源v1-产品源v2.md)
-- 代码现实基线：[docs/frontend/前端现实基线-20260721.md](../docs/frontend/前端现实基线-20260721.md)
-- 架构/审美/排版审查（只读建议）：[docs/frontend/前端架构审美与排版审查报告.md](../docs/frontend/前端架构审美与排版审查报告.md)
-- GPT / Gemini 风格对照（与纯对话产品的差异）：[docs/frontend/GPT-Gemini风格对照与改版建议.md](../docs/frontend/GPT-Gemini风格对照与改版建议.md)
-- NotebookLM 风格对照（当前产品方向）：[docs/frontend/NotebookLM风格对照与改版建议.md](../docs/frontend/NotebookLM风格对照与改版建议.md)
 - 门禁：pnpm ui:check（与 ChatWorkbench / ResearchWorkbenchView 所有权对齐）
 
 ## 本地运行

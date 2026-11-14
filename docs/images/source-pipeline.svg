@@ -1,80 +1,79 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="1200" height="560" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
-    </marker>
-  </defs>
-  <rect width="1200" height="560" fill="#ffffff"/>
-  <text x="600" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">资料异步处理流水线</text>
-  <text x="600" y="66" text-anchor="middle" font-size="13" fill="#475569">每个阶段消费一个独立的 Kafka topic，阶段之间只传递资料快照 ID，大对象经 MinIO 交接</text>
-
-  <!-- 阶段 -->
-  <g font-size="12">
-    <rect x="30" y="100" width="170" height="130" rx="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.6"/>
-    <text x="115" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#312e81">上传</text>
-    <text x="115" y="156" text-anchor="middle" fill="#3730a3">分片上传与断点续传</text>
-    <text x="115" y="178" text-anchor="middle" fill="#3730a3">流式计算 SHA-256</text>
-    <text x="115" y="200" text-anchor="middle" fill="#3730a3">单文件最大 128 MB</text>
-
-    <rect x="232" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-    <text x="317" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">解析 Parse</text>
-    <text x="317" y="156" text-anchor="middle" fill="#047857">逐页提取，去页眉页脚</text>
-    <text x="317" y="178" text-anchor="middle" fill="#047857">编码识别，音视频转写</text>
-    <text x="317" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.parse</text>
-
-    <rect x="434" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-    <text x="519" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">切片 Chunk</text>
-    <text x="519" y="156" text-anchor="middle" fill="#047857">按章节与句子切分</text>
-    <text x="519" y="178" text-anchor="middle" fill="#047857">≤600 Token，带页码</text>
-    <text x="519" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.chunk</text>
-
-    <rect x="636" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-    <text x="721" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">向量化 Embed</text>
-    <text x="721" y="156" text-anchor="middle" fill="#047857">调用 Embedding</text>
-    <text x="721" y="178" text-anchor="middle" fill="#047857">向量写入对象存储</text>
-    <text x="721" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.embed</text>
-
-    <rect x="838" y="100" width="170" height="130" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.6"/>
-    <text x="923" y="130" text-anchor="middle" font-size="16" font-weight="700" fill="#065f46">索引 Index</text>
-    <text x="923" y="156" text-anchor="middle" fill="#047857">写入 ES 检索投影</text>
-    <text x="923" y="178" text-anchor="middle" fill="#047857">BM25 + kNN</text>
-    <text x="923" y="204" text-anchor="middle" font-family="Consolas, Menlo, monospace" font-size="10.5" fill="#64748b">noteweave.source.index</text>
-
-    <rect x="1040" y="100" width="130" height="130" rx="12" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
-    <text x="1105" y="140" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">可检索</text>
-    <text x="1105" y="168" text-anchor="middle" fill="#475569">INDEXED</text>
-    <text x="1105" y="192" text-anchor="middle" fill="#475569">问答 / 精读 / Wiki</text>
-  </g>
-  <g stroke="#475569" stroke-width="1.6">
-    <line x1="200" y1="165" x2="230" y2="165" marker-end="url(#arrow)"/>
-    <line x1="402" y1="165" x2="432" y2="165" marker-end="url(#arrow)"/>
-    <line x1="604" y1="165" x2="634" y2="165" marker-end="url(#arrow)"/>
-    <line x1="806" y1="165" x2="836" y2="165" marker-end="url(#arrow)"/>
-    <line x1="1008" y1="165" x2="1038" y2="165" marker-end="url(#arrow)"/>
-  </g>
-
-  <!-- 转写分支 -->
-  <rect x="232" y="290" width="440" height="104" rx="12" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
-  <text x="252" y="318" font-size="15" font-weight="700" fill="#7c2d12">音视频转写（Artifact Worker）</text>
-  <g font-size="12.5" fill="#9a3412">
-    <text x="252" y="342">mp3 / m4a / wav / mp4 等先按文件头校验格式</text>
-    <text x="252" y="364">系统 MCP 调用 faster-whisper 生成带时间戳文字稿</text>
-    <text x="252" y="386">大模型按 60 行一批纠正识别错误，时间戳保持不变</text>
-  </g>
-  <g stroke="#ea580c" stroke-width="1.6" fill="none">
-    <line x1="317" y1="230" x2="317" y2="288" marker-end="url(#arrow)"/>
-    <path d="M672,342 L700,342 L700,248 L560,248 L540,232" marker-end="url(#arrow)"/>
-  </g>
-  <text x="326" y="264" font-size="12" fill="#9a3412">音视频资料</text>
-  <text x="706" y="300" font-size="12" fill="#9a3412">回调文字稿后进入切片</text>
-
-  <!-- 可靠性 -->
-  <rect x="30" y="430" width="1140" height="104" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4"/>
-  <text x="50" y="458" font-size="15" font-weight="700" fill="#0f172a">可靠性保障</text>
-  <g font-size="13" fill="#334155">
-    <text x="50" y="486">· 每个资料快照记录 processing_stage，重复投递的消息按阶段幂等跳过</text>
-    <text x="50" y="512">· 解析异常进入死信 topic，并回写失败状态与是否可重试，资料不会卡在处理中</text>
-    <text x="620" y="486">· 索引失败按 1、2、4 分钟退避自动重试，最多 3 次</text>
-    <text x="620" y="512">· 资料库支持单份资料重新处理；任务事件可在界面查看</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 760" width="1400" height="760" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="760" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">资料异步处理流水线：分阶段 Kafka 任务与幂等重试</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">上传只负责收文件；解析、切片、向量化、索引拆成独立阶段，阶段之间只传快照 ID</text>
+  <rect x="40.0" y="104.0" width="280.0" height="120.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="128.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">分片上传</text>
+  <text x="54.0" y="152.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">单文件最大 128 MB</text>
+  <text x="54.0" y="171.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">流式读取，固定大小缓冲区</text>
+  <text x="54.0" y="190.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">边读边校验格式与大小</text>
+  <text x="54.0" y="211.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">UploadSecurityPolicy</text>
+  <rect x="346.0" y="104.0" width="230.0" height="82.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="360.0" y="128.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">MinIO</text>
+  <text x="360.0" y="152.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">原始文件与大对象</text>
+  <text x="360.0" y="171.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">阶段之间按对象路径交接</text>
+  <rect x="602.0" y="104.0" width="330.0" height="100.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="616.0" y="128.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">资料与快照（MySQL）</text>
+  <text x="616.0" y="152.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">资料版本不可变</text>
+  <text x="616.0" y="171.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">阶段任务写入发件箱，与业务数据同事务</text>
+  <text x="616.0" y="190.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">发件箱投递 Kafka，失败重投</text>
+  <rect x="958.0" y="104.0" width="400.0" height="100.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="972.0" y="128.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">media-mcp（MCP 服务）</text>
+  <text x="972.0" y="152.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">B 站解析、字幕、faster-whisper 转写</text>
+  <text x="972.0" y="171.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">抓帧、时间轴、OCR</text>
+  <text x="972.0" y="190.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">转写结果由模型逐批校对识别错误</text>
+  <path d="M320.0,145.0 L346.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M576.0,145.0 L602.0,145.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="24.0" y="270.0" width="1352.0" height="210.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="294.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Kafka 阶段任务</text>
+  <rect x="40.0" y="316.0" width="300.0" height="122.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="54.0" y="340.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">解析</text>
+  <text x="54.0" y="364.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">parse-worker（Docling）转换文档</text>
+  <text x="54.0" y="383.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">扫描页按需 OCR，保留页码与位置</text>
+  <text x="54.0" y="402.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">音视频调用 media-mcp 转写</text>
+  <text x="54.0" y="423.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">noteweave.source.parse</text>
+  <rect x="380.0" y="316.0" width="300.0" height="122.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="394.0" y="340.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">切片</text>
+  <text x="394.0" y="364.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">按结构切成检索片段</text>
+  <text x="394.0" y="383.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">生成精读用的原文窗口</text>
+  <text x="394.0" y="404.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">noteweave.source.chunk</text>
+  <rect x="720.0" y="316.0" width="300.0" height="122.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="734.0" y="340.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">向量化</text>
+  <text x="734.0" y="364.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">批量调用 Embedding</text>
+  <text x="734.0" y="383.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">失败只重试这一阶段</text>
+  <text x="734.0" y="404.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">noteweave.source.embed</text>
+  <rect x="1060.0" y="316.0" width="300.0" height="122.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1074.0" y="340.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">索引</text>
+  <text x="1074.0" y="364.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">写入 ES 问答片段与精读资料</text>
+  <text x="1074.0" y="383.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">全部写完才标为可检索</text>
+  <text x="1074.0" y="404.0" font-size="11" font-weight="400" fill="#d97706" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">noteweave.source.index</text>
+  <path d="M340.0,377.0 L380.0,377.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M680.0,377.0 L720.0,377.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1020.0,377.0 L1060.0,377.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M667.0,204.0 L667.0,240.0 L190.0,240.0 L190.0,316.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="362.0" y="231.0" width="76.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="400.0" y="244.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">资料快照 ID</text>
+  <path d="M270.0,316.0 L270.0,256.0 L1158.0,256.0 L1158.0,204.0" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-violet)"/>
+  <rect x="877.8" y="247.0" width="44.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="900.0" y="260.0" font-size="11.5" font-weight="600" fill="#7c3aed" text-anchor="middle">音视频</text>
+  <rect x="40.0" y="512.0" width="420.0" height="100.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="54.0" y="536.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">幂等与重试</text>
+  <text x="54.0" y="560.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">按快照、阶段与版本生成幂等键去重</text>
+  <text x="54.0" y="579.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">索引失败记录下次重试时间，退避重试</text>
+  <text x="54.0" y="598.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">超过次数进入死信，状态回写资料</text>
+  <rect x="490.0" y="512.0" width="420.0" height="100.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="504.0" y="536.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">状态可见</text>
+  <text x="504.0" y="560.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">资料的处理阶段、重试次数实时回写</text>
+  <text x="504.0" y="579.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">前端显示阶段与下次重试时间</text>
+  <text x="504.0" y="598.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">检索投影就绪前不对检索可见</text>
+  <rect x="940.0" y="512.0" width="420.0" height="100.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="954.0" y="536.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">下游任务</text>
+  <text x="954.0" y="560.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">noteweave.wiki.ingest：编译知识页</text>
+  <text x="954.0" y="579.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">资料撤销：墓碑与异步清理（见模块二）</text>
+  <text x="954.0" y="598.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">产物生成按冻结的快照读取原文与关键帧</text>
+  <rect x="40.0" y="640.0" width="1320.0" height="88.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="664.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">为什么拆成阶段</text>
+  <text x="54.0" y="688.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">大文件解析与向量化都很慢，同步处理会占住请求线程；拆成阶段后每个阶段可以单独扩容、单独重试，失败时能精确定位到阶段。</text>
+  <text x="54.0" y="707.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">阶段之间只传快照 ID，大对象走 MinIO，消息体积固定；同一快照重复投递时按幂等键跳过。</text>
 </svg>

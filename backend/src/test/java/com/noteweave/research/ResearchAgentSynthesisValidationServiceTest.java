@@ -29,6 +29,37 @@ class ResearchAgentSynthesisValidationServiceTest {
     }
 
     @Test
+    void namedStudyAuthorMustAppearInTheCitedQuote() {
+        // 开放式研究回放：句子点名 Gibbs et al. (2022)，引用的原文里却没有这位作者
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("Gibbs et al. (2022) found that PostgreSQL 17 uses GIN [evidence:pg].",
+                        List.of("pg"), List.of("evidence:pg")),
+                validParagraphs().get(1)), Map.of())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void sequenceWordsNeedDatedQuotes() {
+        // 资料研究回放：引用的原文都没有日期，却用随后排了先后
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL 17 uses GIN [evidence:pg]，随后 MySQL 8.4 indexes virtual columns [evidence:mysql]。",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of()))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void sameStudyMustShareACitationWithThePreviousSentence() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                validParagraphs().get(0),
+                paragraph("A source reports GIN [evidence:pg]. The same study indexes virtual columns [evidence:mysql].",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of()))
+                .isInstanceOf(BusinessException.class);
+        validateMultiCellReport("Verified findings.", List.of(
+                validParagraphs().get(0),
+                paragraph("A source reports GIN [evidence:pg]. Another source indexes virtual columns [evidence:mysql].",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of());
+    }
+
+    @Test
     void acceptsComparisonSentenceThatNamesBothSubjectsAndCitesOneOfThem() {
         validateMultiCellReport("Verified findings.", List.of(
                 paragraph("Unlike MySQL, PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg"), List.of("evidence:pg")),
@@ -472,5 +503,32 @@ class ResearchAgentSynthesisValidationServiceTest {
                         Map.of("text", "The measured latency is 50 ms.", "cell_keys", List.of("cell-a"),
                                 "evidence_keys", List.of("evidence-a"))))),
                 "background_notes", List.of(Map.of("point", "延迟受哪些因素影响", "text", note)));
+    }
+
+    @Test
+    void datesCompareAsWholeDatesAtTheSamePrecision() {
+        // 原文英文日期与中文成文是同一日期时放行；多写了日、或只借用月份里的数字时仍然拒绝
+        String[][] accepted = {
+                {"Star River 项目于 2026 年 12 月 15 日上线。", "Star River project launches on December 15, 2026."},
+                {"第二阶段：2027 年 2 月覆盖 600 名教师", "Phase two: 600 teachers in February 2027."},
+                {"于2024年3月1日发布", "Released 2024-03-01"},
+                {"12 月 15 日上线", "December 15, 2026"},
+                {"2027 年", "Phase two in February 2027."},
+        };
+        for (String[] pair : accepted) {
+            org.assertj.core.api.Assertions.assertThat(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[1]))
+                    .as(pair[0]).containsAll(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[0]));
+        }
+        String[][] rejected = {
+                {"2027 年 2 月 3 日", "February 2027"},
+                {"2 所学校", "February 2027"},
+                {"15 名教师", "Released 2024-03-01"},
+                {"2026 年 12 月 16 日", "December 15, 2026"},
+        };
+        for (String[] pair : rejected) {
+            org.assertj.core.api.Assertions.assertThat(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[1])
+                            .containsAll(ResearchAgentSynthesisValidationService.typedTokensForTest(pair[0])))
+                    .as(pair[0]).isFalse();
+        }
     }
 }

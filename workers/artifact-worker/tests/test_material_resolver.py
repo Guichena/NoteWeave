@@ -57,8 +57,9 @@ def test_changed_window_content_is_rejected_before_generation() -> None:
         })
 
 
-def test_real_architecture_document_late_fact_reaches_frozen_artifact_citation(monkeypatch) -> None:
-    document = (Path(__file__).resolve().parents[3] / "docs" / "Artifact-Skill执行架构.md").read_text(
+def test_architecture_document_fixture_late_fact_reaches_frozen_artifact_citation(monkeypatch) -> None:
+    # 固定删除前的真实长文样本（da6a5f24^），避免测试依赖会继续编辑或清理的项目文档。
+    document = (Path(__file__).parent / "fixtures" / "artifact_architecture_snapshot.txt").read_text(
         encoding="utf-8"
     )
     paragraphs = document.splitlines(keepends=True)

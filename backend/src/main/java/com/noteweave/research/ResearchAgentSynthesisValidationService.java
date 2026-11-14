@@ -21,8 +21,25 @@ class ResearchAgentSynthesisValidationService {
     private static final Pattern INLINE_CITATION = Pattern.compile("\\[(evidence:[^\\[\\]\\s]+)\\]");
     /** 原文常写 60.6 percent，结论写 60.6%；比对数字前统一成 %，与 Worker 侧核对口径一致。 */
     private static final Pattern PERCENT_WORD = Pattern.compile("(\\d)\\s*(?:per\\s?cent\\b|％)", Pattern.CASE_INSENSITIVE);
+    /** et al. 里的点号不是句号，与 Worker 侧 narrative_report._STATEMENT 一致。 */
     private static final Pattern STATEMENT = Pattern.compile(
-            ".+?(?:[。！？!?]|\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
+            ".+?(?:[。！？!?]|(?<!\\bet al)\\.(?!\\d)(?=\\s|\\[|$)|$)(?:\\s*\\[evidence:[^\\[\\]\\s]+\\])*", Pattern.DOTALL);
+    /** 按作者和年份点名研究，与 Worker 侧 _AUTHOR_YEAR 一致：作者姓氏必须出现在所引原文里。 */
+    private static final Pattern AUTHOR_YEAR = Pattern.compile(
+            "(?<![A-Za-z])([A-Z][A-Za-z'\\-]{1,30})(?:\\s+(?:et\\s+al\\.?|and|&)(?:\\s+[A-Z][A-Za-z'\\-]{1,30})?)?"
+                    + "\\s*(?:等人?)?\\s*[（(]\\s*(?:19|20)\\d{2}[a-z]?\\s*[)）]");
+    /** 指回上一句那项研究的说法，与 Worker 侧 _SAME_STUDY 一致：必须和上一句引用同一条证据。 */
+    /** 明确表示先后的说法，与 Worker 侧 _SEQUENCE 一致。 */
+    private static final Pattern SEQUENCE = Pattern.compile(
+            "随后|此后|上线前|上线后|在此之前|\\bsubsequently\\b|\\bafterwards\\b|\\b(?:before|after|prior to)(?: the)? launch\\b",
+            Pattern.CASE_INSENSITIVE);
+
+    private static boolean hasDate(Set<String> tokens) {
+        return tokens.stream().anyMatch(token -> token.startsWith("date:") || token.matches("(?:19|20)\\d{2}"));
+    }
+
+    private static final Pattern SAME_STUDY = Pattern.compile(
+            "同一(?:项)?研究|该研究|这项研究|上述研究|\\bthe same study\\b|\\bthis study\\b", Pattern.CASE_INSENSITIVE);
     /** 与 Worker 成文的标题一致（narrative_report.BACKGROUND_HEADING_*），前端按它们给这一节单独的样式。 */
     static final String BACKGROUND_HEADING_ZH = "## 补充说明（通用知识，未经本次检索核验）";
     static final String BACKGROUND_HEADING_EN = "## Background notes (general knowledge, not verified by this research)";
@@ -256,22 +273,60 @@ class ResearchAgentSynthesisValidationService {
             throw invalid("正文列出的证据与句中实际引用不一致");
         }
         Matcher statements = STATEMENT.matcher(prose);
+        Set<String> previousRefs = new HashSet<>();
+        String previousSources = null;
         while (statements.find()) {
             String statement = statements.group();
             if (statement.isBlank()) continue;
             Set<String> refs = inline.isEmpty() ? new HashSet<>(declared) : inlineCitations(statement);
+            // 说"同一研究"时要和上一句引用同一条证据，不能把相邻引用的不同研究写成一项
+            if (!inline.isEmpty() && !previousRefs.isEmpty() && !refs.isEmpty()
+                    && SAME_STUDY.matcher(statement).find() && java.util.Collections.disjoint(refs, previousRefs)) {
+                throw invalid("句子说同一研究，但引用的证据与上一句不同");
+            }
+            if (!refs.isEmpty()) previousRefs = refs;
             List<FrozenCell> cited = bound.values().stream()
                     .filter(cell -> cell.evidenceKeys().stream().anyMatch(refs::contains)).toList();
             StringBuilder sources = new StringBuilder();
+            List<String> quoteTexts = new java.util.ArrayList<>();
             for (FrozenCell cell : cited) {
                 if (cell.quotes().isEmpty()) {
                     sources.append(' ').append(trustedContext).append(' ').append(cell.value()).append(' ').append(cell.context());
+                    quoteTexts.add(cell.value() + " " + cell.context());
                 } else {
-                    cell.quotes().forEach((key, quote) -> { if (refs.contains(key)) sources.append(' ').append(quote); });
+                    cell.quotes().forEach((key, quote) -> {
+                        if (refs.contains(key)) {
+                            sources.append(' ').append(quote);
+                            quoteTexts.add(quote);
+                        }
+                    });
                     sources.append(' ').append(cell.entity());
                 }
             }
-            Set<String> unsupported = new java.util.TreeSet<>(typedTokens(INLINE_CITATION.matcher(statement).replaceAll("")));
+            // 用随后、上线前这类词排先后时，句中每条原文都要有日期；承接上一句时上一句的原文也要有日期，
+            // 与 Worker 侧 _sequence_supported 一致
+            Matcher sequence = SEQUENCE.matcher(statement);
+            if (!inline.isEmpty() && sequence.find()) {
+                if (quoteTexts.isEmpty() || quoteTexts.stream().anyMatch(text -> !hasDate(typedTokens(text)))) {
+                    throw invalid("句子排了先后，但所引原文没有写出对应日期");
+                }
+                Matcher firstCitation = INLINE_CITATION.matcher(statement);
+                boolean refersBack = !firstCitation.find() || sequence.start() < firstCitation.start();
+                if (refersBack && previousSources != null && !hasDate(typedTokens(previousSources))) {
+                    throw invalid("句子承接上一句排了先后，但上一句所引原文没有写出日期");
+                }
+            }
+            if (!refs.isEmpty()) previousSources = sources.toString();
+            String statementProse = INLINE_CITATION.matcher(statement).replaceAll("");
+            Matcher author = AUTHOR_YEAR.matcher(statementProse);
+            while (author.find()) {
+                String surname = author.group(1);
+                if (!Pattern.compile("(?<![A-Za-z])" + Pattern.quote(surname) + "(?![A-Za-z])")
+                        .matcher(sources).find()) {
+                    throw invalid("句子点名的研究作者没有出现在所引原文里：" + surname);
+                }
+            }
+            Set<String> unsupported = new java.util.TreeSet<>(typedTokens(statementProse));
             unsupported.removeAll(typedTokens(sources.toString()));
             if (!unsupported.isEmpty()) {
                 // 带上句子开头和缺少出处的数字，拒收后可以直接从日志定位是哪一句
@@ -315,9 +370,87 @@ class ResearchAgentSynthesisValidationService {
         return quotes;
     }
 
+    private static final String MONTH_NAME = "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+            + "Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?";
+    private static final String DAY = "0?[1-9]|[12]\\d|3[01]";
+    private static final String MONTH = "0?[1-9]|1[0-2]";
+    private static final String YEAR = "(?:19|20)\\d{2}";
+    /**
+     * 日期按整体比对，与 Worker 成文核对（narrative_report._DATE_PATTERNS）一致：原文 December 15, 2026
+     * 与成文 2026 年 12 月 15 日是同一个日期。成文比原文更精确（多写了日或月）时仍然对不上。
+     */
+    private static final List<Pattern> DATE_PATTERNS = List.of(
+            Pattern.compile("(?<![\\w.])(?<day>" + DAY + ")[ \\t]+(?<mname>" + MONTH_NAME + ")\\.?,?[ \\t]+(?<year>"
+                    + YEAR + ")(?!\\w|\\.\\d)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?<![\\w.])(?<mname>" + MONTH_NAME + ")\\.?[ \\t]+(?:(?<day>" + DAY
+                    + ")(?:st|nd|rd|th)?,?[ \\t]+)?(?<year>" + YEAR + ")(?!\\w|\\.\\d)", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(?<![\\w.])(?<year>" + YEAR + ")[ \\t]*[-/年][ \\t]*(?<month>" + MONTH + ")"
+                    + "(?:[ \\t]*[-/月][ \\t]*(?<day>" + DAY + ")[ \\t]*日?|[ \\t]*月)?(?![\\d.]\\d|\\d)"),
+            Pattern.compile("(?<![\\w.])(?<year>" + YEAR + ")\\.(?<month>" + MONTH + ")\\.(?<day>" + DAY
+                    + ")(?!\\w|\\.\\d)"),
+            Pattern.compile("(?<![\\w.])(?<month>" + MONTH + ")[ \\t]*月(?:[ \\t]*(?<day>" + DAY + ")[ \\t]*[日号])?"));
+    private static final List<String> MONTH_ABBREVIATIONS = List.of(
+            "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec");
+
+    /** 把日期换成按精度分层的标记，返回去掉日期后的文字；规则与 Worker 侧 _date_tokens 相同。 */
+    static String extractDateTokens(String value, Set<String> tokens) {
+        List<int[]> spans = new java.util.ArrayList<>();
+        for (Pattern pattern : DATE_PATTERNS) {
+            Matcher matcher = pattern.matcher(value);
+            while (matcher.find()) {
+                int start = matcher.start();
+                int end = matcher.end();
+                if (spans.stream().anyMatch(span -> span[0] < end && start < span[1])) continue;
+                String year = group(matcher, "year");
+                String monthName = group(matcher, "mname");
+                String monthDigits = group(matcher, "month");
+                int month;
+                if (monthName != null) {
+                    month = MONTH_ABBREVIATIONS.indexOf(monthName.substring(0, 3).toLowerCase(Locale.ROOT)) + 1;
+                } else if (monthDigits != null) {
+                    month = Integer.parseInt(monthDigits);
+                } else {
+                    continue;
+                }
+                String dayText = group(matcher, "day");
+                Integer day = dayText == null ? null : Integer.parseInt(dayText);
+                spans.add(new int[] {start, end});
+                tokens.add("month:" + month);
+                if (day != null) tokens.add("monthday:" + month + "-" + day);
+                if (year != null) {
+                    tokens.add(year);
+                    tokens.add("date:" + year + "-" + month);
+                    if (day != null) tokens.add("date:" + year + "-" + month + "-" + day);
+                }
+            }
+        }
+        if (spans.isEmpty()) return value;
+        spans.sort(java.util.Comparator.comparingInt(span -> span[0]));
+        StringBuilder stripped = new StringBuilder();
+        int last = 0;
+        for (int[] span : spans) {
+            stripped.append(value, last, span[0]).append(' ');
+            last = span[1];
+        }
+        return stripped.append(value.substring(last)).toString();
+    }
+
+    private static String group(Matcher matcher, String name) {
+        try {
+            return matcher.group(name);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    static Set<String> typedTokensForTest(String value) {
+        return new ResearchAgentSynthesisValidationService().typedTokens(value);
+    }
+
     private Set<String> typedTokens(String value) {
         Set<String> tokens = new HashSet<>();
-        Matcher matcher = TYPED_TOKEN.matcher(PERCENT_WORD.matcher(value).replaceAll("$1%"));
+        String remaining = extractDateTokens(value, tokens);
+        Matcher matcher = TYPED_TOKEN.matcher(PERCENT_WORD.matcher(remaining).replaceAll("$1%"));
         while (matcher.find()) tokens.add(matcher.group().replaceAll("\\s+", "").replace(",", "")
                 .toLowerCase(Locale.ROOT).replaceFirst("^v(?=\\d)", ""));
         return tokens;

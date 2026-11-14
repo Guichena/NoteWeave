@@ -117,21 +117,31 @@ public class ConversationTopicProjectionV2Service {
      */
     public ConstraintRefresh refreshForAnswer(String workspaceId, String conversationId, int cutoffSeq,
                                               boolean includeCurrentQuery) {
+        return refreshForAnswer(workspaceId, conversationId, cutoffSeq, includeCurrentQuery, null);
+    }
+
+    /**
+     * @param route 查询改写模型对本轮问题（序号为 cutoffSeq 的用户消息）的话题判断；为空时按规则切分。
+     *              这条消息一旦落库就成为固定前缀，之后的刷新不会再改它的归属。
+     */
+    public ConstraintRefresh refreshForAnswer(String workspaceId, String conversationId, int cutoffSeq,
+                                              boolean includeCurrentQuery, TopicRoute route) {
         return refreshConstraints(workspaceId, conversationId, cutoffSeq,
-                includeCurrentQuery ? null : cutoffSeq);
+                includeCurrentQuery ? null : cutoffSeq, route);
     }
 
     private ConstraintRefresh refreshConstraints(String workspaceId, String conversationId, Integer cutoffSeq) {
-        return refreshConstraints(workspaceId, conversationId, cutoffSeq, null);
+        return refreshConstraints(workspaceId, conversationId, cutoffSeq, null, null);
     }
 
     /** extractBeforeSeq 不为空时，只抽取序号小于它的消息；切分仍覆盖到 cutoffSeq。 */
     private ConstraintRefresh refreshConstraints(String workspaceId, String conversationId, Integer cutoffSeq,
-                                                 Integer extractBeforeSeq) {
+                                                 Integer extractBeforeSeq, TopicRoute route) {
+        Map<Integer, TopicRoute> routes = route == null || cutoffSeq == null ? Map.of() : Map.of(cutoffSeq, route);
         Segmentation segmentation = null;
         for (int attempt = 0; attempt < CONSTRAINT_APPLY_ATTEMPTS; attempt++) {
             segmentation = Objects.requireNonNull(independentTransaction(conversationId,
-                    () -> segment(workspaceId, conversationId, cutoffSeq)));
+                    () -> segment(workspaceId, conversationId, cutoffSeq, routes)));
             ConstraintState observed = segmentation.constraintState();
             boolean rebuild = !usable(observed);
             List<TopicSegmenterV2.Message> extractable = extractBeforeSeq == null
@@ -210,7 +220,8 @@ public class ConversationTopicProjectionV2Service {
         return transactionTemplate.execute(status -> body.get());
     }
 
-    private Segmentation segment(String workspaceId, String conversationId, Integer cutoffSeq) {
+    private Segmentation segment(String workspaceId, String conversationId, Integer cutoffSeq,
+                                 Map<Integer, TopicRoute> routes) {
         List<String> locked = jdbc.query("""
                 select id from conversation where id = ? and workspace_id = ? for update
                 """, (rs, index) -> rs.getString(1), conversationId, workspaceId);
@@ -229,7 +240,9 @@ public class ConversationTopicProjectionV2Service {
                 """, (rs, index) -> new MessageRow(rs.getString("id"), rs.getInt("message_seq"),
                 rs.getString("role"), rs.getString("content"), rs.getString("content_hash"),
                 rs.getString("context_status")), conversationId, workspaceId, cutoffSeq, cutoffSeq);
-        if (rows.stream().anyMatch(row -> !"CURRENT".equals(row.contextStatus()))) {
+        // 生成失败的助手消息没有正文、也不需要脱敏：按空消息参与切分，否则一次失败会让本会话
+        // 之后每一轮的话题投影都报需要脱敏，整段会话永久退回旧版上下文
+        if (rows.stream().anyMatch(row -> !SETTLED_CONTEXT_STATUSES.contains(row.contextStatus()))) {
             throw new BusinessException("CONTEXT_TOPIC_REDACTED",
                     "Deleted messages require topic redaction before shadow projection refresh",
                     HttpStatus.CONFLICT);
@@ -243,14 +256,15 @@ public class ConversationTopicProjectionV2Service {
                 rs.getInt("start_seq"), rs.getInt("end_seq"), rs.getString("decision_status"),
                 rs.getString("decision_reason"), rs.getString("rule_version")), conversationId);
         List<TopicSegmenterV2.Message> messages = rows.stream()
-                .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(), row.text()))
+                .map(row -> new TopicSegmenterV2.Message(row.id(), row.seq(), row.role(),
+                        "FAILED".equals(row.contextStatus()) ? "" : row.text()))
                 .toList();
         boolean embed = semanticSegmentationEnabled && embeddings != null && embeddings.isEnabled();
         if (embed) {
             // 切分向量始终取用户原话，检索改写的 standalone query 不参与（M5-M08）
             messages = TopicSegmentationVectors.attach(messages, embeddings, vectorCache);
         }
-        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, persisted);
+        TopicSegmenterV2.Projection projection = segmenter.segmentSemantic(messages, persisted, routes);
         if (embed && projection.degradationReasons().contains(TopicSegmenterV2.VECTOR_UNAVAILABLE)) {
             log.warn("话题切分退回词项: {}", TopicSegmenterV2.VECTOR_UNAVAILABLE);
         }
@@ -339,7 +353,7 @@ public class ConversationTopicProjectionV2Service {
         Integer invalid = jdbc.queryForObject("""
                 select count(*) from conversation_message
                 where workspace_id = ? and conversation_id = ? and message_seq <= ?
-                  and context_status <> 'CURRENT'
+                  and context_status not in ('CURRENT', 'FAILED')
                 """, Integer.class, workspaceId, conversationId,
                 segmentation.messages().stream().mapToInt(TopicSegmenterV2.Message::seq).max().orElse(0));
         ConstraintState current = latestState(workspaceId, conversationId);
@@ -573,6 +587,9 @@ public class ConversationTopicProjectionV2Service {
             throw new IllegalStateException("SHA-256 unavailable", ex);
         }
     }
+
+    /** 可以参与话题投影的消息状态：生成失败的消息没有正文，按空消息处理；删除与进行中的消息不行。 */
+    static final java.util.Set<String> SETTLED_CONTEXT_STATUSES = java.util.Set.of("CURRENT", "FAILED");
 
     private record MessageRow(String id, int seq, String role, String text,
                               String contentHash, String contextStatus) {}

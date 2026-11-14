@@ -45,6 +45,14 @@ public class SourceDeletionCleanupListener {
     /** 文件对象生命周期网关；未注入时保留既有引用检查（legacy 检查-删除竞态）。 */
     private com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle;
 
+    /** 撤销墓碑；ES 删除还在重试时续期，保证删除完成前检索一直提前排除这份资料。 */
+    private com.noteweave.retrieval.RevokedSourceTombstones revokedSources;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    void setRevokedSources(com.noteweave.retrieval.RevokedSourceTombstones revokedSources) {
+        this.revokedSources = revokedSources;
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     void setFileObjectLifecycle(com.noteweave.source.storage.FileObjectLifecycleGateway fileObjectLifecycle) {
         this.fileObjectLifecycle = fileObjectLifecycle;
@@ -235,6 +243,9 @@ public class SourceDeletionCleanupListener {
 
     private void execute(CleanupTask task) {
         if ("RETRIEVAL_PROJECTION".equals(task.cleanupType())) {
+            if (revokedSources != null) {
+                revokedSources.record(task.workspaceId(), task.sourceId());
+            }
             RetrievalProjectionWriter writer = projectionWriter.getIfAvailable();
             if (writer == null) {
                 throw new IllegalStateException("Retrieval projection writer is unavailable");

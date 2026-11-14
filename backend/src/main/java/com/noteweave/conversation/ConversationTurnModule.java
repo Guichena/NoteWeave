@@ -237,7 +237,7 @@ public class ConversationTurnModule {
                     ? ChatService.ContextFreeze.NONE
                     : new ChatService.ContextFreeze(
                             // 本轮问题的约束不在等待首字的路径上抽取，冻结后在后台补抽
-                            () -> freezeShadowAnswer(command, pending.actor(), pending.prepared(), false),
+                            route -> freezeShadowAnswer(command, pending.actor(), pending.prepared(), false, route),
                             () -> catchUpShadowConstraints(command, pending.prepared()));
             ChatService.PreparedAnswerMaterial material = chatService.compileAdmittedAnswer(
                     command.conversationId(),
@@ -317,12 +317,18 @@ public class ConversationTurnModule {
 
     private void freezeShadowAnswer(SubmitTurnCommand command, String actor,
                                     PreparedAnswerTurn prepared, boolean includeCurrentQuery) {
+        freezeShadowAnswer(command, actor, prepared, includeCurrentQuery, null);
+    }
+
+    private void freezeShadowAnswer(SubmitTurnCommand command, String actor,
+                                    PreparedAnswerTurn prepared, boolean includeCurrentQuery,
+                                    TopicRoute route) {
         if (shadowSnapshots == null) return;
         TurnReceipt receipt = prepared.receipt();
         try {
             shadowSnapshots.freezeAnswer(prepared.workspaceId(), actor, command.conversationId(),
                     receipt.messageId(), receipt.answerRunId(), command.content(),
-                    command.requestedTurnMode(), includeCurrentQuery);
+                    command.requestedTurnMode(), includeCurrentQuery, route);
         } catch (RuntimeException failure) {
             String code = failure instanceof BusinessException business
                     ? business.code() : "CONTEXT_V2_SHADOW_FAILURE";

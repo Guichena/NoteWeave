@@ -17,6 +17,47 @@ import org.junit.jupiter.api.Test;
 class OpenAiCompatibleEmbeddingClientTest {
 
     @Test
+    void queryReusesAnAlreadyComputedTopicVectorWithoutSpendingAgain() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        AtomicInteger requests = new AtomicInteger();
+        server.createContext("/v1/embeddings", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            requests.incrementAndGet();
+            byte[] body = """
+                    {"model":"embedding-v1","data":[{"index":0,"embedding":[0.1,0.2,0.3]}],"usage":{"total_tokens":7}}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            var client = new OpenAiCompatibleEmbeddingClient(new ObjectMapper(), properties(server, 3, 1, 100, 1));
+            var topic = client.embedDocuments(List.of("项目上线时间"));
+            var query = client.embedQuery("项目上线时间");
+            assertThat(query.singleVector()).isEqualTo(topic.singleVector());
+            assertThat(query.totalTokens()).isZero();
+            assertThat(requests.get()).isEqualTo(1);
+
+            // 资料召回、阅读窗口和记忆评分会再次请求同一查询；只应消耗一次提供方调用。
+            var firstQuery = client.embedQuery("另一个问题");
+            var repeatedQuery = client.embedQuery("另一个问题");
+            assertThat(firstQuery.totalTokens()).isEqualTo(7);
+            assertThat(repeatedQuery.totalTokens()).isZero();
+            assertThat(repeatedQuery.singleVector()).isEqualTo(firstQuery.singleVector());
+            assertThat(requests.get()).isEqualTo(2);
+            AtomicInteger permits = new AtomicInteger();
+            client.embedDocumentsWithBudget(List.of("项目上线时间"), permits::incrementAndGet);
+            assertThat(permits.get()).isEqualTo(1);
+            assertThat(requests.get()).isEqualTo(3);
+            assertThat(client.embedQueryFresh("项目上线时间").totalTokens()).isEqualTo(7);
+            assertThat(requests.get()).isEqualTo(4);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void embedsQueryWithConfiguredModelDimensionsAndAuthorization() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         AtomicReference<String> requestBody = new AtomicReference<>();

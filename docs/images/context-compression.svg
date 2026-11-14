@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 940" width="1400" height="940" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="940" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">上下文压缩：按话题分段、增量摘要与原文尾部</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">更早的消息由所属话题的摘要覆盖，最近的消息保留原文；话题只决定摘要的分组与优先级</text>
+  <text x="40.0" y="191.0" font-size="13" font-weight="700" fill="#334155" text-anchor="start">消息</text>
+  <rect x="92.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="115.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">1</text>
+  <rect x="142.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="165.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">2</text>
+  <rect x="192.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="215.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">3</text>
+  <rect x="242.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="265.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">4</text>
+  <rect x="292.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="315.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">5</text>
+  <rect x="342.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="365.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">6</text>
+  <rect x="392.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="415.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">7</text>
+  <rect x="442.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="465.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">8</text>
+  <rect x="492.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="515.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">9</text>
+  <rect x="542.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="565.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">10</text>
+  <rect x="592.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="615.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">11</text>
+  <rect x="642.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="665.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">12</text>
+  <rect x="692.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="715.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">13</text>
+  <rect x="742.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#fffbeb" stroke="#d97706" stroke-width="1"/>
+  <text x="765.0" y="191.0" font-size="12" font-weight="600" fill="#78350f" text-anchor="middle">14</text>
+  <rect x="792.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="815.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">15</text>
+  <rect x="842.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+  <text x="865.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">16</text>
+  <rect x="892.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="915.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">17</text>
+  <rect x="942.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="965.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">18</text>
+  <rect x="992.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1015.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">19</text>
+  <rect x="1042.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1065.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">20</text>
+  <rect x="1092.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1115.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">21</text>
+  <rect x="1142.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1165.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">22</text>
+  <rect x="1192.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1215.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">23</text>
+  <rect x="1242.0" y="168.0" width="46.0" height="36.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="2.2"/>
+  <text x="1265.0" y="191.0" font-size="12" font-weight="600" fill="#312e81" text-anchor="middle">24</text>
+  <path d="M92,160 L92,152 L488,152 L488,160" fill="none" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="290.0" y="146.0" font-size="12.5" font-weight="600" fill="#312e81" text-anchor="middle">段 1 · 话题 A</text>
+  <path d="M492,160 L492,152 L788,152 L788,160" fill="none" stroke="#d97706" stroke-width="1.5"/>
+  <text x="640.0" y="146.0" font-size="12.5" font-weight="600" fill="#78350f" text-anchor="middle">段 2 · 话题 B</text>
+  <path d="M792,160 L792,152 L1288,152 L1288,160" fill="none" stroke="#4f46e5" stroke-width="1.5"/>
+  <text x="1040.0" y="146.0" font-size="12.5" font-weight="600" fill="#312e81" text-anchor="middle">段 3 · 回到话题 A（改写模型判断：T2）</text>
+  <rect x="988.0" y="212.0" width="304.0" height="22.0" rx="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+  <text x="1140.0" y="227.0" font-size="11.5" font-weight="400" fill="#312e81" text-anchor="middle">原文尾部（6 条，按 token 收缩后）</text>
+  <rect x="888.0" y="212.0" width="104.0" height="22.0" rx="6" fill="#ffffff" stroke="#4f46e5" stroke-width="1.2" stroke-dasharray="6 5"/>
+  <text x="940.0" y="227.0" font-size="11.5" font-weight="400" fill="#312e81" text-anchor="middle">补齐</text>
+  <rect x="92.0" y="248.0" width="246.0" height="22.0" rx="5" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="100.0" y="263.5" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="start">摘要 v1（1-5）</text>
+  <rect x="344.0" y="248.0" width="75.2" height="22.0" rx="11" fill="#f8fafc" stroke="#64748b" stroke-width="1"/>
+  <text x="381.6" y="263.5" font-size="11.5" font-weight="400" fill="#0f172a" text-anchor="middle">被 v2 取代</text>
+  <rect x="92.0" y="278.0" width="396.0" height="22.0" rx="5" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.1"/>
+  <text x="100.0" y="293.5" font-size="11.5" font-weight="400" fill="#312e81" text-anchor="start">摘要 v2（1-8，在 v1 上只读 6-8）</text>
+  <rect x="494.0" y="278.0" width="106.0" height="22.0" rx="11" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+  <text x="547.0" y="293.5" font-size="11.5" font-weight="400" fill="#065f46" text-anchor="middle">入选：同话题旧段</text>
+  <rect x="492.0" y="248.0" width="296.0" height="22.0" rx="5" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>
+  <text x="500.0" y="263.5" font-size="11.5" font-weight="400" fill="#78350f" text-anchor="start">摘要（9-14）</text>
+  <rect x="794.0" y="248.0" width="129.0" height="22.0" rx="11" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+  <text x="858.5" y="263.5" font-size="11.5" font-weight="400" fill="#065f46" text-anchor="middle">入选：最近的其他话题</text>
+  <rect x="792.0" y="278.0" width="96.0" height="22.0" rx="5" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.1"/>
+  <text x="800.0" y="293.5" font-size="11.5" font-weight="400" fill="#312e81" text-anchor="start">15-16</text>
+  <rect x="894.0" y="278.0" width="149.0" height="22.0" rx="11" fill="#ecfdf5" stroke="#059669" stroke-width="1"/>
+  <text x="968.5" y="293.5" font-size="11.5" font-weight="400" fill="#065f46" text-anchor="middle">入选：当前段，落后 2 条</text>
+  <text x="40.0" y="264.0" font-size="13" font-weight="700" fill="#334155" text-anchor="start">摘要</text>
+  <rect x="92.0" y="319.0" width="16.0" height="14.0" rx="3" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.1"/>
+  <text x="114.0" y="330.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">话题 A</text>
+  <rect x="173.9" y="319.0" width="16.0" height="14.0" rx="3" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>
+  <text x="195.9" y="330.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">话题 B</text>
+  <rect x="255.8" y="319.0" width="16.0" height="14.0" rx="3" fill="#ecfdf5" stroke="#059669" stroke-width="1.1"/>
+  <text x="277.8" y="330.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">进入本轮上下文</text>
+  <rect x="383.8" y="319.0" width="16.0" height="14.0" rx="3" fill="#fff1f2" stroke="#e11d48" stroke-width="1.1"/>
+  <text x="405.8" y="330.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">排除</text>
+  <text x="500.0" y="330.0" font-size="12.5" font-weight="600" fill="#334155" text-anchor="start">例：当前问题在第 24 条之后，上下文 = 段 1 摘要 v2 + 段 2 摘要 + 段 3 摘要（15-16）+ 原文 17-24</text>
+  <rect x="40.0" y="362.0" width="420.0" height="166.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="54.0" y="386.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">原文尾部怎么定</text>
+  <text x="54.0" y="410.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">从最新一条往前数，至少 2 条、最多 8 条</text>
+  <text x="54.0" y="429.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">累计超过 6000 token 或总预算一半就停</text>
+  <text x="54.0" y="448.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">短消息保留满 8 条，长回答只留最近几轮</text>
+  <text x="54.0" y="467.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">摘要任务用同一规则决定覆盖终点</text>
+  <text x="54.0" y="488.0" font-size="11" font-weight="400" fill="#4f46e5" text-anchor="start" font-family="SFMono-Regular, Consolas, Menlo, monospace">ContextWindowPlannerV2.rawTailSize</text>
+  <rect x="490.0" y="362.0" width="420.0" height="166.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="504.0" y="386.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">当前话题的摘要落后时</text>
+  <text x="504.0" y="410.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">已覆盖到原文尾部之前：直接使用</text>
+  <text x="504.0" y="429.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">落后 1～8 条：原文向前补到摘要终点之后</text>
+  <text x="504.0" y="448.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">落后更多或还没有摘要：展开本段原文</text>
+  <text x="504.0" y="467.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">仍超长：先按 256 条、再按预算裁掉最旧</text>
+  <text x="504.0" y="486.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">至少保留最新一条，只记降级不阻断</text>
+  <rect x="940.0" y="362.0" width="420.0" height="166.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="954.0" y="386.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">摘要怎么选</text>
+  <text x="954.0" y="410.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">每段取覆盖到原文尾部之前的最新一版</text>
+  <text x="954.0" y="429.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">目标话题的各段优先，最近的其他话题再带一个</text>
+  <text x="954.0" y="448.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">话题归属不确定时不引入同话题其他段</text>
+  <text x="954.0" y="467.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">与原文重叠或范围过期的版本排除，超预算记降级</text>
+  <text x="954.0" y="486.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">回到旧话题带段尾原文（最多 4 条）</text>
+  <text x="954.0" y="505.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">问到早先细节时按话题回放原文（最多 3 组）</text>
+  <rect x="24.0" y="540.0" width="1352.0" height="196.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="564.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">增量摘要生成</text>
+  <text x="133.0" y="564.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">Kafka 异步执行，生成慢只会让原文补齐的范围变大</text>
+  <rect x="44.0" y="584.0" width="220.0" height="82.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="58.0" y="608.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">发件箱</text>
+  <text x="58.0" y="632.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">与切分结果同事务写入</text>
+  <text x="58.0" y="651.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">只取原文尾部之前的消息</text>
+  <rect x="290.0" y="584.0" width="230.0" height="82.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="304.0" y="608.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">Kafka</text>
+  <text x="304.0" y="632.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">noteweave.conversation</text>
+  <text x="304.0" y="651.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">.summary</text>
+  <rect x="546.0" y="576.0" width="300.0" height="100.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="560.0" y="600.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">增量摘要</text>
+  <rect x="802.0" y="585.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="820.0" y="599.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="560.0" y="624.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">上一版摘要 + 新增消息</text>
+  <text x="560.0" y="643.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">长消息分块全部放进提示</text>
+  <text x="560.0" y="662.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">输出更新后的完整摘要</text>
+  <rect x="872.0" y="576.0" width="250.0" height="82.0" rx="10" fill="#fff1f2" stroke="#e11d48" stroke-width="1.4"/>
+  <text x="886.0" y="600.0" font-size="14.5" font-weight="700" fill="#881337" text-anchor="start">模型失败时兜底</text>
+  <text x="886.0" y="624.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">上一版 + 新增原文</text>
+  <text x="886.0" y="643.0" font-size="12.5" font-weight="400" fill="#9f1239" text-anchor="start">超长保留首尾并标注截断</text>
+  <rect x="1148.0" y="576.0" width="208.0" height="82.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1162.0" y="600.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">写入版本</text>
+  <text x="1162.0" y="624.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">状态 READY，内容不可变</text>
+  <text x="1162.0" y="643.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">段 + 终点唯一</text>
+  <path d="M264.0,625.0 L290.0,625.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M520.0,625.0 L546.0,626.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M846.0,626.0 L872.0,626.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M696.0,676.0 L696.0,700.0 L1252.0,700.0 L1252.0,658.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="983.5" y="681.0" width="33.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="1000.0" y="694.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">成功</text>
+  <path d="M1122.0,617.0 L1148.0,617.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="40.0" y="770.0" width="1320.0" height="88.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="54.0" y="794.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">为什么这样切</text>
+  <text x="54.0" y="818.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">话题由查询改写模型在同一次调用里判断，规则与向量兜底；话题只决定摘要的分组与优先级，原文尾部每轮都带，最近的其他话题也带一个，判断偶尔出错也不会丢前文。</text>
+  <text x="54.0" y="837.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">摘要按版本追加、从不原地修改，冻结快照引用的是具体版本，重新生成时上下文和当时完全一致。</text>
+</svg>

@@ -42,6 +42,15 @@ public class ConversationContextCompilerV2Service {
     public ContextProjectionV2 compile(String workspaceId, String actorId, String conversationId,
                                        int cutoffSeq, String currentInput, String taskPurpose,
                                        int tokenBudget) {
+        return compile(workspaceId, actorId, conversationId, cutoffSeq, currentInput, taskPurpose,
+                tokenBudget, null);
+    }
+
+    /** @param detailQuery 不为空时，按它在目标话题的历史原文里回放几组问答 */
+    @Transactional(readOnly = true)
+    public ContextProjectionV2 compile(String workspaceId, String actorId, String conversationId,
+                                       int cutoffSeq, String currentInput, String taskPurpose,
+                                       int tokenBudget, String detailQuery) {
         access.requirePermission(workspaceId, WorkspacePermission.WORKSPACE_READ);
         if (!users.requireUserId().equals(actorId)) {
             throw new BusinessException("CONTEXT_ACTOR_MISMATCH",
@@ -78,8 +87,11 @@ public class ConversationContextCompilerV2Service {
         List<ContextProjectionV2.RawMessage> messages = new ArrayList<>();
         for (int index = 0; index < rows.size(); index++) {
             MessageRow row = rows.get(index);
-            if (row.seq() != index + 1 || !"CURRENT".equals(row.status()))
+            if (row.seq() != index + 1
+                    || !ConversationTopicProjectionV2Service.SETTLED_CONTEXT_STATUSES.contains(row.status()))
                 throw invalid("conversation prefix contains pending or deleted messages");
+            // 生成失败的助手消息没有正文，不进入原文窗口；话题投影仍覆盖它的序号
+            if ("FAILED".equals(row.status())) continue;
             messages.add(new ContextProjectionV2.RawMessage(row.id(), row.seq(), row.role(),
                     row.text(), sha256(row.text())));
         }
@@ -115,7 +127,7 @@ public class ConversationContextCompilerV2Service {
         return planner.compile(new ContextWindowPlannerV2.Input(workspaceId, actorId, conversationId,
                 cutoffSeq, currentInput, taskPurpose, tokenBudget, messages, segments,
                 summaries.ready(workspaceId, conversationId, cutoffSeq), constraints,
-                memoryReferences(workspaceId, actorId)));
+                memoryReferences(workspaceId, actorId), detailQuery));
     }
 
     /**

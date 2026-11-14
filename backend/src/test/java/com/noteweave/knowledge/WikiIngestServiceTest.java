@@ -115,7 +115,10 @@ class WikiIngestServiceTest {
         when(jdbcTemplate.queryForList(anyString(), eq(String.class),
                 eq("workspace-1"), eq("source-1")))
                 .thenReturn(List.of("READY"));
-        when(transactionExecutor.execute(any()))
+        // 事务外的编译规划先读取资料：读取失败与事务内失败一样记为失败终态
+        when(jdbcTemplate.query(anyString(),
+                org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.ResultSetExtractor<Object>>any(),
+                eq("workspace-1"), eq("source-1")))
                 .thenThrow(new IllegalStateException("source unavailable"));
 
         service.runSourceIngestNow("task-1", "workspace-1", "source-1");

@@ -152,6 +152,57 @@ class QaHybridRetrieverChannelTest {
         assertThat(result.measurements().get("ownership_rejected_count")).isPositive();
     }
 
+    @Test
+    void parallelBranchesKeepTheSameResultsDegradationsAndFailures() {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            Harness serial = harness();
+            Harness parallel = harness();
+            parallel.retriever().setBranchExecutor(pool);
+            var serialResult = serial.retriever().retrieve("workspace", "query", Set.of());
+            var parallelResult = parallel.retriever().retrieve("workspace", "query", Set.of());
+            assertThat(parallelResult.chunks()).isEqualTo(serialResult.chunks());
+            assertThat(parallelResult.degradationReasons()).isEqualTo(serialResult.degradationReasons());
+            assertThat(parallelResult.measurements())
+                    .containsKeys("recall_ms", "embedding_ms", "vector_search_ms", "keyword_search_ms",
+                            "rerank_ms", "total_ms")
+                    .containsEntry(QaHybridRetriever.LOW_RECALL_EXPANSION_ELIGIBLE, 1L);
+
+            // 两路都失败时仍报召回不可用；向量失败、关键词成功时降级只记向量
+            Harness bothFail = harness();
+            bothFail.retriever().setBranchExecutor(pool);
+            when(bothFail.search().vectorRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+            when(bothFail.search().keywordRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+            assertThatThrownBy(() -> bothFail.retriever().retrieve("workspace", "query", Set.of()))
+                    .isInstanceOf(com.noteweave.retrieval.provider.RetrievalProviderException.class);
+
+            Harness vectorFail = harness();
+            vectorFail.retriever().setBranchExecutor(pool);
+            when(vectorFail.search().vectorRetrieve(any())).thenThrow(new IllegalStateException("private failure"));
+            when(vectorFail.search().keywordRetrieve(any())).thenReturn(List.of(hit("only")));
+            assertThat(vectorFail.retriever().retrieve("workspace", "query", Set.of()).degradationReasons())
+                    .containsExactly("QA_VECTOR_RECALL_UNAVAILABLE");
+
+            Harness business = harness();
+            business.retriever().setBranchExecutor(pool);
+            var failure = new com.noteweave.common.BusinessException("ORIGIN_INVALID", "denied",
+                    org.springframework.http.HttpStatus.FORBIDDEN);
+            when(business.search().vectorRetrieve(any())).thenThrow(failure);
+            assertThatThrownBy(() -> business.retriever().retrieve("workspace", "query", Set.of()))
+                    .isSameAs(failure);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void enoughCandidatesAreNotMarkedForLowRecallExpansion() {
+        Harness harness = harness();
+        when(harness.search().keywordRetrieve(any())).thenReturn(List.of(hit("k1"), hit("k2"), hit("k3")));
+        var result = harness.retriever().retrieve("workspace", "query", Set.of());
+        assertThat(result.measurements()).containsEntry(QaHybridRetriever.LOW_RECALL_EXPANSION_ELIGIBLE, 0L);
+    }
+
     private Harness harness() {
         return harness(Map.of("only", new PassageOwnership("only", "source-only", "snapshot-only", "", "")));
     }

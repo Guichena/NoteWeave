@@ -826,6 +826,13 @@ def _answering_column_cards(snapshot: ResearchAgentTaskSnapshot, column: object,
     单元格最后只剩旁支事实，或者全部判为没回答而成为缺口。uncovered_out 记录答案检查认为没有答到的要求，
     没做成答案检查时按全部要求都没答到处理。
     """
+    from app.version_scope import supports_entity_version
+    versions = _entity_versions(str(snapshot.query_policy.get("entity_label") or ""))
+    by_window = {getattr(window, "window_id", ""): window for window in windows}
+    # 先剔除不适用版本，避免模型将无版本的通用结论借给指定版本，也不将其保留成该版本的线索。
+    raw = [card for card in raw if supports_entity_version(
+        versions, card, by_window.get(getattr(card, "window_id", "")),
+        str(snapshot.query_policy.get("entity_label") or ""))]
     if llm_client is None:
         # 没有模型做答案检查时不知道各项要求是否答全，只按来源档次取舍
         kept = _keep_answering_cards(snapshot, column, _prefer_primary_cards(snapshot, raw, windows), None)
@@ -953,10 +960,25 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
     if llm_client is None:
         return sorted(cards, key=lambda card: -float(getattr(card, "support_score", 0.0) or 0.0))
     requirements = _column_requirements(column)
+    default_required = bool(re.search(r"\bdefault\b|默认", str(getattr(column, "label", "")), re.I))
     sources = {getattr(window, "window_id", ""): window for window in windows or []}
+    from app.version_scope import source_versions
     payload = {
         "policy": [
             "Decide which claims directly answer the column for the entity.",
+            "For a versioned entity, verify applicability to that exact released version. A proposal's "
+            "future feature or a later release is not evidence of support in an earlier release. A quoted "
+            "explicit introduction boundary may establish lack of support before that release. Distinguish "
+            "negative findings from missing evidence; never infer availability from an official domain alone.",
+            "When the column asks for default behaviour, optional/experimental modes alone do not answer. "
+            "Require the default/standard configuration, not just instructions to opt into a different build.",
+            "For default_configuration_indices, separately identify claims describing the ordinary standard "
+            "configuration. An experimental build's own default is NOT the standard configuration. A quote "
+            "contrasting standard and optional builds IS usable for its standard-build fact. The literal word "
+            "default is neither required nor sufficient. Return an empty list if no claim establishes it.",
+            "For default_configuration_quotes, copy the exact contiguous part of each claim's quote that "
+            "establishes the standard configuration. Do not supply a paraphrase, inference or a description "
+            "of an optional mode. Include claim_index and quote for each such proof.",
             "This is ONE cell in a row for entity, not the whole comparison. Interpret every requirement "
             "only for the given entity. A requirement may name several compared entities or describe "
             "per-product examples: clauses specific to other entities do not apply to this cell. Do not "
@@ -988,6 +1010,12 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             "research_question is context only and adds no requirement to this cell. Columns such as supporting "
             "or opposing evidence are relative to the claim in the question: a claim answers the supporting column "
             "only when it supports that claim, and the opposing column only when it contradicts it or finds no effect.",
+            "Keep the outcome being measured distinct from related outcomes. For a question about X's effect "
+            "on Y, evidence about a different outcome (such as satisfaction, retention or preference when "
+            "these differ from Y) does not establish "
+            "Y's direction or absence of effect. Require Y or an explicitly defined proxy for a supporting or "
+            "opposing result. Retain applicable design or measurement facts for a methods requirement, without "
+            "promoting them into outcome evidence. An unspecified 'outcomes' finding is not a result for Y.",
         ],
         "research_question": str(snapshot.query_policy.get("query") or ""),
         "entity": str(snapshot.query_policy.get("entity_label") or ""),
@@ -998,12 +1026,16 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
                     "quote": str(getattr(card, "quote_text", "")),
                     "source_url": str(getattr(sources.get(getattr(card, "window_id", "")), "url", "")),
                     "source_title": str(getattr(sources.get(getattr(card, "window_id", "")), "source_title", "")),
+                    "source_release_versions": sorted(source_versions(sources.get(getattr(card, "window_id", "")))),
                     "published_at": str(getattr(sources.get(getattr(card, "window_id", "")), "published_at", "")),
                     "updated_at": str(getattr(sources.get(getattr(card, "window_id", "")), "updated_at", ""))}
                    for index, card in enumerate(cards)],
         "output_schema": {"answering_indices": ["integer index of each answering claim, most direct first"],
                           "coverage": [{"requirement_index": "integer", "claim_indices": ["integer"]}]},
     }
+    if default_required:
+        payload["output_schema"]["default_configuration_indices"] = ["integer claim index for standard configuration only"]
+        payload["output_schema"]["default_configuration_quotes"] = [{"claim_index": "integer", "quote": "exact standard-configuration proof"}]
     try:
         parsed = parse_json_payload(llm_client.complete_json(ANSWER_CHECK_PURPOSE, payload))
     except Exception:
@@ -1014,6 +1046,41 @@ def _keep_answering_cards(snapshot: ResearchAgentTaskSnapshot, column: object, c
             partial_out.extend(cards)
         return []
     order = list(dict.fromkeys(index for index in indices if type(index) is int and 0 <= index < len(cards)))
+    if default_required:
+        scope_indices = parsed.get("default_configuration_indices")
+        scope = {index for index in scope_indices if type(index) is int} if isinstance(scope_indices, list) else set()
+        proofs = parsed.get("default_configuration_quotes")
+        grounded = set()
+        for proof in proofs if isinstance(proofs, list) else []:
+            if not isinstance(proof, dict):
+                continue
+            index, quote = proof.get("claim_index"), proof.get("quote")
+            if type(index) is not int or not 0 <= index < len(cards) or not isinstance(quote, str) or not quote.strip():
+                continue
+            if quote not in str(getattr(cards[index], "quote_text", "")):
+                continue
+            optional = re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程", quote, re.I)
+            standard = re.search(r"\b(?:standard|regular|ordinary|normal)\s+(?:build|configuration)\b|标准构建|常规构建|标准配置", quote, re.I)
+            full_optional = re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程",
+                                      str(getattr(cards[index], "quote_text", "")), re.I)
+            explicit_default = re.search(r"\bdefault\b|默认", quote, re.I)
+            # 带可选配置的原文不能裁掉主语，只拿谓词中的 default 充当标准配置证明。
+            first_clause = re.split(r"[;；]|(?<=[.!?。！？])\s+", str(getattr(cards[index], "quote_text", "")), maxsplit=1)[0].strip()
+            complete_default = explicit_default and quote.strip() == first_clause
+            # 比较句也能明确写出默认构建（如 default GIL-enabled build）；不能因同句提到可选构建而删除。
+            default_binding = re.search(r"\bdefault(?:[\s`*-]+[a-z0-9_.+-]+){0,5}[\s`*-]+(?:build|configuration|interpreter)\b"
+                                        r"|默认[^。！？；;\n]{0,40}(?:构建|配置|解释器)", quote, re.I)
+            comparison_binding = False
+            if default_binding and not re.search(r"\b(?:optional|opt-in|experimental|free.threaded)\b|可选|实验性|自由线程",
+                                                  default_binding.group(), re.I):
+                full_quote = str(getattr(cards[index], "quote_text", ""))
+                comparison_binding = any(re.search(
+                    r"(?:compared\s+(?:to|with)|in\s+contrast\s+to|unlike|(?:similar|equivalent|identical)\b[^.!?;\n]{0,80}\bto|相(?:比|较)(?:于)?|与)\s*(?:(?:the|a|an)\s+)?$",
+                    full_quote[max(0, match.start() - 80):match.start()], re.I)
+                    for match in re.finditer(re.escape(default_binding.group()), full_quote, re.I))
+            if standard or comparison_binding or (not optional and (not full_optional or complete_default)):
+                grounded.add(index)
+        order = [index for index in order if index in scope and index in grounded]
     keep = set(order)
     answering = [cards[index] for index in order]
     covered: dict[int, list[object]] = {}
@@ -1050,7 +1117,11 @@ def _prefer_primary_cards(snapshot: ResearchAgentTaskSnapshot, cards: list[objec
             return 0
         source_tier = _source_tier(snapshot, window)
         # 只把二手来源判为第 2 档；规划域名之外的官方文档（如云厂商托管服务的文档）排在规划域名之后
-        return (2 if source_tier >= 2 else source_tier) + _version_mismatch(versions, window)
+        from app.version_scope import supports_entity_version
+        mismatch = _version_mismatch(versions, window)
+        if mismatch and supports_entity_version(versions, card, window):
+            mismatch = 0
+        return (2 if source_tier >= 2 else source_tier) + mismatch
 
     best = min(tier(card) for card in cards)
     # 明确要求官方或指定版本时，补查也不能将第三方文档、镜像或其他版本升级为正式证据。
@@ -1168,6 +1239,12 @@ def _build_task_scope(snapshot: ResearchAgentTaskSnapshot) -> tuple[ResearchTask
     plan.stop_contract["deep_cell_entity_id"] = snapshot.entity_id
     plan.stop_contract["deep_cell_entity_label"] = entity_label
     plan.stop_contract["retrieval_mode"] = retrieval_mode
+    repair = snapshot.query_policy.get("repair_target")
+    # 独立反证与高风险双候选必须重新读取；普通补缺口仅复用抓取正文，仍重新选段、抽取和核验。
+    plan.stop_contract["reuse_fetched_pages"] = (
+        not snapshot.high_risk and snapshot.query_policy.get("counter_required") is not True
+        and (snapshot.role == "DEEP_CELL" or (isinstance(repair, dict)
+             and repair.get("repair_cause") in {"MARGINAL_GAIN_EXHAUSTED", "FETCH_FAILED", "PROVIDER_FAILED"})))
     # 合并任务要用同一批网页回答多个单元格，抓取与阅读的网页数按单元格数增加
     document_budget = min(MAX_DOCUMENTS_PER_TASK, BASE_DOCUMENTS_PER_TASK + len(columns))
     plan.stop_contract["tool_response_retention_budget"] = max(
@@ -1195,6 +1272,9 @@ def _maybe_crash_after_archive(
 def _filter_external_hits_by_domain(
     snapshot: ResearchAgentTaskSnapshot, hits: list[object], plan: ResearchPlan | None = None
 ) -> list[object]:
+    # 已被服务端排除的来源不能再次抓取、抽取后才拒绝，补查从发现阶段就跳过它们。
+    excluded = set(snapshot.source_policy.get("excluded_source_ids", []))
+    hits = [hit for hit in hits if str(getattr(hit, "source_id", "")) not in excluded]
     allowed = _effective_allowed_external_domains(snapshot, plan)
     if not allowed:
         return list(hits)
@@ -1288,27 +1368,16 @@ def _source_tier(snapshot: ResearchAgentTaskSnapshot, item: object) -> int:
 
 
 def _entity_versions(label: str) -> set[str]:
-    """研究对象名称里的版本号，例如 MySQL 8.4 得到 8.4，JDK 21 得到 21。"""
-    # edition 年份和规范编号不与实现版本比较，例如 Rust 2024 edition 对应 Rust 1.85。
-    label = re.sub(r"\b(?:RFC|PEP|JEP|CVE|ISO|IEC)\s*[-:]?\s*\d+(?:[-.:]\d+)*", "", label, flags=re.I)
-    label = re.sub(r"\b(?:19|20)\d{2}\s*(?:edition|版|版本|年版)\b|\bedition\s+(?:19|20)\d{2}\b",
-                   "", label, flags=re.I)
-    # 连在名称后面的数字是算法或协议名的一部分，例如 SHA-256、AES-128、UTF-8、HTTP/2，不是版本号；
-    # 误当成版本时，网址带任何版本号的官方文档都被判为版本不符，要求官方来源的单元格全部成为缺口
-    return set(re.findall(r"(?<![\w./-])(\d+(?:\.\d+)*)(?![\w.])", label))
+    from app.version_scope import entity_versions
+    return entity_versions(label)
 
 
 def _version_mismatch(versions: set[str], hit: object) -> int:
     """官方文档的网址常带版本号（如 /refman/9.3/），与研究对象的版本不一致时排到同一档的后面。"""
     if not versions:
         return 0
-    path = urlsplit(str(getattr(hit, "url", "") or "")).path
-    found = set(re.findall(r"(?<![\w.])(\d+\.\d+(?:\.\d+)*)(?![\w.])", path))
-    # 只有主版本号的文档网址（如 PostgreSQL 的 /docs/16/）只认文档目录后面那一段，
-    # 避免把 /jeps/444 这类编号当成版本
-    segments = [segment for segment in path.lower().split("/") if segment]
-    found |= {segment for previous, segment in zip(segments, segments[1:])
-              if previous in _VERSIONED_DOC_DIRS and re.fullmatch(r"\d{1,3}", segment)}
+    from app.version_scope import source_versions
+    found = source_versions(hit)
     if not found:
         return 0
     return 0 if found & versions else 1
