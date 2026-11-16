@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 902" width="1200" height="902" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1200" height="902" fill="#ffffff"/>
+  <text x="600.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">示例对话：写综述时梳理论文，中间插问引用格式，再回到论文</text>
+  <text x="600.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">左侧色条表示消息所属话题；右侧是改写模型对每条用户消息的话题判断</text>
+  <rect x="150.0" y="87.0" width="16.0" height="14.0" rx="3" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.1"/>
+  <text x="172.0" y="98.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">话题：长上下文压缩论文梳理</text>
+  <rect x="350.0" y="87.0" width="16.0" height="14.0" rx="3" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>
+  <text x="372.0" y="98.0" font-size="12" font-weight="400" fill="#475569" text-anchor="start">话题：综述的引用格式</text>
+  <text x="44.0" y="137.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#1</text>
+  <text x="88.0" y="137.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="112.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="112.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="137.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">我在写一篇长上下文压缩的综述，传了三篇论文，帮我先捋一下各自用的什么方法，压缩了多少，效果咋样</text>
+  <rect x="920.0" y="120.0" width="128.0" height="24.0" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.1"/>
+  <text x="984.0" y="136.5" font-size="12" font-weight="400" fill="#065f46" text-anchor="middle">新话题（首条消息）</text>
+  <text x="44.0" y="185.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#2</text>
+  <text x="88.0" y="185.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="160.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="160.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="185.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">甲是 prompt pruning，压缩 4 倍；乙是摘要式压缩，8 倍，LongBench 从 46.3 降到 44.2；丙是 KV cache……</text>
+  <text x="44.0" y="233.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#3</text>
+  <text x="88.0" y="233.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="208.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="208.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="233.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">多跳问答那部分呢，哪篇掉得最少？对了，后面术语都保留英文就行，不用翻</text>
+  <rect x="920.0" y="216.0" width="169.8" height="24.0" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="1004.9" y="232.5" font-size="12" font-weight="400" fill="#0f172a" text-anchor="middle">接着当前话题  + 1 条约束</text>
+  <text x="44.0" y="281.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#4</text>
+  <text x="88.0" y="281.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="256.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="256.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="281.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">乙掉得最少，HotpotQA 上只降了 1.3；丙最多，降了 6.8，主要是 KV cache 丢了跨段的信息……</text>
+  <text x="44.0" y="329.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#5</text>
+  <text x="88.0" y="329.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="304.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="304.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="329.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">它们实验用的什么模型？</text>
+  <rect x="920.0" y="312.0" width="92.0" height="24.0" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="966.0" y="328.5" font-size="12" font-weight="400" fill="#0f172a" text-anchor="middle">接着当前话题</text>
+  <text x="44.0" y="377.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#6</text>
+  <text x="88.0" y="377.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="352.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="352.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="377.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">都是 7B 级：甲和丙用 Llama-2-7B，乙用 Mistral-7B，所以横向比较时要注明基座不同……</text>
+  <text x="44.0" y="425.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#7</text>
+  <text x="88.0" y="425.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="400.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="400.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="425.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">行，帮我列个对比表的提纲，按方法、压缩率、效果、开销这几列</text>
+  <rect x="920.0" y="408.0" width="92.0" height="24.0" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="966.0" y="424.5" font-size="12" font-weight="400" fill="#0f172a" text-anchor="middle">接着当前话题</text>
+  <text x="44.0" y="473.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#8</text>
+  <text x="88.0" y="473.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="448.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="448.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="473.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">提纲：方法类别 / 压缩率 / LongBench 与多跳问答 / 额外开销……丙的显存数据论文里没给全，需要再核对</text>
+  <text x="44.0" y="521.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#9</text>
+  <text x="88.0" y="521.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="496.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="496.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="521.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">诶另外问一下，中文综述的参考文献一般用 GB/T 7714 还是 APA？</text>
+  <rect x="920.0" y="504.0" width="56.0" height="24.0" rx="12" fill="#ecfdf5" stroke="#059669" stroke-width="1.1"/>
+  <text x="948.0" y="520.5" font-size="12" font-weight="400" fill="#065f46" text-anchor="middle">新话题</text>
+  <text x="44.0" y="569.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#10</text>
+  <text x="88.0" y="569.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="544.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="544.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="569.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">中文期刊和学位论文一般按 GB/T 7714 著录，APA 多见于心理学和英文期刊……</text>
+  <text x="44.0" y="617.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#11</text>
+  <text x="88.0" y="617.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="592.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="592.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="617.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">那是按作者排还是按出现顺序排？</text>
+  <rect x="920.0" y="600.0" width="92.0" height="24.0" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="966.0" y="616.5" font-size="12" font-weight="400" fill="#0f172a" text-anchor="middle">接着当前话题</text>
+  <text x="44.0" y="665.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#12</text>
+  <text x="88.0" y="665.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="640.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="640.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="665.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">综述常用顺序编码制，按正文里首次引用的顺序编号，不按作者排……</text>
+  <text x="44.0" y="713.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#13</text>
+  <text x="88.0" y="713.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="688.0" width="760.0" height="40.0" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.1"/>
+  <rect x="140.0" y="688.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="713.0" font-size="13" font-weight="400" fill="#0f172a" text-anchor="start">英文文献混在里面怎么写，要翻译成中文吗？</text>
+  <rect x="920.0" y="696.0" width="92.0" height="24.0" rx="12" fill="#f8fafc" stroke="#64748b" stroke-width="1.1"/>
+  <text x="966.0" y="712.5" font-size="12" font-weight="400" fill="#0f172a" text-anchor="middle">接着当前话题</text>
+  <text x="44.0" y="761.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#14</text>
+  <text x="88.0" y="761.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">助手</text>
+  <rect x="140.0" y="736.0" width="760.0" height="40.0" rx="8" fill="#f8fafc" stroke="#f1f5f9" stroke-width="1.1"/>
+  <rect x="140.0" y="736.0" width="5.0" height="40.0" rx="2" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="158.0" y="761.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">不用翻译，按原文语种著录，作者姓在前、名字缩写……</text>
+  <text x="44.0" y="809.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start">#15</text>
+  <text x="88.0" y="809.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">用户</text>
+  <rect x="140.0" y="784.0" width="760.0" height="40.0" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.1"/>
+  <rect x="140.0" y="784.0" width="5.0" height="40.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="158.0" y="809.0" font-size="13" font-weight="700" fill="#0f172a" text-anchor="start">好。回到那几篇论文，乙在 8 倍压缩下准确率到底掉了多少来着？</text>
+  <rect x="920.0" y="792.0" width="167.8" height="24.0" rx="12" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>
+  <text x="1003.9" y="808.5" font-size="12" font-weight="400" fill="#78350f" text-anchor="middle">回到论文梳理  + 需要细节</text>
+  <text x="600.0" y="858.0" font-size="13" font-weight="400" fill="#475569" text-anchor="middle">#11 省略了主语，#15 隔了 3 轮才回到旧话题、还要早先的具体数字：这两类判断交给改写模型。</text>
+</svg>

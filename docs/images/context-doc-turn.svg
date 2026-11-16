@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 640" width="1400" height="640" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="640" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">一轮对话的处理顺序</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">改写模型先给出话题判断，读到后立即冻结上下文；摘要、约束和记忆在回答结束后由后台更新</text>
+  <rect x="24.0" y="96.0" width="1352.0" height="262.0" rx="14" fill="#eef2ff" fill-opacity="0.55" stroke="#4f46e5" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="120.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">用户等待的路径</text>
+  <text x="147.5" y="120.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">话题判断随改写一起流式输出，不增加模型调用次数</text>
+  <rect x="44.0" y="140.0" width="248.0" height="196.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="58.0" y="164.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">用户消息 #15</text>
+  <text x="58.0" y="188.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">好。回到那几篇论文，</text>
+  <text x="58.0" y="207.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">乙在 8 倍压缩下准确率</text>
+  <text x="58.0" y="226.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">到底掉了多少来着？</text>
+  <rect x="310.0" y="140.0" width="248.0" height="196.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="324.0" y="164.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">查询改写（流式）</text>
+  <rect x="514.0" y="149.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+  <text x="532.0" y="163.0" font-size="11" font-weight="400" fill="#4c1d95" text-anchor="middle">模型</text>
+  <text x="324.0" y="188.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">输入：最近 8 条原文和</text>
+  <text x="324.0" y="207.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">话题列表，前 3 个附摘要</text>
+  <text x="324.0" y="226.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">先出 r：回到论文梳理话题</text>
+  <text x="324.0" y="245.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">再出 d=1：需要早先细节</text>
+  <text x="324.0" y="264.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">最后出 s：补全主题的独立查询</text>
+  <rect x="576.0" y="140.0" width="248.0" height="196.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="590.0" y="164.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">冻结上下文</text>
+  <text x="590.0" y="188.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">读到 r 就冻结；d=1 时</text>
+  <text x="590.0" y="207.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">多等 s，用它定位回放原文</text>
+  <text x="590.0" y="226.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">按 r 落库本条消息的话题</text>
+  <text x="590.0" y="245.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">规划原文尾部、摘要、段尾</text>
+  <text x="590.0" y="264.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">与回放，快照写入 MySQL</text>
+  <rect x="842.0" y="140.0" width="248.0" height="196.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="856.0" y="164.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">检索与记忆编译</text>
+  <text x="856.0" y="188.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">按独立查询检索论文片段</text>
+  <text x="856.0" y="207.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">编译受控表达参数</text>
+  <text x="856.0" y="226.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">编译结果按策略版本和</text>
+  <text x="856.0" y="245.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">记忆状态指纹缓存在 Redis</text>
+  <rect x="1108.0" y="140.0" width="248.0" height="196.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="1122.0" y="164.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">生成回答（流式）</text>
+  <rect x="1312.0" y="149.0" width="36.0" height="20.0" rx="10" fill="#ffffff" stroke="#059669" stroke-width="1"/>
+  <text x="1330.0" y="163.0" font-size="11" font-weight="400" fill="#065f46" text-anchor="middle">模型</text>
+  <text x="1122.0" y="188.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">事实只来自资料片段</text>
+  <text x="1122.0" y="207.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">回答属性记下回放的</text>
+  <text x="1122.0" y="226.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">消息序号，界面据此显示</text>
+  <text x="1122.0" y="245.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">对话依据并支持跳转</text>
+  <path d="M292.0,238.0 L310.0,238.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M558.0,238.0 L576.0,238.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M824.0,238.0 L842.0,238.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M1090.0,238.0 L1108.0,238.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="24.0" y="396.0" width="1352.0" height="176.0" rx="14" fill="#fffbeb" fill-opacity="0.55" stroke="#d97706" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="420.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">回答结束后，后台异步执行（Kafka）</text>
+  <text x="291.0" y="420.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start">不占用户等待时间，下一轮读取已就绪的结果</text>
+  <rect x="44.0" y="438.0" width="316.0" height="110.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="58.0" y="462.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">会话约束抽取</text>
+  <text x="58.0" y="486.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">模型把用户消息转成增删操作</text>
+  <text x="58.0" y="505.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">纯函数折叠成整表快照</text>
+  <rect x="378.0" y="438.0" width="316.0" height="110.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="392.0" y="462.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">话题摘要增量更新</text>
+  <text x="392.0" y="486.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">在上一版上只读新增消息</text>
+  <text x="392.0" y="505.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">按固定小节输出，要点带出处</text>
+  <text x="392.0" y="524.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">每一版不可变，记下覆盖范围</text>
+  <rect x="712.0" y="438.0" width="316.0" height="110.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="726.0" y="462.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">记忆候选抽取</text>
+  <text x="726.0" y="486.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">限定 8 个表达方式槽位</text>
+  <text x="726.0" y="505.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">冲突检查加四项门控</text>
+  <rect x="1046.0" y="438.0" width="316.0" height="110.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="1060.0" y="462.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">话题边界复核</text>
+  <text x="1060.0" y="486.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">只针对规则切分的不确定边界</text>
+  <text x="1060.0" y="505.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">每 30 秒交给模型批量复核</text>
+  <path d="M1232.0,336.0 L1232.0,382.0 L536.0,382.0 L536.0,438.0" fill="none" stroke="#d97706" stroke-width="1.5" marker-end="url(#arrow-amber)"/>
+  <rect x="856.0" y="363.0" width="56.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="884.0" y="376.0" font-size="11.5" font-weight="600" fill="#d97706" text-anchor="middle">回答完成</text>
+  <path d="M476.0,438.0 L476.0,372.0 L700.0,372.0 L700.0,336.0" fill="none" stroke="#d97706" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-amber)"/>
+  <rect x="461.0" y="353.0" width="214.0" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="568.0" y="366.0" font-size="11.5" font-weight="600" fill="#d97706" text-anchor="middle">下一轮读取：落后 8 条以内用原文补齐</text>
+  <text x="700.0" y="606.0" font-size="13" font-weight="400" fill="#475569" text-anchor="middle">不需要细节时，读到话题编号就冻结，不等独立查询；需要细节时才多等这一步，用独立查询定位回放原文。</text>
+</svg>

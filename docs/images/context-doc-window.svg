@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1142" width="1200" height="1142" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1200" height="1142" fill="#ffffff"/>
+  <text x="600.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">NoteWeave · 一次回答的上下文</text>
+  <text x="600.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">示例：第 15 条消息回到论文梳理话题，追问早先回答里的具体数字  |  只展示模型这一轮看到的内容</text>
+  <rect x="48.0" y="104.0" width="1104.0" height="898.0" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="76.0" y="138.0" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start">上下文窗口（冻结快照，截止第 15 条消息）</text>
+  <rect x="72.0" y="156.0" width="1056.0" height="67.0" rx="10" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <rect x="72.0" y="156.0" width="6.0" height="67.0" rx="3" fill="#94a3b8" stroke="#94a3b8" stroke-width="0"/>
+  <text x="96.0" y="185.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">系统提示：公共规则 + 问答模式规则</text>
+  <text x="96.0" y="211.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">事实只来自下方的资料片段；对话内容、摘要和记忆只用来理解追问、决定表达方式。</text>
+  <rect x="72.0" y="237.0" width="1056.0" height="67.0" rx="10" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <rect x="72.0" y="237.0" width="6.0" height="67.0" rx="3" fill="#94a3b8" stroke="#94a3b8" stroke-width="0"/>
+  <text x="96.0" y="266.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">会话持续约束</text>
+  <rect x="1036.0" y="249.0" width="76.0" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1074.0" y="266.5" font-size="12.5" font-weight="700" fill="#334155" text-anchor="middle">持续约束</text>
+  <text x="96.0" y="292.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">生效要求：术语保留英文原文，不翻译（用户在第 3 条提出）。未经核实的前提：无。</text>
+  <rect x="72.0" y="318.0" width="1056.0" height="113.0" rx="10" fill="#eff6ff" stroke="#eff6ff" stroke-width="0"/>
+  <rect x="72.0" y="318.0" width="6.0" height="113.0" rx="3" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="96.0" y="347.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">话题块 · 长上下文压缩论文梳理（第 1-8 条）  目标话题：回到</text>
+  <rect x="953.0" y="330.0" width="159.0" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1032.5" y="347.5" font-size="12.5" font-weight="700" fill="#1e40af" text-anchor="middle">Spine · 目标话题展开</text>
+  <text x="96.0" y="373.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">目标：为综述比较三篇论文的压缩方法，整理成对比表。</text>
+  <text x="96.0" y="396.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">已定结论：甲 prompt pruning 压缩 4 倍，乙摘要式压缩 8 倍，丙 KV cache 压缩 16 倍〔#2〕；多跳问答上乙下降最少〔#4〕；</text>
+  <text x="96.0" y="419.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">实验模型均为 7B 级〔#6〕；对比表按方法、压缩率、效果、开销四列〔#8〕。未决问题：丙的显存开销还没核对。</text>
+  <rect x="100.0" y="445.0" width="1028.0" height="113.0" rx="10" fill="#fff7ed" stroke="#fff7ed" stroke-width="0"/>
+  <rect x="100.0" y="445.0" width="6.0" height="113.0" rx="3" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="124.0" y="474.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">回放原文 · 第 1-2 条（属于论文梳理话题）</text>
+  <rect x="958.2" y="457.0" width="153.8" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1035.1" y="474.5" font-size="12.5" font-weight="700" fill="#9a3412" text-anchor="middle">ReFold · 按出处回放</text>
+  <text x="124.0" y="500.0" font-size="13.5" font-weight="400" fill="#9a3412" text-anchor="start">ReFold 出处：问题要具体数字，命中要点〔#2〕，按序号读出这一组问答的原文。</text>
+  <text x="124.0" y="523.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">用户：我在写一篇长上下文压缩的综述，传了三篇论文，帮我先捋一下各自用的什么方法，压缩了多少，效果咋样</text>
+  <text x="124.0" y="546.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">助手：……乙是摘要式压缩，8 倍，LongBench 平均准确率从 46.3 降到 44.2……</text>
+  <rect x="72.0" y="572.0" width="1056.0" height="90.0" rx="10" fill="#fff7ed" stroke="#fff7ed" stroke-width="0"/>
+  <rect x="72.0" y="572.0" width="6.0" height="90.0" rx="3" fill="#ea580c" stroke="#ea580c" stroke-width="0"/>
+  <text x="96.0" y="601.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">话题块 · 综述的引用格式（第 9-14 条）  其他话题：折叠</text>
+  <rect x="965.5" y="584.0" width="146.5" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1038.8" y="601.5" font-size="12.5" font-weight="700" fill="#9a3412" text-anchor="middle">Spine · 折叠为结论</text>
+  <text x="96.0" y="627.0" font-size="13.5" font-weight="400" fill="#9a3412" text-anchor="start">Spine 短结果：中文综述按 GB/T 7714 著录〔#10〕；顺序编码制按正文首次引用的顺序编号〔#12〕。</text>
+  <text x="96.0" y="650.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">保底原文 · 第 13-14 条：用户问英文文献要不要翻译；助手答不用翻译，按原文语种著录。</text>
+  <rect x="72.0" y="676.0" width="1056.0" height="67.0" rx="10" fill="#f5f3ff" stroke="#f5f3ff" stroke-width="0"/>
+  <rect x="72.0" y="676.0" width="6.0" height="67.0" rx="3" fill="#7c3aed" stroke="#7c3aed" stroke-width="0"/>
+  <text x="96.0" y="705.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">资料片段（编号证据）</text>
+  <rect x="1036.0" y="688.0" width="76.0" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1074.0" y="705.5" font-size="12.5" font-weight="700" fill="#5b21b6" text-anchor="middle">事实来源</text>
+  <text x="96.0" y="731.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">[1] 论文乙 · 表 2：8 倍压缩时 LongBench 平均准确率 44.2，未压缩基线 46.3。</text>
+  <rect x="72.0" y="757.0" width="1056.0" height="67.0" rx="10" fill="#ecfdf5" stroke="#ecfdf5" stroke-width="0"/>
+  <rect x="72.0" y="757.0" width="6.0" height="67.0" rx="3" fill="#10b981" stroke="#10b981" stroke-width="0"/>
+  <text x="96.0" y="786.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">受控表达参数（由长期记忆编译）</text>
+  <rect x="972.8" y="769.0" width="139.2" height="26.0" rx="13" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="1042.4" y="786.5" font-size="12.5" font-weight="700" fill="#065f46" text-anchor="middle">ACE 式 · 偏好复用</text>
+  <text x="96.0" y="812.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">结构：先给结论再列要点；对比类问题优先用表格。只调节表达方式，不提供事实。</text>
+  <rect x="72.0" y="838.0" width="1056.0" height="90.0" rx="10" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <rect x="72.0" y="838.0" width="6.0" height="90.0" rx="3" fill="#94a3b8" stroke="#94a3b8" stroke-width="0"/>
+  <text x="96.0" y="867.0" font-size="16.5" font-weight="700" fill="#0f172a" text-anchor="start">当前问题（第 15 条）</text>
+  <text x="96.0" y="893.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">好。回到那几篇论文，乙在 8 倍压缩下准确率到底掉了多少来着？</text>
+  <text x="96.0" y="916.0" font-size="13.5" font-weight="400" fill="#475569" text-anchor="start">改写给出的独立查询：论文乙摘要式压缩在 8 倍压缩率下的准确率下降幅度</text>
+  <text x="76.0" y="962.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">历史按话题就地排列：目标话题给完整摘要和回放原文，其他话题只给结论，最近一组原文保底。</text>
+  <text x="76.0" y="986.0" font-size="12.5" font-weight="400" fill="#b45309" text-anchor="start">〔#n〕出处标注、按话题分块排列和按出处回放属于本轮设计，代码尚未实现；其余层为现有实现。</text>
+  <rect x="48.0" y="1024.0" width="1104.0" height="96.0" rx="12" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <text x="76.0" y="1060.0" font-size="15.5" font-weight="700" fill="#0f172a" text-anchor="start">窗口之外</text>
+  <text x="190.0" y="1060.0" font-size="14" font-weight="400" fill="#334155" text-anchor="start">全部消息原文（MySQL，按序号）、各版本话题摘要、长期记忆与历史版本：保存在库里，不全部发给模型。</text>
+  <text x="190.0" y="1088.0" font-size="13" font-weight="400" fill="#64748b" text-anchor="start">回放原文 = 按序号读出当时保存的消息，不重新生成，也不重新检索资料。</text>
+</svg>

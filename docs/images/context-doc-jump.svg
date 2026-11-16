@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 600" width="1400" height="600" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="600" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">回答下方显示对话依据，点击跳回原消息</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">对话依据与资料证据分两行显示：资料证据说明事实从哪来，对话依据说明回答接的是之前哪句话</text>
+  <rect x="40.0" y="100.0" width="660.0" height="460.0" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="64.0" y="130.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">对话界面（示意）</text>
+  <rect x="64.0" y="146.0" width="560.0" height="40.0" rx="10" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <text x="80.0" y="171.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">#1 我在写长上下文压缩的综述，帮我捋一下三篇论文的方法、压缩率和效果</text>
+  <rect x="64.0" y="196.0" width="612.0" height="58.0" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.6"/>
+  <text x="80.0" y="220.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">#2 甲是 prompt pruning，压缩 4 倍；乙是摘要式压缩，8 倍，</text>
+  <text x="80.0" y="242.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">LongBench 从 46.3 降到 44.2；丙是 KV cache……</text>
+  <rect x="560.0" y="225.0" width="75.0" height="24.0" rx="12" fill="#fffbeb" stroke="#d97706" stroke-width="1.1"/>
+  <text x="597.5" y="241.5" font-size="11" font-weight="400" fill="#78350f" text-anchor="middle">跳转后高亮</text>
+  <text x="80.0" y="284.0" font-size="12.5" font-weight="400" fill="#94a3b8" text-anchor="start">……（第 3-14 条）</text>
+  <rect x="196.0" y="302.0" width="480.0" height="40.0" rx="10" fill="#eef2ff" stroke="#eef2ff" stroke-width="0"/>
+  <text x="210.0" y="327.0" font-size="12.5" font-weight="400" fill="#312e81" text-anchor="start">#15 好。回到那几篇论文，乙在 8 倍压缩下准确率到底掉了多少来着？</text>
+  <rect x="64.0" y="354.0" width="612.0" height="186.0" rx="10" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="80.0" y="382.0" font-size="13.5" font-weight="400" fill="#0f172a" text-anchor="start">#16 掉了 2.1 个点：从 46.3 降到 44.2 [1]。</text>
+  <text x="80.0" y="410.0" font-size="13" font-weight="400" fill="#334155" text-anchor="start">这是 LongBench 平均准确率，对比的是同一模型不压缩的基线。</text>
+  <text x="80.0" y="432.0" font-size="13" font-weight="400" fill="#334155" text-anchor="start">对比表里这一格可以记为 -2.1。</text>
+  <rect x="80.0" y="452.0" width="580.0" height="32.0" rx="8" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="94.0" y="473.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">资料证据  [1] 论文乙 · 表 2</text>
+  <rect x="80.0" y="494.0" width="580.0" height="32.0" rx="8" fill="#ffffff" stroke="#fdba74" stroke-width="1"/>
+  <text x="94.0" y="515.0" font-size="12.5" font-weight="400" fill="#9a3412" text-anchor="start">对话依据  第 1-2 条 · 你第一轮问到的压缩效果（点击跳转）</text>
+  <path d="M660.0,510.0 L688.0,510.0 L688.0,225.0 L676.0,225.0" fill="none" stroke="#d97706" stroke-width="1.8" marker-end="url(#arrow-amber)"/>
+  <rect x="744.0" y="104.0" width="616.0" height="96.0" rx="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="758.0" y="128.0" font-size="14.5" font-weight="700" fill="#312e81" text-anchor="start">冻结快照</text>
+  <text x="758.0" y="152.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">规划器记下每条入选原文的序号和原因</text>
+  <text x="758.0" y="171.0" font-size="12.5" font-weight="400" fill="#3730a3" text-anchor="start">原因为话题原文回放的就是对话依据</text>
+  <rect x="744.0" y="220.0" width="616.0" height="96.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="758.0" y="244.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">回答属性</text>
+  <text x="758.0" y="268.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">回答完成时写入回放的消息序号</text>
+  <text x="758.0" y="287.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">重新生成沿用同一份快照，依据不变</text>
+  <path d="M1052.0,200.0 L1052.0,220.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="744.0" y="336.0" width="616.0" height="96.0" rx="10" fill="#fffbeb" stroke="#d97706" stroke-width="1.4"/>
+  <text x="758.0" y="360.0" font-size="14.5" font-weight="700" fill="#78350f" text-anchor="start">前端渲染</text>
+  <text x="758.0" y="384.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">每条消息按序号加锚点</text>
+  <text x="758.0" y="403.0" font-size="12.5" font-weight="400" fill="#92400e" text-anchor="start">点击依据：滚动到该消息并短暂高亮</text>
+  <path d="M1052.0,316.0 L1052.0,336.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="744.0" y="452.0" width="616.0" height="96.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="758.0" y="476.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">边界</text>
+  <text x="758.0" y="500.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">只显示回放原文，不显示原文尾部</text>
+  <text x="758.0" y="519.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">被删除的消息显示为已删除，不可跳转</text>
+  <path d="M1052.0,432.0 L1052.0,452.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <text x="1052.0" y="580.0" font-size="12.5" font-weight="400" fill="#b45309" text-anchor="middle">整页内容属于本轮设计，代码尚未实现；快照里的入选记录与原因已经存在。</text>
+</svg>

@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 860" width="1400" height="860" font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Source Han Sans SC, Helvetica, Arial, sans-serif">
+  <defs><marker id="arrow-slate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker><marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="arrow-emerald" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#059669"/></marker><marker id="arrow-indigo" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f46e5"/></marker><marker id="arrow-sky" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0284c7"/></marker><marker id="arrow-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+  <rect width="1400" height="860" fill="#ffffff"/>
+  <text x="700.0" y="44.0" font-size="25" font-weight="700" fill="#0f172a" text-anchor="middle">整体：三类信息各自从哪来、保留多久、怎样进入一次模型调用</text>
+  <text x="700.0" y="72.0" font-size="14" font-weight="400" fill="#475569" text-anchor="middle">事实每轮从资料重新检索；会话内的对话用来理解追问；跨会话只保留表达偏好</text>
+  <rect x="24.0" y="100.0" width="990.0" height="170.0" rx="14" fill="#f5f3ff" fill-opacity="0.55" stroke="#7c3aed" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="124.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">每轮重新获取 · 事实来源</text>
+  <rect x="44.0" y="140.0" width="290.0" height="114.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="58.0" y="164.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">资料：用户上传的三篇论文</text>
+  <text x="58.0" y="188.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">解析、切块后写入 Elasticsearch</text>
+  <text x="58.0" y="207.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">BM25 与向量检索，重排后取片段</text>
+  <rect x="374.0" y="140.0" width="290.0" height="114.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="388.0" y="164.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">按本轮独立查询检索</text>
+  <text x="388.0" y="188.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">#15 的查询：论文乙 8 倍压缩下</text>
+  <text x="388.0" y="207.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">准确率的下降幅度</text>
+  <rect x="704.0" y="140.0" width="290.0" height="114.0" rx="10" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.4"/>
+  <text x="718.0" y="164.0" font-size="14.5" font-weight="700" fill="#4c1d95" text-anchor="start">编号证据 [1]</text>
+  <text x="718.0" y="188.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">论文乙 · 表 2：44.2，基线 46.3</text>
+  <text x="718.0" y="207.0" font-size="12.5" font-weight="400" fill="#5b21b6" text-anchor="start">回答里的事实只能引用这里</text>
+  <path d="M334.0,197.0 L374.0,197.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M664.0,197.0 L704.0,197.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="24.0" y="290.0" width="990.0" height="170.0" rx="14" fill="#f0f9ff" fill-opacity="0.55" stroke="#0284c7" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="314.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">会话内保留 · 理解追问</text>
+  <rect x="44.0" y="330.0" width="290.0" height="114.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="58.0" y="354.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">消息原文与话题</text>
+  <text x="58.0" y="378.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">15 条消息按序号存在 MySQL</text>
+  <text x="58.0" y="397.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">改写模型判断每条消息的话题</text>
+  <rect x="374.0" y="330.0" width="290.0" height="114.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="388.0" y="354.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">后台维护 + 冻结时规划</text>
+  <text x="388.0" y="378.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">话题摘要经 Kafka 增量生成</text>
+  <text x="388.0" y="397.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">约束抽取成整表快照</text>
+  <text x="388.0" y="416.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">规划器按目标话题挑选</text>
+  <rect x="704.0" y="330.0" width="290.0" height="114.0" rx="10" fill="#f0f9ff" stroke="#0284c7" stroke-width="1.4"/>
+  <text x="718.0" y="354.0" font-size="14.5" font-weight="700" fill="#0c4a6e" text-anchor="start">历史话题块与持续约束</text>
+  <text x="718.0" y="378.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">论文话题：完整摘要 + 回放 #1-#2</text>
+  <text x="718.0" y="397.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">引用格式话题：两条结论 + 保底原文</text>
+  <text x="718.0" y="416.0" font-size="12.5" font-weight="400" fill="#075985" text-anchor="start">约束：术语保留英文</text>
+  <path d="M334.0,387.0 L374.0,387.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M664.0,387.0 L704.0,387.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="24.0" y="480.0" width="990.0" height="170.0" rx="14" fill="#ecfdf5" fill-opacity="0.55" stroke="#059669" stroke-width="1.1" stroke-dasharray="6 5"/>
+  <text x="40.0" y="504.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">跨会话保留 · 决定表达方式</text>
+  <rect x="44.0" y="520.0" width="290.0" height="114.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="58.0" y="544.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">长期记忆</text>
+  <text x="58.0" y="568.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">从多次对话里抽出的表达要求</text>
+  <text x="58.0" y="587.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">限 8 个槽位，通过门控才生效</text>
+  <rect x="374.0" y="520.0" width="290.0" height="114.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="388.0" y="544.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">按问题编译</text>
+  <text x="388.0" y="568.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">风格、结构类每轮都带</text>
+  <text x="388.0" y="587.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">术语类按相关度选入</text>
+  <text x="388.0" y="606.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">结果按版本缓存在 Redis</text>
+  <rect x="704.0" y="520.0" width="290.0" height="114.0" rx="10" fill="#ecfdf5" stroke="#059669" stroke-width="1.4"/>
+  <text x="718.0" y="544.0" font-size="14.5" font-weight="700" fill="#065f46" text-anchor="start">受控表达参数</text>
+  <text x="718.0" y="568.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">先给结论再列要点</text>
+  <text x="718.0" y="587.0" font-size="12.5" font-weight="400" fill="#047857" text-anchor="start">对比类问题优先用表格</text>
+  <path d="M334.0,577.0 L374.0,577.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <path d="M664.0,577.0 L704.0,577.0" fill="none" stroke="#475569" stroke-width="1.5" marker-end="url(#arrow-slate)"/>
+  <rect x="1044.0" y="100.0" width="332.0" height="550.0" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.4"/>
+  <text x="1064.0" y="130.0" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">一次模型调用的输入</text>
+  <rect x="1064.0" y="148.0" width="292.0" height="62.0" rx="8" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <rect x="1064.0" y="148.0" width="5.0" height="62.0" rx="2" fill="#94a3b8" stroke="#94a3b8" stroke-width="0"/>
+  <text x="1084.0" y="185.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">系统提示</text>
+  <rect x="1064.0" y="228.0" width="292.0" height="62.0" rx="8" fill="#eff6ff" stroke="#eff6ff" stroke-width="0"/>
+  <rect x="1064.0" y="228.0" width="5.0" height="62.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="1084.0" y="265.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">持续约束</text>
+  <rect x="1064.0" y="308.0" width="292.0" height="62.0" rx="8" fill="#eff6ff" stroke="#eff6ff" stroke-width="0"/>
+  <rect x="1064.0" y="308.0" width="5.0" height="62.0" rx="2" fill="#2563eb" stroke="#2563eb" stroke-width="0"/>
+  <text x="1084.0" y="345.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">历史话题块</text>
+  <rect x="1064.0" y="388.0" width="292.0" height="62.0" rx="8" fill="#f5f3ff" stroke="#f5f3ff" stroke-width="0"/>
+  <rect x="1064.0" y="388.0" width="5.0" height="62.0" rx="2" fill="#7c3aed" stroke="#7c3aed" stroke-width="0"/>
+  <text x="1084.0" y="425.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">资料片段</text>
+  <rect x="1064.0" y="468.0" width="292.0" height="62.0" rx="8" fill="#ecfdf5" stroke="#ecfdf5" stroke-width="0"/>
+  <rect x="1064.0" y="468.0" width="5.0" height="62.0" rx="2" fill="#10b981" stroke="#10b981" stroke-width="0"/>
+  <text x="1084.0" y="505.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">表达参数</text>
+  <rect x="1064.0" y="548.0" width="292.0" height="62.0" rx="8" fill="#f1f5f9" stroke="#f1f5f9" stroke-width="0"/>
+  <rect x="1064.0" y="548.0" width="5.0" height="62.0" rx="2" fill="#94a3b8" stroke="#94a3b8" stroke-width="0"/>
+  <text x="1084.0" y="585.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start">当前问题与独立查询</text>
+  <path d="M994.0,197.0 L1030.0,197.0 L1030.0,419.0 L1064.0,419.0" fill="none" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+  <path d="M994.0,387.0 L1022.0,387.0 L1022.0,339.0 L1064.0,339.0" fill="none" stroke="#0284c7" stroke-width="1.5" marker-end="url(#arrow-sky)"/>
+  <path d="M994.0,577.0 L1038.0,577.0 L1038.0,499.0 L1064.0,499.0" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+  <text x="44.0" y="690.0" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start">两次会话之间带过去什么</text>
+  <rect x="44.0" y="710.0" width="400.0" height="90.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="58.0" y="734.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">会话一 · 第一天</text>
+  <text x="58.0" y="758.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">梳理三篇论文，插问引用格式，</text>
+  <text x="58.0" y="777.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">回到论文追问准确率（#1-#15）</text>
+  <rect x="956.0" y="710.0" width="420.0" height="90.0" rx="10" fill="#f8fafc" stroke="#64748b" stroke-width="1.4"/>
+  <text x="970.0" y="734.0" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start">会话二 · 第三天</text>
+  <text x="970.0" y="758.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">新开对话：把上次的对比表</text>
+  <text x="970.0" y="777.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start">扩写成综述里的一段正文</text>
+  <path d="M444.0,732.0 L956.0,732.0" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-emerald)"/>
+  <rect x="562.8" y="713.0" width="274.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="700.0" y="726.0" font-size="11.5" font-weight="600" fill="#059669" text-anchor="middle">长期记忆：术语保留英文、先给结论（通过门控后）</text>
+  <path d="M444.0,756.0 L956.0,756.0" fill="none" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#arrow-violet)"/>
+  <rect x="608.8" y="737.0" width="182.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="700.0" y="750.0" font-size="11.5" font-weight="600" fill="#7c3aed" text-anchor="middle">论文资料：每轮按新问题重新检索</text>
+  <path d="M444.0,780.0 L956.0,780.0" fill="none" stroke="#475569" stroke-width="1.5" stroke-dasharray="6 5" marker-end="url(#arrow-slate)"/>
+  <rect x="551.2" y="761.0" width="297.5" height="17" rx="4" fill="#ffffff" fill-opacity="0.92"/>
+  <text x="700.0" y="774.0" font-size="11.5" font-weight="600" fill="#475569" text-anchor="middle">对话原文、话题摘要、会话约束：留在会话一，不带过去</text>
+</svg>
