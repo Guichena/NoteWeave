@@ -135,6 +135,11 @@ public class ResearchAgentCompletionEnvelopeParser {
                 if (root.get("extraction_diagnostics").has("claim_clusters")) {
                     ResearchClaimClusterService.validateClusters(root.get("extraction_diagnostics").get("claim_clusters"));
                 }
+                if (root.get("extraction_diagnostics").has("requirement_coverage")) {
+                    ResearchRequirementCoverageService.validateProposal(root.get("extraction_diagnostics").get("requirement_coverage"));
+                }
+                if (root.get("extraction_diagnostics").has("fact_selection"))
+                    ResearchDeferredMaterialService.validate(root.get("extraction_diagnostics").get("fact_selection"));
             }
             return mapper.treeToValue(root, ResearchAgentCompletionEnvelope.class);
         } catch (BusinessException exception) {

@@ -14,6 +14,149 @@ class ResearchAgentSynthesisValidationServiceTest {
             new ResearchAgentSynthesisValidationService();
 
     @Test
+    void rejectsSummaryWithInventedNumbersOrUnknownEvidence() {
+        for (String summary : List.of("PostgreSQL 999 [evidence:pg].", "An invented finding [evidence:unknown].")) {
+            assertThatThrownBy(() -> validateMultiCellReport(summary, validParagraphs(), Map.of()))
+                    .isInstanceOf(BusinessException.class);
+        }
+    }
+
+    @Test
+    void rejectsCrossEntityCitationEvenWhenBothCellsAreBound() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL indexes virtual columns [evidence:mysql].", List.of("pg", "mysql"), List.of("evidence:mysql")),
+                validParagraphs().get(1)), Map.of())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void rejectsBorrowingNumbersFromAnotherSentenceCitation() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL 17 supports GIN [evidence:pg]. MySQL supports version 17 [evidence:mysql].",
+                        List.of("pg", "mysql"), List.of("evidence:pg", "evidence:mysql"))), Map.of()))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void automaticClaimsCannotReplaceMissingBodyCoverage() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(validParagraphs().get(0)), Map.of()))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void acceptsCompleteProseWithEachSentencesOwnCitation() {
+        validateMultiCellReport("PostgreSQL 17 uses GIN [evidence:pg].", validParagraphs(), Map.of());
+    }
+
+    @Test
+    void tableRowCannotAttributeAnotherProductsEvidenceToItsSubject() {
+        Map<String, Object> table = Map.of("columns", List.of("Product", "Finding"), "rows", List.of(Map.of(
+                "cells", List.of("PostgreSQL 17", "Virtual column indexes [evidence:mysql]"),
+                "cell_keys", List.of("pg", "mysql"), "evidence_keys", List.of("evidence:mysql"))));
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", validParagraphs(), table))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void tableProductHeadersAlsoConstrainCitationEntities() {
+        Map<String, Object> table = Map.of("columns", List.of("Aspect", "PostgreSQL 17", "MySQL 8.4"), "rows", List.of(Map.of(
+                "cells", List.of("Indexes", "Virtual columns [evidence:mysql]", "GIN [evidence:pg]"),
+                "cell_keys", List.of("pg", "mysql"), "evidence_keys", List.of("evidence:mysql", "evidence:pg"))));
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", validParagraphs(), table))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void missingComparisonCellDoesNotBorrowAnotherProductsEvidence() {
+        Map<String, Object> table = Map.of("columns", List.of("Aspect", "PostgreSQL 17", "MySQL 8.4"), "rows", List.of(Map.of(
+                "cells", List.of("Indexes", "GIN [evidence:pg]", "-"),
+                "cell_keys", List.of("pg"), "evidence_keys", List.of("evidence:pg"))));
+        validateMultiCellReport("Verified findings.", validParagraphs(), table);
+    }
+
+    @Test
+    void declaredEvidenceMustMatchTheActualInlineCitations() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg", "mysql"), List.of("evidence:mysql")),
+                validParagraphs().get(1)), Map.of())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void chineseAdjacentNumbersMustBeSupportedByTheirOwnQuotes() {
+        assertThatThrownBy(() -> validateMultiCellReport("Verified findings.", List.of(
+                paragraph("PostgreSQL有999种索引 [evidence:pg]。", List.of("pg"), List.of("evidence:pg")),
+                validParagraphs().get(1)), Map.of())).isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    void versionPrefixDoesNotIntroduceANewNumericFact() {
+        String prose = "Atlas在v1.2版支持该功能 [evidence:version]。";
+        validator.validate(Set.of("version"), List.of(Map.of(
+                        "cell_key", "version", "candidate_value", "Version 1.2", "entity_label", "Atlas",
+                        "evidence_keys", List.of("evidence:version"), "evidence_quotes", List.of(Map.of(
+                                "evidence_key", "evidence:version", "quote", "Atlas Version 1.2 supports it.")))),
+                List.of(Map.of("cell_key", "version", "claim_text", "Version 1.2", "evidence_keys", List.of("evidence:version"))),
+                prose, Map.of("schema_version", "research-reader-report.v1", "title", "Report", "executive_summary", "Verified findings.",
+                        "sections", List.of(Map.of("heading", "Version", "paragraphs", List.of(paragraph(
+                                prose, List.of("version"), List.of("evidence:version")))))), "", false, true);
+    }
+
+    @Test
+    void versionTouchingProductNameIsNotTruncatedToLastComponent() {
+        String prose = "Atlas v1.28支持该功能 [evidence:version]。";
+        validator.validate(Set.of("version"), List.of(Map.of(
+                        "cell_key", "version", "candidate_value", "Atlas v1.28 supports it", "entity_label", "Atlas",
+                        "evidence_keys", List.of("evidence:version"), "evidence_quotes", List.of(Map.of(
+                                "evidence_key", "evidence:version", "quote", "Atlasv1.28以降で利用できます")))),
+                List.of(Map.of("cell_key", "version", "claim_text", "Atlas v1.28 supports it", "evidence_keys", List.of("evidence:version"))),
+                prose, Map.of("schema_version", "research-reader-report.v1", "title", "Report", "executive_summary", "Verified findings.",
+                        "sections", List.of(Map.of("heading", "Version", "paragraphs", List.of(paragraph(
+                                prose, List.of("version"), List.of("evidence:version")))))), "", false, true);
+        assertThatThrownBy(() -> validator.validate(Set.of("version"), List.of(Map.of(
+                        "cell_key", "version", "candidate_value", "Atlasv1.28", "evidence_keys", List.of("evidence:version"))),
+                List.of(Map.of("cell_key", "version", "claim_text", "Atlasv1.28", "evidence_keys", List.of("evidence:version"))),
+                "Atlas有28个选项 [evidence:version]。", Map.of("schema_version", "research-reader-report.v1", "title", "Report",
+                        "executive_summary", "Verified findings.", "sections", List.of(Map.of("heading", "Version", "paragraphs", List.of(paragraph(
+                                "Atlas有28个选项 [evidence:version]。", List.of("version"), List.of("evidence:version")))))), "", false, true))
+                .isInstanceOf(BusinessException.class);
+    }
+
+    private static Map<String, Object> paragraph(String prose, List<String> cells, List<String> evidence) {
+        return Map.of("text", prose, "cell_keys", cells, "evidence_keys", evidence);
+    }
+
+    private static List<Map<String, Object>> validParagraphs() {
+        return List.of(paragraph("PostgreSQL 17 uses GIN [evidence:pg].", List.of("pg"), List.of("evidence:pg")),
+                paragraph("MySQL 8.4 indexes virtual columns [evidence:mysql].", List.of("mysql"), List.of("evidence:mysql")));
+    }
+
+    private void validateMultiCellReport(String summary, List<Map<String, Object>> paragraphs, Map<String, Object> table) {
+        List<Map<String, Object>> cells = List.of(
+                Map.of("cell_key", "pg", "candidate_value", "GIN indexes", "entity_label", "PostgreSQL 17",
+                        "evidence_keys", List.of("evidence:pg"), "evidence_quotes", List.of(Map.of(
+                                "evidence_key", "evidence:pg", "quote", "PostgreSQL 17 supports GIN indexes."))),
+                Map.of("cell_key", "mysql", "candidate_value", "Virtual column indexes", "entity_label", "MySQL 8.4",
+                        "evidence_keys", List.of("evidence:mysql"), "evidence_quotes", List.of(Map.of(
+                                "evidence_key", "evidence:mysql", "quote", "MySQL 8.4 indexes virtual columns."))));
+        List<Map<String, Object>> claims = cells.stream().map(cell -> Map.<String, Object>of(
+                "cell_key", cell.get("cell_key"), "claim_text", cell.get("candidate_value"),
+                "evidence_keys", cell.get("evidence_keys"))).toList();
+        String markdown = summary + "\n" + paragraphs.stream().map(item -> item.get("text").toString())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        if (table.get("rows") instanceof List<?> rows) {
+            for (Object item : rows) {
+                if (item instanceof Map<?, ?> row && row.get("cells") instanceof List<?> values) {
+                    markdown += "\n| " + values.stream().map(Object::toString)
+                            .collect(java.util.stream.Collectors.joining(" | ")) + " |";
+                }
+            }
+        }
+        validator.validate(Set.of("pg", "mysql"), cells, claims, markdown,
+                Map.of("schema_version", "research-reader-report.v1", "title", "Findings", "executive_summary", summary,
+                        "sections", List.of(Map.of("heading", "Indexes", "paragraphs", paragraphs)), "comparison_table", table),
+                "", false, true);
+    }
+
+    @Test
     void acceptsExactAuditedClaimAndCitationRendering() {
         validator.validate(
                 Set.of("cell-a"),

@@ -28,7 +28,7 @@ public class ApiRequestIdentityFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getRequestURI();
+        String path = RequestPaths.applicationPath(request);
         return !path.startsWith("/api/v2/")
                 || path.equals("/api/v2/auth/register")
                 || path.equals("/api/v2/auth/login")

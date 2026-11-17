@@ -5,12 +5,11 @@ import com.noteweave.common.Ids;
 import com.noteweave.security.WorkspaceAccessGuard;
 import com.noteweave.security.WorkspacePermission;
 import com.noteweave.security.AuditActorProvider;
-import com.noteweave.research.ResearchGeneratedSourceReadGate;
+import com.noteweave.answer.AnswerContentReadPolicy;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,18 +23,18 @@ public class ConversationService {
     private final JdbcTemplate jdbcTemplate;
     private final WorkspaceAccessGuard workspaceAccessGuard;
     private final AuditActorProvider auditActorProvider;
-    private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final AnswerContentReadPolicy contentReadPolicy;
 
     public ConversationService(
             JdbcTemplate jdbcTemplate,
             WorkspaceAccessGuard workspaceAccessGuard,
             AuditActorProvider auditActorProvider,
-            ResearchGeneratedSourceReadGate generatedSourceGate
+            AnswerContentReadPolicy contentReadPolicy
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.workspaceAccessGuard = workspaceAccessGuard;
         this.auditActorProvider = auditActorProvider;
-        this.generatedSourceGate = generatedSourceGate;
+        this.contentReadPolicy = contentReadPolicy;
     }
 
     @Transactional
@@ -122,14 +121,7 @@ public class ConversationService {
         Object[] parameters = new Object[ids.size() + 1];
         parameters[0] = workspaceId;
         for (int i = 0; i < ids.size(); i++) parameters[i + 1] = ids.get(i);
-        Set<String> redacted = new HashSet<>(jdbcTemplate.queryForList("""
-                select m.id from conversation_message m
-                join answer_run r on r.assistant_request_id = m.assistant_request_id
-                join run_input_snapshot s on s.answer_run_id = r.id
-                where m.workspace_id = ? and m.id in (%s)
-                  and s.replay_availability = 'METADATA_ONLY'
-                """.formatted(placeholders), String.class, parameters));
-        Map<String, List<String>> sourcesByMessage = new HashMap<>();
+        Set<String> readable = contentReadPolicy.readableMessageIds(workspaceId, ids);
         Map<String, List<String>> citationsByMessage = new HashMap<>();
         jdbcTemplate.query("""
                 select mc.message_id, c.source_id, c.title, c.quote_text
@@ -139,23 +131,17 @@ public class ConversationService {
                 where m.workspace_id = ? and m.id in (%s)
                 order by mc.message_id, mc.sort_order
                 """.formatted(placeholders), rs -> {
-            sourcesByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
-                    .add(rs.getString(2));
             citationsByMessage.computeIfAbsent(rs.getString(1), ignored -> new ArrayList<>())
                     .add(citationLine(rs.getString(3), rs.getString(4)));
         }, parameters);
-        List<String> citedSources = sourcesByMessage.values().stream().flatMap(List::stream)
-                .filter(id -> id != null && !id.isBlank()).distinct().toList();
-        Set<String> readableSources = generatedSourceGate.readableSourceIds(workspaceId, citedSources);
-        sourcesByMessage.forEach((messageId, sourceIds) -> {
-            if (!readableSources.containsAll(sourceIds)) redacted.add(messageId);
-        });
-        return messages.stream().map(message -> redacted.contains(message.messageId())
+        return messages.stream().map(message -> !readable.contains(message.messageId())
                 && "ASSISTANT".equals(message.role())
                 ? new ConversationMessageResponse(message.messageId(), message.messageSeq(),
                     message.role(), message.requestedTurnMode(),
-                    "此回答引用的资料已撤销，内容不可查看。", message.replyToMessageId(),
-                    "REDACTED", null, message.answerStatus(), null, message.createdAt(), null, List.of())
+                    "DELETED".equals(message.contextStatus()) ? "" : "此回答依据或上下文已撤销，内容不可查看。",
+                    message.replyToMessageId(),
+                    "DELETED".equals(message.contextStatus()) ? "DELETED" : "REDACTED", null,
+                    message.answerStatus(), null, message.createdAt(), null, List.of())
                 : withCitations(message, citationsByMessage.get(message.messageId()))).toList();
     }
 

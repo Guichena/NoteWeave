@@ -37,17 +37,20 @@ public class AnswerRunService {
     private final AuditActorProvider auditActorProvider;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
+    private final AnswerContentReadPolicy contentReadPolicy;
 
     public AnswerRunService(
             JdbcTemplate jdbcTemplate,
             AuditActorProvider auditActorProvider,
             MeterRegistry meterRegistry,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            AnswerContentReadPolicy contentReadPolicy
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.auditActorProvider = auditActorProvider;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
+        this.contentReadPolicy = contentReadPolicy;
     }
 
     @Transactional
@@ -130,6 +133,7 @@ public class AnswerRunService {
             int maximumOutputTokens,
             String evidenceSufficiency
     ) {
+        lockAnswerMessage(workspaceId, runId);
         String actor = actor();
         EvidenceBundleSnapshot bundleSnapshot = EvidenceBundleSnapshot.from(evidenceBundle);
         persistEvidenceManifest(workspaceId, runId, evidenceBundle);
@@ -236,6 +240,7 @@ public class AnswerRunService {
             String finalContent,
             Integer outputTokens
     ) {
+        lockAnswerMessage(workspaceId, runId);
         AnswerRunRef current = requireRef(workspaceId, runId);
         if ("COMPLETED".equals(current.status())) {
             return CompletionOutcome.COMPLETED;
@@ -245,6 +250,10 @@ public class AnswerRunService {
         }
         if ("FAILED".equals(current.status())) {
             return CompletionOutcome.FAILED;
+        }
+        if (!isContentReadable(workspaceId, runId)) {
+            cancelFromStream(workspaceId, runId, streamOwner);
+            return CompletionOutcome.CANCELLED;
         }
         requireNonBlankFinalContent(finalContent);
         String actor = actor();
@@ -412,6 +421,7 @@ public class AnswerRunService {
     }
 
     public AnswerRunResponse get(String workspaceId, String runId) {
+        boolean readable = isContentReadable(workspaceId, runId);
         return jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
@@ -427,12 +437,13 @@ public class AnswerRunService {
             if (!rs.next()) {
                 throw notFound();
             }
-            return response(rs);
+            return response(rs, readable);
         }, workspaceId, runId);
     }
 
     public AnswerEvidenceManifestResponse evidenceManifest(String workspaceId, String runId) {
         requireRef(workspaceId, runId);
+        boolean readable = isContentReadable(workspaceId, runId);
         List<AnswerEvidenceManifestResponse.Evidence> evidence = jdbcTemplate.query("""
                 select rank_no, evidence_id, evidence_kind, source_id, source_snapshot_id, passage_id,
                        knowledge_item_id, knowledge_version_id, title, excerpt, content_hash,
@@ -444,9 +455,11 @@ public class AnswerRunService {
                 rs.getInt("rank_no"), rs.getString("evidence_id"), rs.getString("evidence_kind"),
                 rs.getString("source_id"), rs.getString("source_snapshot_id"), rs.getString("passage_id"),
                 rs.getString("knowledge_item_id"), rs.getString("knowledge_version_id"), rs.getString("title"),
-                rs.getString("excerpt"), rs.getString("content_hash"), rs.getString("location_info"),
+                readable ? rs.getString("excerpt") : "", readable ? rs.getString("content_hash")
+                        : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                rs.getString("location_info"),
                 rs.getTimestamp("fresh_at") == null ? null : rs.getTimestamp("fresh_at").toInstant(),
-                rs.getInt("character_cost"),
+                readable ? rs.getInt("character_cost") : 0,
                 graphPath(rs.getString("graph_path_json")), rs.getString("text_origin"),
                 rs.getObject("ocr_confidence", Double.class)
         ), workspaceId, runId);
@@ -461,7 +474,7 @@ public class AnswerRunService {
         return new AnswerEvidenceManifestResponse(
                 runId,
                 evidence,
-                QueryRewrite.viewFromPlanJson(storedPlan.planJson()),
+                readable ? QueryRewrite.viewFromPlanJson(storedPlan.planJson()) : null,
                 compiledMemoryReferences(workspaceId, runId),
                 storedPlan.evidenceSufficiency());
     }
@@ -516,7 +529,7 @@ public class AnswerRunService {
             String conversationId,
             int limit
     ) {
-        return jdbcTemplate.query("""
+        List<AnswerRunResponse> runs = jdbcTemplate.query("""
                 select r.id, r.workspace_id, r.conversation_id, r.mode, r.status,
                        r.query_message_id, r.answer_message_id, r.assistant_request_id,
                        r.retrieval_plan_version, r.retrieval_plan_json, r.model, r.maximum_output_tokens,
@@ -529,8 +542,11 @@ public class AnswerRunService {
                 where r.workspace_id = ? and r.conversation_id = ?
                 order by r.created_at desc
                 limit ?
-                """, (rs, rowNum) -> response(rs),
+                """, (rs, rowNum) -> response(rs, true),
                 workspaceId, conversationId, Math.max(1, Math.min(limit, 50)));
+        java.util.Set<String> readable = contentReadPolicy.readableRunIds(workspaceId,
+                runs.stream().map(AnswerRunResponse::id).toList());
+        return runs.stream().map(run -> readable.contains(run.id()) ? run : withoutContent(run)).toList();
     }
 
     public AnswerRunRef requireByAssistantRequest(String assistantRequestId) {
@@ -553,6 +569,7 @@ public class AnswerRunService {
 
     public List<AnswerEventResponse> eventsAfter(String workspaceId, String runId, long after) {
         requireRef(workspaceId, runId);
+        boolean readable = isContentReadable(workspaceId, runId);
         return jdbcTemplate.query("""
                 select seq, event_type, payload_json, created_at
                 from answer_event
@@ -560,14 +577,29 @@ public class AnswerRunService {
                 order by seq asc
                 """, (rs, rowNum) -> new AnswerEventResponse(
                 rs.getLong("seq"), rs.getString("event_type"),
-                eventPayload(rs.getString("event_type"), rs.getString("payload_json")),
+                readable ? eventPayload(rs.getString("event_type"), rs.getString("payload_json")) : "",
                 instant(rs.getTimestamp("created_at"))
         ), workspaceId, runId, after);
     }
 
+    public boolean isContentReadable(String workspaceId, String runId) {
+        return contentReadPolicy.canReadRun(workspaceId, runId);
+    }
+
+    private void lockAnswerMessage(String workspaceId, String runId) {
+        jdbcTemplate.queryForList("""
+                select id from conversation_message
+                where workspace_id = ? and id = (
+                    select answer_message_id from answer_run where workspace_id = ? and id = ?
+                ) for update
+                """, String.class, workspaceId, workspaceId, runId);
+    }
+
     @Transactional
     public void persistCitationEvents(String workspaceId, String runId, List<String> citationLines) {
+        lockAnswerMessage(workspaceId, runId);
         requireRef(workspaceId, runId);
+        if (!isContentReadable(workspaceId, runId)) return;
         for (String citationLine : citationLines) {
             appendEvent(runId, workspaceId, "citation.upsert", Map.of(
                     "text", citationLine == null ? "" : citationLine));
@@ -739,7 +771,7 @@ public class AnswerRunService {
         );
     }
 
-    private AnswerRunResponse response(java.sql.ResultSet rs) throws java.sql.SQLException {
+    private AnswerRunResponse response(java.sql.ResultSet rs, boolean readable) throws java.sql.SQLException {
         RetrievalStatus retrievalStatus = retrievalStatus(rs.getString("evidence_bundle_json"));
         return new AnswerRunResponse(
                 rs.getString("id"), rs.getString("workspace_id"), rs.getString("conversation_id"),
@@ -748,13 +780,21 @@ public class AnswerRunService {
                 rs.getString("retrieval_plan_version"), text(rs.getString("model")),
                 (Integer) rs.getObject("maximum_output_tokens"),
                 retrievalStatus.degraded(), retrievalStatus.reasons(),
-                (Integer) rs.getObject("revision_no"), text(rs.getString("revision_status")),
-                text(rs.getString("content")), instant(rs.getTimestamp("started_at")),
+                (Integer) rs.getObject("revision_no"), readable ? text(rs.getString("revision_status")) : "REDACTED",
+                readable ? text(rs.getString("content")) : "", instant(rs.getTimestamp("started_at")),
                 instant(rs.getTimestamp("first_token_at")), instant(rs.getTimestamp("finished_at")),
-                text(rs.getString("error_code")), text(rs.getString("error_message")),
-                QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json")),
+                text(rs.getString("error_code")), readable ? text(rs.getString("error_message")) : "",
+                readable ? QueryRewrite.viewFromPlanJson(rs.getString("retrieval_plan_json")) : null,
                 rs.getString("evidence_sufficiency")
         );
+    }
+
+    private AnswerRunResponse withoutContent(AnswerRunResponse run) {
+        return new AnswerRunResponse(run.id(), run.workspaceId(), run.conversationId(), run.mode(), run.status(),
+                run.queryMessageId(), run.answerMessageId(), run.assistantRequestId(), run.retrievalPlanVersion(),
+                run.model(), run.maximumOutputTokens(), run.retrievalDegraded(), run.retrievalDegradationReasons(),
+                run.revisionNo(), "REDACTED", "", run.startedAt(), run.firstTokenAt(), run.finishedAt(),
+                run.errorCode(), "", null, run.evidenceSufficiency());
     }
 
     private RetrievalStatus retrievalStatus(String evidenceBundleJson) {

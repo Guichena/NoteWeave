@@ -106,6 +106,7 @@ public class ArtifactJobController {
             @PathVariable int versionNo,
             @Valid @RequestBody(required = false) RollbackArtifactVersionRequest request
     ) {
+        artifactJobService.requireIdleForVersionMutation(workspaceId, artifactJobId);
         String sourceVersionId = artifactJobService
                 .getVersionDetail(workspaceId, artifactJobId, versionNo)
                 .versionId();

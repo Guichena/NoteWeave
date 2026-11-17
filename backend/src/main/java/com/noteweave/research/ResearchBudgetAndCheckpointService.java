@@ -55,7 +55,8 @@ public class ResearchBudgetAndCheckpointService {
             return new ReservationReceipt(existing.id(), true);
         }
         requireReservableTask(command.researchRunId(), command.taskId());
-        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(command.researchRunId(), command.reserved(), 1))
+        String budgetRole = jdbcTemplate.queryForObject("select role from research_agent_task where id = ?",String.class,command.taskId());
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(command.researchRunId(), command.reserved(), 1, budgetRole))
             throw new BusinessException("RESEARCH_DISCOVERY_BUDGET_EXHAUSTED", "研究主循环剩余预算不足以预留任务");
         String id = Ids.newId();
         Map<String, Long> zero = zeroLike(command.reserved());
@@ -135,14 +136,15 @@ public class ResearchBudgetAndCheckpointService {
         if (!"RESERVED".equals(row.state())) {
             throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE", "Budget reservation is not releasable");
         }
-        Map<String, Long> released = subtract(row.reserved(), row.consumed());
+        Map<String, Long> consumed = knownConsumption(row);
+        Map<String, Long> released = subtract(row.reserved(), consumed);
         int updated = jdbcTemplate.update("""
                 update research_budget_reservation
-                set released_json = ?, state = 'RELEASED', settled_at = current_timestamp, updated_at = current_timestamp
+                set consumed_json = ?, released_json = ?, state = 'RELEASED', settled_at = current_timestamp, updated_at = current_timestamp
                 where id = ? and state = 'RESERVED'
-                """, Json.write(objectMapper, released), row.id());
+                """, Json.write(objectMapper, consumed),Json.write(objectMapper, released), row.id());
         if (updated != 1) throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE", "Budget reservation lost release race");
-        return new BudgetSnapshot(row.reserved(), row.consumed(), released, "RELEASED");
+        return new BudgetSnapshot(row.reserved(), consumed, released, "RELEASED");
     }
 
     /**
@@ -177,19 +179,31 @@ public class ResearchBudgetAndCheckpointService {
             throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE",
                     "Lifecycle budget reservation identity or state is invalid");
         }
-        Map<String, Long> released = subtract(row.reserved(), row.consumed());
+        Map<String, Long> consumed = knownConsumption(row);
+        Map<String, Long> released = subtract(row.reserved(), consumed);
         int updated = jdbcTemplate.update("""
                 update research_budget_reservation
-                set released_json = ?, state = 'RELEASED', settled_at = current_timestamp,
+                set consumed_json = ?, released_json = ?, state = 'RELEASED', settled_at = current_timestamp,
                     updated_at = current_timestamp
                 where id = ? and research_run_id = ? and research_agent_task_id = ?
                   and state = 'RESERVED' and agent_completion_id is null
-                """, Json.write(objectMapper, released), row.id(), runId, taskId);
+                """, Json.write(objectMapper, consumed),Json.write(objectMapper, released), row.id(), runId, taskId);
         if (updated != 1) {
             throw new BusinessException("RESEARCH_BUDGET_NOT_RELEASABLE",
                     "Lifecycle budget reservation lost its release race");
         }
-        return new BudgetSnapshot(row.reserved(), row.consumed(), released, "RELEASED");
+        return new BudgetSnapshot(row.reserved(), consumed, released, "RELEASED");
+    }
+
+    private Map<String,Long> knownConsumption(ReservationRow row) {
+        if (!new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(row.runId())) return row.consumed();
+        String raw = jdbcTemplate.queryForObject("select execution_context_json from research_agent_task where id = ?",String.class,row.taskId());
+        if (raw == null || new ResearchDiscoveryBudget(jdbcTemplate,objectMapper).read(raw).path("query_policy").path("synthesis_input").path("report_call_meter_version").asInt() != 1) return row.consumed();
+        Long calls = jdbcTemplate.queryForObject("select count(*) from research_synthesis_call_permit where task_id = ?",Long.class,row.taskId());
+        Map<String,Long> consumed = new LinkedHashMap<>(row.consumed());
+        consumed.put("llm_calls",Math.max(consumed.getOrDefault("llm_calls",0L),calls == null ? 0L : calls));
+        if (consumed.get("llm_calls") > row.reserved().getOrDefault("llm_calls",0L)) throw new BusinessException("RESEARCH_BUDGET_USAGE_INVALID","已授权的成文调用超出预留预算");
+        return Map.copyOf(consumed);
     }
 
     @Transactional

@@ -144,6 +144,27 @@ class ResearchEvidenceQualificationService {
         }
     }
 
+    /** 每个互补事实分别使用原有资格规则，不能用整格代表值代替核验。 */
+    List<String> qualifyFact(
+            ResearchAgentCompletionCommitter.TaskRow task,
+            ResearchAgentCompletionEnvelope envelope,
+            com.fasterxml.jackson.databind.JsonNode cluster,
+            Map<String, ResearchAgentCompletionCommitter.TrustedEvidenceSource> authority
+    ) {
+        Map<String, ResearchAgentCompletionEnvelope.Evidence> byKey = new HashMap<>();
+        envelope.evidence().forEach(item -> byKey.put(item.evidenceKey(), item));
+        List<String> keys = new ArrayList<>();
+        cluster.path("evidence_keys").forEach(key -> keys.add(key.asText()));
+        if (keys.isEmpty() || keys.stream().anyMatch(key -> !byKey.containsKey(key)))
+            return List.of("FACT_EVIDENCE_MISSING");
+        List<ResearchAgentCompletionEnvelope.EquivalentClaim> claims = new ArrayList<>();
+        cluster.path("equivalent_claims").forEach(claim -> claims.add(new ResearchAgentCompletionEnvelope.EquivalentClaim(
+                claim.path("evidence_key").asText(), claim.path("claim_text").asText(), claim.path("source_domain").asText())));
+        var candidate = new ResearchAgentCompletionEnvelope.Candidate(cluster.path("cluster_key").asText(),
+                cluster.path("cell_key").asText(), 0, cluster.path("claim_text").asText(), keys, 0, claims);
+        return validateBinding(task, candidate, keys.stream().map(byKey::get).toList(), authority);
+    }
+
     private List<String> validateBinding(
             ResearchAgentCompletionCommitter.TaskRow task,
             ResearchAgentCompletionEnvelope.Candidate candidate,
@@ -182,6 +203,12 @@ class ResearchEvidenceQualificationService {
         // as a candidate-only validation row. Pinned by
         // ResearchAgentEvidenceEnforcementNegativeTest (DR-112 group 5).
         if (evidence.isEmpty()) reasons.add("QUALIFIED_SOURCE_REQUIRED");
+        var sourceScope = ResearchSourceScopePolicy.scope(ResearchSourceScopePolicy.contract(task.executionContextJson(), objectMapper), candidate.cellKey());
+        for (var item : evidence) {
+            var source = authority.get(item.evidenceKey());
+            if (source != null) reasons.addAll(((List<?>) ResearchSourceScopePolicy.evaluate(sourceScope, source.sourceUrl(), source.sourceTitle(), item.quoteText(), source.scopeText())
+                    .get("reason_codes")).stream().map(String::valueOf).toList());
+        }
         if (task.candidateQuorum() == 1) {
             Boolean highRisk = jdbcTemplate.queryForObject("select high_risk from research_cell where research_run_id = ? and cell_key = ?",
                     Boolean.class, task.runId(), candidate.cellKey());

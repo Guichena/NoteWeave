@@ -278,11 +278,27 @@ public class CanonicalMemoryReviewService {
     ) {
         if ("REJECT".equals(request.decision())) {
             jdbcTemplate.update("update memory_runtime_revision set status = 'REJECTED' where id = ?", row.revisionId());
-            jdbcTemplate.update("""
-                    update memory_item set status = 'DELETED', review_status = 'REJECTED',
-                        lock_version = lock_version + 1, updated_at = current_timestamp
-                    where id = ?
-                    """, row.itemId());
+            Integer activeHead = jdbcTemplate.queryForObject("""
+                    select count(*) from memory_item i
+                    join memory_runtime_revision r on r.id = i.current_revision_id
+                    where i.id = ? and r.status = 'ACTIVE'
+                    """, Integer.class, row.itemId());
+            if (activeHead != null && activeHead > 0) {
+                // 拒绝更新不能改变旧版本的生效或待复核状态。
+                jdbcTemplate.update("""
+                        update memory_item set lock_version = lock_version + 1, updated_at = current_timestamp
+                        where id = ?
+                        """, row.itemId());
+            } else {
+                Integer proposed = jdbcTemplate.queryForObject("""
+                        select count(*) from memory_runtime_revision where memory_item_id = ? and status = 'PROPOSED'
+                        """, Integer.class, row.itemId());
+                boolean hasProposals = proposed != null && proposed > 0;
+                jdbcTemplate.update("""
+                        update memory_item set status = ?, review_status = ?, current_revision_id = null,
+                            lock_version = lock_version + 1, updated_at = current_timestamp where id = ?
+                        """, hasProposals ? "EMPTY" : "DELETED", hasProposals ? "PENDING" : "REJECTED", row.itemId());
+            }
             updateCandidateStatus(row, "REJECTED");
             writeEvent(row.itemId(), "REVISION_REJECTED", row.revisionId(), decisionPayload(request, null));
             return new MemoryRuntimeRevisionResponse(row.revisionId(), row.itemId(), "REJECTED", List.of());

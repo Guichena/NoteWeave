@@ -35,11 +35,11 @@ public class ResearchAgentCoordinatorSnapshotService {
                   on cell.research_run_id = decision.research_run_id and cell.cell_key = decision.target_id
                 where decision.research_run_id = ?
                   and decision.decision_scope = 'CELL'
-                  and decision.decision_type = 'QUORUM_REPAIR_REQUIRED'
+                  and decision.decision_type in %s
                   and decision.action_text = 'COUNTERFACTUAL_REPAIR'
                   and decision.decision_status = 'OPEN'
-                  and cell.cell_status <> 'VERIFIED'
-                """, Long.class, runId);
+                  and (cell.cell_status <> 'VERIFIED' or cell.semantic_audit_status not in ('PASS','NOT_REQUIRED'))
+                """.formatted(ResearchAuditRepairDecisions.TYPES), Long.class, runId);
         Long verifiedCells = jdbcTemplate.queryForObject("""
                 select count(*) from research_cell
                 where research_run_id = ? and cell_status = 'VERIFIED'

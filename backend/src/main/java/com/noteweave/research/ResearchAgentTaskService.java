@@ -101,6 +101,10 @@ public class ResearchAgentTaskService {
             throw new BusinessException("RESEARCH_AGENT_TASK_NOT_CLAIMABLE", "Research agent task is not claimable");
         }
         contextGate.requireReadable(discovered.researchRunId());
+        String requiredFeature = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).requiredCapability(locked.executionContextJson());
+        if (!requiredFeature.isEmpty() && !command.supportedFeatures().contains(requiredFeature)) {
+            throw new BusinessException("RESEARCH_AGENT_TASK_NOT_CLAIMABLE", "当前 Worker 不支持该任务的冻结契约，请使用升级后的 Worker");
+        }
         int leaseSeconds = leaseSeconds(command.leaseSeconds());
         int claimed = jdbcTemplate.update("""
                 update research_agent_task
@@ -551,7 +555,14 @@ public class ResearchAgentTaskService {
         }
     }
     public record TaskSnapshot(String taskId, String status) { }
-    public record ClaimCommand(String taskId, String workerInstanceId, int leaseSeconds) { }
+    public record ClaimCommand(String taskId, String workerInstanceId, int leaseSeconds, List<String> supportedFeatures) {
+        public ClaimCommand {
+            supportedFeatures = supportedFeatures == null ? List.of() : List.copyOf(supportedFeatures);
+        }
+        public ClaimCommand(String taskId, String workerInstanceId, int leaseSeconds) {
+            this(taskId, workerInstanceId, leaseSeconds, List.of());
+        }
+    }
     public record LeaseCommand(String taskId, String workerInstanceId, int leaseEpoch, long fencingToken, int leaseSeconds) { }
     public record ClaimedTask(String taskId, int leaseEpoch, long fencingToken, Instant leaseExpiresAt,
                               String targetCellsJson, String budgetJson, String taskSnapshotJson, String snapshotDigest) { }

@@ -28,7 +28,8 @@ class ArtifactFileReconcileReadbackTest {
                 create table artifact_version(
                     id varchar(36) primary key, artifact_job_id varchar(36), version_no int,
                     title varchar(100), content_markdown clob, result_payload_json clob,
-                    origin_task_id varchar(36), delivery_status varchar(20), created_at timestamp default current_timestamp)
+                    origin_task_id varchar(36), delivery_status varchar(20), created_at timestamp default current_timestamp,
+                    last_reconcile_attempt_at timestamp)
                 """);
         jdbc.execute("""
                 create table artifact_file(
@@ -74,6 +75,8 @@ class ArtifactFileReconcileReadbackTest {
 
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("DEGRADED");
+
+
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("READY");
         verify(storage, times(2)).write(eq("export"), eq("artifact/recovered.md"), eq(markdown));
@@ -103,6 +106,40 @@ class ArtifactFileReconcileReadbackTest {
                 .thenThrow(new IllegalStateException("Worker export expired"));
         service.reconcileDegradedFiles();
         assertThat(deliveryStatus(jdbc)).isEqualTo("DEGRADED");
+
+        // 最早十个版本一直无法恢复，也必须让第十一个版本获得处理机会。
+        for (int index = 0; index < 11; index++) {
+            String version = index == 10 ? "zzz-healthy" : "blocked-" + index;
+            jdbc.update("""
+                    insert into artifact_version(id, artifact_job_id, version_no, title, content_markdown,
+                        result_payload_json, origin_task_id, delivery_status, created_at)
+                    values (?, 'job', ?, 'Recovered', '# Recovered', '{}', 'task', 'DEGRADED', ?)
+                    """, version, index + 2, java.sql.Timestamp.valueOf("2020-01-01 00:00:00"));
+            jdbc.update("""
+                    insert into artifact_file(id, artifact_version_id, file_format, file_name, media_type,
+                        storage_backend, bucket_name, object_key, size_bytes, checksum_sha256, status,
+                        error_message, file_role, variant, sequence_no)
+                    values (?, ?, 'MARKDOWN', 'recovered.md', 'text/markdown', 'local', 'export',
+                        'artifact/recovered.md', ?, ?, 'READY', '', 'PRIMARY_MARKDOWN', '', 0)
+                    """, version + "-md", version, markdown.length, digest);
+            if (index < 10) {
+                jdbc.update("""
+                        insert into artifact_file(id, artifact_version_id, file_format, file_name, media_type,
+                            storage_backend, bucket_name, object_key, size_bytes, checksum_sha256, status,
+                            error_message, file_role, variant, sequence_no)
+                        values (?, ?, 'MARKDOWN', 'source.md', 'text/markdown', 'local', 'export',
+                            'artifact/source.md', ?, ?, 'READY', '', 'SOURCE_MD', '', 0)
+                        """, version + "-source", version, source.length, sourceDigest);
+            }
+        }
+        when(storage.read("export", "artifact/recovered.md")).thenReturn(markdown);
+        when(storage.read("export", "artifact/source.md")).thenReturn(corrupted);
+        service.reconcileDegradedFiles();
+        assertThat(jdbc.queryForObject("select delivery_status from artifact_version where id = 'zzz-healthy'", String.class))
+                .isEqualTo("DEGRADED");
+        service.reconcileDegradedFiles();
+        assertThat(jdbc.queryForObject("select delivery_status from artifact_version where id = 'zzz-healthy'", String.class))
+                .isEqualTo("READY");
     }
 
     private String deliveryStatus(JdbcTemplate jdbc) {

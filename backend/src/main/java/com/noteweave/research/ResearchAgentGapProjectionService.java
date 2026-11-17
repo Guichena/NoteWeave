@@ -63,11 +63,11 @@ public class ResearchAgentGapProjectionService {
                 select id, target_id, reason_code, evidence_ids_json
                 from research_verifier_decision
                 where research_run_id = ? and decision_scope = 'CELL'
-                  and decision_type = 'QUORUM_REPAIR_REQUIRED'
+                  and decision_type in %s
                   and action_text = 'COUNTERFACTUAL_REPAIR' and decision_status = 'OPEN'
                   and target_id is not null
                 order by cast(id as binary)
-                """, (rs, rowNum) -> new VerifierRepair(
+                """.formatted(ResearchAuditRepairDecisions.TYPES), (rs, rowNum) -> new VerifierRepair(
                 rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4)), runId);
         for (VerifierRepair repair : verifierRepairs) {
             Aggregate aggregate = byCell.computeIfAbsent(repair.cellKey(), ignored -> new Aggregate());
@@ -81,7 +81,7 @@ public class ResearchAgentGapProjectionService {
         for (Map.Entry<String, Aggregate> item : byCell.entrySet()) {
             CellState cell = loadCell(runId, item.getKey());
             if (cell == null) continue;
-            if ("VERIFIED".equals(cell.status())) continue;
+            if ("VERIFIED".equals(cell.status()) && Set.of("PASS","NOT_REQUIRED").contains(cell.auditStatus())) continue;
             Aggregate aggregate = item.getValue();
             result.add(new RepairGap(cell.cellKey(), cell.repairCount(), "FROZEN".equals(cell.status()), cell.activeTaskId() == null,
                     digest(item.getKey(), aggregate), List.copyOf(aggregate.taskIds),
@@ -96,14 +96,19 @@ public class ResearchAgentGapProjectionService {
     static final int GAP_REPAIR_MAX_CELLS = 8;
 
     /**
-     * 已经被深挖或补查任务处理过、仍然没有结论且从未补查过的单元格。
+     * 已经研究过但仍然缺少结论的单元格；需求覆盖不足的任务在两次补查上限内继续累计。
      * 快照计数与补查投影共用这一查询，触发条件和实际补查目标不会不一致。
      */
     static List<String> unrepairedGapCellKeys(JdbcTemplate jdbcTemplate, String runId) {
-        return jdbcTemplate.query("""
+        int maximum = repairLimit(jdbcTemplate, runId);
+        List<String> cells = jdbcTemplate.query("""
                 select cell.cell_key from research_cell cell
                 where cell.research_run_id = ? and cell.cell_status = 'GAP'
-                  and cell.repair_count = 0 and cell.active_task_id is null
+                  and (cell.repair_count = 0 or (cell.repair_count < ? and (cell.last_verifier_decision = 'REQUIREMENT_FACT_DEDUPLICATED' or exists (
+                    select 1 from research_cell_merge coverage_merge
+                    where coverage_merge.research_run_id = cell.research_run_id and coverage_merge.cell_key = cell.cell_key
+                      and coverage_merge.reason_code = 'REQUIREMENT_COVERAGE_INCOMPLETE'
+                  )))) and cell.active_task_id is null
                   and exists (
                     select 1 from research_agent_task task
                     where task.research_run_id = cell.research_run_id
@@ -125,8 +130,26 @@ public class ResearchAgentGapProjectionService {
                   )
                 order by cell.cell_key
                 limit ?
-                """, (rs, rowNum) -> rs.getString(1), runId, GAP_REPAIR_MAX_CELLS);
+                """, (rs, rowNum) -> rs.getString(1), runId, maximum,
+                new ResearchRequirementCoverageService(jdbcTemplate,new ObjectMapper()).fullCompletion(runId) ? 4096 : GAP_REPAIR_MAX_CELLS);
+        Map<String,Integer> scores = ResearchCompletionScheduler.scores(jdbcTemplate,new ObjectMapper(),runId);
+        return cells.stream().sorted(Comparator.<String>comparingInt(cell -> scores.getOrDefault(cell,0)).reversed().thenComparing(Comparator.naturalOrder()))
+                .limit(GAP_REPAIR_MAX_CELLS).toList();
     }
+
+    static int repairLimit(JdbcTemplate jdbc, String runId) {
+        if (!new ResearchRequirementCoverageService(jdbc, new ObjectMapper()).improvedCompletion(runId)) return 2;
+        boolean full = new ResearchRequirementCoverageService(jdbc,new ObjectMapper()).fullCompletion(runId);
+        Integer minimum = jdbc.queryForObject("""
+                select coalesce(max(%s), 1) from research_requirement requirement
+                join research_cell cell on cell.research_run_id = requirement.research_run_id and cell.cell_key = requirement.cell_key
+                  and cell.plan_revision = requirement.plan_revision and cell.entity_set_version = requirement.entity_set_version
+                where requirement.research_run_id = ? and requirement.completion_mode = 'DISTINCT_FACTS'
+                """.formatted(full ? "requirement.minimum_count * case when cell.high_risk then 2 else 1 end" : "requirement.minimum_count"), Integer.class,runId);
+        return Math.min(full ? 8 : 4, Math.max(2, ((minimum == null ? 1 : minimum) + 5) / 6));
+    }
+
+    int repairLimit(String runId) { return repairLimit(jdbcTemplate, runId); }
 
     private List<FailedTask> evidenceTasksFor(String runId, String cellKey) {
         return jdbcTemplate.query("""
@@ -142,9 +165,9 @@ public class ResearchAgentGapProjectionService {
 
     private CellState loadCell(String runId, String cellKey) {
         return jdbcTemplate.query("""
-                select cell_key, cell_status, repair_count, active_task_id
+                select cell_key, cell_status, repair_count, active_task_id, semantic_audit_status
                 from research_cell where research_run_id = ? and cell_key = ?
-                """, rs -> rs.next() ? new CellState(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getString(4)) : null, runId, cellKey);
+                """, rs -> rs.next() ? new CellState(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getString(4), rs.getString(5)) : null, runId, cellKey);
     }
 
     private List<String> cells(String json) {
@@ -205,7 +228,7 @@ public class ResearchAgentGapProjectionService {
                             List<String> excludedSourceIds, List<String> reasonCodes) { }
     private record FailedTask(String id, String status, String terminalReason, String targetCellsJson, String executionContextJson) { }
     private record VerifierRepair(String id, String cellKey, String reasonCode, String evidenceIdsJson) { }
-    private record CellState(String cellKey, String status, int repairCount, String activeTaskId) { }
+    private record CellState(String cellKey, String status, int repairCount, String activeTaskId, String auditStatus) { }
     private static final class Aggregate {
         private final Set<String> taskIds = new LinkedHashSet<>();
         private final Set<String> decisionIds = new LinkedHashSet<>();

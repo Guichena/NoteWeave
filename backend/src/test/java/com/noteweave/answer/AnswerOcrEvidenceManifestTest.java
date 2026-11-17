@@ -45,7 +45,10 @@ class AnswerOcrEvidenceManifestTest {
         source("foreign-w", "foreign-source", "foreign-snapshot", "foreign-chunk", "OCR", 0.9);
         AuditActorProvider actor = mock(AuditActorProvider.class);
         when(actor.currentOrSystem("ANSWER")).thenReturn("system:test");
-        service = new AnswerRunService(jdbc, actor, new SimpleMeterRegistry(), mapper);
+        AnswerContentReadPolicy policy = mock(AnswerContentReadPolicy.class);
+        when(policy.canReadRun(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(true);
+        service = new AnswerRunService(jdbc, actor, new SimpleMeterRegistry(), mapper, policy);
     }
 
     @Test

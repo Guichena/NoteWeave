@@ -142,7 +142,10 @@ public class ConversationController {
                     conversationEventMux.follow(
                             conversationId,
                             cursor,
-                            event -> send(emitter, emitterClosed, event),
+                            event -> send(emitter, emitterClosed,
+                                    answerRunService.isContentReadable(workspaceId, event.runId()) ? event
+                                            : new ConversationLiveEvent(event.sequence(), event.runId(),
+                                                    event.runSequence(), event.eventType(), "", event.occurredAt())),
                             Duration.ofSeconds(115),
                             closeOnTerminal
                     );

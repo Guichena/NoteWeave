@@ -90,6 +90,11 @@ public class ResearchAgentCoordinatorTickService {
             ResearchAgentRunnableWorkService.RefillReceipt refill = runnableWork.refill(snapshot);
             return new TickReceipt(refill.outcome(), snapshot, refill.taskization());
         }
+        if (snapshot.taskCount() > 0) {
+            var reportRepair = coordinator.advanceReportFeedback(runId, snapshot.checkpointSeq(), snapshot.currentWaveNo());
+            if (reportRepair != null && reportRepair.createdTaskCount() > 0)
+                return new TickReceipt("REPORT_FACT_REPAIR_TASKIZED", snapshots.snapshot(runId), reportRepair);
+        }
         if (snapshot.taskCount() == 0 && discoveryLoop.enabled(runId) && !rolloutGuard.evaluate().allowsInitialWave())
             return new TickReceipt("ROLLOUT_PAUSED", snapshot, null);
         if (snapshot.taskCount() == 0 && !discoveryLoop.enabled(runId)) {
@@ -171,6 +176,20 @@ public class ResearchAgentCoordinatorTickService {
             if (!Set.of("FALLBACK_READY", "SYNTHESIS_READY").contains(workflow.outcome())) {
                 return new TickReceipt(workflow.outcome(), snapshot, workflow.taskization());
             }
+            var reportDecision = completionGate.evaluateReportForFinalization(runId);
+            var reportRepair = coordinator.advanceReportFeedback(runId, snapshot.checkpointSeq(), snapshot.currentWaveNo());
+            if (reportRepair != null && reportRepair.createdTaskCount() > 0)
+                return new TickReceipt("REPORT_FACT_REPAIR_TASKIZED", snapshots.snapshot(runId), reportRepair);
+            if (completionGate.requiresReportCoverage(runId) && reportDecision.terminalState() != ResearchAgentRunCompletionGate.CompletionTerminalState.COMPLETED_VERIFIED) {
+                completionGate.recordDecision(runId, reportDecision);
+                if (reportDecision.terminalState().isInfrastructureFailure()) {
+                    lifecycle.failRun(runId, completionGate.infrastructureTerminalReason(reportDecision));
+                    return new TickReceipt("RUN_FAILED_INFRASTRUCTURE", snapshot, null);
+                }
+                honestReports.renderAndPersist(runId, reportDecision);
+                lifecycle.completeRun(runId, reportDecision.terminalState().name());
+                return new TickReceipt("RUN_COMPLETED_WITH_REPORT_LIMITATIONS", snapshot, null);
+            }
             finalization.finalizeIncrementalRun(runId);
             // DR-305: record the verified business terminal state for the fully converged path too,
             // so every terminal Run carries an explicit completion decision.
@@ -221,6 +240,9 @@ public class ResearchAgentCoordinatorTickService {
         if (Set.of("SYNTHESIS_TASKIZED", "SYNTHESIS_PENDING").contains(workflow.outcome())) {
             return new TickReceipt("PARTIAL_" + workflow.outcome(), snapshot, workflow.taskization());
         }
+        var reportRepair = coordinator.advanceReportFeedback(runId, snapshot.checkpointSeq(), snapshot.currentWaveNo());
+        if (reportRepair != null && reportRepair.createdTaskCount() > 0)
+            return new TickReceipt("REPORT_FACT_REPAIR_TASKIZED", snapshots.snapshot(runId), reportRepair);
         return null;
     }
 

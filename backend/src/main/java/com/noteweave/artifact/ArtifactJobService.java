@@ -170,15 +170,39 @@ public class ArtifactJobService {
             RegenerateArtifactVersionRequest request
     ) {
         requireWorkspace(workspaceId);
+        String jobStatus = lockJobStatus(workspaceId, artifactJobId);
+        Map<String, Object> requestPayload = new LinkedHashMap<>();
+        requestPayload.put("source_version_no", sourceVersionNo);
+        requestPayload.put("user_requirement", request.userRequirement() == null || request.userRequirement().isBlank()
+                ? null : request.userRequirement().trim());
+        requestPayload.put("inputs", request.inputs());
+        String requestJson = Json.write(objectMapper, requestPayload);
+        if (request.clientRequestId() != null) {
+            var receipt = artifactJobWriteRepository.findRegenerationReceipt(artifactJobId, request.clientRequestId());
+            if (receipt != null) {
+                try {
+                    if (!objectMapper.readTree(receipt.payloadJson()).equals(objectMapper.readTree(requestJson))) {
+                        throw new BusinessException("ARTIFACT_REGENERATION_REQUEST_CONFLICT",
+                                "同一再生成请求编号不能用于不同参数", HttpStatus.CONFLICT);
+                    }
+                } catch (JsonProcessingException ex) {
+                    throw new IllegalStateException("再生成请求记录无法读取", ex);
+                }
+                return new ArtifactJobResponse(artifactJobId, receipt.taskId(), receipt.skillKey(), receipt.status());
+            }
+        }
+        requireIdleStatus(jobStatus);
         getVersionDetail(workspaceId, artifactJobId, sourceVersionNo);
-        ArtifactRegenerationRow row = loadRegenerationRow(workspaceId, artifactJobId);
+        ArtifactRegenerationRow row = artifactJobReadRepository.loadVersionRegenerationRow(workspaceId, artifactJobId, sourceVersionNo);
         ArtifactSkillDefinition skill = artifactSkillCatalogService.resolveSkill(row.skillKey());
         String requirement = request.userRequirement() == null || request.userRequirement().isBlank()
                 ? row.userRequirement()
                 : request.userRequirement().trim();
-        Map<String, Object> inputs = request.inputs() == null
-                ? artifactPayloadReadModelAssembler.readInputs(row.inputsJson())
-                : artifactSkillCatalogService.validateAndNormalizeInputs(skill, request.inputs());
+        Map<String, Object> inputs = new LinkedHashMap<>(artifactPayloadReadModelAssembler.readInputs(row.inputsJson()));
+        if (request.inputs() != null) {
+            inputs.putAll(request.inputs());
+            inputs = artifactSkillCatalogService.validateAndNormalizeInputs(skill, inputs);
+        }
         int nextRunNo = row.latestRunNo() + 1;
         String taskId = taskService.createTask(
                 workspaceId,
@@ -212,6 +236,9 @@ public class ArtifactJobService {
                 )),
                 artifactSkillCatalogService.catalogDigest()
         );
+        if (request.clientRequestId() != null) {
+            artifactJobWriteRepository.recordRegenerationRequest(taskId, request.clientRequestId(), requestJson);
+        }
         contextV2ShadowSnapshots.freeze(workspaceId, taskId, requirement, row.skillKey());
         memoryCompilerService.logPackUsage(
                 workspaceId,
@@ -269,6 +296,7 @@ public class ArtifactJobService {
             RollbackArtifactVersionRequest request
     ) {
         requireWorkspace(workspaceId);
+        requireIdleStatus(lockJobStatus(workspaceId, artifactJobId));
         exportService.requireVersionReadable(workspaceId, artifactJobId, sourceVersionNo);
         ArtifactRollbackRow source = loadRollbackRow(workspaceId, artifactJobId, sourceVersionNo);
         int nextVersionNo = artifactJobWriteRepository.lockNextVersionNo(workspaceId, artifactJobId);
@@ -294,6 +322,26 @@ public class ArtifactJobService {
         );
         videoMaterialService.linkPublishedVersion(versionId, source.materialBundleId());
         return getVersionDetail(workspaceId, artifactJobId, nextVersionNo);
+    }
+
+    @Transactional
+    public void requireIdleForVersionMutation(String workspaceId, String artifactJobId) {
+        requireWorkspace(workspaceId);
+        requireIdleStatus(lockJobStatus(workspaceId, artifactJobId));
+    }
+
+    private String lockJobStatus(String workspaceId, String artifactJobId) {
+        List<String> statuses = artifactJobWriteRepository.lockJobStatuses(artifactJobId, workspaceId);
+        if (statuses.size() != 1) {
+            throw new BusinessException("ARTIFACT_JOB_NOT_FOUND", "产物任务不存在", HttpStatus.NOT_FOUND);
+        }
+        return statuses.get(0);
+    }
+
+    private void requireIdleStatus(String status) {
+        if (!Set.of("COMPLETED", "FAILED", "CANCELLED").contains(status)) {
+            throw new BusinessException("ARTIFACT_JOB_ACTIVE", "产物正在生成，请等待当前任务结束后再操作版本", HttpStatus.CONFLICT);
+        }
     }
 
     public ArtifactVersionComparisonResponse compareVersions(

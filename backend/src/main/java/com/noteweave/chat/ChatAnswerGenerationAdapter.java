@@ -2,6 +2,7 @@ package com.noteweave.chat;
 
 import com.noteweave.answer.AnswerGenerationGateway;
 import com.noteweave.answer.AnswerGenerationMaterial;
+import com.noteweave.answer.AnswerContentReadPolicy;
 import com.noteweave.common.BusinessException;
 import com.noteweave.research.ResearchGeneratedSourceReadGate;
 import java.util.ArrayList;
@@ -19,6 +20,7 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     private final ChatLlmClient chatLlmClient;
     private final boolean templateFallbackEnabled;
     private final ResearchGeneratedSourceReadGate generatedSourceGate;
+    private final AnswerContentReadPolicy contentReadPolicy;
 
     public ChatAnswerGenerationAdapter(
             JdbcTemplate jdbcTemplate,
@@ -30,6 +32,7 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
         this.chatLlmClient = chatLlmClient;
         this.generatedSourceGate = generatedSourceGate;
         this.templateFallbackEnabled = templateFallbackEnabled;
+        this.contentReadPolicy = new AnswerContentReadPolicy(jdbcTemplate, generatedSourceGate);
     }
 
     @Override
@@ -46,6 +49,9 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
             }
             String messageId = rs.getString("id");
             String workspaceId = rs.getString("workspace_id");
+            if (!contentReadPolicy.readableMessageIds(workspaceId, List.of(messageId)).contains(messageId)) {
+                throw new BusinessException("ANSWER_CONTENT_REDACTED", "回答依据或上下文已撤销，内容不可读取", HttpStatus.GONE);
+            }
             return new AnswerGenerationMaterial(
                     messageId,
                     workspaceId,
@@ -168,7 +174,16 @@ public class ChatAnswerGenerationAdapter implements AnswerGenerationGateway {
     @Override
     public void persistContent(String workspaceId, String messageId, String content) {
         jdbcTemplate.update("""
-                update conversation_message set content = ? where workspace_id = ? and id = ?
+                update conversation_message set content = ?
+                where workspace_id = ? and id = ? and context_status <> 'DELETED'
+                  and not exists (
+                    select 1 from answer_run r
+                    left join conversation_message q on q.id = r.query_message_id
+                    left join run_input_snapshot snapshot on snapshot.answer_run_id = r.id
+                    where r.answer_message_id = conversation_message.id
+                      and (r.status in ('CANCELLED', 'FAILED') or q.context_status = 'DELETED'
+                           or snapshot.replay_availability = 'METADATA_ONLY')
+                  )
                 """, content, workspaceId, messageId);
     }
 

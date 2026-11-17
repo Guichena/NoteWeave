@@ -81,6 +81,7 @@ class AnswerGenerationOrchestratorTest {
             AnswerRunService answerRunService,
             AnswerGenerationGateway gateway
     ) {
+        when(answerRunService.isContentReadable(anyString(), anyString())).thenReturn(true);
         return new AnswerGenerationOrchestrator(
                 answerRunService,
                 mock(AnswerCancellationRegistry.class),

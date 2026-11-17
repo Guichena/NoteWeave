@@ -42,6 +42,31 @@ public class ConversationMessageDeletionService {
                 throw new BusinessException("CONVERSATION_MESSAGE_NOT_FOUND", "Conversation message not found", HttpStatus.NOT_FOUND);
             }
         }
+        // 与完成生成使用相同的消息行锁；已完成正文和活动生成都不能在删除后恢复。
+        List<String> affectedRuns = jdbcTemplate.queryForList("""
+                select id from answer_run
+                where workspace_id = ? and (answer_message_id = ? or query_message_id = ?)
+                """, String.class, workspaceId, messageId, messageId);
+        for (String runId : affectedRuns) {
+            jdbcTemplate.update("""
+                    update answer_run set status = 'CANCELLED', stream_owner = null, stream_lease_until = null,
+                        finished_at = current_timestamp, version = version + 1
+                    where workspace_id = ? and id = ?
+                      and status in ('CREATED', 'PREPARING', 'RETRIEVING', 'GENERATING', 'FINALIZING')
+                    """, workspaceId, runId);
+            jdbcTemplate.update("""
+                    update message_revision set content = '', status = 'PARTIAL', updated_at = current_timestamp
+                    where workspace_id = ? and answer_run_id = ?
+                    """, workspaceId, runId);
+            jdbcTemplate.update("""
+                    update answer_event set payload_json = '{}'
+                    where workspace_id = ? and answer_run_id = ?
+                    """, workspaceId, runId);
+            jdbcTemplate.update("""
+                    update answer_run_evidence_manifest set excerpt = '', character_cost = 0, content_hash = ?
+                    where workspace_id = ? and answer_run_id = ?
+                    """, EMPTY_CONTENT_SHA256, workspaceId, runId);
+        }
         replayRedactionService.redactDeletedConversationMessage(workspaceId, messageId);
         jdbcTemplate.update("""
                 update conversation_segment set lock_version = lock_version + 1

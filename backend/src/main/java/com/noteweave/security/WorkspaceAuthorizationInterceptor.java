@@ -4,8 +4,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Map;
+import com.noteweave.common.BusinessException;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.HandlerMapping;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 @Component
@@ -28,31 +32,47 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
-        String path = request.getRequestURI();
+        String path = RequestPaths.applicationPath(request);
+        Object matchedPattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        String permissionPath = matchedPattern == null ? path : matchedPattern.toString();
         String method = request.getMethod();
         Matcher matcher = WORKSPACE_PATH.matcher(path);
         if (matcher.matches()) {
-            guard.requirePermission(matcher.group(1), workspacePermission(path, method));
+            guard.requirePermission(resourceId(request, "workspaceId", matcher.group(1)),
+                    workspacePermission(permissionPath, method));
             return true;
         }
         if ((matcher = KNOWLEDGE_ITEM_PATH.matcher(path)).matches()) {
-            WorkspacePermission permission = HttpMethod.GET.matches(method)
+            WorkspacePermission permission = HttpMethod.GET.matches(method) || HttpMethod.HEAD.matches(method)
                     ? WorkspacePermission.WORKSPACE_READ : WorkspacePermission.KNOWLEDGE_WRITE;
-            guard.requireKnowledgeItemPermission(matcher.group(1), permission);
+            guard.requireKnowledgeItemPermission(resourceId(request, "itemId", matcher.group(1)), permission);
         } else if ((matcher = MESSAGE_SOURCE_PATH.matcher(path)).matches()) {
-            guard.requireMessagePermission(matcher.group(1), WorkspacePermission.SOURCE_WRITE);
+            guard.requireMessagePermission(resourceId(request, "messageId", matcher.group(1)), WorkspacePermission.SOURCE_WRITE);
         } else if ((matcher = TASK_PATH.matcher(path)).matches()) {
-            guard.requireTaskPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);
+            guard.requireTaskPermission(resourceId(request, "taskId", matcher.group(1)), WorkspacePermission.WORKSPACE_READ);
         } else if ((matcher = CONVERSATION_PATH.matcher(path)).matches()) {
-            guard.requireConversationPermission(matcher.group(1), WorkspacePermission.ANSWER_RUN);
+            guard.requireConversationPermission(resourceId(request, "conversationId", matcher.group(1)), WorkspacePermission.ANSWER_RUN);
         } else if (!("/api/v2/uploads/formats".equals(path)
                 && (HttpMethod.GET.matches(method) || HttpMethod.HEAD.matches(method)))
                 && (matcher = UPLOAD_PATH.matcher(path)).matches()) {
-            guard.requireUploadPermission(matcher.group(1), WorkspacePermission.SOURCE_WRITE);
+            guard.requireUploadPermission(resourceId(request, "uploadId", matcher.group(1)), WorkspacePermission.SOURCE_WRITE);
         } else if ((matcher = CHAT_REQUEST_PATH.matcher(path)).matches()) {
-            guard.requireChatRequestPermission(matcher.group(1), WorkspacePermission.WORKSPACE_READ);
+            guard.requireChatRequestPermission(resourceId(request, "assistantRequestId", matcher.group(1)), WorkspacePermission.WORKSPACE_READ);
+        } else if (!isAuthenticatedCollectionOrAuthRoute(path)) {
+            throw new BusinessException("WORKSPACE_ACCESS_DENIED", "接口未配置资源权限规则", HttpStatus.FORBIDDEN);
         }
         return true;
+    }
+
+    private String resourceId(HttpServletRequest request, String name, String fallback) {
+        Object variables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+        return variables instanceof Map<?, ?> values && values.get(name) instanceof String value ? value : fallback;
+    }
+
+    private boolean isAuthenticatedCollectionOrAuthRoute(String path) {
+        return "/api/v2/workspaces".equals(path) || "/api/v2/skills".equals(path)
+                || "/api/v2/uploads/formats".equals(path)
+                || path.matches("/api/v2/auth/(register|login|refresh|logout|session)");
     }
 
     private WorkspacePermission workspacePermission(String path, String method) {

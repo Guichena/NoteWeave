@@ -50,7 +50,7 @@ public class ResearchAgentCompletionCanonicalizer {
     );
     public static final Set<String> EXTRACTION_DIAGNOSTICS_KEYS = Set.of(
             "schema_version", "termination_reason", "accepted_count", "rejected_count",
-            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report", "claim_clusters"
+            "rejection_counts", "provider_receipt", "rejection_samples", "execution_report", "claim_clusters", "requirement_coverage", "fact_selection", "source_scope_checks", "runtime_metrics"
     );
     public static final Set<String> EXTRACTION_PROVIDER_RECEIPT_KEYS = Set.of(
             "purpose", "transport", "model", "call_count", "response_digest", "response_chars"
@@ -213,6 +213,10 @@ public class ResearchAgentCompletionCanonicalizer {
             }
         }
         if (envelope.extractionDiagnostics() != null) {
+            if (envelope.extractionDiagnostics().containsKey("runtime_metrics")) ResearchRuntimeMetricsService.validate(new ObjectMapper().valueToTree(envelope.extractionDiagnostics().get("runtime_metrics")));
+            if (envelope.extractionDiagnostics().containsKey("source_scope_checks")) ResearchSourceScopeChecks.validate(envelope.extractionDiagnostics().get("source_scope_checks"));
+            if (envelope.extractionDiagnostics().containsKey("fact_selection"))
+                ResearchDeferredMaterialService.validate(envelope.extractionDiagnostics().get("fact_selection"));
             validateExtractionDiagnostics(envelope.extractionDiagnostics());
             if (envelope.extractionDiagnostics().containsKey("execution_report")) {
                 ResearchRepairExecutionService.validateReport(envelope.extractionDiagnostics().get("execution_report"));
@@ -296,6 +300,8 @@ public class ResearchAgentCompletionCanonicalizer {
     }
 
     void validateExtractionDiagnostics(Map<String, Object> diagnostics) {
+        if (diagnostics.containsKey("requirement_coverage"))
+            ResearchRequirementCoverageService.validateProposal(diagnostics.get("requirement_coverage"));
         if (!diagnostics.keySet().containsAll(EXTRACTION_DIAGNOSTICS_REQUIRED_KEYS)
                 || !EXTRACTION_DIAGNOSTICS_KEYS.containsAll(diagnostics.keySet())) {
             throw invalid("extraction_diagnostics contains missing or unknown fields");

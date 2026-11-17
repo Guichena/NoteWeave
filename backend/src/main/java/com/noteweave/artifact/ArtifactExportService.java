@@ -464,9 +464,10 @@ public class ArtifactExportService {
     public void reconcileDegradedFiles() {
         List<String> versionIds = jdbcTemplate.queryForList("""
                 select id from artifact_version where delivery_status = 'DEGRADED'
-                order by created_at asc limit 10
+                order by coalesce(last_reconcile_attempt_at, created_at), id limit 10
                 """, String.class);
         for (String versionId : versionIds) {
+            jdbcTemplate.update("update artifact_version set last_reconcile_attempt_at = current_timestamp where id = ?", versionId);
             try {
                 ExportRow version = loadVersionById(versionId);
                 List<ArtifactFileMetadataResponse> files = listFiles(versionId);
@@ -760,6 +761,7 @@ public class ArtifactExportService {
     }
 
     private void persistWorkerPdf(ExportRow row, String fileName) {
+        if (hasFile(row.versionId(), PDF)) return;
         try {
             persistFile(row, PDF, fileName, "application/pdf", fetchWorkerExport(row.originTaskId(), fileName));
         } catch (RuntimeException ex) {

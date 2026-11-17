@@ -1,6 +1,7 @@
 package com.noteweave.config;
 
 import com.noteweave.common.RequestContext;
+import com.noteweave.security.RequestPaths;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -72,7 +73,7 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         // 过滤器只在 /internal/* 上生效
-        return !request.getRequestURI().startsWith("/internal/");
+        return !RequestPaths.applicationPath(request).startsWith("/internal/");
     }
 
     @Override
@@ -81,7 +82,7 @@ public class InternalServiceAuthFilter extends OncePerRequestFilter {
             HttpServletResponse response,
             FilterChain filterChain
     ) throws ServletException, IOException {
-        String expectedToken = expectedToken(request.getRequestURI());
+        String expectedToken = expectedToken(RequestPaths.applicationPath(request));
         if (!expectedToken.isBlank()) {
             // 生产 / 配置生效：必须 header 匹配
             String supplied = request.getHeader(HEADER_NAME);

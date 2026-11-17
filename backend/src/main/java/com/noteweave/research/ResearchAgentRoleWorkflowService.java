@@ -57,6 +57,7 @@ class ResearchAgentRoleWorkflowService {
 
     WorkflowReceipt advancePendingAudit(String runId, int waveNo) {
         if (!auditEnabled || !featureFlags.enabledForRun(runId, ResearchAgentFeatureFlagService.EVIDENCE_AUDIT)) return new WorkflowReceipt("NO_AUDIT_PENDING", null);
+        ResearchAuditRepairDecisions.settle(jdbcTemplate, runId, ResearchAgentGapProjectionService.repairLimit(jdbcTemplate, runId));
         List<CellScope> pending = jdbcTemplate.query("""
                 select id, cell_key, cell_version, plan_revision, entity_set_version, candidate_value, evidence_refs_json
                 from research_cell where research_run_id = ? and semantic_audit_status = 'PENDING' and cell_status <> 'FROZEN'
@@ -101,7 +102,9 @@ class ResearchAgentRoleWorkflowService {
                 """, Integer.class, runId);
         if (validated != null && validated > 0) return new WorkflowReceipt("SYNTHESIS_READY", null);
         if (activeRoleTask(runId, "SYNTHESIS")) return new WorkflowReceipt("SYNTHESIS_PENDING", null);
-        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
+        if (new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).fullCompletion(runId) && finishedCurrentSynthesis(runId))
+            return new WorkflowReceipt("FALLBACK_READY", null);
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1, "SYNTHESIS"))
             return new WorkflowReceipt("FALLBACK_READY", null);
         return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 2, audit, List.of()));
     }
@@ -125,14 +128,15 @@ class ResearchAgentRoleWorkflowService {
                 select count(*) from research_agent_task
                 where research_run_id = ? and role = 'SYNTHESIS' and status in ('SUBMITTED', 'FAILED', 'CANCELLED')
                 """, Integer.class, runId);
-        if (finished != null && finished > 0) return new WorkflowReceipt("FALLBACK_READY", null);
+        if (finished != null && finished > 0 && (!new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).fullCompletion(runId)
+                || finishedCurrentSynthesis(runId))) return new WorkflowReceipt("FALLBACK_READY", null);
         // 带局限时总会有单元格没通过审计（冲突、缺口），整体审计结论通常不是 PASS；
         // 成文只用 research_formal_eligible_cell 里逐格审计通过的单元格，所以只要求审计已经执行过
         RoleResult audit = auditActive(runId) ? latestRoleResult(runId, "EVIDENCE_AUDIT") : NO_AUDIT;
-        if (audit == null || verifiedCells(runId).isEmpty()) {
+        if (audit == null || reportCells(runId).isEmpty()) {
             return new WorkflowReceipt("FALLBACK_READY", null);
         }
-        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1))
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, Map.of("llm_calls", 2L), 1, "SYNTHESIS"))
             return new WorkflowReceipt("FALLBACK_READY", null);
         return new WorkflowReceipt("SYNTHESIS_TASKIZED", taskizeSynthesis(runId, waveNo + 1, audit, limitations));
     }
@@ -146,13 +150,21 @@ class ResearchAgentRoleWorkflowService {
         List<CellScope> cells = new ArrayList<>();
         List<Map<String, Object>> auditCells = new ArrayList<>();
         var clusterService = new ResearchClaimClusterService(jdbcTemplate, objectMapper);
+        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
+        var semantics = new ResearchFactSemanticCoverage(jdbcTemplate);
+        boolean factSemantics = coverage.modernState(runId) && coverage.enforcesFacts(runId);
         int pairCount = 0;
         for (CellScope cell : available) {
             if (!cells.isEmpty() && (cell.planRevision() != cells.get(0).planRevision() || cell.entitySetVersion() != cells.get(0).entitySetVersion())) continue;
-            List<Map<String, Object>> claimClusters = clusterService.clusters(runId, cell.key());
-            int pairs = claimClusters.size() * (claimClusters.size() - 1) / 2;
+            List<Map<String, Object>> claimClusters = factSemantics ? coverage.auditFacts(runId, cell.key(), cell.planRevision(), cell.entitySetVersion()).stream()
+                    .map(fact -> Map.<String, Object>of("cluster_key", fact.get("fact_id"), "claim_text", fact.get("claim_text"), "evidence_keys", fact.get("evidence_keys"),
+                            "evidence_quotes", fact.get("evidence_quotes"), "source_scopes", fact.get("source_scopes"))).toList()
+                    : clusterService.clusters(runId, cell.key());
+            List<Map<String, String>> pendingPairs = factSemantics ? semantics.pendingPairs(claimClusters.stream().map(item -> String.valueOf(item.get("cluster_key"))).toList(),
+                    semantics.relations(runId, cell.key()), Math.max(0, 20 - pairCount)) : List.of();
+            int pairs = factSemantics ? pendingPairs.size() : claimClusters.size() * (claimClusters.size() - 1) / 2;
             if (!cells.isEmpty() && (pairCount + pairs > 20 || canonicalizer.canonicalJsonValue(auditCells).length() > 160000)) break;
-            Set<String> keys = new java.util.TreeSet<>(cell.evidenceKeys());
+            Set<String> keys = new java.util.TreeSet<>(factSemantics ? List.of() : cell.evidenceKeys());
             for (var cluster : claimClusters) for (Object key : (List<?>) cluster.get("evidence_keys")) keys.add(String.valueOf(key));
             List<Map<String, Object>> evidence = new ArrayList<>();
             for (String key : keys) evidence.addAll(jdbcTemplate.query("""
@@ -171,18 +183,22 @@ class ResearchAgentRoleWorkflowService {
             int revision = jdbcTemplate.queryForObject("select semantic_revision from research_cell where id = ?", Integer.class, cell.id());
             List<String> descriptions = jdbcTemplate.queryForList("select col.description from research_column col join research_cell cell on cell.research_run_id = col.research_run_id and cell.column_key = col.column_key where cell.id = ?",
                     String.class, cell.id());
-            auditCells.add(Map.of("cell_key", cell.key(), "cell_version", cell.version(), "semantic_revision", revision,
+            Map<String, Object> auditCell = new LinkedHashMap<>(Map.of("cell_key", cell.key(), "cell_version", cell.version(), "semantic_revision", revision,
                     "column_description", descriptions.isEmpty() ? "" : value(descriptions.get(0)), "evidence", evidence,
-                    "clusters", claimClusters.stream().map(cluster -> Map.of("cluster_key", cluster.get("cluster_key"),
+                    "clusters", factSemantics ? claimClusters : claimClusters.stream().map(cluster -> Map.of("cluster_key", cluster.get("cluster_key"),
                     "claim_text", cluster.get("claim_text"), "evidence_keys", cluster.get("evidence_keys"))).toList()));
+            if (factSemantics) auditCell.put("pairs", pendingPairs);
+            auditCells.add(Map.copyOf(auditCell));
             cells.add(cell); pairCount += pairs;
+            if (factSemantics && pairCount >= 20) break;
         }
         Map<String, Object> digestInput = Map.of("schema_version", "research-evidence-audit-input.v2", "cells", auditCells);
         String inputDigest = canonicalizer.domainSeparatedDigest(AUDIT_DIGEST_DOMAIN, digestInput);
         Map<String, Object> auditInput = new LinkedHashMap<>(digestInput);
         auditInput.put("input_digest", inputDigest);
+        if (factSemantics) auditInput.put("fact_semantics_version", 1);
         Map<String, Object> policy = Map.of("allowed_tools", List.of(), "audit_input", auditInput);
-        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, roleBudget("EVIDENCE_AUDIT", policy), 1)) {
+        if (!new ResearchDiscoveryBudget(jdbcTemplate, objectMapper).allows(runId, roleBudget("EVIDENCE_AUDIT", policy), 1, "EVIDENCE_AUDIT")) {
             // 审计不能执行时保留未判定状态，不允许通过正式成文资格。
             for (CellScope cell : cells) jdbcTemplate.update("update research_cell set semantic_audit_status = 'NOT_RUN' where id = ? and semantic_audit_status = 'PENDING'", cell.id());
             jdbcTemplate.update("update research_discovery_loop set phase = 'STOPPED', stop_reason = 'LOOP_BUDGET_EXHAUSTED' where research_run_id = ?", runId);
@@ -209,8 +225,9 @@ class ResearchAgentRoleWorkflowService {
             List<String> limitations
     ) {
         RunScope run = runScope(runId);
-        List<CellScope> cells = verifiedCells(runId);
+        List<CellScope> cells = reportCells(runId);
         Map<String, String> labels = ResearchAgentIncrementalFinalizationService.matrixLabels(jdbcTemplate, runId);
+        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
         // 只给编号和一句结论时，模型不知道这一格属于哪个对象、哪一列，容易把一句话的适用范围说大；
         // 带上名称和几段支撑原文，成文时能按原文的范围下结论
         List<Map<String, Object>> synthesisCells = cells.stream().map(cell -> {
@@ -225,6 +242,7 @@ class ResearchAgentRoleWorkflowService {
             item.put("guarded", false);
             item.put("entity_label", labels.getOrDefault(parts[0], ""));
             item.put("column_label", parts.length > 1 ? labels.getOrDefault(parts[1], "") : "");
+            if (coverage.enforcesFacts(runId)) item.put("facts", coverage.synthesisFacts(runId, cell.key(), cell.planRevision(), cell.entitySetVersion()));
             // 每条原文带上自己的证据编号：只给两份互不对应的列表时，模型分不清哪个编号对应哪句原文，
             // 同一格里常把只讲 gauge 的引用挂到列举四种类型的句子上
             List<Map<String, String>> evidenceQuotes = evidenceQuotes(runId, evidenceKeys);
@@ -232,15 +250,52 @@ class ResearchAgentRoleWorkflowService {
             item.put("supporting_quotes", evidenceQuotes.stream().map(quote -> quote.get("quote")).toList());
             return item;
         }).toList();
-        String ledgerDigest = canonicalizer.domainSeparatedDigest(LEDGER_DIGEST_DOMAIN, synthesisCells);
-        Map<String, Object> synthesisInput = Map.of(
-                "question", run.question(),
-                "ledger_digest", ledgerDigest,
-                "audit_digest", audit.digest(),
-                "cells", synthesisCells,
-                "leads", synthesisLeads(runId, labels),
-                "required_points", requiredPoints(runId),
-                "limitations", List.copyOf(limitations));
+        Map<String, Object> synthesisInput = new LinkedHashMap<>();
+        if (ResearchCompletionGapPolicy.enabled(jdbcTemplate,runId)) synthesisInput.put(ResearchCompletionGapPolicy.FLAG,1);
+        List<String> knownLimitations = new ArrayList<>(limitations);
+        if (coverage.enforcesFacts(runId)) {
+            Map<String, Object> progress = coverage.readModel(runId);
+            synthesisInput.put("requirement_coverage", progress);
+            if (coverage.modernState(runId)) {
+                synthesisInput.put("source_scope_version", 1);
+                synthesisInput.put("report_upload_version", 1);
+                synthesisInput.put("statement_support_version", 1);
+                if (coverage.improvedCompletion(runId)) synthesisInput.put("report_coverage_version", 1);
+                if (coverage.fullCompletion(runId)) {
+                    synthesisInput.put("report_recovery_version", 1);
+                    synthesisInput.put("report_call_meter_version",1);
+                    synthesisInput.put("report_feedback_version", 1);
+                    if (coverage.answerPolicy(runId)) synthesisInput.put(ResearchAnswerPolicy.FLAG, 1);
+                    synthesisInput.put("report_metadata_version", 1);
+                    synthesisInput.put("report_feedback_digest", feedbackDigest(runId));
+                }
+            }
+            synthesisInput.put("coverage_digest", canonicalizer.domainSeparatedDigest("research-synthesis-coverage.v1", progress));
+            for (Object raw : (List<?>) progress.get("requirements")) {
+                Map<?, ?> requirement = (Map<?, ?>) raw;
+                if (!"SATISFIED".equals(requirement.get("status"))) knownLimitations.add(
+                        "尚未充分回答：" + requirement.get("entity_label") + " / " + requirement.get("text"));
+            }
+            if (!Boolean.TRUE.equals(progress.get("explicit_definitions_complete")))
+                knownLimitations.add("用户明确要求尚未完成解析，当前报告仅包含已核验的发现。");
+            // 每批最多两次模型调用；超过预留数量的批次使用有引用的确定性成文。
+            long desired = Math.min(16L, Math.max(2L, (synthesisCells.size() + 5L) / 6L * 2L));
+            if (coverage.modernState(runId)) desired = Math.min(16L, Math.max(4L, (synthesisCells.size() + 5L) / 6L * 3L));
+            if (coverage.improvedCompletion(runId)) desired = Math.min(16L, Math.max(6L, (synthesisCells.size() + 5L) / 6L * 4L));
+            // 逐项答案、逐句核验与全量覆盖共用这份上限；实际未使用额度仍释放。
+            if (coverage.answerPolicy(runId)) desired = 16L;
+            var budget = new ResearchDiscoveryBudget(jdbcTemplate, objectMapper);
+            while (desired > 0 && !budget.allows(runId, Map.of("llm_calls", desired), 1, "SYNTHESIS")) desired--;
+            synthesisInput.put("narrative_llm_budget", desired);
+        }
+        synthesisInput.put("question", run.question()); synthesisInput.put("audit_digest", audit.digest());
+        synthesisInput.put("cells", synthesisCells); synthesisInput.put("leads", synthesisLeads(runId, labels));
+        synthesisInput.put("required_points", requiredPoints(runId));
+        synthesisInput.put("limitations", knownLimitations.stream().distinct().toList());
+        String ledgerDigest = coverage.enforcesFacts(runId)
+                ? canonicalizer.domainSeparatedDigest("research-synthesis-ledger.v2", synthesisInput)
+                : canonicalizer.domainSeparatedDigest(LEDGER_DIGEST_DOMAIN, synthesisCells);
+        synthesisInput.put("ledger_digest", ledgerDigest);
         return createRoleTask(run, cells, waveNo, "SYNTHESIS", "synthesis:" + ledgerDigest.substring(7, 39),
                 Map.of("allowed_tools", List.of(), "synthesis_input", synthesisInput));
     }
@@ -264,6 +319,21 @@ class ResearchAgentRoleWorkflowService {
         } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
             return List.of();
         }
+    }
+
+    private String feedbackDigest(String runId) {
+        return canonicalizer.domainSeparatedDigest("research-report-feedback-state.v1", new ResearchReportFeedbackService(jdbcTemplate, objectMapper).details(runId, ""));
+    }
+
+    private boolean finishedCurrentSynthesis(String runId) {
+        String digest = feedbackDigest(runId);
+        for (String raw : jdbcTemplate.queryForList("select execution_context_json from research_agent_task where research_run_id = ? and role = 'SYNTHESIS' and status in ('SUBMITTED','FAILED','CANCELLED')", String.class, runId)) {
+            try {
+                var node = objectMapper.readTree(raw); if (node.isTextual()) node = objectMapper.readTree(node.asText());
+                if (digest.equals(node.path("query_policy").path("synthesis_input").path("report_feedback_digest").asText())) return true;
+            } catch (JsonProcessingException exception) { throw new BusinessException("RESEARCH_SYNTHESIS_INPUT_INVALID", "报告任务输入无法读取"); }
+        }
+        return false;
     }
 
     /** 交给成文的线索最多条数，避免线索挤占已核验结论的篇幅。 */
@@ -297,19 +367,29 @@ class ResearchAgentRoleWorkflowService {
         return leads;
     }
 
-    /** 与每格证据上限一致：每个交给成文的证据编号都有原文，模型不会引用一条看不到原文的证据。 */
-    private static final int MAX_SUPPORTING_QUOTES = 8;
     private static final int MAX_SYNTHESIS_EVIDENCE_PER_CELL = 8;
 
     /** 单元格自身的证据，加上同一单元格其他候选簇里通过资格校验的证据，最多 8 条。 */
     private List<String> withRelatedEvidence(String runId, CellScope cell) {
         java.util.LinkedHashSet<String> keys = new java.util.LinkedHashSet<>(cell.evidenceKeys());
+        var coverage = new ResearchRequirementCoverageService(jdbcTemplate, objectMapper);
+        int limit = MAX_SYNTHESIS_EVIDENCE_PER_CELL;
+        if (coverage.enabled(runId)) {
+            // 跨轮事实优先于同一代表值的重复佐证，避免只读取最后一次候选簇。
+            List<String> accumulated = coverage.evidenceKeys(runId, cell.key());
+            if (!accumulated.isEmpty()) {
+                java.util.LinkedHashSet<String> combined = new java.util.LinkedHashSet<>(accumulated);
+                combined.addAll(keys);
+                keys = combined;
+            }
+            return List.copyOf(keys);
+        }
         var clusterService = new ResearchClaimClusterService(jdbcTemplate, objectMapper);
         for (Map<String, Object> cluster : clusterService.clusters(runId, cell.key())) {
             Object raw = cluster.get("evidence_keys");
             if (!(raw instanceof List<?> list)) continue;
             for (Object key : list) {
-                if (keys.size() >= MAX_SYNTHESIS_EVIDENCE_PER_CELL) break;
+                if (keys.size() >= limit) break;
                 String evidenceKey = String.valueOf(key);
                 if (!keys.contains(evidenceKey) && qualifiedEvidence(runId, evidenceKey)) keys.add(evidenceKey);
             }
@@ -336,7 +416,6 @@ class ResearchAgentRoleWorkflowService {
     private List<Map<String, String>> evidenceQuotes(String runId, List<String> evidenceKeys) {
         List<Map<String, String>> quotes = new ArrayList<>();
         for (String key : evidenceKeys) {
-            if (quotes.size() >= MAX_SUPPORTING_QUOTES) break;
             // 原文前加上来源标题：PEP、JEP、RFC 编号常常只出现在标题里，成文时需要据此写出编号
             jdbcTemplate.query("""
                     select source_title, quote_text from source_evidence
@@ -364,6 +443,10 @@ class ResearchAgentRoleWorkflowService {
             String logicalKey,
             Map<String, Object> queryPolicy
     ) {
+        if (new ResearchRequirementCoverageService(jdbcTemplate,objectMapper).fullCompletion(run.id())) {
+            queryPolicy = new LinkedHashMap<>(queryPolicy);
+            queryPolicy.put("completion_runtime_version",1);
+        }
         if (cells.isEmpty() || cells.size() > 80) throw new BusinessException(
                 "RESEARCH_AGENT_ROLE_BARRIER_INVALID", "Role task requires one to eighty verified cells");
         Map<String, Long> budget = roleBudget(role, queryPolicy);
@@ -417,6 +500,24 @@ class ResearchAgentRoleWorkflowService {
                 rs.getString(6), readStringList(rs.getString(7))), runId);
     }
 
+    private List<CellScope> reportCells(String runId) {
+        var coverage = new ResearchRequirementCoverageService(jdbcTemplate,objectMapper);
+        List<CellScope> result = new ArrayList<>(verifiedCells(runId));
+        if (!coverage.fullCompletion(runId) || !coverage.enforcesFacts(runId)) return result;
+        var partial = jdbcTemplate.query("""
+                select id,cell_key,cell_version,plan_revision,entity_set_version from research_cell
+                where research_run_id = ? and cell_status = 'GAP' and active_task_id is null
+                  and (? or semantic_audit_status = 'PASS') order by cell_key
+                """,(rs,n) -> new CellScope(rs.getString(1),rs.getString(2),rs.getInt(3),rs.getInt(4),rs.getInt(5),"",List.of()),runId,!auditActive(runId));
+        for (CellScope cell : partial) {
+            var facts = coverage.synthesisFacts(runId,cell.key(),cell.planRevision(),cell.entitySetVersion());
+            if (facts.isEmpty()) continue;
+            List<String> keys = facts.stream().flatMap(fact -> ((List<?>)fact.get("evidence_keys")).stream()).map(String::valueOf).distinct().toList();
+            result.add(new CellScope(cell.id(),cell.key(),cell.version(),cell.planRevision(),cell.entitySetVersion(),String.valueOf(facts.get(0).get("claim_text")),keys));
+        }
+        return result.stream().sorted(java.util.Comparator.comparing(CellScope::key)).toList();
+    }
+
     private RoleResult latestRoleResult(String runId, String role) {
         return jdbcTemplate.query("""
                 select result_status, result_digest from research_agent_role_result
@@ -442,11 +543,17 @@ class ResearchAgentRoleWorkflowService {
     private Map<String, Long> roleBudget(String role, Map<String, Object> policy) {
         Map<String, Long> budget = new LinkedHashMap<>(zeroBudget());
         // 报告合成允许一次带失败原因的重试
-        if ("SYNTHESIS".equals(role)) budget.put("llm_calls", 2L);
+        if ("SYNTHESIS".equals(role)) {
+            var input = objectMapper.valueToTree(policy.get("synthesis_input"));
+            budget.put("llm_calls", input.path("narrative_llm_budget").asLong(2L));
+        }
         if ("EVIDENCE_AUDIT".equals(role)) {
             com.fasterxml.jackson.databind.JsonNode input = objectMapper.valueToTree(policy.get("audit_input"));
             long pairs = 0;
-            for (var cell : input.path("cells")) { long size = cell.path("clusters").size(); pairs += size * (size - 1) / 2; }
+            for (var cell : input.path("cells")) {
+                long size = cell.path("clusters").size();
+                pairs += cell.has("pairs") ? cell.path("pairs").size() : size * (size - 1) / 2;
+            }
             budget.put("llm_calls", Math.min(80L, pairs * 4));
         }
         return Map.copyOf(budget);

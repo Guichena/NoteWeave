@@ -47,7 +47,7 @@ public class AnswerGenerationOrchestrator {
         AnswerGenerationMaterial material = generationGateway.load(assistantRequestId);
         AnswerRunRef run = answerRunService.requireByAssistantRequest(assistantRequestId);
         if (run != null && "COMPLETED".equals(run.status())) {
-            replayCompleted(material, consumer);
+            replayCompleted(material, run, consumer);
             return;
         }
         if (run != null && ("FAILED".equals(run.status()) || "CANCELLED".equals(run.status()))) {
@@ -184,11 +184,15 @@ public class AnswerGenerationOrchestrator {
     ) {
         answerRunService.requireRef(workspaceId, runId);
         runEventMux.seed(runId, answerRunService.currentEventSequence(workspaceId, runId));
-        runEventMux.follow(runId, after, consumer, Duration.ofSeconds(125));
+        runEventMux.follow(runId, after, event -> consumer.accept(
+                answerRunService.isContentReadable(workspaceId, runId) ? event
+                        : new AnswerLiveEvent(event.sequence(), event.eventType(), "", event.occurredAt())),
+                Duration.ofSeconds(125));
     }
 
     private void replayCompleted(
             AnswerGenerationMaterial material,
+            AnswerRunRef run,
             Consumer<AnswerDeliveryEvent> consumer
     ) {
         AtomicLong sequence = new AtomicLong();
@@ -197,9 +201,14 @@ public class AnswerGenerationOrchestrator {
             return;
         }
         generationGateway.replayChunks(material.content())
-                .forEach(piece -> emit(consumer, sequence, "answer.delta", piece, null));
-        material.citationLines().forEach(citation ->
-                emit(consumer, sequence, "citation.upsert", citation, null));
+                .forEach(piece -> {
+                    ensureNotCancelled(run);
+                    emit(consumer, sequence, "answer.delta", piece, null);
+                });
+        material.citationLines().forEach(citation -> {
+            ensureNotCancelled(run);
+            emit(consumer, sequence, "citation.upsert", citation, null);
+        });
         emit(consumer, sequence, "answer.completed", material.messageId(), null);
     }
 
@@ -210,7 +219,7 @@ public class AnswerGenerationOrchestrator {
     ) {
         AnswerRunRef current = answerRunService.requireRef(run.workspaceId(), run.runId());
         if ("COMPLETED".equals(current.status())) {
-            replayCompleted(material, consumer);
+            replayCompleted(material, run, consumer);
             return;
         }
         if ("FAILED".equals(current.status()) || "CANCELLED".equals(current.status())) {
@@ -300,7 +309,8 @@ public class AnswerGenerationOrchestrator {
     }
 
     private void ensureNotCancelled(AnswerRunRef run) {
-        if (run != null && cancellationRegistry.isCancelled(run.runId())) {
+        if (run != null && (cancellationRegistry.isCancelled(run.runId())
+                || !answerRunService.isContentReadable(run.workspaceId(), run.runId()))) {
             throw new AnswerRunCancelledException();
         }
     }

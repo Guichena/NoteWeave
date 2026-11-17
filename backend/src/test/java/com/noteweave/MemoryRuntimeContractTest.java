@@ -653,6 +653,71 @@ class MemoryRuntimeContractTest {
         org.assertj.core.api.Assertions.assertThat(payload.path("reason").asText()).isEqualTo("复核后确认仍然适用");
     }
 
+    @Test
+    void rejectingUpdateKeepsTheApprovedHeadAndOtherProposals() throws Exception {
+        String workspace = createWorkspace();
+        MemoryObservationResult active = observe(workspace, "preference:reject-update", "回答保持简洁");
+        acceptRevision(workspace, active.revisionId());
+        MemoryObservationResult rejected = observe(workspace, "preference:reject-update", "回答增加细节");
+        MemoryObservationResult pending = observe(workspace, "preference:reject-update", "回答使用列表");
+
+        rejectRevision(workspace, rejected.revisionId());
+
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "select status from memory_item where id = ?", String.class, active.memoryItemId())).isEqualTo("ACTIVE");
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "select current_revision_id from memory_item where id = ?", String.class, active.memoryItemId()))
+                .isEqualTo(active.revisionId());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "select status from memory_runtime_revision where id = ?", String.class, pending.revisionId())).isEqualTo("PROPOSED");
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspace))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_version_id").value(active.revisionId()));
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/review", workspace))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].revision_id").value(pending.revisionId()));
+    }
+
+    @Test
+    void rejectingOneOfSeveralInitialProposalsLeavesOthersReviewable() throws Exception {
+        String workspace = createWorkspace();
+        MemoryObservationResult first = observe(workspace, "preference:reject-initial", "回答保持简洁");
+        MemoryObservationResult second = observe(workspace, "preference:reject-initial", "回答使用列表");
+        rejectRevision(workspace, first.revisionId());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "select status from memory_item where id = ?", String.class, first.memoryItemId())).isEqualTo("EMPTY");
+        acceptRevision(workspace, second.revisionId());
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/shadow-recall", workspace))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.runtime.memory_references[0].memory_version_id").value(second.revisionId()));
+    }
+
+    @Test
+    void rejectingTheOnlyInitialProposalRemovesOnlyTheEmptyItem() throws Exception {
+        String workspace = createWorkspace();
+        MemoryObservationResult proposal = observe(workspace, "preference:reject-only", "回答保持简洁");
+        rejectRevision(workspace, proposal.revisionId());
+        org.assertj.core.api.Assertions.assertThat(jdbcTemplate.queryForObject(
+                "select status from memory_item where id = ?", String.class, proposal.memoryItemId())).isEqualTo("DELETED");
+        mockMvc.perform(get("/api/v2/workspaces/{workspaceId}/memory/items", workspace))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review",
+                        workspace, proposal.revisionId()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"REJECT\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    private MemoryObservationResult observe(String workspace, String slot, String text) {
+        return memoryRuntime.observe(new ExecutionObservation("reject-test-" + java.util.UUID.randomUUID(),
+                workspace, "WORKSPACE", slot, text, "USER_FEEDBACK", "feedback-test"));
+    }
+
+    private void rejectRevision(String workspace, String revision) throws Exception {
+        mockMvc.perform(post("/api/v2/workspaces/{workspaceId}/memory/revisions/{revisionId}/review", workspace, revision)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"decision\":\"REJECT\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("REJECTED"));
+    }
+
     private String createWorkspace() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v2/workspaces")
                         .contentType(MediaType.APPLICATION_JSON)

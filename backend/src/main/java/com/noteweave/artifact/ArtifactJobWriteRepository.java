@@ -29,6 +29,26 @@ class ArtifactJobWriteRepository {
                 """, (rs, index) -> rs.getString(1), artifactJobId, workspaceId);
     }
 
+    record RegenerationReceipt(String taskId, String skillKey, String status, String payloadJson) {}
+
+    RegenerationReceipt findRegenerationReceipt(String artifactJobId, String clientRequestId) {
+        return jdbcTemplate.query("""
+                select r.task_id, aj.skill_key, t.task_status, r.client_request_payload_json
+                from artifact_job_run r
+                join artifact_job aj on aj.id = r.artifact_job_id
+                join task t on t.id = r.task_id
+                where r.artifact_job_id = ? and r.client_request_id = ?
+                """, rs -> rs.next() ? new RegenerationReceipt(rs.getString(1), rs.getString(2),
+                rs.getString(3), rs.getString(4)) : null, artifactJobId, clientRequestId);
+    }
+
+    void recordRegenerationRequest(String taskId, String clientRequestId, String payloadJson) {
+        jdbcTemplate.update("""
+                update artifact_job_run set client_request_id = ?, client_request_payload_json = ?
+                where task_id = ?
+                """, clientRequestId, payloadJson, taskId);
+    }
+
     boolean hasFullInputSnapshot(String inputSnapshotId, String workspaceId, String artifactJobId) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*) from artifact_run_input_snapshot

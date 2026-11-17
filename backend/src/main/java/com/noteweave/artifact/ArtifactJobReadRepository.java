@@ -237,6 +237,31 @@ class ArtifactJobReadRepository {
         }, workspaceId, artifactJobId);
     }
 
+    ArtifactRegenerationRow loadVersionRegenerationRow(String workspaceId, String artifactJobId, int versionNo) {
+        return jdbcTemplate.query("""
+                select av.skill_key, s.user_requirement, s.inputs_json, r.source_scope_json,
+                       s.control_pack_json, s.id as input_snapshot_id,
+                       (select max(latest.run_no) from artifact_job_run latest
+                        where latest.artifact_job_id = aj.id) as latest_run_no
+                from artifact_job aj
+                join artifact_version av on av.artifact_job_id = aj.id and av.version_no = ?
+                join artifact_job_run r on r.artifact_job_id = aj.id and r.task_id = coalesce(av.origin_task_id,
+                    case when av.version_no = aj.latest_version_no then aj.task_id else null end)
+                join artifact_run_input_snapshot s on s.id = r.input_snapshot_id
+                    and s.workspace_id = aj.workspace_id and s.artifact_job_id = aj.id
+                where aj.workspace_id = ? and aj.id = ? and s.replay_availability = 'FULL'
+                """, rs -> {
+            if (!rs.next()) {
+                throw new BusinessException("ARTIFACT_VERSION_INPUT_UNAVAILABLE",
+                        "所选版本的冻结输入不可用，无法重新生成", org.springframework.http.HttpStatus.CONFLICT);
+            }
+            return new ArtifactRegenerationRow(rs.getString("skill_key"), blank(rs.getString("user_requirement")),
+                    blank(rs.getString("inputs_json")), blank(rs.getString("source_scope_json")),
+                    blank(rs.getString("control_pack_json")), rs.getString("input_snapshot_id"),
+                    rs.getInt("latest_run_no"));
+        }, versionNo, workspaceId, artifactJobId);
+    }
+
     ArtifactRollbackRow loadRollbackRow(String workspaceId, String artifactJobId, int versionNo) {
         return jdbcTemplate.query("""
                 select av.skill_key, av.title, av.content_markdown, av.result_payload_json,

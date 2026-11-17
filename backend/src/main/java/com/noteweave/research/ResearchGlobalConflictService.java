@@ -205,6 +205,8 @@ class ResearchGlobalConflictService {
             ResearchGlobalConflictDetector.ConflictFinding finding,
             String traceStatus
     ) {
+        new ResearchRequirementCoverageService(jdbcTemplate, objectMapper).invalidateEvidence(
+                runId, cell.cellKey(), finding.evidenceKeys(), finding.conflictKind());
         Map<String, Object> notes = new LinkedHashMap<>();
         notes.put("cell_key", cell.cellKey());
         notes.put("conflict_kind", finding.conflictKind());
