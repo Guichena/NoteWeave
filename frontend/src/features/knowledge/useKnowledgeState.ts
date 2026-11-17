@@ -21,6 +21,7 @@ export function useKnowledgeState(
   );
   const gateRef = useRef(new LatestKnowledgeRequestGate());
   const gate = gateRef.current;
+  gate.setWorkspace(options.workspaceId);
 
   useEffect(() => {
     gate.setWorkspace(options.workspaceId);

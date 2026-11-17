@@ -80,7 +80,7 @@ export class ArtifactsApi {
   regenerateVersion(workspaceId: string, artifactJobId: string, versionNo: number) {
     return this.client.post<ArtifactJobCreateResponse>(
       `${this.versionPath(workspaceId, artifactJobId, versionNo)}/regenerate`,
-      {}
+      { client_request_id: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}` }
     );
   }
 

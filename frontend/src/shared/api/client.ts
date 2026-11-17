@@ -1,4 +1,4 @@
-import { type AccessTokenProvider, refreshAuthSession } from "./auth";
+import { type AccessTokenProvider, getAuthSession, refreshAuthSession } from "./auth";
 import { ApiError } from "./error";
 
 export type ApiEnvelope<T> = {
@@ -48,13 +48,20 @@ export class ApiClient {
     if (token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);
     }
+    const requestToken = headers.get("Authorization")?.replace(/^Bearer\s+/, "").trim();
+    const requestSession = getAuthSession();
     const response = await this.fetcher(this.url(path), { ...init, headers });
     if (!response.ok) {
       const error = await toApiError(response);
+      const sessionMatchesRequest = () => !getAuthSession()
+        || getAuthSession()?.access_token === requestToken;
       if (response.status === 401 && allowRefresh && !path.includes("/api/v2/auth/")) {
         try {
-          const refreshed = await refreshAuthSession();
-          if (refreshed?.access_token) {
+          const current = getAuthSession();
+          const sameOwner = !requestSession || current?.user.user_id === requestSession.user.user_id;
+          const managedToken = !requestSession || requestSession.access_token === requestToken;
+          const refreshed = sameOwner && managedToken ? await refreshAuthSession(requestToken) : null;
+          if (refreshed?.access_token && (!requestSession || refreshed.user.user_id === requestSession.user.user_id)) {
             const retryHeaders = new Headers(init.headers);
             if (!retryHeaders.has("Accept")) {
               retryHeaders.set("Accept", "application/json");
@@ -68,9 +75,9 @@ export class ApiClient {
         } catch {
           // fall through to unauthorized handling
         }
-        this.onUnauthorized(error);
+        if (sessionMatchesRequest()) this.onUnauthorized(error);
       } else if (response.status === 401) {
-        this.onUnauthorized(error);
+        if (sessionMatchesRequest()) this.onUnauthorized(error);
       }
       throw error;
     }

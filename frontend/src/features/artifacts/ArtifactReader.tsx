@@ -163,7 +163,7 @@ export function ArtifactReader(props: ArtifactReaderProps) {
                 与上一版比较
               </button>
               {!isLatest ? (
-                <button type="button" role="menuitem" className="artifact-menu-item" disabled={isBusy}
+                <button type="button" role="menuitem" className="artifact-menu-item" disabled={isBusy || regenerating}
                   title="以这个版本的内容追加一个新版本，原有版本都会保留"
                   onClick={() => runMenuAction(rollback)}>
                   恢复为此版本

@@ -21,6 +21,7 @@ export function useArtifactState(
   const [state, dispatch] = useReducer(reduceArtifactServerState, workspaceId, createArtifactServerState);
   const gateRef = useRef(new LatestArtifactRequestGate());
   const gate = gateRef.current;
+  gate.setWorkspace(workspaceId);
 
   useEffect(() => {
     gate.setWorkspace(workspaceId);
@@ -41,6 +42,7 @@ export function useArtifactState(
       return [];
     }
     const lease = gate.begin("jobs", workspaceId);
+    if (!lease.isCurrent()) return [];
     dispatch({ type: "jobs-loading" });
     try {
       const jobs = await api.listJobs(workspaceId, { signal: lease.signal });
@@ -56,7 +58,7 @@ export function useArtifactState(
       return jobs;
     } catch (error) {
       if (lease.isCurrent() && !isAbortError(error)) {
-        dispatch({ type: "jobs-snapshot", jobs: [], latestVersion: null });
+        dispatch({ type: "jobs-failed", error: error instanceof Error ? error.message : "产物列表加载失败" });
       }
       throw error;
     } finally {

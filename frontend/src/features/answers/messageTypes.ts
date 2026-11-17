@@ -25,7 +25,8 @@ export function updateLastAssistantMessage(current: Message[], answer: AnswerRun
     ? {
       ...message,
       content: answer.content,
-      citations: [...answer.citations],
+      citations: answer.redacted || answer.citationsKnown || answer.citations.length > 0
+        ? [...answer.citations] : message.citations,
       answerStatus: answer.status,
       answerError: answer.error
     }
@@ -41,7 +42,8 @@ export function updateAssistantMessageByRun(
     ? {
       ...message,
       content: answer.content,
-      citations: [...answer.citations],
+      citations: answer.redacted || answer.citationsKnown || answer.citations.length > 0
+        ? [...answer.citations] : message.citations,
       answerStatus: answer.status,
       answerError: answer.error
     }

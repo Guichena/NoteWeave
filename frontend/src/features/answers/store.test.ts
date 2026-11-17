@@ -5,12 +5,42 @@ import {
   createAnswerRunState,
   reduceAnswerRunState
 } from "./store";
+import { updateAssistantMessageByRun, type Message } from "./messageTypes";
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("AnswerRunStore", () => {
+  it("preserves restored citations when an initial snapshot omits them and accepts late citation metadata", () => {
+    const store = new AnswerRunStore();
+    const restored: Message[] = [{ role: "assistant", answerRunId: "run", content: "结论 [1]", citations: ["资料A | 证据"] }];
+    const snapshot = store.applySnapshot(JSON.stringify({ answer_runs: [{ id: "run", status: "COMPLETED", content: "结论 [1]" }] }))[0];
+    expect(updateAssistantMessageByRun(restored, "run", snapshot)[0].citations).toEqual(["资料A | 证据"]);
+    const update = store.applyConversationEvent(event("1", "citation.upsert", 1, "资料A | 证据"));
+    expect(update[0].citations).toEqual(["资料A | 证据"]);
+    expect(store.applyConversationEvent(event("2", "answer.delta", 2, "晚到正文"))).toEqual([]);
+    expect(store.get("run")?.content).toBe("结论 [1]");
+  });
+
+  it("clears body and citations on redaction and cannot restore them from stale snapshots or events", () => {
+    const store = new AnswerRunStore();
+    store.applyConversationEvent(event("1", "answer.delta", 1, "旧正文"));
+    store.applyConversationEvent(event("2", "citation.upsert", 2, "旧证据"));
+    const redacted = store.reconcileRun({ id: "run", status: "COMPLETED", content: "", revision_status: "REDACTED" });
+    expect(redacted).toMatchObject({ content: "", citations: [], redacted: true });
+    expect(updateAssistantMessageByRun([{ role: "assistant", answerRunId: "run", content: "旧正文", citations: ["旧证据"] }], "run", redacted)[0])
+      .toMatchObject({ content: "", citations: [] });
+    store.reconcileRun({ id: "run", status: "COMPLETED", content: "旧快照正文" });
+    store.applyConversationEvent(event("3", "citation.upsert", 3, "旧证据"));
+    expect(store.get("run")).toMatchObject({ content: "", citations: [] });
+  });
+
+  it("distinguishes explicit empty citations from a missing citation field", () => {
+    const store = new AnswerRunStore();
+    const state = store.reconcileRun({ id: "run", status: "COMPLETED", content: "无引用", citations: [] });
+    expect(updateAssistantMessageByRun([{ role: "assistant", answerRunId: "run", content: "正文", citations: ["旧证据"] }], "run", state)[0].citations).toEqual([]);
+  });
   it("deduplicates conversation event ids and rejects out-of-order run sequences", () => {
     const store = new AnswerRunStore();
 

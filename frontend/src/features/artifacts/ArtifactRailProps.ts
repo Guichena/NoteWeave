@@ -25,6 +25,7 @@ export type ArtifactRailProps = {
   artifactSkillsLoading: boolean;
   artifactJobs: ArtifactJobSummary[];
   artifactJobsLoading: boolean;
+  artifactJobsError?: string;
   refreshArtifactJobs?: () => Promise<unknown>;
   sourceCount: number;
   setSelectedArtifactSkillKey: (key: string) => void;

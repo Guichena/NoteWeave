@@ -201,6 +201,12 @@ export function ArtifactRail(props: ArtifactRailProps) {
           />
         ) : null}
 
+        {props.artifactJobsError ? (
+          <div role="status">
+            <p>产物列表暂时无法更新，正在自动重试。已有结果仍保留。</p>
+            <button type="button" onClick={() => void props.refreshArtifactJobs?.()}>立即刷新</button>
+          </div>
+        ) : null}
         <ArtifactOutputList
           items={outputItems}
           loading={props.artifactJobsLoading}

@@ -18,6 +18,62 @@ function createArtifactApi() {
 }
 
 describe("useArtifactWorkspace", () => {
+  it("does not apply an old save result to another workspace", async () => {
+    let finish!: (value: { source_id: string }) => void;
+    const response = new Promise<{ source_id: string }>(resolve => { finish = resolve; });
+    const api = createArtifactApi();
+    api.saveVersionAsSource.mockReturnValueOnce(response);
+    const replaceSources = vi.fn();
+    const sourceApi = { list: vi.fn(async () => []) };
+    const { result, rerender, unmount } = renderHook(({ workspaceId }) => useArtifactWorkspace({ workspaceId, latestTask: null,
+      run: async (_label, action) => { await action(); }, setStatus: vi.fn(), replaceSources,
+      api: api as never, sourceApi: sourceApi as never }), { initialProps: { workspaceId: "A" } });
+    let saving!: Promise<void>;
+    act(() => { saving = result.current.saveArtifactVersionAsSource({ artifact_job_id: "job-A", version_no: 1 }); });
+    rerender({ workspaceId: "B" });
+    await act(async () => { finish({ source_id: "source-A" }); await saving; });
+    expect(replaceSources).not.toHaveBeenCalled();
+    expect(sourceApi.list).not.toHaveBeenCalled();
+    expect(result.current.artifactSavedSourceByVersionId).toEqual({});
+    unmount();
+  });
+  it("keeps the last successful snapshot and resumes polling after a temporary failure", async () => {
+    vi.useFakeTimers();
+    const api = createArtifactApi();
+    api.listJobs.mockResolvedValueOnce([artifactJob("RUNNING")] as never)
+      .mockRejectedValueOnce(new Error("网络暂时不可用"))
+      .mockResolvedValueOnce([artifactJob("COMPLETED")] as never);
+    const { result, unmount } = renderHook(() => useArtifactWorkspace({ workspaceId: "workspace-1", latestTask: null,
+      run: async (_label, action) => { await action(); }, setStatus: vi.fn(), replaceSources: vi.fn(),
+      artifactPollIntervalMs: 100, api: api as never, sourceApi: { list: vi.fn() } as never }));
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(result.current.artifactJobs[0].status).toBe("RUNNING");
+      expect(result.current.jobsError).toBe("网络暂时不可用");
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(result.current.artifactJobs[0].status).toBe("COMPLETED");
+      expect(result.current.jobsError).toBe("");
+      await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+      expect(api.listJobs).toHaveBeenCalledTimes(3);
+    } finally { unmount(); vi.useRealTimers(); }
+  });
+
+  it("retries an initial failure even before an active job is known", async () => {
+    vi.useFakeTimers();
+    const api = createArtifactApi();
+    api.listJobs.mockRejectedValueOnce(new Error("网络暂时不可用")).mockResolvedValueOnce([]);
+    const { result, unmount } = renderHook(() => useArtifactWorkspace({ workspaceId: "workspace-1", latestTask: null,
+      run: async (_label, action) => { await action(); }, setStatus: vi.fn(), replaceSources: vi.fn(),
+      artifactPollIntervalMs: 100, api: api as never, sourceApi: { list: vi.fn() } as never }));
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(result.current.jobsError).not.toBe("");
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      expect(result.current.jobsError).toBe("");
+      expect(api.listJobs).toHaveBeenCalledTimes(2);
+    } finally { unmount(); vi.useRealTimers(); }
+  });
   it("polls active artifact jobs until the authoritative terminal snapshot arrives", async () => {
     vi.useFakeTimers();
     const api = createArtifactApi();

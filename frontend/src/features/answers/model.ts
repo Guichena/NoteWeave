@@ -30,6 +30,8 @@ export type AnswerRunSnapshot = {
   content: string;
   error_code?: string;
   error_message?: string;
+  revision_status?: string;
+  citations?: string[];
 };
 
 export type AnswerRunState = {
@@ -39,4 +41,6 @@ export type AnswerRunState = {
   status: string;
   error: string;
   lastRunSequence: number;
+  citationsKnown?: boolean;
+  redacted?: boolean;
 };

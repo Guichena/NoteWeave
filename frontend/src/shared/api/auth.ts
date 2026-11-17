@@ -25,6 +25,8 @@ export type RegisterInput = {
 const STORAGE_KEY = "noteweave.auth.session.v1";
 const AUTH_CHANGED_EVENT = "noteweave:auth-changed";
 let memorySession: AuthSession | null = readStoredSession();
+let sessionVersion = 0;
+let pendingRefresh: { version: number; promise: Promise<AuthSession | null> } | null = null;
 
 export function setAccessToken(token: string | null | undefined) {
   if (!token?.trim()) {
@@ -32,6 +34,7 @@ export function setAccessToken(token: string | null | undefined) {
     return;
   }
   const current = memorySession;
+  sessionVersion += 1;
   memorySession = {
     access_token: token.trim(),
     refresh_token: current?.refresh_token ?? "",
@@ -43,11 +46,13 @@ export function setAccessToken(token: string | null | undefined) {
 }
 
 export function setAuthSession(session: AuthSession) {
+  sessionVersion += 1;
   memorySession = session;
   persist();
 }
 
 export function clearAuthSession() {
+  sessionVersion += 1;
   memorySession = null;
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem(STORAGE_KEY);
@@ -87,53 +92,68 @@ export async function register(input: RegisterInput) {
   return session;
 }
 
-export async function refreshAuthSession() {
+export function refreshAuthSession(rejectedAccessToken?: string): Promise<AuthSession | null> {
+  if (rejectedAccessToken && memorySession?.access_token !== rejectedAccessToken) {
+    return Promise.resolve(memorySession);
+  }
   const refreshToken = memorySession?.refresh_token;
   if (!refreshToken) {
     clearAuthSession();
-    return null;
+    return Promise.resolve(null);
   }
-  try {
-    const session = await authRequest<AuthSession>("/api/v2/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken })
-    });
-    setAuthSession(session);
-    return session;
-  } catch (error) {
-    clearAuthSession();
-    throw error;
-  }
+  const version = sessionVersion;
+  if (pendingRefresh?.version === version) return pendingRefresh.promise;
+  const promise = (async () => {
+    try {
+      const session = await authRequest<AuthSession>("/api/v2/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      if (sessionVersion !== version) return memorySession;
+      setAuthSession(session);
+      return session;
+    } catch (error) {
+      if (sessionVersion !== version) return memorySession;
+      clearAuthSession();
+      throw error;
+    }
+  })();
+  const operation = { version, promise };
+  pendingRefresh = operation;
+  void promise.finally(() => {
+    if (pendingRefresh === operation) pendingRefresh = null;
+  }).catch(() => undefined);
+  return promise;
 }
 
 export async function validateAuthSession() {
   if (!memorySession?.access_token) {
     return null;
   }
+  const version = sessionVersion;
+  const accessToken = memorySession.access_token;
   try {
     const user = await authRequest<AuthUser>("/api/v2/auth/session", {
-      headers: { Authorization: `Bearer ${memorySession.access_token}` }
+      headers: { Authorization: `Bearer ${accessToken}` }
     });
+    if (sessionVersion !== version || !memorySession) return memorySession;
     memorySession = { ...memorySession, user };
     persist();
     return memorySession;
   } catch {
-    return refreshAuthSession();
+    return sessionVersion === version ? refreshAuthSession(accessToken) : memorySession;
   }
 }
 
 export async function logoutAuthSession() {
   const accessToken = memorySession?.access_token;
-  try {
-    if (accessToken) {
-      await authRequest<void>("/api/v2/auth/logout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-    }
-  } finally {
-    clearAuthSession();
+  clearAuthSession();
+  if (accessToken) {
+    await authRequest<void>("/api/v2/auth/logout", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
   }
 }
 

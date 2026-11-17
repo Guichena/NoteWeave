@@ -77,7 +77,9 @@ export class AnswerRunStore {
         content: text(run.content),
         status: text(run.status),
         error_code: text(run.error_code),
-        error_message: text(run.error_message)
+        error_message: text(run.error_message),
+        revision_status: text(run.revision_status),
+        ...(Array.isArray(run.citations) ? { citations: run.citations.filter((value): value is string => typeof value === "string") } : {})
       }));
     }
     return updates;
@@ -86,13 +88,17 @@ export class AnswerRunStore {
   reconcileRun(snapshot: AnswerRunSnapshot) {
     const current = this.states.get(snapshot.id) ?? createAnswerRunState(snapshot.id);
     const snapshotStatus = snapshot.status || current.status;
+    const redacted = current.redacted === true || snapshot.revision_status === "REDACTED";
     const next: AnswerRunState = {
       ...current,
-      content: snapshot.content === "" && current.content !== ""
+      content: redacted ? "" : snapshot.content === "" && current.content !== ""
         ? current.content
         : snapshot.content,
       status: snapshotStatus,
-      error: snapshot.error_message || snapshot.error_code || ""
+      citations: redacted ? [] : snapshot.citations ?? current.citations,
+      citationsKnown: redacted || snapshot.citations !== undefined || current.citationsKnown,
+      redacted,
+      error: redacted ? "" : snapshot.error_message || snapshot.error_code || ""
     };
     this.states.set(snapshot.id, next);
     this.settle(snapshot.id, next);
@@ -188,7 +194,8 @@ export function reduceAnswerRunState(
   data: string,
   runSequence = current.lastRunSequence + 1
 ): AnswerRunState {
-  if (isTerminal(current.status)) {
+  if (current.redacted || (isTerminal(current.status)
+      && !(current.status === "COMPLETED" && eventType === "citation.upsert"))) {
     return current;
   }
   const next = {
@@ -204,6 +211,7 @@ export function reduceAnswerRunState(
       next.content = data;
       return next;
     case "citation.upsert":
+      next.citationsKnown = true;
       if (!next.citations.includes(data)) {
         next.citations.push(data);
       }

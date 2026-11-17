@@ -217,7 +217,9 @@ export class LatestKnowledgeRequestGate {
 
   begin(channel: string, workspaceId = this.workspaceId): RequestLease {
     if (workspaceId !== this.workspaceId) {
-      this.setWorkspace(workspaceId);
+      const controller = new AbortController();
+      controller.abort();
+      return { signal: controller.signal, isCurrent: () => false, complete: () => undefined };
     }
     this.controllers.get(channel)?.abort();
     const controller = new AbortController();

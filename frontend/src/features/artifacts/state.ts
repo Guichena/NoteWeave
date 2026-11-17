@@ -7,6 +7,8 @@ export type ArtifactServerState = {
   workspaceId: string;
   revision: number;
   jobsLoading: boolean;
+  jobsError: string;
+  jobsFailureCount: number;
   artifactJobs: ArtifactJobSummary[];
   latestArtifactVersion: ArtifactVersionDetail | null;
   selectedArtifactHistoryVersion: ArtifactVersionDetail | null;
@@ -19,6 +21,7 @@ export type ArtifactServerState = {
 export type ArtifactStateAction =
   | { type: "workspace"; workspaceId: string }
   | { type: "jobs-loading" }
+  | { type: "jobs-failed"; error: string }
   | { type: "jobs-snapshot"; jobs: ArtifactJobSummary[]; latestVersion: ArtifactVersionDetail | null }
   | { type: "history-loading"; key: string }
   | { type: "history-selected"; key: string; version: ArtifactVersionDetail | null }
@@ -33,6 +36,8 @@ export function createArtifactServerState(workspaceId = ""): ArtifactServerState
     workspaceId,
     revision: 0,
     jobsLoading: false,
+    jobsError: "",
+    jobsFailureCount: 0,
     artifactJobs: [],
     latestArtifactVersion: null,
     selectedArtifactHistoryVersion: null,
@@ -60,9 +65,14 @@ export function reduceArtifactServerState(
         ...state,
         revision: state.revision + 1,
         jobsLoading: false,
+        jobsError: "",
+        jobsFailureCount: 0,
         artifactJobs: action.jobs,
         latestArtifactVersion: action.latestVersion
       };
+    case "jobs-failed":
+      return { ...state, revision: state.revision + 1, jobsLoading: false,
+        jobsError: action.error, jobsFailureCount: state.jobsFailureCount + 1 };
     case "history-loading":
       return {
         ...state,
@@ -134,6 +144,11 @@ export class LatestArtifactRequestGate {
   }
 
   begin(channel: string, workspaceId = this.workspaceId): RequestLease {
+    if (workspaceId !== this.workspaceId) {
+      const controller = new AbortController();
+      controller.abort();
+      return { signal: controller.signal, isCurrent: () => false, complete: () => undefined };
+    }
     this.cancel(channel);
     const controller = new AbortController();
     this.controllers.set(channel, controller);

@@ -2,8 +2,8 @@ import { consumeSse } from "./consume";
 import { type ExecutionEvent as StreamEvent } from "../../features/executions/model";
 import { asRecord } from "../util/records";
 
-export async function streamEvents(path: string, onEvent: (event: StreamEvent) => void) {
-  await consumeSse(path, (event) => onEvent(toStreamEvent(event.event, event.data, event.id)));
+export async function streamEvents(path: string, onEvent: (event: StreamEvent) => void, signal?: AbortSignal) {
+  await consumeSse(path, (event) => onEvent(toStreamEvent(event.event, event.data, event.id)), signal);
 }
 
 function parseStreamEventData(data: string) {

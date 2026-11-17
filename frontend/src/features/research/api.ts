@@ -75,6 +75,12 @@ export class ResearchApi {
     return this.client.get<ResearchCell[]>(`${this.runsPath(workspaceId)}/${researchRunId}/cells`, init);
   }
 
+  getRequirements(workspaceId: string, researchRunId: string, init?: RequestInit) {
+    return this.client.get<import("./model").ResearchRequirementProgress>(
+      `${this.runsPath(workspaceId)}/${researchRunId}/requirements`, init
+    );
+  }
+
   listDiscoveryProposals(workspaceId: string, researchRunId: string, init?: RequestInit) {
     return this.client.get<ResearchDiscoveryProposal[]>(
       `${this.runsPath(workspaceId)}/${researchRunId}/discovery-proposals`,

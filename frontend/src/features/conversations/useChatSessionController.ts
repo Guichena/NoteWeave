@@ -10,8 +10,7 @@ import { answersApi } from "../answers/api";
 import type { AnswerFeedbackInput, AnswerRunState } from "../answers/model";
 import {
   type Message,
-  updateAssistantMessageByRun,
-  updateLastAssistantMessage
+  updateAssistantMessageByRun
 } from "../answers/messageTypes";
 import { useChatSourceActions } from "./useChatSourceActions";
 import { isSourceSearchable, type SourceAsset } from "../sources/model";
@@ -21,6 +20,7 @@ import { ConversationStreamClient } from "../../shared/event-stream";
 import { streamEvents } from "../../shared/event-stream/streamEvent";
 import type { ShellRun } from "../shell/useShellBusy";
 import { readAnswerModePreference, writeAnswerModePreference } from "./answerModePreference";
+import { useOperationScope } from "../../shared/useOperationScope";
 
 export type UseChatSessionControllerInput = {
   workspace: Workspace | null;
@@ -75,6 +75,22 @@ export function useChatSessionController({
   const [sourceDraftRewriteMode, setSourceDraftRewriteMode] = useState("");
   const [selectedQaSourceIds, setSelectedQaSourceIds] = useState<string[]>([]);
   const [conversationStreamConnected, setConversationStreamConnected] = useState(false);
+  const chatScopeKey = `${workspace?.workspace_id ?? ""}:${conversation?.conversation_id ?? ""}`;
+  const isCurrent = useOperationScope(chatScopeKey);
+  const fallbackStreamRef = useRef(new AbortController());
+  const [draftScopeKey, setDraftScopeKey] = useState("");
+  const hasCurrentNote = draftScopeKey === chatScopeKey;
+  useEffect(() => {
+    const controller = new AbortController();
+    fallbackStreamRef.current = controller;
+    setLastNoteAssistantMessageId("");
+    setLastNoteAnswerContent("");
+    setSourceDraftTitle("工作台整理笔记");
+    setSourceDraftContent("");
+    setSourceDraftRewriteMode("");
+    setDraftScopeKey("");
+    return () => controller.abort();
+  }, [chatScopeKey]);
 
   function setMode(nextMode: AnswerMode) {
     setModeState(nextMode);
@@ -98,16 +114,19 @@ export function useChatSessionController({
       + `/conversations/${conversation.conversation_id}/events`;
     const client = new ConversationStreamClient(streamPath, {
       onConnectionChange: (connected) => {
+        if (!isCurrent()) return;
         if (!connected) {
           setConversationStreamConnected(false);
         }
       },
       onError: () => {
+        if (!isCurrent()) return;
         if (statusActiveRef.current) {
           setStatus("实时更新暂不可用，回答将从任务快照同步");
         }
       },
       onEvent: (event) => {
+        if (!isCurrent()) return;
         try {
           const updates = answerRunStoreRef.current.applyConversationEvent(event);
           if (event.event === "conversation.snapshot") {
@@ -132,7 +151,7 @@ export function useChatSessionController({
       setConversationStreamConnected(false);
       answerRunStoreRef.current.clear("会话已切换");
     };
-  }, [workspace?.workspace_id, conversation?.conversation_id, setStatus]);
+  }, [workspace?.workspace_id, conversation?.conversation_id, setStatus, isCurrent]);
 
   function currentRoute() {
     return routes.find((route) => route.key === mode) ?? routes[0];
@@ -147,6 +166,7 @@ export function useChatSessionController({
   }
 
   function appendSystemMessage(content: string) {
+    if (!isCurrent()) return;
     setMessages((current) => [...current, { role: "system", content }]);
   }
 
@@ -161,6 +181,7 @@ export function useChatSessionController({
     saveNoteAnswerAsSource
   } = useChatSourceActions({
     workspace,
+    conversation,
     run,
     setStatus,
     setSources,
@@ -175,10 +196,10 @@ export function useChatSessionController({
     sourceText,
     setSourceText,
     appendSystemMessage,
-    lastNoteAssistantMessageId,
-    lastNoteAnswerContent,
+    lastNoteAssistantMessageId: hasCurrentNote ? lastNoteAssistantMessageId : "",
+    lastNoteAnswerContent: hasCurrentNote ? lastNoteAnswerContent : "",
     sourceDraftTitle,
-    sourceDraftContent,
+    sourceDraftContent: hasCurrentNote ? sourceDraftContent : "",
     sourceDraftRewriteMode,
     setSourceDraftTitle,
     setSourceDraftContent,
@@ -188,10 +209,12 @@ export function useChatSessionController({
 
 
   async function reconcileAnswerRun(answerRunId: string, fallback?: AnswerRunState) {
+    if (!isCurrent()) return;
     if (!workspace) {
       return answerRunStoreRef.current.get(answerRunId) ?? fallback;
     }
     const snapshot = await answersApi.getRun(workspace.workspace_id, answerRunId);
+    if (!isCurrent()) return;
     const current = answerRunStoreRef.current.get(answerRunId);
     if (!current && fallback) {
       answerRunStoreRef.current.reconcileRun({
@@ -211,6 +234,7 @@ export function useChatSessionController({
     runLabel = `${currentRoute().label} 提问`,
     options: { mode?: AnswerMode; regeneratedFrom?: string } = {}
   ) {
+    if (!isCurrent()) return;
     const turnMode = options.mode ?? mode;
     if (!conversation) {
       setStatus("请先创建工作台和会话");
@@ -232,6 +256,7 @@ export function useChatSessionController({
           ...(options.regeneratedFrom ? { regenerated_from: options.regeneratedFrom } : {})
         });
       } catch (error) {
+        if (!isCurrent()) return;
         setMessages((current) => {
           const rollbackIndex = [...current]
             .map((message, index) => ({ message, index }))
@@ -244,9 +269,11 @@ export function useChatSessionController({
         });
         throw error;
       }
+      if (!isCurrent()) return;
       setQuestion((current) => (current.trim() === trimmed ? "" : current));
       const buffered = answerRunStoreRef.current.get(sent.answer_run_id);
       if (turnMode === "note") {
+        setDraftScopeKey(chatScopeKey);
         setLastNoteAssistantMessageId(sent.assistant_message_id);
         setLastNoteAnswerContent(buffered?.content ?? "");
         setSourceDraftContent("");
@@ -268,8 +295,15 @@ export function useChatSessionController({
         answerError: buffered?.error ?? ""
       }]);
       if (conversationStreamConnected) {
-        await answerRunStoreRef.current.waitFor(sent.answer_run_id);
+        try {
+          await answerRunStoreRef.current.waitFor(sent.answer_run_id);
+        } catch (error) {
+          if (!isCurrent()) return;
+          throw error;
+        }
+        if (!isCurrent()) return;
         const completed = await reconcileAnswerRun(sent.answer_run_id);
+        if (!isCurrent()) return;
         if (turnMode === "note" && completed?.content) {
           setLastNoteAnswerContent(completed.content);
           await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, completed.content);
@@ -285,20 +319,23 @@ export function useChatSessionController({
       }
       let fallback = createAnswerRunState(sent.answer_run_id);
       await streamEvents(sent.answer_stream_url || sent.stream_url, (event) => {
+        if (!isCurrent()) return;
         fallback = reduceAnswerRunState(fallback, event.event, event.data);
         if (fallback.status === "FAILED" || fallback.status === "CANCELLED") {
-          setMessages((current) => updateLastAssistantMessage(current, fallback));
+          setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, fallback));
           throw new Error(fallback.error || "回答流失败");
         }
-        setMessages((current) => updateLastAssistantMessage(current, fallback));
-      });
+        setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, fallback));
+      }, fallbackStreamRef.current.signal);
+      if (!isCurrent()) return;
       if (!fallback.content) {
-        setMessages((current) => updateLastAssistantMessage(current, {
+        setMessages((current) => updateAssistantMessageByRun(current, sent.answer_run_id, {
           ...fallback,
           content: "后端已完成回答，但没有返回 delta 内容。"
         }));
       }
       const reconciled = await reconcileAnswerRun(sent.answer_run_id, fallback);
+      if (!isCurrent()) return;
       if (turnMode === "note" && reconciled?.content) {
         setLastNoteAnswerContent(reconciled.content);
         await prepareNoteSourceDraft(sent.assistant_message_id, sourceDraftTitle, reconciled.content);
@@ -340,11 +377,11 @@ export function useChatSessionController({
     messages,
     setMessages,
     appendSystemMessage,
-    lastNoteAssistantMessageId,
-    lastNoteAnswerContent,
+    lastNoteAssistantMessageId: hasCurrentNote ? lastNoteAssistantMessageId : "",
+    lastNoteAnswerContent: hasCurrentNote ? lastNoteAnswerContent : "",
     sourceDraftTitle,
     setSourceDraftTitle,
-    sourceDraftContent,
+    sourceDraftContent: hasCurrentNote ? sourceDraftContent : "",
     setSourceDraftContent,
     sourceDraftRewriteMode,
     selectedQaSourceIds,

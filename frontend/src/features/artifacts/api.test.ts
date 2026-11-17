@@ -54,7 +54,7 @@ describe("ArtifactsApi", () => {
         item_type: "WIKI",
         title: "指南"
       }],
-      ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/regenerate", {}],
+      ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/regenerate", { client_request_id: expect.any(String) }],
       ["/api/v2/workspaces/workspace/artifact-jobs/job/versions/4/rollback", {}]
     ]);
   });

@@ -154,7 +154,12 @@ function AssistantMessage({ message, loadEvidence, onOpenWikiPage, onFeedback, o
 
   async function copyAnswer() {
     try {
-      await navigator.clipboard?.writeText(presentation.body || message.content);
+      const content = message.answerMode === "wiki"
+        ? normalizeWikiMessageSections(splitMarkdownSections(message.content, true))
+          .map(section => section.title ? `## ${section.title}\n${section.content}` : section.content)
+          .join("\n\n")
+        : message.content;
+      await navigator.clipboard?.writeText(content);
       setCopied(true);
     } catch {
       setCopied(false);

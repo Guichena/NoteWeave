@@ -9,6 +9,7 @@ import { artifactsApi, type ArtifactsApi } from "./api";
 import { type ArtifactFileMetadata, type ArtifactJobSummary, type ArtifactVersionComparison } from "./model";
 import { useArtifactState } from "./useArtifactState";
 import { artifactVersionSaveKey } from "./versionKey";
+import { useOperationScope } from "../../shared/useOperationScope";
 
 const ARTIFACT_JOB_POLL_INTERVAL_MS = 2_500;
 const ARTIFACT_JOB_TERMINAL_STATUSES = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
@@ -56,14 +57,16 @@ export function useArtifactWorkspace({
   sourceApi = sourcesApi
 }: UseArtifactWorkspaceInput) {
   const state = useArtifactState(workspaceId, api);
+  const isCurrent = useOperationScope(workspaceId);
 
   const loadJobs = useCallback(async () => {
+    if (!isCurrent()) return [];
     try {
       return await state.refreshJobs();
     } catch {
       return [];
     }
-  }, [state.refreshJobs]);
+  }, [state.refreshJobs, isCurrent]);
 
   useEffect(() => {
     if (!workspaceId) {
@@ -91,17 +94,18 @@ export function useArtifactWorkspace({
     if (
       !workspaceId
       || artifactPollIntervalMs <= 0
-      || !state.artifactJobs.some(isArtifactJobActive)
+      || (!state.jobsError && !state.artifactJobs.some(isArtifactJobActive))
     ) {
       return;
     }
     const timer = window.setTimeout(() => {
       void loadJobs();
-    }, artifactPollIntervalMs);
+    }, Math.min(30_000, artifactPollIntervalMs * 2 ** Math.min(4, Math.max(0, state.jobsFailureCount - 1))));
     return () => window.clearTimeout(timer);
-  }, [workspaceId, artifactPollIntervalMs, state.artifactJobs, loadJobs]);
+  }, [workspaceId, artifactPollIntervalMs, state.artifactJobs, state.jobsError, state.jobsFailureCount, state.revision, loadJobs]);
 
   const openArtifactHistoryVersion = useCallback(async (item: ArtifactHistoryItem) => {
+    if (!isCurrent()) return;
     if (!workspaceId) {
       return;
     }
@@ -115,11 +119,12 @@ export function useArtifactWorkspace({
         versionNo: item.versionNo
       }, state.latestArtifactVersion));
     } catch {
-      setStatus("历史产物版本详情加载失败");
+      if (isCurrent()) setStatus("历史产物版本详情加载失败");
     }
-  }, [workspaceId, state.selectHistoryVersion, state.latestArtifactVersion, setStatus]);
+  }, [workspaceId, state.selectHistoryVersion, state.latestArtifactVersion, setStatus, isCurrent]);
 
   const saveArtifactVersionAsSource = useCallback(async (version: ArtifactVersionRef) => {
+    if (!isCurrent()) return;
     if (!workspaceId) {
       setStatus("请先创建工作台");
       return;
@@ -130,15 +135,18 @@ export function useArtifactWorkspace({
         version.artifact_job_id,
         version.version_no
       );
+      if (!isCurrent()) return;
       state.recordSavedSource(artifactVersionSaveKey(version), saved.source_id);
-      replaceSources(await sourceApi.list(workspaceId));
+      const sources = await sourceApi.list(workspaceId);
+      if (isCurrent()) replaceSources(sources);
     }, "artifact");
-  }, [workspaceId, run, api, sourceApi, state.recordSavedSource, replaceSources, setStatus]);
+  }, [workspaceId, run, api, sourceApi, state.recordSavedSource, replaceSources, setStatus, isCurrent]);
 
   const writeArtifactVersionToKnowledge = useCallback(async (
     version: ArtifactWritebackVersion,
     itemType: "NOTE" | "WIKI"
   ) => {
+    if (!isCurrent()) return;
     if (!workspaceId) {
       setStatus("请先创建工作台");
       return;
@@ -151,11 +159,13 @@ export function useArtifactWorkspace({
         version.version_no,
         { item_type: itemType, title: version.title }
       );
+      if (!isCurrent()) return;
       state.recordWriteback(artifactVersionSaveKey(version), itemType);
     }, "artifact");
-  }, [workspaceId, run, api, state.recordWriteback, setStatus]);
+  }, [workspaceId, run, api, state.recordWriteback, setStatus, isCurrent]);
 
   const regenerateArtifactVersion = useCallback(async (version: ArtifactVersionRef) => {
+    if (!isCurrent()) return;
     if (!workspaceId) {
       setStatus("请先创建工作台");
       return;
@@ -164,9 +174,10 @@ export function useArtifactWorkspace({
       await api.regenerateVersion(workspaceId, version.artifact_job_id, version.version_no);
       await loadJobs();
     }, "artifact");
-  }, [workspaceId, run, api, loadJobs, setStatus]);
+  }, [workspaceId, run, api, loadJobs, setStatus, isCurrent]);
 
   const rollbackArtifactVersion = useCallback(async (version: ArtifactVersionRef) => {
+    if (!isCurrent()) return;
     if (!workspaceId) {
       setStatus("请先创建工作台");
       return;
@@ -177,12 +188,14 @@ export function useArtifactWorkspace({
         version.artifact_job_id,
         version.version_no
       );
+      if (!isCurrent()) return;
       state.applyRollback(rolledBack);
       await loadJobs();
     }, "artifact");
-  }, [workspaceId, run, api, state.applyRollback, loadJobs, setStatus]);
+  }, [workspaceId, run, api, state.applyRollback, loadJobs, setStatus, isCurrent]);
 
   const compareArtifactWithPreviousVersion = useCallback(async (version: ArtifactVersionRef) => {
+    if (!isCurrent()) return null;
     if (!workspaceId || version.version_no <= 1) {
       setStatus("当前版本没有可比较的上一版本");
       return null;
@@ -195,11 +208,12 @@ export function useArtifactWorkspace({
         version.version_no - 1,
         version.version_no
       );
+      if (!isCurrent()) return;
       comparison = result;
       setStatus(result.summary);
     }, "artifact");
     return comparison;
-  }, [workspaceId, run, api, setStatus]);
+  }, [workspaceId, run, api, setStatus, isCurrent]);
 
   const downloadArtifactVersionPdf = useCallback(async (version: ArtifactPdfVersion) => {
     if (!workspaceId) {

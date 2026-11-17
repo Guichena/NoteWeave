@@ -9,6 +9,25 @@ import { MessageBubble, splitCitedViews } from "./MessageBubble";
 afterEach(cleanup);
 
 describe("MessageBubble failed answers", () => {
+  it("copies every answer section including tables, code and citations", async () => {
+    const writeText = vi.fn(async (_content: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    const content = "## 结论\n第一章 [1]\n\n## 对比\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\n## 示例\n```java\nrun();\n```\n\n## 来源引用\n- [1] 资料原文";
+    render(<MessageBubble message={{ role: "assistant", answerMode: "qa", answerStatus: "COMPLETED", content }} />);
+    fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
+    expect(writeText).toHaveBeenCalledWith(content);
+  });
+
+  it("copies complete Wiki prose without the internal workspace path", () => {
+    const writeText = vi.fn(async (_content: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<MessageBubble message={{ role: "assistant", answerMode: "wiki", answerStatus: "COMPLETED",
+      content: "## 结论\n结论正文\n\n## 说明\n解释正文\n\n## 默认 Wiki 工作台\n/workspaces/private-id" }} />);
+    fireEvent.click(screen.getByRole("button", { name: "复制回答" }));
+    const copied = writeText.mock.calls[0]?.[0];
+    expect(copied).toContain("解释正文");
+    expect(copied).not.toContain("private-id");
+  });
   it("hides partial placeholder content and cards when an answer run fails", () => {
     render(
       <MessageBubble message={{

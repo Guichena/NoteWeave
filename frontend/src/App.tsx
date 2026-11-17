@@ -7,6 +7,7 @@ import { useWorkspaceSession } from "./features/workspace/useWorkspaceSession";
 import { WorkspaceSettingsPanel } from "./features/workspace/WorkspaceSettingsPanel";
 import { isSourceReady, type SourceAsset } from "./features/sources/model";
 import { useChatSessionController } from "./features/conversations/useChatSessionController";
+import { useOperationScope } from "./shared/useOperationScope";
 import { buildChatWorkbenchProps } from "./features/conversations/buildChatWorkbenchProps";
 import { useWikiWorkbenchController } from "./features/knowledge/useWikiWorkbenchController";
 import { buildWikiWorkbenchProps } from "./features/knowledge/buildWikiWorkbenchProps";
@@ -138,10 +139,12 @@ export function App() {
     .sort()
     .join("|");
   const workspaceId = workspace?.workspace_id ?? "";
+  const isWorkspaceCurrent = useOperationScope(workspaceId);
   const refreshSources = useCallback(async () => {
-    if (!workspaceId) return;
-    setSources(await sourcesApi.list(workspaceId));
-  }, [workspaceId]);
+    if (!workspaceId || !isWorkspaceCurrent()) return;
+    const next = await sourcesApi.list(workspaceId);
+    if (isWorkspaceCurrent()) setSources(next);
+  }, [workspaceId, isWorkspaceCurrent]);
   const reprocessSource = useCallback(
     (sourceId: string) => sourcesApi.reprocessSource(workspaceId, sourceId),
     [workspaceId]
