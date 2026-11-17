@@ -437,7 +437,7 @@ def run_research_agent_kafka_consumer_forever(executor: AgentExecutor | None = N
             executors["EVIDENCE_AUDIT"] = EvidenceAuditExecutor(worker_instance_id)
             enabled_roles.add("EVIDENCE_AUDIT")
         if settings.research_agent_synthesis_enabled:
-            executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id)
+            executors["SYNTHESIS"] = SynthesisExecutor(worker_instance_id, upload_client=client)
             enabled_roles.add("SYNTHESIS")
         if settings.research_agent_wide_discovery_enabled:
             executors["WIDE_DISCOVERY"] = DiscoveryExecutor(worker_instance_id, client,
@@ -538,6 +538,10 @@ def _is_retryable_agent_error(exc: Exception | None) -> bool:
         return False
     if isinstance(exc, AgentTaskApiError):
         return exc.status_code == 429 or exc.status_code >= 500
+    if isinstance(exc, RuntimeError) and str(exc) in {
+        "RESEARCH_WEB_PROVIDER_UNREACHABLE", "RESEARCH_EXTRACTION_PROVIDER_UNAVAILABLE",
+    }:
+        return True
     return isinstance(exc, (TimeoutError, ConnectionError, OSError))
 
 

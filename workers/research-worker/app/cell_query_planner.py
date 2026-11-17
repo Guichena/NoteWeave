@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from app.json_repair import parse_json_payload
 from app.llm_client import LlmClient
@@ -56,6 +57,7 @@ class CellColumn:
     label: str
     description: str = ""
     search_intents: tuple[str, ...] = ()
+    requirements: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,6 +74,9 @@ class CellQueryContext:
     objective: str = ""
     boundaries: tuple[str, ...] = ()
     authoritative_domains: tuple[str, ...] = ()
+    as_of_date: str = ""
+    source_scopes: tuple[dict, ...] = ()
+    requirement_targets: tuple[dict, ...] = ()
 
 
 @dataclass
@@ -93,8 +98,11 @@ def plan_cell_queries(context: CellQueryContext, llm_client: LlmClient | None) -
             return _rule_plan(context, ["CELL_QUERY_LLM_CALL_FAILED"])
         specs, attempt_rejected = _validate(raw, context)
         rejected.extend(attempt_rejected)
-        if specs:
+        missing = {column.key for column in context.columns} - {key for spec in specs for key in spec.column_keys}
+        if specs and not missing:
             return CellQueryPlan(specs=ensure_authoritative_query(specs, context), method="LLM", rejected=rejected)
+        if missing:
+            rejected.append({"query": "", "reason": "missing column coverage: " + ", ".join(sorted(missing))})
     return _rule_plan(context, ["CELL_QUERY_LLM_OUTPUT_INVALID"], rejected)
 
 
@@ -126,11 +134,21 @@ def _call_model(
             "that target studies and data, such as 'empirical study', 'paper', 'case study' or 'survey results'. "
             "For a column asking for opposing or inconclusive evidence, search for null or negative results, "
             "criticism and independent studies, not vendor pages.",
+            "For empirical research, use at least one unrestricted query for a paper title, author manuscript, "
+            "preprint or institutional repository. Publisher landing pages may be inaccessible; find another "
+            "copy of the same study without assuming that it supports the hypothesis.",
             "Never repeat or lightly reword a query listed in tried_queries.",
+            "For current support, status or maturity, explicitly search for the latest supported stable state "
+            "as of as_of_date, release announcements and accepted decisions. Keep this separate from queries "
+            "about the initial experimental release; old-version documentation does not establish current status.",
             "intent is one of: direct (find the answer), verify (find a primary or official confirmation), "
             "counter (find limitations, exceptions or contradicting evidence), coverage (find aspects not yet covered).",
             "column_keys must only contain keys from the columns list.",
             "Use each column's description and search_intents to decide what evidence to look for.",
+            "This task covers only the given entity. Interpret shared comparison requirements and "
+            "per-product examples for that entity; do not search for clauses that apply only to other entities.",
+            "Cover every column and each distinct requirement in its description within max_queries. "
+            "Do not spend all queries on the first column; combine closely related requirements when needed.",
             "When authoritative_domains are given, exactly one verify query must add site:<domain> for the domain "
             "that best matches the entity; the other queries stay unrestricted.",
             "Stay inside boundaries: never search for evidence about anything they exclude.",
@@ -146,12 +164,16 @@ def _call_model(
             }],
         },
         "max_queries": context.max_queries,
+        "as_of_date": context.as_of_date or datetime.now(timezone.utc).date().isoformat(),
         "role": context.role,
         "question": context.question,
         "entity": context.entity_label,
+        "source_scopes": list(context.source_scopes),
+        "requirement_targets": list(context.requirement_targets),
         "columns": [
             {"key": column.key, "label": column.label, "description": column.description,
-             "search_intents": list(column.search_intents)}
+             "search_intents": list(column.search_intents),
+             **({"requirements": list(column.requirements)} if column.requirements else {})}
             for column in context.columns
         ],
         "objective": context.objective,
@@ -162,6 +184,8 @@ def _call_model(
         "constraints": list(context.constraints),
         "tried_queries": list(context.tried_queries),
     }
+    if context.requirement_targets:
+        payload["policy"].append("requirement_targets 明确各列的冻结条件和时间范围。当前状态查询先寻找正式版本、支持级别和生效说明，不能预设未指定的版本号；历史起点查询与当前状态分开，规范标识查询保留编号标题的对应关系。")
     if rejected:
         payload["previous_output_rejected"] = rejected[-8:]
     try:
@@ -208,6 +232,14 @@ def _validate(
             str(key) for key in item.get("column_keys", [])
             if isinstance(key, str) and key in allowed_columns
         ] if isinstance(item.get("column_keys"), list) else []
+        targets = [target for target in context.requirement_targets if target.get("column_key") in column_keys]
+        if targets and all(target.get("temporal_mode") == "CURRENT" for target in targets):
+            allowed = {version for target in targets for version in target.get("required_versions", [])}
+            for target in targets:
+                allowed.update(re.findall(r"(?<!\d)\d+\.\d+(?:\.\d+)*", target.get("criterion", "")))
+            if any(version not in allowed for version in re.findall(r"(?<!\d)\d+\.\d+(?:\.\d+)*", query)):
+                rejected.append({"query": query, "reason": "current status query presupposes an unspecified release"})
+                continue
         accepted.append(_spec(
             query, intent, column_keys,
             language=str(item.get("language") or "").strip().lower()[:8],
@@ -272,15 +304,21 @@ def _rule_plan(
     subject = context.entity_label or question_keywords(context.question, limit=6)
     candidates: list[tuple[str, str, list[str]]] = []
     broad = " ".join(part for part in [subject, question_keywords(context.question, limit=4)] if part)
-    if context.entity_label:
-        candidates.append((broad, "direct", []))
-    else:
-        candidates.append((subject, "direct", []))
     for column in context.columns:
         label = column.label.strip()
-        if not label or label.casefold() in _GENERIC_COLUMN_LABELS:
-            continue
-        candidates.append((f"{subject} {label}", "direct", [column.key]))
+        fallback_topic = column.description.strip() or (label if label.casefold() not in _GENERIC_COLUMN_LABELS else "")
+        topic = next((intent.strip() for intent in column.search_intents if intent.strip()),
+                     fallback_topic or question_keywords(context.question, limit=4))
+        targets = [target for target in context.requirement_targets if target.get("column_key") == column.key]
+        if targets and all(target.get("temporal_mode") == "CURRENT" for target in targets):
+            topic = "current supported status stable release notes effective version"
+            versions = {version for target in targets for version in target.get("required_versions", [])}
+            if versions:
+                topic = " ".join(sorted(versions)) + " " + topic
+        query = topic if subject.casefold() in topic.casefold() else f"{subject} {topic}"
+        candidates.append((query, "direct", [column.key]))
+    # 列查询优先，宽查询只能使用剩余预算。
+    candidates.append((broad if context.entity_label else subject, "direct", []))
     if context.role == "COUNTERFACTUAL":
         candidates.append((f"{subject} limitations", "counter", []))
     if context.time_range:
@@ -291,7 +329,10 @@ def _rule_plan(
         if len(specs) >= context.max_queries:
             break
         normalized = normalize_query(query)[:MAX_QUERY_CHARS].strip()
-        if query_rejection_reason(normalized, specs, context.tried_queries):
+        # 同义去重只能在同一列内进行，不能因列名共享常用词而删掉另一列。
+        comparable = [spec for spec in specs if not column_keys or not spec.column_keys
+                      or set(spec.column_keys) & set(column_keys)]
+        if query_rejection_reason(normalized, comparable, context.tried_queries):
             continue
         specs.append(_spec(normalized, intent, column_keys, rationale="rule fallback"))
     if not specs:
@@ -302,14 +343,14 @@ def _rule_plan(
 
 
 def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQueryContext) -> list[ResearchQuerySpec]:
-    """规划给出官方域名而检索词里没有 site: 查询时，补一条定向官方来源的查询。
-
-    放在第二条，紧跟宽泛的第一条：检索按顺序执行，命中数达到预算就停，放在最后时前两条常常已经用满预算，
-    官方来源查询根本没有执行（PG 17 增量备份一题只搜到邮件列表，官方文档页一次也没检索到）。
-    未到上限时插入；已到上限时去掉最后一条，条数不变，不增加搜索调用。
-    """
+    """保留每列的检索词和预算，补充定向来源查询，同时保留不限定域名的查询。"""
+    limit = max(1, context.max_queries)
+    specs = list(specs[:limit])
     domains = [domain.strip().lower() for domain in context.authoritative_domains if domain.strip()]
-    if not domains or any("site:" in spec.query.lower() for spec in specs):
+    scoped = [index for index, spec in enumerate(specs) if re.search(r"\bsite:", spec.query, re.I)]
+    if scoped:
+        return ensure_unrestricted_query(specs)
+    if not domains:
         return specs
     subject = context.entity_label or question_keywords(context.question, limit=6)
     # 官方文档多为英文，中文列名放进 site: 查询基本搜不到对应页面；有检索意图时优先用第一条
@@ -318,10 +359,27 @@ def ensure_authoritative_query(specs: list[ResearchQuerySpec], context: CellQuer
                if column.label.strip() and column.label.strip().casefold() not in _GENERIC_COLUMN_LABELS]
     topic = columns[0] if columns else question_keywords(context.question, limit=3)
     domain = best_matching_domain(domains, subject)
-    query = normalize_query(" ".join(part for part in [subject, topic, f"site:{domain}"] if part))[:MAX_QUERY_CHARS]
-    spec = _spec(query, "verify", [], rationale="official source")
-    kept = specs if len(specs) < max(2, context.max_queries) else specs[:-1]
-    return [*kept[:1], spec, *kept[1:]]
+    if len(specs) >= limit:
+        # 预算已满时只给已有查询增加域名，不删除最后一列的查询，也不改变它的列绑定。
+        index = min(1, len(specs) - 1)
+        base = specs.pop(index)
+    else:
+        base = _spec(normalize_query(f"{subject} {topic}"), "verify",
+                     [context.columns[0].key] if context.columns else [], rationale="official source")
+    suffix = f" site:{domain}"
+    query = base.query[:max(1, MAX_QUERY_CHARS - len(suffix))].rstrip() + suffix
+    spec = base.model_copy(update={"query": query, "family": "verified_evidence",
+                                   "search_angle": "verified_evidence", "search_lane": "DEEP_FOCUS"})
+    return [*specs[:1], spec, *specs[1:]]
+
+
+def ensure_unrestricted_query(specs: list[ResearchQuerySpec]) -> list[ResearchQuerySpec]:
+    """优先域名不能限制全部查询，保留查找作者公开版本等替代来源的机会。"""
+    if len(specs) > 1 and all(re.search(r"\bsite:", spec.query, re.I) for spec in specs):
+        query = normalize_query(re.sub(r"\bsite:\S+", "", specs[0].query, flags=re.I))
+        if query:
+            return [specs[0].model_copy(update={"query": query}), *specs[1:]]
+    return specs
 
 
 def best_matching_domain(domains: list[str], subject: str) -> str:

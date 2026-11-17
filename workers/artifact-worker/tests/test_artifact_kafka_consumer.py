@@ -125,12 +125,25 @@ def test_consumer_skips_stale_delivery_before_external_execution() -> None:
     messages = FakeMessages([command()])
 
     def stale(*_args, **_kwargs):
-        raise ArtifactCallbackHttpError(409, "delivery is stale")
+        raise ArtifactCallbackHttpError(409, '{"code":"WORKER_CALLBACK_DELIVERY_STALE"}')
 
     summary = consume_artifact_commands(messages, executor=stale)
 
     assert messages.commit_count == 1
     assert summary.skipped_count == 1
+
+
+@pytest.mark.parametrize("code", ["WORKER_CALLBACK_IDEMPOTENCY_CONFLICT", "WORKER_CALLBACK_OWNER_MISMATCH", ""])
+def test_consumer_does_not_discard_unconfirmed_conflicts(code: str) -> None:
+    messages = FakeMessages([command()])
+
+    def conflict(*_args, **_kwargs):
+        raise ArtifactCallbackHttpError(409, json.dumps({"code": code}))
+
+    with pytest.raises(ArtifactCallbackHttpError):
+        consume_artifact_commands(messages, executor=conflict)
+
+    assert messages.commit_count == 0
 
 
 def test_invalid_command_is_committed_only_after_durable_dead_letter() -> None:

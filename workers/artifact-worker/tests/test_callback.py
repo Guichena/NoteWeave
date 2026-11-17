@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import subprocess
 from io import BytesIO
 from types import SimpleNamespace
 import pytest
@@ -145,12 +146,12 @@ class FakeCallbackClient:
 
     def send_progress(self, task_id: str, event: ArtifactProgressEvent) -> None:
         if self.should_fail_progress:
-            raise RuntimeError("java progress callback unavailable")
+            raise callback_module.ArtifactCallbackTransportError("java progress callback unavailable")
         self.progress_events.append(event)
 
     def send_complete(self, task_id: str, result: ArtifactTaskResult) -> None:
         if self.should_fail_complete:
-            raise RuntimeError("java complete callback unavailable")
+            raise callback_module.ArtifactCallbackTransportError("java complete callback unavailable")
         self.completed_results.append(result)
 
     def send_fail(self, task_id: str, phase: str, error_code: str, error_message: str) -> None:
@@ -1025,6 +1026,58 @@ def test_run_artifact_task_with_callbacks_should_report_generation_failures_to_j
 
     assert client.failures[0]["phase"] == "WORKER_EXECUTION"
     assert client.failures[0]["error_code"] == "VALUEERROR"
+
+
+@pytest.mark.parametrize("failure", [
+    ValueError("冻结素材校验失败"),
+    FileNotFoundError("预览文件缺失"),
+    subprocess.TimeoutExpired("libreoffice", 30),
+])
+def test_local_completion_preparation_failure_is_reported_before_retry(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception,
+) -> None:
+    client = FakeCallbackClient(_build_resume_task_input())
+
+    def fail_preparation(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(callback_module, "_attach_frozen_video_material", fail_preparation)
+    with pytest.raises(type(failure)) as raised:
+        run_artifact_task_with_callbacks("task-a-callback", client)
+
+    assert raised.value.artifact_failure_reported is True
+    assert client.completed_results == []
+    assert len(client.failures) == 1
+    assert client.failures[0]["phase"] == "WORKER_COMPLETION"
+
+
+def test_different_video_wait_operations_have_independent_stable_progress_receipts() -> None:
+    receipts: dict[str, str] = {}
+    calls: list[str] = []
+
+    class CheckingClient(JavaArtifactCallbackClient):
+        def _request(self, _method, _path, payload, *, idempotency_key, task_id):
+            digest = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            if idempotency_key in receipts and receipts[idempotency_key] != digest:
+                raise callback_module.ArtifactCallbackHttpError(
+                    409, '{"code":"WORKER_CALLBACK_IDEMPOTENCY_CONFLICT"}')
+            receipts[idempotency_key] = digest
+            calls.append(idempotency_key)
+            return {}
+
+    client = CheckingClient("http://java-host:8081")
+    for operation in ("EXTRACT_TRANSCRIPT", "CAPTURE_FRAMES", "ANALYZE_FRAMES"):
+        event = ArtifactProgressEvent(
+            phase="WAITING_FOR_PROVIDER", progress_percent=30, message="等待采集",
+            payload={"provider_job": {"operation_key": operation}},
+        )
+        client.send_progress("task-video", event)
+        client.send_progress("task-video", event)
+
+    assert len(receipts) == 3
+    assert calls[0] == calls[1]
+    assert calls[2] == calls[3]
+    assert calls[4] == calls[5]
 
 
 @pytest.mark.parametrize("failure_point", ["progress", "complete"])

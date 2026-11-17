@@ -39,7 +39,7 @@ def _context(**overrides: object) -> CellQueryContext:
 
 def test_valid_model_output_should_become_structured_specs() -> None:
     llm = _SequenceLlm({"queries": [
-        {"query": "PostgreSQL JSON index", "intent": "direct", "column_keys": ["json_index"], "language": "en"},
+        {"query": "PostgreSQL JSON index", "intent": "direct", "column_keys": ["json_index", "answer"], "language": "en"},
         {"query": "PostgreSQL GIN jsonb_path_ops operator classes", "intent": "verify",
          "column_keys": ["json_index", "unknown_column"]},
         {"query": "PostgreSQL GIN index limitations jsonb", "intent": "counter", "column_keys": []},
@@ -68,7 +68,7 @@ def test_invalid_queries_should_be_rejected_and_repaired_once() -> None:
             {"query": "x" * 201, "intent": "direct"},
             {"query": "PostgreSQL JSON index", "intent": "direct"},
         ]},
-        {"queries": [{"query": "PostgreSQL jsonb GIN index", "intent": "direct"}]},
+        {"queries": [{"query": "PostgreSQL jsonb GIN index", "intent": "direct", "column_keys": ["json_index", "answer"]}]},
     )
 
     plan = plan_cell_queries(_context(tried_queries=("PostgreSQL JSON index",)), llm)
@@ -85,7 +85,7 @@ def test_invalid_queries_should_be_rejected_and_repaired_once() -> None:
 
 def test_duplicate_queries_in_one_output_should_keep_only_the_first() -> None:
     llm = _SequenceLlm({"queries": [
-        {"query": "PostgreSQL JSON index types", "intent": "direct"},
+        {"query": "PostgreSQL JSON index types", "intent": "direct", "column_keys": ["json_index", "answer"]},
         {"query": "PostgreSQL JSON index types", "intent": "verify"},
     ]})
 
@@ -149,7 +149,7 @@ def test_counterfactual_role_rule_plan_should_include_a_counter_query() -> None:
 
 def test_search_query_plan_should_follow_spec_order_metadata_and_budget() -> None:
     llm = _SequenceLlm({"queries": [
-        {"query": "PostgreSQL JSON index", "intent": "direct"},
+        {"query": "PostgreSQL JSON index", "intent": "direct", "column_keys": ["json_index", "answer"]},
         {"query": "PostgreSQL GIN jsonb_path_ops", "intent": "verify"},
         {"query": "PostgreSQL GIN limitations", "intent": "counter"},
     ]})

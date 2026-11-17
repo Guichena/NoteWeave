@@ -68,6 +68,11 @@ class ArtifactAcquisitionAckExecutionResponse(BaseModel):
 class ArtifactCallbackHttpError(RuntimeError):
     def __init__(self, status_code: int, detail: str) -> None:
         self.status_code = status_code
+        try:
+            payload = json.loads(detail)
+            self.code = str(payload.get("code", "")) if isinstance(payload, dict) else ""
+        except (ValueError, TypeError):
+            self.code = ""
         super().__init__(f"Java callback failed: {status_code} {detail}")
 
 
@@ -303,7 +308,7 @@ class JavaArtifactCallbackClient:
             idempotency_key=_callback_idempotency_key(
                 task_id,
                 "progress",
-                event.phase,
+                json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False),
             ),
             task_id=task_id,
         )
@@ -443,15 +448,24 @@ def run_artifact_task_with_callbacks(
         raise
     try:
         return _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
-    except ArtifactCallbackHttpError as exc:
-        # 宿主拒收产物内容（内容 IR、候选、文件清单不合规）时重试也不会通过，必须上报失败；
-        # 否则消费者会把这个 409 当成旧投递跳过，任务会一直停在运行中
-        rejected_code = _rejected_artifact_content_code(exc)
-        if rejected_code:
-            setattr(exc, "error_code", rejected_code)
-            if _report_execution_failure(callback_client, task_id, "WORKER_COMPLETION", exc):
-                setattr(exc, "artifact_failure_reported", True)
+    except Exception as exc:
+        if _report_completion_failure(callback_client, task_id, "WORKER_COMPLETION", exc):
+            setattr(exc, "artifact_failure_reported", True)
         raise
+
+
+def _report_completion_failure(
+    client: ArtifactCallbackClient, task_id: str, phase: str, exc: Exception,
+) -> bool:
+    if isinstance(exc, ArtifactCallbackHttpError):
+        rejected_code = _rejected_artifact_content_code(exc)
+        if not rejected_code:
+            return False
+        setattr(exc, "error_code", rejected_code)
+    elif isinstance(exc, (ArtifactCallbackTransportError, TimeoutError, ConnectionError, error.URLError)):
+        # 无法确认完成回调是否成功，保留投递重试；不能把网络故障改为业务失败。
+        return False
+    return _report_execution_failure(client, task_id, phase, exc)
 
 
 def _rejected_artifact_content_code(exc: ArtifactCallbackHttpError) -> str:
@@ -618,21 +632,14 @@ def resume_waiting_artifact_task_with_callbacks(
                 task_id, events, result, callback_client, task_input)
         else:
             response = _emit_callbacks_for_result(task_id, events, result, callback_client, task_input)
-    except ValueError as exc:
-        if task_input is not None \
-                and task_input.input_payload.writeback_mode == "MATERIAL_ONLY":
-            if isinstance(callback_client, JavaArtifactCallbackClient):
-                _report_material_failure(callback_client, task_id)
-        else:
-            _report_execution_failure(callback_client, task_id, "WORKER_RESUME", exc)
-        release_waiting_task_claim(task_id)
-        raise
     except Exception as exc:
         if task_input is not None \
                 and task_input.input_payload.writeback_mode == "MATERIAL_ONLY" \
                 and isinstance(callback_client, JavaArtifactCallbackClient):
             if _report_material_failure(callback_client, task_id):
                 setattr(exc, "artifact_failure_reported", True)
+        elif _report_completion_failure(callback_client, task_id, "WORKER_RESUME", exc):
+            setattr(exc, "artifact_failure_reported", True)
         release_waiting_task_claim(task_id)
         raise
     if not _is_waiting_status(result.job_snapshot.status):
@@ -1059,6 +1066,6 @@ def _report_execution_failure(
 def is_retryable_failure(exc: Exception) -> bool:
     name = type(exc).__name__.upper()
     message = str(exc).lower()
-    if name in {"ARTIFACTCONFIGURATIONREQUIREDERROR", "VALUEERROR", "JSONDECODEERROR"}:
+    if name in {"ARTIFACTCONFIGURATIONREQUIREDERROR", "VALUEERROR", "JSONDECODEERROR", "FILENOTFOUNDERROR"}:
         return False
     return not any(marker in message for marker in ("invalid input", "forbidden", "not configured"))

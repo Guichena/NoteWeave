@@ -296,7 +296,7 @@ def test_composite_search_adapter_should_merge_workspace_and_external_hits() -> 
     assert hits[1].provider_resolution == "fake-web"
     assert hits[1].url == "https://example.com/verify-loop"
     assert hits[1].source_domain == "example.com"
-    assert transport.calls[0] == (plan.query_set[0], plan.stop_contract["execution_profile"]["per_query_result_limit"])
+    assert transport.calls[0] == (plan.query_set[0], 1)
 
 
 def test_composite_search_adapter_should_dedupe_by_source_url_and_title() -> None:
@@ -532,8 +532,8 @@ def test_composite_search_adapter_should_record_provider_fallback_chain() -> Non
     assert external_hit.provider_attempts == ["primary-web", "backup-web"]
     assert external_hit.provider_resolution == "backup-web"
     assert external_hit.provider_fallback_reason == "prior providers returned no retained hits"
-    assert primary_transport.calls[0] == (plan.query_set[0], plan.stop_contract["execution_profile"]["per_query_result_limit"])
-    assert backup_transport.calls[0] == (plan.query_set[0], plan.stop_contract["execution_profile"]["per_query_result_limit"])
+    assert primary_transport.calls[0] == (plan.query_set[0], 1)
+    assert backup_transport.calls[0] == (plan.query_set[0], 1)
 
 
 def test_external_search_adapter_should_prioritize_requirement_target_queries_during_read_more() -> None:

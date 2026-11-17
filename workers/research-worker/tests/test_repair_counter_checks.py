@@ -17,7 +17,10 @@ class Llm:
     def complete_json(self, purpose, payload):
         if purpose == "research.answer_check":
             # 答案检查不消耗预设输出：全部结论都视为回答了该列
-            return json.dumps({"answering_indices": list(range(len(payload["claims"])))})
+            indices = list(range(len(payload["claims"])))
+            return json.dumps({"answering_indices": indices,
+                               "coverage": [{"requirement_index": item["index"], "claim_indices": indices}
+                                            for item in payload["requirements"]]})
         self.calls.append((purpose, payload))
         return json.dumps(next(self.outputs))
 
